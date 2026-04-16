@@ -1,0 +1,79 @@
+/* Custom styles for CustomDateFilterModal */
+
+.custom-calendar-full-width {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.custom-calendar-full-width .react-datepicker__month-container {
+  width: 50% !important;
+  flex: 1 !important;
+}
+
+.custom-calendar-full-width .react-datepicker__month {
+  margin: 0.8rem !important;
+}
+
+.custom-calendar-full-width .react-datepicker__day-name,
+.custom-calendar-full-width .react-datepicker__day,
+.custom-calendar-full-width .react-datepicker__time-name {
+  width: 2.5rem !important;
+  line-height: 2.5rem !important;
+  margin: 0.2rem !important;
+}
+
+.custom-calendar-full-width .react-datepicker__current-month {
+  font-size: 1rem !important;
+  font-weight: 600 !important;
+  margin-bottom: 0.5rem !important;
+}
+
+.custom-calendar-full-width .react-datepicker__header {
+  padding-top: 1rem !important;
+  background-color: transparent !important;
+  border-bottom: none !important;
+}
+
+.custom-calendar-full-width .react-datepicker__navigation {
+  top: 1rem !important;
+}
+
+/* Dark mode support */
+.dark .custom-calendar-full-width {
+  background-color: #1f2937 !important;
+  border-color: #374151 !important;
+}
+
+.dark .custom-calendar-full-width .react-datepicker__header {
+  background-color: #1f2937 !important;
+}
+
+.dark .custom-calendar-full-width .react-datepicker__current-month,
+.dark .custom-calendar-full-width .react-datepicker__day-name {
+  color: #f3f4f6 !important;
+}
+
+.dark .custom-calendar-full-width .react-datepicker__day {
+  color: #d1d5db !important;
+}
+
+.dark .custom-calendar-full-width .react-datepicker__day:hover {
+  background-color: #374151 !important;
+}
+
+.dark .custom-calendar-full-width .react-datepicker__day--selected,
+.dark .custom-calendar-full-width .react-datepicker__day--in-selecting-range,
+.dark .custom-calendar-full-width .react-datepicker__day--in-range {
+  background-color: #2563eb !important;
+  color: white !important;
+}
+
+.dark .custom-calendar-full-width .react-datepicker__day--keyboard-selected {
+  background-color: #1e40af !important;
+  color: white !important;
+}
+
+.dark .custom-calendar-full-width .react-datepicker__day--disabled {
+  color: #6b7280 !important;
+}
+

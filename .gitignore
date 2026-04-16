@@ -1,0 +1,50 @@
+# ─── Docker volumes ───────────────────────────────────────────────────────────
+postgres_primary_data/
+postgres_replica_data/
+
+# ─── Environment files ────────────────────────────────────────────────────────
+.env
+.env.local
+.env.prod
+.env.dev
+.env.*.local
+
+# ─── Python ───────────────────────────────────────────────────────────────────
+**/.venv/
+**/venv/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.Python
+**/pip-log.txt
+**/pip-delete-this-directory.txt
+**/*.egg-info/
+**/*.egg
+**/dist/
+**/build/
+**/.eggs/
+
+# ─── Node / Frontend ──────────────────────────────────────────────────────────
+**/node_modules/
+**/dist/
+**/.next/
+**/.nuxt/
+**/out/
+**/.cache/
+
+# ─── OS files ─────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── IDE ──────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ─── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+

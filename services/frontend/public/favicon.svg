@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#a855f7;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#22c55e;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background Circle -->
+  <circle cx="50" cy="50" r="48" fill="url(#grad1)"/>
+  
+  <!-- Feather (Plumo = Pluma/Feather in Portuguese) -->
+  <path d="M 50 20 Q 60 25, 65 35 Q 68 45, 65 55 Q 60 65, 50 70 L 50 20 Z" 
+        fill="white" opacity="0.9"/>
+  <path d="M 50 20 Q 40 25, 35 35 Q 32 45, 35 55 Q 40 65, 50 70 L 50 20 Z" 
+        fill="white" opacity="0.7"/>
+  
+  <!-- Feather details (lines) -->
+  <line x1="50" y1="30" x2="58" y2="32" stroke="url(#grad1)" stroke-width="1.5" opacity="0.6"/>
+  <line x1="50" y1="40" x2="60" y2="43" stroke="url(#grad1)" stroke-width="1.5" opacity="0.6"/>
+  <line x1="50" y1="50" x2="60" y2="53" stroke="url(#grad1)" stroke-width="1.5" opacity="0.6"/>
+  <line x1="50" y1="60" x2="58" y2="62" stroke="url(#grad1)" stroke-width="1.5" opacity="0.6"/>
+  
+  <!-- Dollar sign accent -->
+  <circle cx="70" cy="30" r="8" fill="#22c55e"/>
+  <text x="70" y="35" font-family="Arial, sans-serif" font-size="12" font-weight="bold" 
+        fill="white" text-anchor="middle">$</text>
+</svg>
+

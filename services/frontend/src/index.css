@@ -1,0 +1,269 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+
+    /* Chart colors - Dark Mode */
+    --chart-trend-color: #FBBF24;  /* Amarelo para tendência */
+    --chart-result-color: #DB2777; /* Rosa médio para resultado */
+  }
+
+  /* Universal System Colors - Never change regardless of theme/client */
+  :root {
+    /* CRUD Operations - Universal Standards */
+    --crud-create: #0ea5e9;  /* Blue - Create/Add/Save/Import */
+    --crud-edit: #0ea5e9;    /* Blue - Edit/Modify */
+    --crud-delete: #dc2626;  /* Red - Delete/Remove */
+    --crud-cancel: #6b7280;  /* Gray - Cancel/Neutral */
+
+    /* On-CRUD colors (text colors for CRUD buttons) */
+    --on-crud-create: #FFFFFF;  /* White text on cyan background */
+    --on-crud-edit: #FFFFFF;    /* White text on cyan background */
+    --on-crud-delete: #FFFFFF;  /* White text on red background */
+    --on-crud-cancel: #FFFFFF;  /* White text on gray background */
+
+    /* System Status - Universal Standards */
+    --status-success: #10b981;  /* Green - Success states */
+    --status-warning: #f59e0b;  /* Warning states */
+    --status-error: #ef4444;    /* Error states */
+    --status-info: #3b82f6;     /* Information states */
+
+    /* Enterprise Neutrals - Professional UI Elements */
+    --neutral-primary: #374151;    /* Primary neutral actions */
+    --neutral-secondary: #6b7280;  /* Secondary neutral actions */
+    --neutral-tertiary: #9ca3af;   /* Tertiary neutral elements */
+  }
+
+  /* 5-Color Schema System - Customizable tenant colors (nova paleta 2026) */
+  /* IMPORTANT: Base colors (--color-1 through --color-5) are set dynamically via useColorApplication hook */
+  /* IMPORTANT: On-colors (--on-color-*) are calculated dynamically based on luminance */
+  /* IMPORTANT: Gradients are generated dynamically based on base colors */
+  /* The values below are FALLBACKS only, used before the dynamic colors are loaded */
+  :root {
+    /* Base colors - Fallback values (will be overridden by API) */
+    --color-1: #297BFF;  /* Azul Vibrante */
+    --color-2: #0CC02A;  /* Verde Vibrante */
+    --color-3: #005F61;  /* Teal Profundo */
+    --color-4: #6F74B8;  /* Lavanda Suave */
+    --color-5: #220080;  /* Roxo Intenso */
+
+    /* On-colors - Calculated dynamically (DO NOT HARDCODE) */
+    /* These are set by colorApplicationService based on luminance calculation */
+    --on-color-1: #FFFFFF;  /* Fallback only */
+    --on-color-2: #000000;  /* Fallback only */
+    --on-color-3: #FFFFFF;  /* Fallback only */
+    --on-color-4: #FFFFFF;  /* Fallback only */
+    --on-color-5: #FFFFFF;  /* Fallback only */
+
+    /* On-gradient colors - Calculated dynamically (DO NOT HARDCODE) */
+    --on-gradient-1-2: #FFFFFF;  /* Fallback only */
+    --on-gradient-2-3: #FFFFFF;  /* Fallback only */
+    --on-gradient-3-4: #FFFFFF;  /* Fallback only */
+    --on-gradient-4-5: #000000;  /* Fallback only */
+    --on-gradient-5-1: #000000;  /* Fallback only */
+
+    /* Gradient backgrounds - Generated dynamically */
+    --gradient-1-2: linear-gradient(135deg, var(--color-1), var(--color-2));
+    --gradient-2-3: linear-gradient(135deg, var(--color-2), var(--color-3));
+    --gradient-3-4: linear-gradient(135deg, var(--color-3), var(--color-4));
+    --gradient-4-5: linear-gradient(135deg, var(--color-4), var(--color-5));
+    --gradient-5-1: linear-gradient(135deg, var(--color-5), var(--color-1));
+
+    /* Chart colors - Light Mode */
+    --chart-trend-color: #DB2777;  /* Rosa médio para tendência */
+    --chart-result-color: #000000; /* Preto para resultado */
+    --gradient-full: linear-gradient(135deg, var(--color-1), var(--color-2), var(--color-3), var(--color-4), var(--color-5));
+  }
+}
+
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: light dark;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+#root {
+  width: 100%;
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.3s ease-out;
+}
+
+/* Custom Color Utilities */
+@layer utilities {
+  /* Base color backgrounds */
+  .bg-color-1 { background-color: var(--color-1); }
+  .bg-color-2 { background-color: var(--color-2); }
+  .bg-color-3 { background-color: var(--color-3); }
+  .bg-color-4 { background-color: var(--color-4); }
+  .bg-color-5 { background-color: var(--color-5); }
+
+  /* Base color text */
+  .text-color-1 { color: var(--color-1); }
+  .text-color-2 { color: var(--color-2); }
+  .text-color-3 { color: var(--color-3); }
+  .text-color-4 { color: var(--color-4); }
+  .text-color-5 { color: var(--color-5); }
+
+  /* On-color text (for solid backgrounds) */
+  .text-on-color-1 { color: var(--on-color-1); }
+  .text-on-color-2 { color: var(--on-color-2); }
+  .text-on-color-3 { color: var(--on-color-3); }
+  .text-on-color-4 { color: var(--on-color-4); }
+  .text-on-color-5 { color: var(--on-color-5); }
+
+  /* On-gradient text (for gradient backgrounds) */
+  .text-on-gradient-1-2 { color: var(--on-gradient-1-2); }
+  .text-on-gradient-2-3 { color: var(--on-gradient-2-3); }
+  .text-on-gradient-3-4 { color: var(--on-gradient-3-4); }
+  .text-on-gradient-4-5 { color: var(--on-gradient-4-5); }
+  .text-on-gradient-5-1 { color: var(--on-gradient-5-1); }
+
+  /* Gradient backgrounds */
+  .bg-gradient-1-2 { background: var(--gradient-1-2); }
+  .bg-gradient-2-3 { background: var(--gradient-2-3); }
+  .bg-gradient-3-4 { background: var(--gradient-3-4); }
+  .bg-gradient-4-5 { background: var(--gradient-4-5); }
+  .bg-gradient-5-1 { background: var(--gradient-5-1); }
+  .bg-gradient-full { background: var(--gradient-full); }
+
+  /* Primary color aliases (using color-1 as primary - blue) */
+  .text-color-primary { color: var(--color-1); }
+  .bg-color-primary { background-color: var(--color-1); }
+  .border-color-primary { border-color: var(--color-1); }
+  .bg-color-primary-light {
+    background-color: color-mix(in srgb, var(--color-1) 10%, transparent);
+  }
+  .dark .bg-color-primary-light {
+    background-color: color-mix(in srgb, var(--color-1) 20%, transparent);
+  }
+  .border-color-primary-border {
+    border-color: color-mix(in srgb, var(--color-1) 30%, transparent);
+  }
+  .dark .border-color-primary-border {
+    border-color: color-mix(in srgb, var(--color-1) 40%, transparent);
+  }
+  .ring-color-primary {
+    --tw-ring-color: var(--color-1);
+  }
+
+  /* Color 2 (Purple) utilities - Secondary color for partner accounts */
+  .text-color-secondary { color: var(--color-2); }
+  .bg-color-secondary { background-color: var(--color-2); }
+  .border-color-secondary { border-color: var(--color-2); }
+  .bg-color-secondary-light {
+    background-color: color-mix(in srgb, var(--color-2) 10%, transparent);
+  }
+  .dark .bg-color-secondary-light {
+    background-color: color-mix(in srgb, var(--color-2) 20%, transparent);
+  }
+  .border-color-secondary-border {
+    border-color: color-mix(in srgb, var(--color-2) 30%, transparent);
+  }
+  .dark .border-color-secondary-border {
+    border-color: color-mix(in srgb, var(--color-2) 40%, transparent);
+  }
+}
+
+/* Modern Slider Styles for Split Expense Modal */
+.slider-modern {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  outline: none;
+}
+
+/* Slider Thumb - Chrome/Safari */
+.slider-modern::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: white;
+  cursor: pointer;
+  border: 3px solid var(--color-1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
+}
+
+.slider-modern::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.slider-modern::-webkit-slider-thumb:active {
+  transform: scale(1.1);
+}
+
+/* Slider Thumb - Firefox */
+.slider-modern::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: white;
+  cursor: pointer;
+  border: 3px solid var(--color-1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
+}
+
+.slider-modern::-moz-range-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.slider-modern::-moz-range-thumb:active {
+  transform: scale(1.1);
+}

@@ -1,0 +1,500 @@
+# Plumo - Finanças leves, vida plena
+# PowerShell Profile Functions
+# Copy this entire file content into your $PROFILE
+
+# === NAVIGATION COMMANDS ===
+
+# Main project directory
+function expenses {
+    Set-Location C:\Workspace\gus-expenses-plaftform\
+    Write-Host "[PLUMO] Plumo Platform Root" -ForegroundColor Cyan
+}
+
+# Backend service directory
+function expenses-backend {
+    Set-Location C:\Workspace\gus-expenses-plaftform\services\backend\
+    Write-Host "[PLUMO] Backend Service" -ForegroundColor Blue
+}
+
+# Frontend service directory
+function expenses-frontend {
+    Set-Location C:\Workspace\gus-expenses-plaftform\services\frontend\
+    Write-Host "[PLUMO] Frontend Service" -ForegroundColor Blue
+}
+
+# Auth service directory
+function expenses-auth {
+    Set-Location C:\Workspace\gus-expenses-plaftform\services\auth\
+    Write-Host "[EXPENSES] Auth Service" -ForegroundColor Blue
+}
+
+# Documentation directory
+function expenses-docs {
+    Set-Location C:\Workspace\gus-expenses-plaftform\docs\
+    Write-Host "[EXPENSES] Documentation Directory" -ForegroundColor Cyan
+}
+
+# === DOCKER COMMANDS - PROD (porta 5432) ===
+
+# Start Docker database service (PROD)
+function dkup {
+    expenses
+    Write-Host "[DOCKER] Starting PROD PostgreSQL database..." -ForegroundColor Green
+    docker-compose -f docker-compose.db.prod.yml up -d
+    Write-Host "[SUCCESS] PROD Database started!" -ForegroundColor Green
+    Write-Host "  Database: localhost:5432 (expenses_db)" -ForegroundColor Cyan
+}
+
+# Stop PROD Docker services
+function dkdown {
+    expenses
+    Write-Host "[DOCKER] Stopping PROD Docker services..." -ForegroundColor Red
+    docker-compose -f docker-compose.db.prod.yml down
+    Write-Host "[SUCCESS] PROD Docker services stopped!" -ForegroundColor Green
+}
+
+# View PROD Docker logs
+function dklogs {
+    expenses
+    Write-Host "[DOCKER] Showing PROD database logs..." -ForegroundColor Cyan
+    docker-compose -f docker-compose.db.prod.yml logs -f
+}
+
+# Check PROD Docker service status
+function dkstatus {
+    expenses
+    Write-Host "[DOCKER] PROD Database service status:" -ForegroundColor Cyan
+    docker-compose -f docker-compose.db.prod.yml ps
+}
+
+# === DOCKER COMMANDS - DEV (porta 5433) ===
+
+# Start Docker database service (DEV)
+function dkup-dev {
+    expenses
+    Write-Host "[DOCKER] Starting DEV PostgreSQL database..." -ForegroundColor Yellow
+    docker-compose -f docker-compose.db.dev.yml up -d
+    Write-Host "[SUCCESS] DEV Database started!" -ForegroundColor Green
+    Write-Host "  Database: localhost:5433 (expenses_db_dev)" -ForegroundColor Yellow
+}
+
+# Stop DEV Docker services
+function dkdown-dev {
+    expenses
+    Write-Host "[DOCKER] Stopping DEV Docker services..." -ForegroundColor Red
+    docker-compose -f docker-compose.db.dev.yml down
+    Write-Host "[SUCCESS] DEV Docker services stopped!" -ForegroundColor Green
+}
+
+# View DEV Docker logs
+function dklogs-dev {
+    expenses
+    Write-Host "[DOCKER] Showing DEV database logs..." -ForegroundColor Yellow
+    docker-compose -f docker-compose.db.dev.yml logs -f
+}
+
+# Check DEV Docker service status
+function dkstatus-dev {
+    expenses
+    Write-Host "[DOCKER] DEV Database service status:" -ForegroundColor Yellow
+    docker-compose -f docker-compose.db.dev.yml ps
+}
+
+# === DOCKER COMMANDS - ALL ===
+
+# Start both PROD and DEV databases
+function dkup-all {
+    expenses
+    Write-Host "[DOCKER] Starting ALL PostgreSQL databases..." -ForegroundColor Magenta
+    docker-compose -f docker-compose.db.prod.yml up -d
+    docker-compose -f docker-compose.db.dev.yml up -d
+    Write-Host "[SUCCESS] All databases started!" -ForegroundColor Green
+    Write-Host "  PROD: localhost:5432 (expenses_db)" -ForegroundColor Cyan
+    Write-Host "  DEV:  localhost:5433 (expenses_db_dev)" -ForegroundColor Yellow
+}
+
+# Stop all Docker services
+function dkdown-all {
+    expenses
+    Write-Host "[DOCKER] Stopping ALL Docker services..." -ForegroundColor Red
+    docker-compose -f docker-compose.db.prod.yml down
+    docker-compose -f docker-compose.db.dev.yml down
+    Write-Host "[SUCCESS] All Docker services stopped!" -ForegroundColor Green
+}
+
+# Check all Docker service status
+function dkstatus-all {
+    expenses
+    Write-Host "[DOCKER] All Database services status:" -ForegroundColor Magenta
+    Write-Host "--- PROD ---" -ForegroundColor Cyan
+    docker-compose -f docker-compose.db.prod.yml ps
+    Write-Host "--- DEV ---" -ForegroundColor Yellow
+    docker-compose -f docker-compose.db.dev.yml ps
+}
+
+# === SERVER COMMANDS - PROD ===
+
+# Start the backend server (PROD)
+function run-backend {
+    expenses-backend
+    Write-Host "[START-PROD] Starting backend server on port 8000..." -ForegroundColor Green
+    $env:PORT = "8000"
+    $env:ENVIRONMENT = "prod"
+    $env:DATABASE_URL = "postgresql://postgres:expenses@localhost:5432/expenses_db"
+    $env:AUTH_SERVICE_URL = "http://localhost:8001"
+    # Activate venv if it exists
+    if (Test-Path ".\venv\Scripts\Activate.ps1") {
+        .\venv\Scripts\Activate.ps1
+    }
+    python dev_server.py
+}
+
+# Start the frontend dev server (PROD)
+function run-frontend {
+    expenses-frontend
+    Write-Host "[START-PROD] Starting frontend dev server on port 5173..." -ForegroundColor Green
+    $env:VITE_PORT = "5173"
+    $env:VITE_API_URL = "http://localhost:8000"
+    npm run dev
+}
+
+# Start the auth service (PROD)
+function run-auth {
+    expenses-auth
+    Write-Host "[START-PROD] Starting auth service on port 8001..." -ForegroundColor Green
+    $env:PORT = "8001"
+    $env:DB_PORT = "5432"
+    $env:DB_NAME = "expenses_db"
+    $env:CORS_ORIGINS = "http://localhost:5173,http://localhost:3000,http://localhost:8000"
+    # Activate venv if it exists
+    if (Test-Path ".\venv\Scripts\Activate.ps1") {
+        .\venv\Scripts\Activate.ps1
+    }
+    python dev_server.py
+}
+
+# Start all services in Windows Terminal tabs (PROD)
+function run-all-tabs-prod {
+    Write-Host "[START-PROD] Starting all PROD services in new tabs..." -ForegroundColor Cyan
+    Write-Host "  Auth:     localhost:8001" -ForegroundColor Cyan
+    Write-Host "  Backend:  localhost:8000" -ForegroundColor Cyan
+    Write-Host "  Frontend: localhost:5173" -ForegroundColor Cyan
+    Write-Host "  Database: localhost:5432 (expenses_db)" -ForegroundColor Cyan
+    wt -w 0 new-tab --title "Auth-PROD"     powershell.exe -NoExit -Command "run-auth"
+    wt -w 0 new-tab --title "Backend-PROD"  powershell.exe -NoExit -Command "run-backend"
+    wt -w 0 new-tab --title "Frontend-PROD" powershell.exe -NoExit -Command "run-frontend"
+    Write-Host "[SUCCESS] PROD services started!" -ForegroundColor Green
+}
+
+# === SERVER COMMANDS - DEV ===
+
+# Start the backend server (DEV)
+function run-backend-dev {
+    expenses-backend
+    Write-Host "[START-DEV] Starting backend server on port 8010..." -ForegroundColor Yellow
+    $env:PORT = "8010"
+    $env:ENVIRONMENT = "dev"
+    $env:DATABASE_URL = "postgresql://postgres:expenses@localhost:5433/expenses_db_dev"
+    $env:AUTH_SERVICE_URL = "http://localhost:8011"
+    # Activate venv if it exists
+    if (Test-Path ".\venv\Scripts\Activate.ps1") {
+        .\venv\Scripts\Activate.ps1
+    }
+    python dev_server.py
+}
+
+# Start the frontend dev server (DEV)
+function run-frontend-dev {
+    expenses-frontend
+    Write-Host "[START-DEV] Starting frontend dev server on port 5174..." -ForegroundColor Yellow
+    $env:VITE_PORT = "5174"
+    $env:VITE_API_URL = "http://localhost:8010"
+    npm run dev -- --port 5174
+}
+
+# Start the auth service (DEV)
+function run-auth-dev {
+    expenses-auth
+    Write-Host "[START-DEV] Starting auth service on port 8011..." -ForegroundColor Yellow
+    $env:PORT = "8011"
+    $env:DB_PORT = "5433"
+    $env:DB_NAME = "expenses_db_dev"
+    $env:CORS_ORIGINS = "http://localhost:5174,http://localhost:3000,http://localhost:8010"
+    # Activate venv if it exists
+    if (Test-Path ".\venv\Scripts\Activate.ps1") {
+        .\venv\Scripts\Activate.ps1
+    }
+    python dev_server.py
+}
+
+# Start all services in Windows Terminal tabs (DEV)
+function run-all-tabs-dev {
+    Write-Host "[START-DEV] Starting all DEV services in new tabs..." -ForegroundColor Yellow
+    Write-Host "  Auth:     localhost:8011" -ForegroundColor Yellow
+    Write-Host "  Backend:  localhost:8010" -ForegroundColor Yellow
+    Write-Host "  Frontend: localhost:5174" -ForegroundColor Yellow
+    Write-Host "  Database: localhost:5433 (expenses_db_dev)" -ForegroundColor Yellow
+    wt -w 0 new-tab --title "Auth-DEV"     powershell.exe -NoExit -Command "run-auth-dev"
+    wt -w 0 new-tab --title "Backend-DEV"  powershell.exe -NoExit -Command "run-backend-dev"
+    wt -w 0 new-tab --title "Frontend-DEV" powershell.exe -NoExit -Command "run-frontend-dev"
+    Write-Host "[SUCCESS] DEV services started!" -ForegroundColor Green
+}
+
+# Start ALL services (PROD + DEV) in Windows Terminal tabs
+function run-all-tabs {
+    Write-Host "[START-ALL] Starting PROD + DEV services..." -ForegroundColor Magenta
+    Write-Host ""
+    Write-Host "PROD:" -ForegroundColor Cyan
+    Write-Host "  Auth:     localhost:8001" -ForegroundColor Cyan
+    Write-Host "  Backend:  localhost:8000" -ForegroundColor Cyan
+    Write-Host "  Frontend: localhost:5173" -ForegroundColor Cyan
+    Write-Host "  Database: localhost:5432 (expenses_db)" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "DEV:" -ForegroundColor Yellow
+    Write-Host "  Auth:     localhost:8011" -ForegroundColor Yellow
+    Write-Host "  Backend:  localhost:8010" -ForegroundColor Yellow
+    Write-Host "  Frontend: localhost:5174" -ForegroundColor Yellow
+    Write-Host "  Database: localhost:5433 (expenses_db_dev)" -ForegroundColor Yellow
+    Write-Host ""
+    # Start PROD
+    wt -w 0 new-tab --title "Auth-PROD"     powershell.exe -NoExit -Command "run-auth"
+    wt -w 0 new-tab --title "Backend-PROD"  powershell.exe -NoExit -Command "run-backend"
+    wt -w 0 new-tab --title "Frontend-PROD" powershell.exe -NoExit -Command "run-frontend"
+    # Start DEV
+    wt -w 0 new-tab --title "Auth-DEV"     powershell.exe -NoExit -Command "run-auth-dev"
+    wt -w 0 new-tab --title "Backend-DEV"  powershell.exe -NoExit -Command "run-backend-dev"
+    wt -w 0 new-tab --title "Frontend-DEV" powershell.exe -NoExit -Command "run-frontend-dev"
+    Write-Host "[SUCCESS] All services started!" -ForegroundColor Green
+}
+
+# === DATABASE MIGRATION COMMANDS - PROD ===
+
+# Reverte todas as migrations do banco de dados (PROD)
+function db-rollback {
+    expenses
+    Write-Host "[DB-PROD] Revertendo todas as migrations..." -ForegroundColor Red
+    $env:DATABASE_URL = "postgresql://postgres:expenses@localhost:5432/expenses_db"
+    python .\services\backend\scripts\migration_runner.py --reverter-ate 0
+}
+
+# Aplica todas as migrations pendentes (PROD)
+function db-migrate {
+    expenses
+    Write-Host "[DB-PROD] Aplicando todas as migrations..." -ForegroundColor Green
+    $env:DATABASE_URL = "postgresql://postgres:expenses@localhost:5432/expenses_db"
+    python .\services\backend\scripts\migration_runner.py --aplicar-todas
+}
+
+# Mostra o status das migrations (PROD)
+function db-status {
+    expenses
+    Write-Host "[DB-PROD] Verificando status das migrations..." -ForegroundColor Cyan
+    $env:DATABASE_URL = "postgresql://postgres:expenses@localhost:5432/expenses_db"
+    python .\services\backend\scripts\migration_runner.py --status
+}
+
+# Reverte até uma migration específica (PROD)
+function db-rollback-to {
+    param([string]$migration)
+    if (-not $migration) {
+        Write-Host "[ERROR] Por favor forneça o número da migration: db-rollback-to '0001'" -ForegroundColor Red
+        return
+    }
+    expenses
+    Write-Host "[DB-PROD] Revertendo até migration: $migration" -ForegroundColor Yellow
+    $env:DATABASE_URL = "postgresql://postgres:expenses@localhost:5432/expenses_db"
+    python .\services\backend\scripts\migration_runner.py --reverter-ate $migration
+}
+
+# === DATABASE MIGRATION COMMANDS - DEV ===
+
+# Reverte todas as migrations do banco de dados (DEV)
+function db-rollback-dev {
+    expenses
+    Write-Host "[DB-DEV] Revertendo todas as migrations..." -ForegroundColor Red
+    $env:DATABASE_URL = "postgresql://postgres:expenses@localhost:5433/expenses_db_dev"
+    python .\services\backend\scripts\migration_runner.py --reverter-ate 0
+}
+
+# Aplica todas as migrations pendentes (DEV)
+function db-migrate-dev {
+    expenses
+    Write-Host "[DB-DEV] Aplicando todas as migrations..." -ForegroundColor Yellow
+    $env:DATABASE_URL = "postgresql://postgres:expenses@localhost:5433/expenses_db_dev"
+    python .\services\backend\scripts\migration_runner.py --aplicar-todas
+}
+
+# Mostra o status das migrations (DEV)
+function db-status-dev {
+    expenses
+    Write-Host "[DB-DEV] Verificando status das migrations..." -ForegroundColor Yellow
+    $env:DATABASE_URL = "postgresql://postgres:expenses@localhost:5433/expenses_db_dev"
+    python .\services\backend\scripts\migration_runner.py --status
+}
+
+# Reverte até uma migration específica (DEV)
+function db-rollback-to-dev {
+    param([string]$migration)
+    if (-not $migration) {
+        Write-Host "[ERROR] Por favor forneça o número da migration: db-rollback-to-dev '0001'" -ForegroundColor Red
+        return
+    }
+    expenses
+    Write-Host "[DB-DEV] Revertendo até migration: $migration" -ForegroundColor Yellow
+    $env:DATABASE_URL = "postgresql://postgres:expenses@localhost:5433/expenses_db_dev"
+    python .\services\backend\scripts\migration_runner.py --reverter-ate $migration
+}
+
+# === DEVELOPMENT UTILITIES ===
+
+# Kill all project processes
+function kill-all {
+    Write-Host "[STOP] Stopping all Plumo processes..." -ForegroundColor Red
+    Get-Process | Where-Object {$_.ProcessName -eq "python" -and $_.CommandLine -like "*dev_server*"} | Stop-Process -Force -ErrorAction SilentlyContinue
+    Get-Process | Where-Object {$_.ProcessName -eq "node" -and $_.CommandLine -like "*vite*"} | Stop-Process -Force -ErrorAction SilentlyContinue
+    Write-Host "[SUCCESS] All processes stopped" -ForegroundColor Green
+}
+
+# Check what's running on common ports
+function check-ports {
+    Write-Host "[CHECK] Checking common Plumo ports..." -ForegroundColor Cyan
+    $ports = @(5173, 8000, 8001, 5432, 5433)
+    foreach ($port in $ports) {
+        $connection = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
+        if ($connection) {
+            Write-Host "[OK] Port $port is in use" -ForegroundColor Green
+        } else {
+            Write-Host "[FREE] Port $port is free" -ForegroundColor Red
+        }
+    }
+}
+
+# Open project in VS Code
+function code-expenses {
+    expenses
+    Write-Host "[CODE] Opening Plumo Platform in VS Code..." -ForegroundColor Cyan
+    code .
+}
+
+# Git status
+function git-status-all {
+    expenses
+    Write-Host "[GIT] Git status for Plumo Platform..." -ForegroundColor Cyan
+    git status --short
+}
+
+# Install Python dependencies
+function install-deps {
+    expenses
+    Write-Host "[INSTALL] Installing Python dependencies..." -ForegroundColor Cyan
+    python scripts/install_requirements.py
+}
+
+# Install frontend dependencies
+function install-frontend-deps {
+    expenses-frontend
+    Write-Host "[INSTALL] Installing frontend dependencies..." -ForegroundColor Cyan
+    npm install
+}
+
+# Full development setup
+function dev-setup {
+    Write-Host "[SETUP] Setting up development environment..." -ForegroundColor Yellow
+
+    # Check if all required tools are available
+    $tools = @("python", "node", "npm", "git", "docker")
+    foreach ($tool in $tools) {
+        if (Get-Command $tool -ErrorAction SilentlyContinue) {
+            Write-Host "[OK] $tool is available" -ForegroundColor Green
+        } else {
+            Write-Host "[ERROR] $tool is not available" -ForegroundColor Red
+        }
+    }
+
+    # Install dependencies
+    Write-Host "[INSTALL] Installing Python dependencies..." -ForegroundColor Cyan
+    expenses
+    python scripts/install_requirements.py
+
+    Write-Host "[INSTALL] Installing frontend dependencies..." -ForegroundColor Cyan
+    expenses-frontend
+    npm install
+
+    Write-Host "[SUCCESS] Development setup complete!" -ForegroundColor Green
+}
+
+# Quick health check
+function expenses-health {
+    Write-Host "[HEALTH] Plumo Platform System Check..." -ForegroundColor Cyan
+    check-ports
+    Write-Host ""
+    git-status-all
+    Write-Host ""
+    Write-Host "[STATUS] Database Status:" -ForegroundColor Yellow
+    Write-Host "PROD (5432): " -NoNewline
+    if (Test-NetConnection localhost -Port 5432 -WarningAction SilentlyContinue -InformationLevel Quiet) {
+        Write-Host "[OK] Running" -ForegroundColor Green
+    } else {
+        Write-Host "[ERROR] Not Running" -ForegroundColor Red
+    }
+    Write-Host "DEV  (5433): " -NoNewline
+    if (Test-NetConnection localhost -Port 5433 -WarningAction SilentlyContinue -InformationLevel Quiet) {
+        Write-Host "[OK] Running" -ForegroundColor Green
+    } else {
+        Write-Host "[ERROR] Not Running" -ForegroundColor Red
+    }
+}
+
+# === QUICK ALIASES ===
+
+# Navigation
+Set-Alias -Name e -Value expenses
+Set-Alias -Name eb -Value expenses-backend
+Set-Alias -Name ef -Value expenses-frontend
+Set-Alias -Name ea -Value expenses-auth
+
+# Servers - PROD (default, sem sufixo)
+Set-Alias -Name rat -Value run-all-tabs-prod
+
+# Servers - DEV
+Set-Alias -Name rat-dev -Value run-all-tabs-dev
+
+# Servers - ALL (PROD + DEV)
+Set-Alias -Name rat-all -Value run-all-tabs
+
+# Database - PROD (default, sem sufixo)
+Set-Alias -Name dbr -Value db-rollback
+Set-Alias -Name dbm -Value db-migrate
+Set-Alias -Name dbs -Value db-status
+
+# Database - DEV
+Set-Alias -Name dbr-dev -Value db-rollback-dev
+Set-Alias -Name dbm-dev -Value db-migrate-dev
+Set-Alias -Name dbs-dev -Value db-status-dev
+
+# Database - ALL (PROD + DEV)
+function db-rollback-all {
+    Write-Host "[DB-ALL] Rolling back PROD and DEV databases..." -ForegroundColor Yellow
+    db-rollback
+    db-rollback-dev
+}
+function db-migrate-all {
+    Write-Host "[DB-ALL] Migrating PROD and DEV databases..." -ForegroundColor Yellow
+    db-migrate
+    db-migrate-dev
+}
+function db-status-all {
+    Write-Host "[DB-ALL] Status of PROD and DEV databases..." -ForegroundColor Yellow
+    db-status
+    db-status-dev
+}
+Set-Alias -Name dbr-all -Value db-rollback-all
+Set-Alias -Name dbm-all -Value db-migrate-all
+Set-Alias -Name dbs-all -Value db-status-all
+
+Write-Host "[SUCCESS] Plumo Platform PowerShell functions loaded!" -ForegroundColor Green
+Write-Host "[TIP] Commands available:" -ForegroundColor Cyan
+Write-Host "  PROD: rat, dkup, dbm, dbr, dbs (localhost:5173)" -ForegroundColor Cyan
+Write-Host "  DEV:  rat-dev, dkup-dev, dbm-dev, dbr-dev, dbs-dev (localhost:5174)" -ForegroundColor Yellow
+Write-Host "  ALL:  rat-all, dkup-all, dkdown-all, dkstatus-all, dbm-all, dbr-all, dbs-all" -ForegroundColor Magenta
+

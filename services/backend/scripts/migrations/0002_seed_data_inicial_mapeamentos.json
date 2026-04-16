@@ -1,0 +1,3308 @@
+[
+  {
+    "account_name": "Gustavo",
+    "mappings": [
+      {
+        "original_description": "amokarite",
+        "tag": "Acalento",
+        "subtag": "Produto",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "khorcosmetics",
+        "tag": "Acalento",
+        "subtag": "Produto",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "florapura",
+        "tag": "Acalento",
+        "subtag": "Produto",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "perlas prill",
+        "tag": "Acalento",
+        "subtag": "Produto",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\b(?:fios\\s+da\\s+terra|narte|khor)\\b|(?<!s)\\balva\\b",
+        "tag": "Acalento",
+        "subtag": "Produto",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\b[Pp]ink\\s*[Cc]heeks\\b",
+        "tag": "Acalento",
+        "subtag": "Produto",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "casa de carnes",
+        "tag": "Alimentação",
+        "subtag": "Açougue",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "zé delivery",
+        "tag": "Alimentação",
+        "subtag": "Bebida",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "skina da cerveja",
+        "tag": "Alimentação",
+        "subtag": "Bebida",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "rei do chopp",
+        "tag": "Alimentação",
+        "subtag": "Bebida",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "bacio di latte",
+        "tag": "Alimentação",
+        "subtag": "Café, Doce, Sorvete & Suco",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "kopenhaguen",
+        "tag": "Alimentação",
+        "subtag": "Café, Doce, Sorvete & Suco",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "milky moo",
+        "tag": "Alimentação",
+        "subtag": "Café, Doce, Sorvete & Suco",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "kopenhagen",
+        "tag": "Alimentação",
+        "subtag": "Café, Doce, Sorvete & Suco",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "favor de mel",
+        "tag": "Alimentação",
+        "subtag": "Café, Doce, Sorvete & Suco",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "fruta gurt frozen yogurt ltda",
+        "tag": "Alimentação",
+        "subtag": "Café, Doce, Sorvete & Suco",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "sabor do interior",
+        "tag": "Alimentação",
+        "subtag": "Café, Doce, Sorvete & Suco",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "fini",
+        "tag": "Alimentação",
+        "subtag": "Café, Doce, Sorvete & Suco",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "latte ricco",
+        "tag": "Alimentação",
+        "subtag": "Café, Doce, Sorvete & Suco",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "quiosque das balas fin",
+        "tag": "Alimentação",
+        "subtag": "Café, Doce, Sorvete & Suco",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "seu moco jardim ype",
+        "tag": "Alimentação",
+        "subtag": "Café, Doce, Sorvete & Suco",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "brasil cacau",
+        "tag": "Alimentação",
+        "subtag": "Café, Doce, Sorvete & Suco",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "cacau show",
+        "tag": "Alimentação",
+        "subtag": "Café, Doce, Sorvete & Suco",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "ice creamy",
+        "tag": "Alimentação",
+        "subtag": "Café, Doce, Sorvete & Suco",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "casa bauducco",
+        "tag": "Alimentação",
+        "subtag": "Café, Doce, Sorvete & Suco",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "mundo das guloseimas",
+        "tag": "Alimentação",
+        "subtag": "Café, Doce, Sorvete & Suco",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "starbucks",
+        "tag": "Alimentação",
+        "subtag": "Café, Doce, Sorvete & Suco",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "trevo",
+        "tag": "Alimentação",
+        "subtag": "Café, Doce, Sorvete & Suco",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "qualidade",
+        "tag": "Alimentação",
+        "subtag": "Café, Doce, Sorvete & Suco",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "gelace",
+        "tag": "Alimentação",
+        "subtag": "Café, Doce, Sorvete & Suco",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "brunasso gou",
+        "tag": "Alimentação",
+        "subtag": "Café, Doce, Sorvete & Suco",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "casa de bolo",
+        "tag": "Alimentação",
+        "subtag": "Café, Doce, Sorvete & Suco",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\b(?:caf[eé]|coffee|cafeteria|sorvete|sorveteria|doce|suco|gelateria|shake|milkshake)s?\\b",
+        "tag": "Alimentação",
+        "subtag": "Café, Doce, Sorvete & Suco",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\bjo[aã]o\\s+e\\s+maria\\b",
+        "tag": "Alimentação",
+        "subtag": "Café, Doce, Sorvete & Suco",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "acai|açai|açaí",
+        "tag": "Alimentação",
+        "subtag": "Café, Doce, Sorvete & Suco",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "cancelamento - examine",
+        "tag": "Alimentação",
+        "subtag": "Cancelamento & Reembolso",
+        "type": "receita",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "mc donald",
+        "tag": "Alimentação",
+        "subtag": "Cancelamento & Reembolso",
+        "type": "receita",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "horti",
+        "tag": "Alimentação",
+        "subtag": "Cancelamento & Reembolso",
+        "type": "receita",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "brunasso gou",
+        "tag": "Alimentação",
+        "subtag": "Cancelamento & Reembolso",
+        "type": "receita",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\b(?!mercado\\s*(?:livre|pago)\\b)(?:super)?mercados?\\b",
+        "tag": "Alimentação",
+        "subtag": "Cancelamento & Reembolso",
+        "type": "receita",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "kombidafruta",
+        "tag": "Alimentação",
+        "subtag": "Hortifruti",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "mp *kombidafruta",
+        "tag": "Alimentação",
+        "subtag": "Hortifruti",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "mercpago    *kombidaf",
+        "tag": "Alimentação",
+        "subtag": "Hortifruti",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "kombi das frutas",
+        "tag": "Alimentação",
+        "subtag": "Hortifruti",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "banana",
+        "tag": "Alimentação",
+        "subtag": "Hortifruti",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "horti",
+        "tag": "Alimentação",
+        "subtag": "Hortifruti",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\b[Ll]uana\\s*[Aa]ntonelli\\b",
+        "tag": "Alimentação",
+        "subtag": "Hortifruti",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false,
+        "shared_account_name": "Polezel",
+        "my_contribution_percentage": 50.0
+      },
+      {
+        "original_description": "vitti",
+        "tag": "Alimentação",
+        "subtag": "Marmita",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\b(?:pasta|papa)",
+        "tag": "Alimentação",
+        "subtag": "Marmita",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "empó|empa",
+        "tag": "Alimentação",
+        "subtag": "Natural",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "nova fazenda",
+        "tag": "Alimentação",
+        "subtag": "Padaria",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "elizabete fraga pereira da silva",
+        "tag": "Alimentação",
+        "subtag": "Padaria",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false,
+        "shared_account_name": "Polezel",
+        "my_contribution_percentage": 50.0
+      },
+      {
+        "original_description": "edna maria da cruz",
+        "tag": "Alimentação",
+        "subtag": "Padaria",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false,
+        "shared_account_name": "Polezel",
+        "my_contribution_percentage": 50.0
+      },
+      {
+        "original_description": "elisabete beatriz",
+        "tag": "Alimentação",
+        "subtag": "Padaria",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "padaria|pães|panificadora",
+        "tag": "Alimentação",
+        "subtag": "Padaria",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\bf[aá]bricas?\\s+de\\s+bolos?\\b",
+        "tag": "Alimentação",
+        "subtag": "Padaria",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\b(?:peixarias?|pescados?)\\b",
+        "tag": "Alimentação",
+        "subtag": "Peixaria",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "seo pacheco petisc",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "seu bento",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "chef luzza",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "famous chicken",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "spoleto",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "frango assado",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "subway",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "reidocupim",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "lc fragoso",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "ma prado sushi",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "a esfiharia",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "montana",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "narizinho cantinas",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "pachecos chopp",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "outback",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "montana grill",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "jangada",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "paccos",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "petiscao",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "uai salgados",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "rest prosa mineira",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "br 11 botequim",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "graal",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "prozaria",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "churrascaria cacador",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "fridas",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "velho gacho rio",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "rest frangoassado cai",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "rest plata forma",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "crislanches",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "food",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "pizza",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "graal",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "divino",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "mc donald",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "italia no box",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\broberto\\s*[Dd][Ee]|\\brobertode|\\bpastelarias?\\b",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\brestaurants?|restaurantes?\\b",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\b(?:burg|hamb)",
+        "tag": "Alimentação",
+        "subtag": "Restaurante",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "pucci salgados",
+        "tag": "Alimentação",
+        "subtag": "Salgado",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "valdete donizete bortolotti polezel",
+        "tag": "Alimentação",
+        "subtag": "Salgado",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "lanchonete",
+        "tag": "Alimentação",
+        "subtag": "Salgado",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\bbar(?:do)?s?\\b",
+        "tag": "Alimentação",
+        "subtag": "Salgado",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "paulistao atacadista",
+        "tag": "Alimentação",
+        "subtag": "Supermercado",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "swift",
+        "tag": "Alimentação",
+        "subtag": "Supermercado",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "assaí atacadista",
+        "tag": "Alimentação",
+        "subtag": "Supermercado",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "examine",
+        "tag": "Alimentação",
+        "subtag": "Supermercado",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "frios de gea",
+        "tag": "Alimentação",
+        "subtag": "Supermercado",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "pão de açúcar",
+        "tag": "Alimentação",
+        "subtag": "Supermercado",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "enxuto",
+        "tag": "Alimentação",
+        "subtag": "Supermercado",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "atacadão",
+        "tag": "Alimentação",
+        "subtag": "Supermercado",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "covabra",
+        "tag": "Alimentação",
+        "subtag": "Supermercado",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "savegnago",
+        "tag": "Alimentação",
+        "subtag": "Supermercado",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\b(?!mercado\\s*(?:livre|pago)\\b)(?:super)?mercados?\\b",
+        "tag": "Alimentação",
+        "subtag": "Supermercado",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "amazon music",
+        "tag": "Assinatura",
+        "subtag": "Amazon - Music",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "amazon prime",
+        "tag": "Assinatura",
+        "subtag": "Amazon - Prime",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "amazon prime",
+        "tag": "Assinatura",
+        "subtag": "Cancelamento & Reembolso",
+        "type": "receita",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "canva",
+        "tag": "Assinatura",
+        "subtag": "Canva",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "crunchyroll",
+        "tag": "Assinatura",
+        "subtag": "Crunchyroll",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "jusbrasil",
+        "tag": "Assinatura",
+        "subtag": "Jusbrasil",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\b(?:Melimais|meli\\+)",
+        "tag": "Assinatura",
+        "subtag": "Melimais",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "miro com",
+        "tag": "Assinatura",
+        "subtag": "Miro",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "mycapital",
+        "tag": "Assinatura",
+        "subtag": "My Capital",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "netflix",
+        "tag": "Assinatura",
+        "subtag": "Netflix",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "openai",
+        "tag": "Assinatura",
+        "subtag": "Openai",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "simple video",
+        "tag": "Assinatura",
+        "subtag": "Simple Video",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "spotify",
+        "tag": "Assinatura",
+        "subtag": "Spotify",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "vimego video",
+        "tag": "Assinatura",
+        "subtag": "Vimego Video",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "youtube",
+        "tag": "Assinatura",
+        "subtag": "Youtube",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "encargos por atraso",
+        "tag": "Banco",
+        "subtag": "Atraso",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "multa por atraso",
+        "tag": "Banco",
+        "subtag": "Atraso",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "iof",
+        "tag": "Banco",
+        "subtag": "IOF",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "carla weygand sabino",
+        "tag": "Carla",
+        "subtag": "Salário",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "sao paulo minas",
+        "tag": "Carro",
+        "subtag": "Combustível",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "posto",
+        "tag": "Carro",
+        "subtag": "Combustível",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\bporto\\s+(?:seg(?:u(?:ro)?)?|consorcio)\\b",
+        "tag": "Carro",
+        "subtag": "Consórcio",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\b(?:[Ee]stapar|estacionamentos?)\\b",
+        "tag": "Carro",
+        "subtag": "Estacionamento",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\bZul\\b",
+        "tag": "Carro",
+        "subtag": "Estacionamento",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "cattai cattai martharo",
+        "tag": "Carro",
+        "subtag": "Manutenção",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\b[Aa]uto\\s*[Ee]l[eé]trica\\b",
+        "tag": "Carro",
+        "subtag": "Manutenção",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "multa de trânsito",
+        "tag": "Carro",
+        "subtag": "Multa",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "detran",
+        "tag": "Carro",
+        "subtag": "Multa",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "uber",
+        "tag": "Carro",
+        "subtag": "Outro",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "conect",
+        "tag": "Carro",
+        "subtag": "Pedágio",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "alfa seguradora sa",
+        "tag": "Carro",
+        "subtag": "Seguro",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "itaucard",
+        "tag": "Cartão",
+        "subtag": "Fatura",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "fatura do cartão btg pactual",
+        "tag": "Cartão",
+        "subtag": "Fatura",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "btg pactual sa",
+        "tag": "Cartão",
+        "subtag": "Fatura",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "gps",
+        "tag": "Cida",
+        "subtag": "GPS",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false,
+        "shared_account_name": "Polezel"
+      },
+      {
+        "original_description": "amazon kindle unltd",
+        "tag": "Compra Online",
+        "subtag": "Amazon - Kindle",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\bamazon(?:mktplc)?(?:\\s+digital)?(?!\\s+(?:prime|music|kindle)\\b|ia\\b)\\b",
+        "tag": "Compra Online",
+        "subtag": "Amazon - Marketplace",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "americanas",
+        "tag": "Compra Online",
+        "subtag": "Americanas",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "apple",
+        "tag": "Compra Online",
+        "subtag": "Apple",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "casas bahia",
+        "tag": "Compra Online",
+        "subtag": "Casas Bahia",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "casasbahia",
+        "tag": "Compra Online",
+        "subtag": "Casas Bahia",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "magalu",
+        "tag": "Compra Online",
+        "subtag": "Magalu",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "mercadolivre|mercado livre",
+        "tag": "Compra Online",
+        "subtag": "Mercado Livre",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "gAAAAABpjc1PBds-zDX1AZx1Jm3G3XbL88UYmM3sJDf4ytRBvbpLQsAAlL-6Pk0SUB1V0h1UkMH7jKvGZ1uATV4V-3JFYjSScg==",
+        "tag": "Compra Online",
+        "subtag": "Outro",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 0,
+        "is_sensitive": true,
+        "mapped_description": "gAAAAABpjc1PxKUlZ6rNC8CwoZh3vzGqFfpioajjzQjqq5c5JXRvb8Dlp8GQ1WyiOookBvB7PmTFrlyNrXRqMiWyNKEz9pJrxw=="
+      },
+      {
+        "original_description": "gAAAAABpjc8_qifcdPWy2V9rzeSauFK23OS2tQLUUcfWJcqWj2Btt2V2z8uRZRknI7gKZhAh4tCKJKplG79KkUXyJkB29ATAuw==",
+        "tag": "Compra Online",
+        "subtag": "Outro",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 0,
+        "is_sensitive": true,
+        "mapped_description": "gAAAAABpjc8_z-f-bI61adon9XWVjZAJP7_stsE_biyCpvsgso97Y-YI5FQO_0h7v2rL8WjrW1STsaG1kjdwCatUPywX_1Zeug=="
+      },
+      {
+        "original_description": "shein shein",
+        "tag": "Compra Online",
+        "subtag": "Shein",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "submarino",
+        "tag": "Compra Online",
+        "subtag": "Submarino",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "ebn temu com",
+        "tag": "Compra Online",
+        "subtag": "Temu",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "temu",
+        "tag": "Compra Online",
+        "subtag": "Temu",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\b(?:koelle|kll)\\b",
+        "tag": "Ensino & Aprendizado",
+        "subtag": "Cancelamento & Reembolso",
+        "type": "receita",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "agile people interface treinamentos",
+        "tag": "Ensino & Aprendizado",
+        "subtag": "Curso & Certificação",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "pimenta labs marke",
+        "tag": "Ensino & Aprendizado",
+        "subtag": "Curso & Certificação",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "gino terentim",
+        "tag": "Ensino & Aprendizado",
+        "subtag": "Curso & Certificação",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "future-dojo",
+        "tag": "Ensino & Aprendizado",
+        "subtag": "Curso & Certificação",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "eduzz",
+        "tag": "Ensino & Aprendizado",
+        "subtag": "Curso & Certificação",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "business agility inst",
+        "tag": "Ensino & Aprendizado",
+        "subtag": "Curso & Certificação",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "apm",
+        "tag": "Ensino & Aprendizado",
+        "subtag": "Koelle",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\b(?:koelle|kll)\\b",
+        "tag": "Ensino & Aprendizado",
+        "subtag": "Koelle",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\b(?:livrarias?|livros?)\\b",
+        "tag": "Ensino & Aprendizado",
+        "subtag": "Livro",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\bcart(ão|ões)\\b",
+        "tag": "Geral",
+        "subtag": "Cancelamento & Reembolso",
+        "type": "receita",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "luiz gustavo giacomelo quine",
+        "tag": "Geral",
+        "subtag": "Investimento Familia",
+        "type": "receita",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "luiz gustavo giacomelo quine",
+        "tag": "Geral",
+        "subtag": "Investimento Gustavo",
+        "type": "receita",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "andre luis carrilho",
+        "tag": "Geral",
+        "subtag": "Outro",
+        "type": "receita",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "talita bonatti",
+        "tag": "Geral",
+        "subtag": "Outro",
+        "type": "receita",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "aparecida valentina campana polezel",
+        "tag": "Geral",
+        "subtag": "Outro",
+        "type": "receita",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "aparecida valentina campana polezel",
+        "tag": "Geral",
+        "subtag": "Outro",
+        "type": "receita",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "luiz gustavo g quinelato",
+        "tag": "Geral",
+        "subtag": "Outro",
+        "type": "receita",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "aparecida valentina campana polezel",
+        "tag": "Geral",
+        "subtag": "Outro",
+        "type": "receita",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "angela rosaria meyer campana",
+        "tag": "Geral",
+        "subtag": "Outro",
+        "type": "receita",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "natalia cristina polezel",
+        "tag": "Geral",
+        "subtag": "Outro",
+        "type": "receita",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "natalia cristina polezel",
+        "tag": "Geral",
+        "subtag": "Outro",
+        "type": "receita",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "talita bonatti",
+        "tag": "Geral",
+        "subtag": "Outro",
+        "type": "receita",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "harold schultz neto",
+        "tag": "Geral",
+        "subtag": "Outro",
+        "type": "receita",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "leonardo giacomelo quinelato",
+        "tag": "Geral",
+        "subtag": "Outro",
+        "type": "receita",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "cirineu arcanjo polezel",
+        "tag": "Geral",
+        "subtag": "Outro",
+        "type": "receita",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "danieli cristina polezel",
+        "tag": "Geral",
+        "subtag": "Outro",
+        "type": "receita",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "luiz gustavo g quinelato",
+        "tag": "Geral",
+        "subtag": "Outro",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "aparecida valentina campana polezel",
+        "tag": "Geral",
+        "subtag": "Outro",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "angela rosaria meyer campana",
+        "tag": "Geral",
+        "subtag": "Outro",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "luiz gustavo giacomelo quine",
+        "tag": "Geral",
+        "subtag": "Outro",
+        "type": "receita",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "luiz gustavo giacomelo quine",
+        "tag": "Geral",
+        "subtag": "Outro",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "luiz gustavo g quine",
+        "tag": "Geral",
+        "subtag": "Outro",
+        "type": "receita",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\b[Dd]anieli\\s+(?:[Cc]ristina|[Pp]olezel)\\b",
+        "tag": "Geral",
+        "subtag": "Outro",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "saque banco24horas",
+        "tag": "Geral",
+        "subtag": "Saque",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "darf|tributo",
+        "tag": "Governo",
+        "subtag": "Cancelamento & Reembolso",
+        "type": "receita",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "secretaria do tesouro nacional",
+        "tag": "Governo",
+        "subtag": "Imposto",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "darf|tributo",
+        "tag": "Governo",
+        "subtag": "Imposto",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "municipio de rio claro",
+        "tag": "Governo",
+        "subtag": "IPTU",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "p m rio claro iptu",
+        "tag": "Governo",
+        "subtag": "IPTU",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "ipva cota única",
+        "tag": "Governo",
+        "subtag": "IPVA",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "Secr. Da Receita Federal",
+        "tag": "Governo",
+        "subtag": "Restituição IRPF",
+        "type": "receita",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "piatto caixas premiada",
+        "tag": "Lazer",
+        "subtag": "Aposta",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "loterias",
+        "tag": "Lazer",
+        "subtag": "Aposta",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "m s simonetti viagens e turismo",
+        "tag": "Lazer",
+        "subtag": "Cancelamento & Reembolso",
+        "type": "receita",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "flaviane caroline marques sanches",
+        "tag": "Lazer",
+        "subtag": "Esporte",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "agua viva",
+        "tag": "Lazer",
+        "subtag": "Esporte",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "sao miguel arcanjo",
+        "tag": "Lazer",
+        "subtag": "Festa & Entretenimento",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "unike online presente",
+        "tag": "Lazer",
+        "subtag": "Festa & Entretenimento",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "cast ra tim bum",
+        "tag": "Lazer",
+        "subtag": "Festa & Entretenimento",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "buffet infanto juvenil animalima ltda",
+        "tag": "Lazer",
+        "subtag": "Festa & Entretenimento",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "utilar presentes",
+        "tag": "Lazer",
+        "subtag": "Festa & Entretenimento",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "ballon kids",
+        "tag": "Lazer",
+        "subtag": "Festa & Entretenimento",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "aryana ottaviani alavarce",
+        "tag": "Lazer",
+        "subtag": "Festa & Entretenimento",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "art kids",
+        "tag": "Lazer",
+        "subtag": "Festa & Entretenimento",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "ri happy",
+        "tag": "Lazer",
+        "subtag": "Festa & Entretenimento",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\b[Ff]esta\\s+(?:[Ee]\\s+)?[Cc]ia\\b",
+        "tag": "Lazer",
+        "subtag": "Festa & Entretenimento",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\bGui(?:lherme)?\\s+Ottaviani\\b",
+        "tag": "Lazer",
+        "subtag": "Foto",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "epicgames",
+        "tag": "Lazer",
+        "subtag": "Game",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "bebi family",
+        "tag": "Lazer",
+        "subtag": "Game",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "top heroes",
+        "tag": "Lazer",
+        "subtag": "Game",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "santa hippo",
+        "tag": "Lazer",
+        "subtag": "Game",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "masha",
+        "tag": "Lazer",
+        "subtag": "Game",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "lands of",
+        "tag": "Lazer",
+        "subtag": "Game",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "summon",
+        "tag": "Lazer",
+        "subtag": "Game",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "google",
+        "tag": "Lazer",
+        "subtag": "Game",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "cocobi",
+        "tag": "Lazer",
+        "subtag": "Game",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "nintendo",
+        "tag": "Lazer",
+        "subtag": "Game",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\b(?:games?|jogos?)\\b",
+        "tag": "Lazer",
+        "subtag": "Game",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "fantasy park",
+        "tag": "Lazer",
+        "subtag": "Park & Brinquedo",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "max circus",
+        "tag": "Lazer",
+        "subtag": "Park & Brinquedo",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "happy kids",
+        "tag": "Lazer",
+        "subtag": "Park & Brinquedo",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "império cirkus",
+        "tag": "Lazer",
+        "subtag": "Park & Brinquedo",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "super carros kids recr",
+        "tag": "Lazer",
+        "subtag": "Park & Brinquedo",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "millenium park",
+        "tag": "Lazer",
+        "subtag": "Park & Brinquedo",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "parque",
+        "tag": "Lazer",
+        "subtag": "Park & Brinquedo",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "circo",
+        "tag": "Lazer",
+        "subtag": "Park & Brinquedo",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "play",
+        "tag": "Lazer",
+        "subtag": "Park & Brinquedo",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "diversoes",
+        "tag": "Lazer",
+        "subtag": "Park & Brinquedo",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\bhappy\\s+(?:event|machine)s?\\b",
+        "tag": "Lazer",
+        "subtag": "Park & Brinquedo",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "loterias",
+        "tag": "Lazer",
+        "subtag": "Prêmio",
+        "type": "receita",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "safari diversoes",
+        "tag": "Lazer",
+        "subtag": "Viagem & Passeio",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "safari diversao",
+        "tag": "Lazer",
+        "subtag": "Viagem & Passeio",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "emirates",
+        "tag": "Lazer",
+        "subtag": "Viagem & Passeio",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "dourada corretora de cambio ltda",
+        "tag": "Lazer",
+        "subtag": "Viagem & Passeio",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "airbnb",
+        "tag": "Lazer",
+        "subtag": "Viagem & Passeio",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "m s simonetti viagens e turismo",
+        "tag": "Lazer",
+        "subtag": "Viagem & Passeio",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "animalia",
+        "tag": "Lazer",
+        "subtag": "Viagem & Passeio",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "elektro",
+        "tag": "Moradia",
+        "subtag": "Água, Energia & Gás",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\b[Gg]as\\s*[Ee](?:cia)?\\b",
+        "tag": "Moradia",
+        "subtag": "Água, Energia & Gás",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false,
+        "shared_account_name": "Polezel",
+        "my_contribution_percentage": 50.0
+      },
+      {
+        "original_description": "\\bv7(?:serv)?\\b|\\bserv\\s+agua\\b",
+        "tag": "Moradia",
+        "subtag": "Água, Energia & Gás",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false,
+        "shared_account_name": "Polezel",
+        "my_contribution_percentage": 50.0
+      },
+      {
+        "original_description": "xavier camargo",
+        "tag": "Moradia",
+        "subtag": "Aluguel & Condomínio",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "f.a. polastri empreendimento imobiliario spe ltda.",
+        "tag": "Moradia",
+        "subtag": "Apartamento",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\b(?:Travessia\\s+Securitizadora|capretz)\\b",
+        "tag": "Moradia",
+        "subtag": "Apartamento",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "rodobens adm de consorcio",
+        "tag": "Moradia",
+        "subtag": "Carta de crédito",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "daae rio claro",
+        "tag": "Moradia",
+        "subtag": "DAAE",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "comercio moveleiro moradia",
+        "tag": "Moradia",
+        "subtag": "Decoração",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "pagamento para vivo",
+        "tag": "Moradia",
+        "subtag": "Internet & Telefone",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "yes celular",
+        "tag": "Moradia",
+        "subtag": "Internet & Telefone",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "telefonica brasil",
+        "tag": "Moradia",
+        "subtag": "Internet & Telefone",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "^\\s*(?:vivo|claro|oi)\\s*$",
+        "tag": "Moradia",
+        "subtag": "Internet & Telefone",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "certeza limpeza",
+        "tag": "Moradia",
+        "subtag": "Limpeza & Higiene",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "marco antonio contato",
+        "tag": "Moradia",
+        "subtag": "Limpeza & Higiene",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "ton limpa tapete",
+        "tag": "Moradia",
+        "subtag": "Limpeza & Higiene",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "certeza higiene e limp",
+        "tag": "Moradia",
+        "subtag": "Limpeza & Higiene",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "contato materiais",
+        "tag": "Moradia",
+        "subtag": "Limpeza & Higiene",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "gilmar",
+        "tag": "Moradia",
+        "subtag": "Manutenção",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "claret mat eletricos",
+        "tag": "Moradia",
+        "subtag": "Manutenção",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "eletro",
+        "tag": "Moradia",
+        "subtag": "Manutenção",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\b[Ff]onte\\s*[Ll]uz\\b",
+        "tag": "Moradia",
+        "subtag": "Manutenção",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "utilidade",
+        "tag": "Moradia",
+        "subtag": "Utilidade",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "casa e vid",
+        "tag": "Moradia",
+        "subtag": "Utilidade",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "salão hellus",
+        "tag": "Saúde & Bem estar",
+        "subtag": "Cabelo",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "winner",
+        "tag": "Saúde & Bem estar",
+        "subtag": "Cabelo",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "bradesco saúde",
+        "tag": "Saúde & Bem estar",
+        "subtag": "Cancelamento & Reembolso",
+        "type": "receita",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "martha magalhaes rodrigues",
+        "tag": "Saúde & Bem estar",
+        "subtag": "Cancelamento & Reembolso",
+        "type": "receita",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "lynx",
+        "tag": "Saúde & Bem estar",
+        "subtag": "Cancelamento & Reembolso",
+        "type": "receita",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "clinica",
+        "tag": "Saúde & Bem estar",
+        "subtag": "Consulta",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "olifant odontologia",
+        "tag": "Saúde & Bem estar",
+        "subtag": "Dentista",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "olifant odon",
+        "tag": "Saúde & Bem estar",
+        "subtag": "Dentista",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "marco aurelio ribeiro",
+        "tag": "Saúde & Bem estar",
+        "subtag": "Dentista",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "valter marques",
+        "tag": "Saúde & Bem estar",
+        "subtag": "Estética & Cosmético",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "tok de beleza",
+        "tag": "Saúde & Bem estar",
+        "subtag": "Estética & Cosmético",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "jr cosmeticos",
+        "tag": "Saúde & Bem estar",
+        "subtag": "Estética & Cosmético",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "soneda perfumaria",
+        "tag": "Saúde & Bem estar",
+        "subtag": "Estética & Cosmético",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "natalia generoso",
+        "tag": "Saúde & Bem estar",
+        "subtag": "Estética & Cosmético",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "jessica cristina",
+        "tag": "Saúde & Bem estar",
+        "subtag": "Estética & Cosmético",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "lynx",
+        "tag": "Saúde & Bem estar",
+        "subtag": "Estética & Cosmético",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "jessica sant",
+        "tag": "Saúde & Bem estar",
+        "subtag": "Estética & Cosmético",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "natura pay",
+        "tag": "Saúde & Bem estar",
+        "subtag": "Estética & Cosmético",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "nicpharma",
+        "tag": "Saúde & Bem estar",
+        "subtag": "Farmácia",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\b(?:droga|farma|farm[aá]cia)",
+        "tag": "Saúde & Bem estar",
+        "subtag": "Farmácia",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "martha magalhaes rodrigues",
+        "tag": "Saúde & Bem estar",
+        "subtag": "Fono",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "homeopatica sao joao",
+        "tag": "Saúde & Bem estar",
+        "subtag": "Homeopatia",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "lsl laboratório de an",
+        "tag": "Saúde & Bem estar",
+        "subtag": "Laboratório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "draª amanda de mello",
+        "tag": "Saúde & Bem estar",
+        "subtag": "Pediatra",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "olifant pediatria",
+        "tag": "Saúde & Bem estar",
+        "subtag": "Pediatra",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "olifant",
+        "tag": "Saúde & Bem estar",
+        "subtag": "Pediatra",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "olifant ltda",
+        "tag": "Saúde & Bem estar",
+        "subtag": "Pediatra",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "unimed",
+        "tag": "Saúde & Bem estar",
+        "subtag": "Plano de Saúde",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "silvana regina picelli mainardi",
+        "tag": "Saúde & Bem estar",
+        "subtag": "Terapia",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "infobase consultoria e informatica ltda.",
+        "tag": "Trabalho",
+        "subtag": "Benefício",
+        "type": "receita",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "wex",
+        "tag": "Trabalho",
+        "subtag": "Benefício",
+        "type": "receita",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "dell",
+        "tag": "Trabalho",
+        "subtag": "Ferramenta & Conteúdo",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "wondershare",
+        "tag": "Trabalho",
+        "subtag": "Ferramenta & Conteúdo",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "dell computadores",
+        "tag": "Trabalho",
+        "subtag": "Ferramenta & Conteúdo",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "godaddy",
+        "tag": "Trabalho",
+        "subtag": "Ferramenta & Conteúdo",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "site123",
+        "tag": "Trabalho",
+        "subtag": "Ferramenta & Conteúdo",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "new soft informat limeira ltda",
+        "tag": "Trabalho",
+        "subtag": "PLR",
+        "type": "receita",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "pagamento recebido",
+        "tag": "Trabalho",
+        "subtag": "Salário",
+        "type": "receita",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "luiz gustavo g quine",
+        "tag": "Trabalho",
+        "subtag": "Salário",
+        "type": "receita",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "loja primavera",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "decathlon",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "vlcs",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "c&a",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "claudiamelo",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "jeanszaria",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "mr jones",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "havaianas",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "pernambucanas",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "polo sul",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "your shoe",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "authentika comercio de bolsas em geral ltda",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "riachuelo",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "romeu e julieta",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "salome boutique",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "sandaliaria rc",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "savana",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "claudia melo",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "maria bonita",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "lupo",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "loja n s do rosario",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "armenia calcados",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "authentika bolsas",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "subfashion",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "via s a",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "torra torra",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "tanger",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "morena flor",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "lojas renner",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "fernanda pa",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "twin",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "pasetto",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "boneca de pano",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "montreal",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "textil abril",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "nossa senhora d",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\b(?:sapataria|sapato|moda|roupa)s?\\b(?!.*\\b(?:kids?|infantil)\\b)",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "Encanto|encantei calcados",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "\\blinda\\s+(?:novidades?|com[eé]rcio)\\b",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório",
+        "type": "despesa",
+        "mapping_type": "regex",
+        "priority": 2,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "mini me baby kids",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório - Crianças",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "on off kids",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório - Crianças",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "milon rio claro",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório - Crianças",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "kidstok",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório - Crianças",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "mozinha kids",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório - Crianças",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "bibi calcados piracicaba",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório - Crianças",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "tuti guti moda infantil",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório - Crianças",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "milon",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório - Crianças",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "pijamas bicho pregu",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório - Crianças",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "kyly propria milon",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório - Crianças",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "lalirru acessorios infantis ltda",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório - Crianças",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "loja kanguru moda infantil eireli me",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório - Crianças",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "la vie kids",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório - Crianças",
+        "type": "despesa",
+        "mapping_type": "exact",
+        "priority": 1,
+        "is_sensitive": false
+      },
+      {
+        "original_description": "shopping do bebe",
+        "tag": "Vestuário",
+        "subtag": "Roupa, Sapato & Acessório - Crianças",
+        "type": "despesa",
+        "mapping_type": "pattern",
+        "priority": 1,
+        "is_sensitive": false
+      }
+    ]
+  },
+  {
+    "account_name": "Polezel",
+    "mappings": []
+  },
+  {
+    "account_name": "Lurdes",
+    "mappings": []
+  },
+  {
+    "account_name": "Acalento",
+    "mappings": []
+  }
+]

@@ -1,0 +1,12 @@
+﻿# =============================================================
+# requirements/install.txt -- gus-plumo (project-level)
+# =============================================================
+# Each line is a path (relative to project root):
+#   FILE  -> .venv created at path.parent.parent, pip install -r <file>
+#   DIR   -> delegates to <dir>/scripts/setup_env.py  (legacy support)
+# Lines starting with # are ignored.
+# =============================================================
+
+services/backend/requirements/install.txt
+services/auth/requirements/install.txt
+services/frontend/package.json

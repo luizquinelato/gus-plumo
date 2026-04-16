@@ -1,0 +1,3600 @@
+[
+  {
+    "account_name": "Gustavo",
+    "tags": [
+      {
+        "name": "Acalento",
+        "icon": "Heart",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Produto",
+            "type": "despesa",
+            "icon": "ShoppingBag"
+          }
+        ]
+      },
+      {
+        "name": "Alimentação",
+        "icon": "Utensils",
+        "subtags": [
+          {
+            "name": "Açougue",
+            "type": "despesa",
+            "icon": "Beef"
+          },
+          {
+            "name": "Bebida",
+            "type": "despesa",
+            "icon": "Beer"
+          },
+          {
+            "name": "Café, Doce, Sorvete & Suco",
+            "type": "despesa",
+            "icon": "Coffee"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Hortifruti",
+            "type": "despesa",
+            "icon": "Apple"
+          },
+          {
+            "name": "Marmita",
+            "type": "despesa",
+            "icon": "Utensils"
+          },
+          {
+            "name": "Natural",
+            "type": "despesa",
+            "icon": "Leaf"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Padaria",
+            "type": "despesa",
+            "icon": "Croissant"
+          },
+          {
+            "name": "Peixaria",
+            "type": "despesa",
+            "icon": "Fish"
+          },
+          {
+            "name": "Restaurante",
+            "type": "despesa",
+            "icon": "UtensilsCrossed"
+          },
+          {
+            "name": "Salgado",
+            "type": "despesa",
+            "icon": "Croissant"
+          },
+          {
+            "name": "Supermercado",
+            "type": "despesa",
+            "icon": "ShoppingCart"
+          }
+        ]
+      },
+      {
+        "name": "Assinatura",
+        "icon": "Calendar",
+        "subtags": [
+          {
+            "name": "Amazon - Music",
+            "type": "despesa",
+            "icon": "Music"
+          },
+          {
+            "name": "Amazon - Prime",
+            "type": "despesa",
+            "icon": "Youtube"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Canva",
+            "type": "despesa",
+            "icon": "Palette"
+          },
+          {
+            "name": "Crunchyroll",
+            "type": "despesa",
+            "icon": "Tv"
+          },
+          {
+            "name": "Jusbrasil",
+            "type": "despesa",
+            "icon": "Scale"
+          },
+          {
+            "name": "Melimais",
+            "type": "despesa",
+            "icon": "Package"
+          },
+          {
+            "name": "Miro",
+            "type": "despesa",
+            "icon": "Layout"
+          },
+          {
+            "name": "My Capital",
+            "type": "despesa",
+            "icon": "Coins"
+          },
+          {
+            "name": "Netflix",
+            "type": "despesa",
+            "icon": "Tv"
+          },
+          {
+            "name": "Openai",
+            "type": "despesa",
+            "icon": "Bot"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Simple Video",
+            "type": "despesa",
+            "icon": "Video"
+          },
+          {
+            "name": "Spotify",
+            "type": "despesa",
+            "icon": "Music"
+          },
+          {
+            "name": "Vimego Video",
+            "type": "despesa",
+            "icon": "Film"
+          },
+          {
+            "name": "Youtube",
+            "type": "despesa",
+            "icon": "Youtube"
+          }
+        ]
+      },
+      {
+        "name": "Banco",
+        "icon": "Building",
+        "subtags": [
+          {
+            "name": "Atraso",
+            "type": "despesa",
+            "icon": "Clock"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "IOF",
+            "type": "despesa",
+            "icon": "Percent"
+          },
+          {
+            "name": "Juro",
+            "type": "despesa",
+            "icon": "TrendingUp"
+          },
+          {
+            "name": "Mora",
+            "type": "despesa",
+            "icon": "AlertCircle"
+          },
+          {
+            "name": "Multa",
+            "type": "despesa",
+            "icon": "AlertTriangle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          }
+        ]
+      },
+      {
+        "name": "Carla",
+        "icon": "User",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "GPS",
+            "type": "despesa",
+            "icon": "MapPin"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Salário",
+            "type": "despesa",
+            "icon": "Wallet"
+          }
+        ]
+      },
+      {
+        "name": "Carro",
+        "icon": "Car",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Combustível",
+            "type": "despesa",
+            "icon": "Fuel"
+          },
+          {
+            "name": "Consórcio",
+            "type": "despesa",
+            "icon": "FileText"
+          },
+          {
+            "name": "Estacionamento",
+            "type": "despesa",
+            "icon": "ParkingCircle"
+          },
+          {
+            "name": "Licenciamento",
+            "type": "despesa",
+            "icon": "Car"
+          },
+          {
+            "name": "Manutenção",
+            "type": "despesa",
+            "icon": "Wrench"
+          },
+          {
+            "name": "Multa",
+            "type": "despesa",
+            "icon": "AlertCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Pedágio",
+            "type": "despesa",
+            "icon": "Ticket"
+          },
+          {
+            "name": "Seguro",
+            "type": "despesa",
+            "icon": "Shield"
+          }
+        ]
+      },
+      {
+        "name": "Cartão",
+        "icon": "CreditCard",
+        "subtags": [
+          {
+            "name": "Benefício",
+            "type": "receita",
+            "icon": "Gift"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Fatura",
+            "type": "despesa",
+            "icon": "Receipt"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          }
+        ]
+      },
+      {
+        "name": "Cida",
+        "icon": "User",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "GPS",
+            "type": "despesa",
+            "icon": "MapPin"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          }
+        ]
+      },
+      {
+        "name": "Compra Online",
+        "icon": "ShoppingCart",
+        "subtags": [
+          {
+            "name": "Amazon - Kindle",
+            "type": "despesa",
+            "icon": "BookOpen"
+          },
+          {
+            "name": "Amazon - Marketplace",
+            "type": "despesa",
+            "icon": "Package"
+          },
+          {
+            "name": "Amazon - Prime",
+            "type": "despesa",
+            "icon": "Star"
+          },
+          {
+            "name": "Americanas",
+            "type": "despesa",
+            "icon": "Store"
+          },
+          {
+            "name": "Apple",
+            "type": "despesa",
+            "icon": "Apple"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Casas Bahia",
+            "type": "despesa",
+            "icon": "Home"
+          },
+          {
+            "name": "Cashback",
+            "type": "receita",
+            "icon": "DollarSign"
+          },
+          {
+            "name": "Kabum",
+            "type": "despesa",
+            "icon": "Laptop"
+          },
+          {
+            "name": "Magalu",
+            "type": "despesa",
+            "icon": "ShoppingBag"
+          },
+          {
+            "name": "Mercado Livre",
+            "type": "despesa",
+            "icon": "Package"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Samsung",
+            "type": "despesa",
+            "icon": "Smartphone"
+          },
+          {
+            "name": "Shein",
+            "type": "despesa",
+            "icon": "Package"
+          },
+          {
+            "name": "Shopee",
+            "type": "despesa",
+            "icon": "ShoppingBag"
+          },
+          {
+            "name": "Submarino",
+            "type": "despesa",
+            "icon": "Ship"
+          },
+          {
+            "name": "Temu",
+            "type": "despesa",
+            "icon": "Package"
+          }
+        ]
+      },
+      {
+        "name": "Ensino & Aprendizado",
+        "icon": "GraduationCap",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Curso & Certificação",
+            "type": "despesa",
+            "icon": "Award"
+          },
+          {
+            "name": "Koelle",
+            "type": "despesa",
+            "icon": "School"
+          },
+          {
+            "name": "Livro",
+            "type": "despesa",
+            "icon": "Book"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Papelaria",
+            "type": "despesa",
+            "icon": "Pencil"
+          }
+        ]
+      },
+      {
+        "name": "Geral",
+        "icon": "Layers",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Empréstimo",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Investimento Familia",
+            "type": "receita",
+            "icon": "PiggyBank"
+          },
+          {
+            "name": "Investimento Gustavo",
+            "type": "receita",
+            "icon": "PiggyBank"
+          },
+          {
+            "name": "Investimento Lurdes",
+            "type": "receita",
+            "icon": "PiggyBank"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Presente",
+            "type": "despesa",
+            "icon": "Gift"
+          },
+          {
+            "name": "Saque",
+            "type": "despesa",
+            "icon": "Wallet"
+          }
+        ]
+      },
+      {
+        "name": "Governo",
+        "icon": "Landmark",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Cartório",
+            "type": "despesa",
+            "icon": "FileCheck"
+          },
+          {
+            "name": "Imposto",
+            "type": "despesa",
+            "icon": "Receipt"
+          },
+          {
+            "name": "IPTU",
+            "type": "despesa",
+            "icon": "Home"
+          },
+          {
+            "name": "IPVA",
+            "type": "despesa",
+            "icon": "Car"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Restituição IRPF",
+            "type": "receita",
+            "icon": "FileText"
+          }
+        ]
+      },
+      {
+        "name": "Lazer",
+        "icon": "PartyPopper",
+        "subtags": [
+          {
+            "name": "Aposta",
+            "type": "despesa",
+            "icon": "Dices"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Ensaio & Fotografia",
+            "type": "despesa",
+            "icon": "Camera"
+          },
+          {
+            "name": "Esporte",
+            "type": "despesa",
+            "icon": "Waves"
+          },
+          {
+            "name": "Festa & Entretenimento",
+            "type": "despesa",
+            "icon": "Music"
+          },
+          {
+            "name": "Foto",
+            "type": "despesa",
+            "icon": "Camera"
+          },
+          {
+            "name": "Game",
+            "type": "despesa",
+            "icon": "Gamepad2"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Park & Brinquedo",
+            "type": "despesa",
+            "icon": "PartyPopper"
+          },
+          {
+            "name": "Prêmio",
+            "type": "receita",
+            "icon": "Award"
+          },
+          {
+            "name": "Viagem & Passeio",
+            "type": "despesa",
+            "icon": "Plane"
+          }
+        ]
+      },
+      {
+        "name": "Moradia",
+        "icon": "Home",
+        "subtags": [
+          {
+            "name": "Água, Energia & Gás",
+            "type": "despesa",
+            "icon": "Droplet"
+          },
+          {
+            "name": "Aluguel & Condomínio",
+            "type": "despesa",
+            "icon": "Building"
+          },
+          {
+            "name": "Apartamento",
+            "type": "despesa",
+            "icon": "Building2"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Carta de crédito",
+            "type": "despesa",
+            "icon": "FileText"
+          },
+          {
+            "name": "DAAE",
+            "type": "despesa",
+            "icon": "Droplets"
+          },
+          {
+            "name": "Decoração",
+            "type": "despesa",
+            "icon": "Flower"
+          },
+          {
+            "name": "Internet & Telefone",
+            "type": "despesa",
+            "icon": "Wifi"
+          },
+          {
+            "name": "Limpeza & Higiene",
+            "type": "despesa",
+            "icon": "Sparkles"
+          },
+          {
+            "name": "Manutenção",
+            "type": "despesa",
+            "icon": "Settings"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Utilidade",
+            "type": "despesa",
+            "icon": "Lightbulb"
+          }
+        ]
+      },
+      {
+        "name": "Saúde & Bem estar",
+        "icon": "Heart",
+        "subtags": [
+          {
+            "name": "Cabelo",
+            "type": "despesa",
+            "icon": "Scissors"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "RefreshCw"
+          },
+          {
+            "name": "Consulta",
+            "type": "despesa",
+            "icon": "Stethoscope"
+          },
+          {
+            "name": "Dentista",
+            "type": "despesa",
+            "icon": "Smile"
+          },
+          {
+            "name": "Estética & Cosmético",
+            "type": "despesa",
+            "icon": "Sparkles"
+          },
+          {
+            "name": "Exame",
+            "type": "despesa",
+            "icon": "HeartPulse"
+          },
+          {
+            "name": "Farmácia",
+            "type": "despesa",
+            "icon": "Pill"
+          },
+          {
+            "name": "Fono",
+            "type": "despesa",
+            "icon": "Ear"
+          },
+          {
+            "name": "Homeopatia",
+            "type": "despesa",
+            "icon": "Pill"
+          },
+          {
+            "name": "Laboratório",
+            "type": "despesa",
+            "icon": "Pill"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Pediatra",
+            "type": "despesa",
+            "icon": "Baby"
+          },
+          {
+            "name": "Plano de Saúde",
+            "type": "despesa",
+            "icon": "HeartPulse"
+          },
+          {
+            "name": "Terapia",
+            "type": "despesa",
+            "icon": "Brain"
+          },
+          {
+            "name": "Vacina",
+            "type": "despesa",
+            "icon": "Syringe"
+          }
+        ]
+      },
+      {
+        "name": "Trabalho",
+        "icon": "Briefcase",
+        "subtags": [
+          {
+            "name": "Benefício",
+            "type": "receita",
+            "icon": "Package"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Ferramenta & Conteúdo",
+            "type": "despesa",
+            "icon": "Wrench"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "PLR",
+            "type": "receita",
+            "icon": "Award"
+          },
+          {
+            "name": "Salário",
+            "type": "receita",
+            "icon": "Banknote"
+          }
+        ]
+      },
+      {
+        "name": "Vestuário",
+        "icon": "Shirt",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Roupa, Sapato & Acessório",
+            "type": "despesa",
+            "icon": "ShoppingBag"
+          },
+          {
+            "name": "Roupa, Sapato & Acessório - Crianças",
+            "type": "despesa",
+            "icon": "Shirt"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "account_name": "Polezel",
+    "tags": [
+      {
+        "name": "Acalento",
+        "icon": "Heart",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Produto",
+            "type": "despesa",
+            "icon": "ShoppingBag"
+          }
+        ]
+      },
+      {
+        "name": "Alimentação",
+        "icon": "Utensils",
+        "subtags": [
+          {
+            "name": "Açougue",
+            "type": "despesa",
+            "icon": "Beef"
+          },
+          {
+            "name": "Bebida",
+            "type": "despesa",
+            "icon": "Beer"
+          },
+          {
+            "name": "Café & Doce",
+            "type": "despesa",
+            "icon": "Coffee"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Hortifruti",
+            "type": "despesa",
+            "icon": "Apple"
+          },
+          {
+            "name": "Natural",
+            "type": "despesa",
+            "icon": "Leaf"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Padaria",
+            "type": "despesa",
+            "icon": "Croissant"
+          },
+          {
+            "name": "Peixaria",
+            "type": "despesa",
+            "icon": "Fish"
+          },
+          {
+            "name": "Restaurante",
+            "type": "despesa",
+            "icon": "UtensilsCrossed"
+          },
+          {
+            "name": "Supermercado",
+            "type": "despesa",
+            "icon": "ShoppingCart"
+          }
+        ]
+      },
+      {
+        "name": "Assinatura",
+        "icon": "Calendar",
+        "subtags": [
+          {
+            "name": "Amazon - Music",
+            "type": "despesa",
+            "icon": "Music"
+          },
+          {
+            "name": "Amazon - Prime",
+            "type": "despesa",
+            "icon": "Youtube"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Canva",
+            "type": "despesa",
+            "icon": "Palette"
+          },
+          {
+            "name": "Crunchyroll",
+            "type": "despesa",
+            "icon": "Tv"
+          },
+          {
+            "name": "Jusbrasil",
+            "type": "despesa",
+            "icon": "Scale"
+          },
+          {
+            "name": "Melimais",
+            "type": "despesa",
+            "icon": "Package"
+          },
+          {
+            "name": "Miro",
+            "type": "despesa",
+            "icon": "Layout"
+          },
+          {
+            "name": "My Capital",
+            "type": "despesa",
+            "icon": "Coins"
+          },
+          {
+            "name": "Netflix",
+            "type": "despesa",
+            "icon": "Tv"
+          },
+          {
+            "name": "Openai",
+            "type": "despesa",
+            "icon": "Bot"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Simple Video",
+            "type": "despesa",
+            "icon": "Video"
+          },
+          {
+            "name": "Spotify",
+            "type": "despesa",
+            "icon": "Music"
+          },
+          {
+            "name": "Vimego Video",
+            "type": "despesa",
+            "icon": "Film"
+          },
+          {
+            "name": "Youtube",
+            "type": "despesa",
+            "icon": "Youtube"
+          }
+        ]
+      },
+      {
+        "name": "Banco",
+        "icon": "Building",
+        "subtags": [
+          {
+            "name": "Atraso",
+            "type": "despesa",
+            "icon": "Clock"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "IOF",
+            "type": "despesa",
+            "icon": "Percent"
+          },
+          {
+            "name": "Juro",
+            "type": "despesa",
+            "icon": "TrendingUp"
+          },
+          {
+            "name": "Mora",
+            "type": "despesa",
+            "icon": "AlertCircle"
+          },
+          {
+            "name": "Multa",
+            "type": "despesa",
+            "icon": "AlertTriangle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          }
+        ]
+      },
+      {
+        "name": "Carla",
+        "icon": "User",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "GPS",
+            "type": "despesa",
+            "icon": "MapPin"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Salário",
+            "type": "despesa",
+            "icon": "Wallet"
+          }
+        ]
+      },
+      {
+        "name": "Carro",
+        "icon": "Car",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Combustível",
+            "type": "despesa",
+            "icon": "Fuel"
+          },
+          {
+            "name": "Consórcio",
+            "type": "despesa",
+            "icon": "FileText"
+          },
+          {
+            "name": "Estacionamento",
+            "type": "despesa",
+            "icon": "ParkingCircle"
+          },
+          {
+            "name": "Licenciamento",
+            "type": "despesa",
+            "icon": "Car"
+          },
+          {
+            "name": "Manutenção",
+            "type": "despesa",
+            "icon": "Wrench"
+          },
+          {
+            "name": "Multa",
+            "type": "despesa",
+            "icon": "AlertCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Pedágio",
+            "type": "despesa",
+            "icon": "Ticket"
+          },
+          {
+            "name": "Seguro",
+            "type": "despesa",
+            "icon": "Shield"
+          }
+        ]
+      },
+      {
+        "name": "Cartão",
+        "icon": "CreditCard",
+        "subtags": [
+          {
+            "name": "Benefício",
+            "type": "receita",
+            "icon": "Gift"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Fatura",
+            "type": "despesa",
+            "icon": "Receipt"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          }
+        ]
+      },
+      {
+        "name": "Cida",
+        "icon": "User",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "GPS",
+            "type": "despesa",
+            "icon": "MapPin"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          }
+        ]
+      },
+      {
+        "name": "Compra Online",
+        "icon": "ShoppingCart",
+        "subtags": [
+          {
+            "name": "Amazon - Kindle",
+            "type": "despesa",
+            "icon": "BookOpen"
+          },
+          {
+            "name": "Amazon - Marketplace",
+            "type": "despesa",
+            "icon": "Package"
+          },
+          {
+            "name": "Amazon - Prime",
+            "type": "despesa",
+            "icon": "Star"
+          },
+          {
+            "name": "Americanas",
+            "type": "despesa",
+            "icon": "Store"
+          },
+          {
+            "name": "Apple",
+            "type": "despesa",
+            "icon": "Apple"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Casas Bahia",
+            "type": "despesa",
+            "icon": "Home"
+          },
+          {
+            "name": "Cashback",
+            "type": "receita",
+            "icon": "DollarSign"
+          },
+          {
+            "name": "Kabum",
+            "type": "despesa",
+            "icon": "Laptop"
+          },
+          {
+            "name": "Magazine Luiza",
+            "type": "despesa",
+            "icon": "ShoppingBag"
+          },
+          {
+            "name": "Mercado Livre",
+            "type": "despesa",
+            "icon": "Package"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Samsung",
+            "type": "despesa",
+            "icon": "Smartphone"
+          },
+          {
+            "name": "Shein",
+            "type": "despesa",
+            "icon": "Package"
+          },
+          {
+            "name": "Shopee",
+            "type": "despesa",
+            "icon": "ShoppingBag"
+          },
+          {
+            "name": "Submarino",
+            "type": "despesa",
+            "icon": "Ship"
+          },
+          {
+            "name": "Temu",
+            "type": "despesa",
+            "icon": "Package"
+          }
+        ]
+      },
+      {
+        "name": "Ensino & Aprendizado",
+        "icon": "GraduationCap",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Curso & Certificação",
+            "type": "despesa",
+            "icon": "Award"
+          },
+          {
+            "name": "Koelle",
+            "type": "despesa",
+            "icon": "School"
+          },
+          {
+            "name": "Livro",
+            "type": "despesa",
+            "icon": "Book"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Papelaria",
+            "type": "despesa",
+            "icon": "Pencil"
+          }
+        ]
+      },
+      {
+        "name": "Geral",
+        "icon": "Layers",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Empréstimo",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Investimento Familia",
+            "type": "receita",
+            "icon": "PiggyBank"
+          },
+          {
+            "name": "Investimento Gustavo",
+            "type": "receita",
+            "icon": "PiggyBank"
+          },
+          {
+            "name": "Investimento Lurdes",
+            "type": "receita",
+            "icon": "PiggyBank"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Saque",
+            "type": "despesa",
+            "icon": "Wallet"
+          }
+        ]
+      },
+      {
+        "name": "Governo",
+        "icon": "Landmark",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Cartório",
+            "type": "despesa",
+            "icon": "FileCheck"
+          },
+          {
+            "name": "Imposto",
+            "type": "despesa",
+            "icon": "Receipt"
+          },
+          {
+            "name": "IPTU",
+            "type": "despesa",
+            "icon": "Home"
+          },
+          {
+            "name": "IPVA",
+            "type": "despesa",
+            "icon": "Car"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Restituição IRPF",
+            "type": "receita",
+            "icon": "FileText"
+          }
+        ]
+      },
+      {
+        "name": "Lazer",
+        "icon": "PartyPopper",
+        "subtags": [
+          {
+            "name": "Aposta",
+            "type": "despesa",
+            "icon": "Dices"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Ensaio & Fotografia",
+            "type": "despesa",
+            "icon": "Camera"
+          },
+          {
+            "name": "Esporte",
+            "type": "despesa",
+            "icon": "Waves"
+          },
+          {
+            "name": "Festa & Entretenimento",
+            "type": "despesa",
+            "icon": "Music"
+          },
+          {
+            "name": "Game",
+            "type": "despesa",
+            "icon": "Gamepad2"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Park & Brinquedo",
+            "type": "despesa",
+            "icon": "PartyPopper"
+          },
+          {
+            "name": "Prêmio",
+            "type": "receita",
+            "icon": "Award"
+          },
+          {
+            "name": "Viagem & Passeio",
+            "type": "despesa",
+            "icon": "Plane"
+          }
+        ]
+      },
+      {
+        "name": "Moradia",
+        "icon": "Home",
+        "subtags": [
+          {
+            "name": "Água, Energia & Gás",
+            "type": "despesa",
+            "icon": "Droplet"
+          },
+          {
+            "name": "Aluguel & Condomínio",
+            "type": "despesa",
+            "icon": "Building"
+          },
+          {
+            "name": "Apartamento",
+            "type": "despesa",
+            "icon": "Building2"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Carta de crédito",
+            "type": "despesa",
+            "icon": "FileText"
+          },
+          {
+            "name": "DAAE",
+            "type": "despesa",
+            "icon": "Droplets"
+          },
+          {
+            "name": "Decoração",
+            "type": "despesa",
+            "icon": "Flower"
+          },
+          {
+            "name": "Internet & Telefone",
+            "type": "despesa",
+            "icon": "Wifi"
+          },
+          {
+            "name": "Limpeza & Higiene",
+            "type": "despesa",
+            "icon": "Sparkles"
+          },
+          {
+            "name": "Manutenção",
+            "type": "despesa",
+            "icon": "Settings"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Utilidade",
+            "type": "despesa",
+            "icon": "Lightbulb"
+          }
+        ]
+      },
+      {
+        "name": "Saúde & Bem estar",
+        "icon": "Heart",
+        "subtags": [
+          {
+            "name": "Cabelo",
+            "type": "despesa",
+            "icon": "Scissors"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "RefreshCw"
+          },
+          {
+            "name": "Consulta",
+            "type": "despesa",
+            "icon": "Stethoscope"
+          },
+          {
+            "name": "Dentista",
+            "type": "despesa",
+            "icon": "Smile"
+          },
+          {
+            "name": "Estética & Cosmético",
+            "type": "despesa",
+            "icon": "Sparkles"
+          },
+          {
+            "name": "Exame",
+            "type": "despesa",
+            "icon": "HeartPulse"
+          },
+          {
+            "name": "Farmácia",
+            "type": "despesa",
+            "icon": "Pill"
+          },
+          {
+            "name": "Fono",
+            "type": "despesa",
+            "icon": "Ear"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Pediatra",
+            "type": "despesa",
+            "icon": "Baby"
+          },
+          {
+            "name": "Plano de Saúde",
+            "type": "despesa",
+            "icon": "HeartPulse"
+          },
+          {
+            "name": "Terapia",
+            "type": "despesa",
+            "icon": "Brain"
+          },
+          {
+            "name": "Vacina",
+            "type": "despesa",
+            "icon": "Syringe"
+          }
+        ]
+      },
+      {
+        "name": "Trabalho",
+        "icon": "Briefcase",
+        "subtags": [
+          {
+            "name": "Benefício",
+            "type": "receita",
+            "icon": "Package"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Ferramenta & Conteúdo",
+            "type": "despesa",
+            "icon": "Wrench"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "PLR",
+            "type": "receita",
+            "icon": "Award"
+          },
+          {
+            "name": "Salário",
+            "type": "receita",
+            "icon": "Banknote"
+          }
+        ]
+      },
+      {
+        "name": "Vestuário",
+        "icon": "Shirt",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Roupa, Sapato & Acessório",
+            "type": "despesa",
+            "icon": "ShoppingBag"
+          },
+          {
+            "name": "Roupa, Sapato & Acessório - Crianças",
+            "type": "despesa",
+            "icon": "Shirt"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "account_name": "Lurdes",
+    "tags": [
+      {
+        "name": "Acalento",
+        "icon": "Heart",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Produto",
+            "type": "despesa",
+            "icon": "ShoppingBag"
+          }
+        ]
+      },
+      {
+        "name": "Alimentação",
+        "icon": "Utensils",
+        "subtags": [
+          {
+            "name": "Açougue",
+            "type": "despesa",
+            "icon": "Beef"
+          },
+          {
+            "name": "Bebida",
+            "type": "despesa",
+            "icon": "Beer"
+          },
+          {
+            "name": "Café & Doce",
+            "type": "despesa",
+            "icon": "Coffee"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Hortifruti",
+            "type": "despesa",
+            "icon": "Apple"
+          },
+          {
+            "name": "Natural",
+            "type": "despesa",
+            "icon": "Leaf"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Padaria",
+            "type": "despesa",
+            "icon": "Croissant"
+          },
+          {
+            "name": "Peixaria",
+            "type": "despesa",
+            "icon": "Fish"
+          },
+          {
+            "name": "Restaurante",
+            "type": "despesa",
+            "icon": "UtensilsCrossed"
+          },
+          {
+            "name": "Supermercado",
+            "type": "despesa",
+            "icon": "ShoppingCart"
+          }
+        ]
+      },
+      {
+        "name": "Assinatura",
+        "icon": "Calendar",
+        "subtags": [
+          {
+            "name": "Amazon - Music",
+            "type": "despesa",
+            "icon": "Music"
+          },
+          {
+            "name": "Amazon - Prime",
+            "type": "despesa",
+            "icon": "Youtube"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Canva",
+            "type": "despesa",
+            "icon": "Palette"
+          },
+          {
+            "name": "Crunchyroll",
+            "type": "despesa",
+            "icon": "Tv"
+          },
+          {
+            "name": "Jusbrasil",
+            "type": "despesa",
+            "icon": "Scale"
+          },
+          {
+            "name": "Melimais",
+            "type": "despesa",
+            "icon": "Package"
+          },
+          {
+            "name": "Miro",
+            "type": "despesa",
+            "icon": "Layout"
+          },
+          {
+            "name": "My Capital",
+            "type": "despesa",
+            "icon": "Coins"
+          },
+          {
+            "name": "Netflix",
+            "type": "despesa",
+            "icon": "Tv"
+          },
+          {
+            "name": "Openai",
+            "type": "despesa",
+            "icon": "Bot"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Simple Video",
+            "type": "despesa",
+            "icon": "Video"
+          },
+          {
+            "name": "Spotify",
+            "type": "despesa",
+            "icon": "Music"
+          },
+          {
+            "name": "Vimego Video",
+            "type": "despesa",
+            "icon": "Film"
+          },
+          {
+            "name": "Youtube",
+            "type": "despesa",
+            "icon": "Youtube"
+          }
+        ]
+      },
+      {
+        "name": "Banco",
+        "icon": "Building",
+        "subtags": [
+          {
+            "name": "Atraso",
+            "type": "despesa",
+            "icon": "Clock"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "IOF",
+            "type": "despesa",
+            "icon": "Percent"
+          },
+          {
+            "name": "Juro",
+            "type": "despesa",
+            "icon": "TrendingUp"
+          },
+          {
+            "name": "Mora",
+            "type": "despesa",
+            "icon": "AlertCircle"
+          },
+          {
+            "name": "Multa",
+            "type": "despesa",
+            "icon": "AlertTriangle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          }
+        ]
+      },
+      {
+        "name": "Carla",
+        "icon": "User",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "GPS",
+            "type": "despesa",
+            "icon": "MapPin"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Salário",
+            "type": "despesa",
+            "icon": "Wallet"
+          }
+        ]
+      },
+      {
+        "name": "Carro",
+        "icon": "Car",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Combustível",
+            "type": "despesa",
+            "icon": "Fuel"
+          },
+          {
+            "name": "Consórcio",
+            "type": "despesa",
+            "icon": "FileText"
+          },
+          {
+            "name": "Estacionamento",
+            "type": "despesa",
+            "icon": "ParkingCircle"
+          },
+          {
+            "name": "Licenciamento",
+            "type": "despesa",
+            "icon": "Car"
+          },
+          {
+            "name": "Manutenção",
+            "type": "despesa",
+            "icon": "Wrench"
+          },
+          {
+            "name": "Multa",
+            "type": "despesa",
+            "icon": "AlertCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Pedágio",
+            "type": "despesa",
+            "icon": "Ticket"
+          },
+          {
+            "name": "Seguro",
+            "type": "despesa",
+            "icon": "Shield"
+          }
+        ]
+      },
+      {
+        "name": "Cartão",
+        "icon": "CreditCard",
+        "subtags": [
+          {
+            "name": "Benefício",
+            "type": "receita",
+            "icon": "Gift"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Fatura",
+            "type": "despesa",
+            "icon": "Receipt"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          }
+        ]
+      },
+      {
+        "name": "Cida",
+        "icon": "User",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "GPS",
+            "type": "despesa",
+            "icon": "MapPin"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          }
+        ]
+      },
+      {
+        "name": "Compra Online",
+        "icon": "ShoppingCart",
+        "subtags": [
+          {
+            "name": "Amazon - Kindle",
+            "type": "despesa",
+            "icon": "BookOpen"
+          },
+          {
+            "name": "Amazon - Marketplace",
+            "type": "despesa",
+            "icon": "Package"
+          },
+          {
+            "name": "Amazon - Prime",
+            "type": "despesa",
+            "icon": "Star"
+          },
+          {
+            "name": "Americanas",
+            "type": "despesa",
+            "icon": "Store"
+          },
+          {
+            "name": "Apple",
+            "type": "despesa",
+            "icon": "Apple"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Casas Bahia",
+            "type": "despesa",
+            "icon": "Home"
+          },
+          {
+            "name": "Cashback",
+            "type": "receita",
+            "icon": "DollarSign"
+          },
+          {
+            "name": "Kabum",
+            "type": "despesa",
+            "icon": "Laptop"
+          },
+          {
+            "name": "Magazine Luiza",
+            "type": "despesa",
+            "icon": "ShoppingBag"
+          },
+          {
+            "name": "Mercado Livre",
+            "type": "despesa",
+            "icon": "Package"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Samsung",
+            "type": "despesa",
+            "icon": "Smartphone"
+          },
+          {
+            "name": "Shein",
+            "type": "despesa",
+            "icon": "Package"
+          },
+          {
+            "name": "Shopee",
+            "type": "despesa",
+            "icon": "ShoppingBag"
+          },
+          {
+            "name": "Submarino",
+            "type": "despesa",
+            "icon": "Ship"
+          },
+          {
+            "name": "Temu",
+            "type": "despesa",
+            "icon": "Package"
+          }
+        ]
+      },
+      {
+        "name": "Ensino & Aprendizado",
+        "icon": "GraduationCap",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Curso & Certificação",
+            "type": "despesa",
+            "icon": "Award"
+          },
+          {
+            "name": "Koelle",
+            "type": "despesa",
+            "icon": "School"
+          },
+          {
+            "name": "Livro",
+            "type": "despesa",
+            "icon": "Book"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Papelaria",
+            "type": "despesa",
+            "icon": "Pencil"
+          }
+        ]
+      },
+      {
+        "name": "Geral",
+        "icon": "Layers",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Empréstimo",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Investimento Familia",
+            "type": "receita",
+            "icon": "PiggyBank"
+          },
+          {
+            "name": "Investimento Gustavo",
+            "type": "receita",
+            "icon": "PiggyBank"
+          },
+          {
+            "name": "Investimento Lurdes",
+            "type": "receita",
+            "icon": "PiggyBank"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Saque",
+            "type": "despesa",
+            "icon": "Wallet"
+          }
+        ]
+      },
+      {
+        "name": "Governo",
+        "icon": "Landmark",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Cartório",
+            "type": "despesa",
+            "icon": "FileCheck"
+          },
+          {
+            "name": "Imposto",
+            "type": "despesa",
+            "icon": "Receipt"
+          },
+          {
+            "name": "IPTU",
+            "type": "despesa",
+            "icon": "Home"
+          },
+          {
+            "name": "IPVA",
+            "type": "despesa",
+            "icon": "Car"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Restituição IRPF",
+            "type": "receita",
+            "icon": "FileText"
+          }
+        ]
+      },
+      {
+        "name": "Lazer",
+        "icon": "PartyPopper",
+        "subtags": [
+          {
+            "name": "Aposta",
+            "type": "despesa",
+            "icon": "Dices"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Ensaio & Fotografia",
+            "type": "despesa",
+            "icon": "Camera"
+          },
+          {
+            "name": "Esporte",
+            "type": "despesa",
+            "icon": "Waves"
+          },
+          {
+            "name": "Festa & Entretenimento",
+            "type": "despesa",
+            "icon": "Music"
+          },
+          {
+            "name": "Game",
+            "type": "despesa",
+            "icon": "Gamepad2"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Park & Brinquedo",
+            "type": "despesa",
+            "icon": "PartyPopper"
+          },
+          {
+            "name": "Prêmio",
+            "type": "receita",
+            "icon": "Award"
+          },
+          {
+            "name": "Viagem & Passeio",
+            "type": "despesa",
+            "icon": "Plane"
+          }
+        ]
+      },
+      {
+        "name": "Moradia",
+        "icon": "Home",
+        "subtags": [
+          {
+            "name": "Água, Energia & Gás",
+            "type": "despesa",
+            "icon": "Droplet"
+          },
+          {
+            "name": "Aluguel & Condomínio",
+            "type": "despesa",
+            "icon": "Building"
+          },
+          {
+            "name": "Apartamento",
+            "type": "despesa",
+            "icon": "Building2"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Carta de crédito",
+            "type": "despesa",
+            "icon": "FileText"
+          },
+          {
+            "name": "DAAE",
+            "type": "despesa",
+            "icon": "Droplets"
+          },
+          {
+            "name": "Decoração",
+            "type": "despesa",
+            "icon": "Flower"
+          },
+          {
+            "name": "Internet & Telefone",
+            "type": "despesa",
+            "icon": "Wifi"
+          },
+          {
+            "name": "Limpeza & Higiene",
+            "type": "despesa",
+            "icon": "Sparkles"
+          },
+          {
+            "name": "Manutenção",
+            "type": "despesa",
+            "icon": "Settings"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Utilidade",
+            "type": "despesa",
+            "icon": "Lightbulb"
+          }
+        ]
+      },
+      {
+        "name": "Saúde & Bem estar",
+        "icon": "Heart",
+        "subtags": [
+          {
+            "name": "Cabelo",
+            "type": "despesa",
+            "icon": "Scissors"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "RefreshCw"
+          },
+          {
+            "name": "Consulta",
+            "type": "despesa",
+            "icon": "Stethoscope"
+          },
+          {
+            "name": "Dentista",
+            "type": "despesa",
+            "icon": "Smile"
+          },
+          {
+            "name": "Estética & Cosmético",
+            "type": "despesa",
+            "icon": "Sparkles"
+          },
+          {
+            "name": "Exame",
+            "type": "despesa",
+            "icon": "HeartPulse"
+          },
+          {
+            "name": "Farmácia",
+            "type": "despesa",
+            "icon": "Pill"
+          },
+          {
+            "name": "Fono",
+            "type": "despesa",
+            "icon": "Ear"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Pediatra",
+            "type": "despesa",
+            "icon": "Baby"
+          },
+          {
+            "name": "Plano de Saúde",
+            "type": "despesa",
+            "icon": "HeartPulse"
+          },
+          {
+            "name": "Terapia",
+            "type": "despesa",
+            "icon": "Brain"
+          },
+          {
+            "name": "Vacina",
+            "type": "despesa",
+            "icon": "Syringe"
+          }
+        ]
+      },
+      {
+        "name": "Trabalho",
+        "icon": "Briefcase",
+        "subtags": [
+          {
+            "name": "Benefício",
+            "type": "receita",
+            "icon": "Package"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Ferramenta & Conteúdo",
+            "type": "despesa",
+            "icon": "Wrench"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "PLR",
+            "type": "receita",
+            "icon": "Award"
+          },
+          {
+            "name": "Salário",
+            "type": "receita",
+            "icon": "Banknote"
+          }
+        ]
+      },
+      {
+        "name": "Vestuário",
+        "icon": "Shirt",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Roupa, Sapato & Acessório",
+            "type": "despesa",
+            "icon": "ShoppingBag"
+          },
+          {
+            "name": "Roupa, Sapato & Acessório - Crianças",
+            "type": "despesa",
+            "icon": "Shirt"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "account_name": "Acalento",
+    "tags": [
+      {
+        "name": "Acalento",
+        "icon": "Heart",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Produto",
+            "type": "despesa",
+            "icon": "ShoppingBag"
+          }
+        ]
+      },
+      {
+        "name": "Alimentação",
+        "icon": "Utensils",
+        "subtags": [
+          {
+            "name": "Açougue",
+            "type": "despesa",
+            "icon": "Beef"
+          },
+          {
+            "name": "Bebida",
+            "type": "despesa",
+            "icon": "Beer"
+          },
+          {
+            "name": "Café & Doce",
+            "type": "despesa",
+            "icon": "Coffee"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Hortifruti",
+            "type": "despesa",
+            "icon": "Apple"
+          },
+          {
+            "name": "Natural",
+            "type": "despesa",
+            "icon": "Leaf"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Padaria",
+            "type": "despesa",
+            "icon": "Croissant"
+          },
+          {
+            "name": "Peixaria",
+            "type": "despesa",
+            "icon": "Fish"
+          },
+          {
+            "name": "Restaurante",
+            "type": "despesa",
+            "icon": "UtensilsCrossed"
+          },
+          {
+            "name": "Supermercado",
+            "type": "despesa",
+            "icon": "ShoppingCart"
+          }
+        ]
+      },
+      {
+        "name": "Assinatura",
+        "icon": "Calendar",
+        "subtags": [
+          {
+            "name": "Amazon - Music",
+            "type": "despesa",
+            "icon": "Music"
+          },
+          {
+            "name": "Amazon - Prime",
+            "type": "despesa",
+            "icon": "Youtube"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Canva",
+            "type": "despesa",
+            "icon": "Palette"
+          },
+          {
+            "name": "Crunchyroll",
+            "type": "despesa",
+            "icon": "Tv"
+          },
+          {
+            "name": "Jusbrasil",
+            "type": "despesa",
+            "icon": "Scale"
+          },
+          {
+            "name": "Melimais",
+            "type": "despesa",
+            "icon": "Package"
+          },
+          {
+            "name": "Miro",
+            "type": "despesa",
+            "icon": "Layout"
+          },
+          {
+            "name": "My Capital",
+            "type": "despesa",
+            "icon": "Coins"
+          },
+          {
+            "name": "Netflix",
+            "type": "despesa",
+            "icon": "Tv"
+          },
+          {
+            "name": "Openai",
+            "type": "despesa",
+            "icon": "Bot"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Simple Video",
+            "type": "despesa",
+            "icon": "Video"
+          },
+          {
+            "name": "Spotify",
+            "type": "despesa",
+            "icon": "Music"
+          },
+          {
+            "name": "Vimego Video",
+            "type": "despesa",
+            "icon": "Film"
+          },
+          {
+            "name": "Youtube",
+            "type": "despesa",
+            "icon": "Youtube"
+          }
+        ]
+      },
+      {
+        "name": "Banco",
+        "icon": "Building",
+        "subtags": [
+          {
+            "name": "Atraso",
+            "type": "despesa",
+            "icon": "Clock"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "IOF",
+            "type": "despesa",
+            "icon": "Percent"
+          },
+          {
+            "name": "Juro",
+            "type": "despesa",
+            "icon": "TrendingUp"
+          },
+          {
+            "name": "Mora",
+            "type": "despesa",
+            "icon": "AlertCircle"
+          },
+          {
+            "name": "Multa",
+            "type": "despesa",
+            "icon": "AlertTriangle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          }
+        ]
+      },
+      {
+        "name": "Carla",
+        "icon": "User",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "GPS",
+            "type": "despesa",
+            "icon": "MapPin"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Salário",
+            "type": "despesa",
+            "icon": "Wallet"
+          }
+        ]
+      },
+      {
+        "name": "Carro",
+        "icon": "Car",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Combustível",
+            "type": "despesa",
+            "icon": "Fuel"
+          },
+          {
+            "name": "Consórcio",
+            "type": "despesa",
+            "icon": "FileText"
+          },
+          {
+            "name": "Estacionamento",
+            "type": "despesa",
+            "icon": "ParkingCircle"
+          },
+          {
+            "name": "Licenciamento",
+            "type": "despesa",
+            "icon": "Car"
+          },
+          {
+            "name": "Manutenção",
+            "type": "despesa",
+            "icon": "Wrench"
+          },
+          {
+            "name": "Multa",
+            "type": "despesa",
+            "icon": "AlertCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Pedágio",
+            "type": "despesa",
+            "icon": "Ticket"
+          },
+          {
+            "name": "Seguro",
+            "type": "despesa",
+            "icon": "Shield"
+          }
+        ]
+      },
+      {
+        "name": "Cartão",
+        "icon": "CreditCard",
+        "subtags": [
+          {
+            "name": "Benefício",
+            "type": "receita",
+            "icon": "Gift"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Fatura",
+            "type": "despesa",
+            "icon": "Receipt"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          }
+        ]
+      },
+      {
+        "name": "Cida",
+        "icon": "User",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "GPS",
+            "type": "despesa",
+            "icon": "MapPin"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          }
+        ]
+      },
+      {
+        "name": "Compra Online",
+        "icon": "ShoppingCart",
+        "subtags": [
+          {
+            "name": "Amazon - Kindle",
+            "type": "despesa",
+            "icon": "BookOpen"
+          },
+          {
+            "name": "Amazon - Marketplace",
+            "type": "despesa",
+            "icon": "Package"
+          },
+          {
+            "name": "Amazon - Prime",
+            "type": "despesa",
+            "icon": "Star"
+          },
+          {
+            "name": "Americanas",
+            "type": "despesa",
+            "icon": "Store"
+          },
+          {
+            "name": "Apple",
+            "type": "despesa",
+            "icon": "Apple"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Casas Bahia",
+            "type": "despesa",
+            "icon": "Home"
+          },
+          {
+            "name": "Cashback",
+            "type": "receita",
+            "icon": "DollarSign"
+          },
+          {
+            "name": "Kabum",
+            "type": "despesa",
+            "icon": "Laptop"
+          },
+          {
+            "name": "Magazine Luiza",
+            "type": "despesa",
+            "icon": "ShoppingBag"
+          },
+          {
+            "name": "Mercado Livre",
+            "type": "despesa",
+            "icon": "Package"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Samsung",
+            "type": "despesa",
+            "icon": "Smartphone"
+          },
+          {
+            "name": "Shein",
+            "type": "despesa",
+            "icon": "Package"
+          },
+          {
+            "name": "Shopee",
+            "type": "despesa",
+            "icon": "ShoppingBag"
+          },
+          {
+            "name": "Submarino",
+            "type": "despesa",
+            "icon": "Ship"
+          },
+          {
+            "name": "Temu",
+            "type": "despesa",
+            "icon": "Package"
+          }
+        ]
+      },
+      {
+        "name": "Ensino & Aprendizado",
+        "icon": "GraduationCap",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Curso & Certificação",
+            "type": "despesa",
+            "icon": "Award"
+          },
+          {
+            "name": "Koelle",
+            "type": "despesa",
+            "icon": "School"
+          },
+          {
+            "name": "Livro",
+            "type": "despesa",
+            "icon": "Book"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Papelaria",
+            "type": "despesa",
+            "icon": "Pencil"
+          }
+        ]
+      },
+      {
+        "name": "Geral",
+        "icon": "Layers",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Empréstimo",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Investimento Familia",
+            "type": "receita",
+            "icon": "PiggyBank"
+          },
+          {
+            "name": "Investimento Gustavo",
+            "type": "receita",
+            "icon": "PiggyBank"
+          },
+          {
+            "name": "Investimento Lurdes",
+            "type": "receita",
+            "icon": "PiggyBank"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Saque",
+            "type": "despesa",
+            "icon": "Wallet"
+          }
+        ]
+      },
+      {
+        "name": "Governo",
+        "icon": "Landmark",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Cartório",
+            "type": "despesa",
+            "icon": "FileCheck"
+          },
+          {
+            "name": "Imposto",
+            "type": "despesa",
+            "icon": "Receipt"
+          },
+          {
+            "name": "IPTU",
+            "type": "despesa",
+            "icon": "Home"
+          },
+          {
+            "name": "IPVA",
+            "type": "despesa",
+            "icon": "Car"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Restituição IRPF",
+            "type": "receita",
+            "icon": "FileText"
+          }
+        ]
+      },
+      {
+        "name": "Lazer",
+        "icon": "PartyPopper",
+        "subtags": [
+          {
+            "name": "Aposta",
+            "type": "despesa",
+            "icon": "Dices"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Ensaio & Fotografia",
+            "type": "despesa",
+            "icon": "Camera"
+          },
+          {
+            "name": "Esporte",
+            "type": "despesa",
+            "icon": "Waves"
+          },
+          {
+            "name": "Festa & Entretenimento",
+            "type": "despesa",
+            "icon": "Music"
+          },
+          {
+            "name": "Game",
+            "type": "despesa",
+            "icon": "Gamepad2"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Park & Brinquedo",
+            "type": "despesa",
+            "icon": "PartyPopper"
+          },
+          {
+            "name": "Prêmio",
+            "type": "receita",
+            "icon": "Award"
+          },
+          {
+            "name": "Viagem & Passeio",
+            "type": "despesa",
+            "icon": "Plane"
+          }
+        ]
+      },
+      {
+        "name": "Moradia",
+        "icon": "Home",
+        "subtags": [
+          {
+            "name": "Água, Energia & Gás",
+            "type": "despesa",
+            "icon": "Droplet"
+          },
+          {
+            "name": "Aluguel & Condomínio",
+            "type": "despesa",
+            "icon": "Building"
+          },
+          {
+            "name": "Apartamento",
+            "type": "despesa",
+            "icon": "Building2"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Carta de crédito",
+            "type": "despesa",
+            "icon": "FileText"
+          },
+          {
+            "name": "DAAE",
+            "type": "despesa",
+            "icon": "Droplets"
+          },
+          {
+            "name": "Decoração",
+            "type": "despesa",
+            "icon": "Flower"
+          },
+          {
+            "name": "Internet & Telefone",
+            "type": "despesa",
+            "icon": "Wifi"
+          },
+          {
+            "name": "Limpeza & Higiene",
+            "type": "despesa",
+            "icon": "Sparkles"
+          },
+          {
+            "name": "Manutenção",
+            "type": "despesa",
+            "icon": "Settings"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Utilidade",
+            "type": "despesa",
+            "icon": "Lightbulb"
+          }
+        ]
+      },
+      {
+        "name": "Saúde & Bem estar",
+        "icon": "Heart",
+        "subtags": [
+          {
+            "name": "Cabelo",
+            "type": "despesa",
+            "icon": "Scissors"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "RefreshCw"
+          },
+          {
+            "name": "Consulta",
+            "type": "despesa",
+            "icon": "Stethoscope"
+          },
+          {
+            "name": "Dentista",
+            "type": "despesa",
+            "icon": "Smile"
+          },
+          {
+            "name": "Estética & Cosmético",
+            "type": "despesa",
+            "icon": "Sparkles"
+          },
+          {
+            "name": "Exame",
+            "type": "despesa",
+            "icon": "HeartPulse"
+          },
+          {
+            "name": "Farmácia",
+            "type": "despesa",
+            "icon": "Pill"
+          },
+          {
+            "name": "Fono",
+            "type": "despesa",
+            "icon": "Ear"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Pediatra",
+            "type": "despesa",
+            "icon": "Baby"
+          },
+          {
+            "name": "Plano de Saúde",
+            "type": "despesa",
+            "icon": "HeartPulse"
+          },
+          {
+            "name": "Terapia",
+            "type": "despesa",
+            "icon": "Brain"
+          },
+          {
+            "name": "Vacina",
+            "type": "despesa",
+            "icon": "Syringe"
+          }
+        ]
+      },
+      {
+        "name": "Trabalho",
+        "icon": "Briefcase",
+        "subtags": [
+          {
+            "name": "Benefício",
+            "type": "receita",
+            "icon": "Package"
+          },
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Ferramenta & Conteúdo",
+            "type": "despesa",
+            "icon": "Wrench"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "PLR",
+            "type": "receita",
+            "icon": "Award"
+          },
+          {
+            "name": "Salário",
+            "type": "receita",
+            "icon": "Banknote"
+          }
+        ]
+      },
+      {
+        "name": "Vestuário",
+        "icon": "Shirt",
+        "subtags": [
+          {
+            "name": "Cancelamento & Reembolso",
+            "type": "receita",
+            "icon": "XCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "receita",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Outro",
+            "type": "despesa",
+            "icon": "HelpCircle"
+          },
+          {
+            "name": "Roupa, Sapato & Acessório",
+            "type": "despesa",
+            "icon": "ShoppingBag"
+          },
+          {
+            "name": "Roupa, Sapato & Acessório - Crianças",
+            "type": "despesa",
+            "icon": "Shirt"
+          }
+        ]
+      }
+    ]
+  }
+]

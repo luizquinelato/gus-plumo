@@ -1,0 +1,2 @@
+# Core - Configurações e utilitários
+

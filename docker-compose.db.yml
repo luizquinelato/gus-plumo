@@ -1,0 +1,38 @@
+# Docker Compose - PROD Environment
+# Porta: 5432 | Database: plumo
+
+name: gus-plumo
+
+services:
+  postgres-prod:
+    image: postgres:17
+    container_name: plumo-postgres
+    environment:
+      POSTGRES_DB: plumo
+      POSTGRES_USER: plumo
+      POSTGRES_PASSWORD: plumo
+      PGDATA: /var/lib/postgresql/data
+      TZ: America/Sao_Paulo
+      PGTZ: America/Sao_Paulo
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data
+    networks:
+      - plumo-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U plumo -d plumo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data_prod:
+    name: plumo_postgres_data
+
+networks:
+  plumo-network:
+    driver: bridge
+    name: plumo-network
+
