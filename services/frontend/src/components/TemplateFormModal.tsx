@@ -393,8 +393,15 @@ const TemplateFormModal = ({ isOpen, onClose, onSuccess, template, availableIcon
                         {/* Número do item - alinhado ao bottom dos inputs */}
                         <div className="flex items-center gap-1 pb-1.5">
                           <GripVertical size={14} className="text-gray-400" />
-                          <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                          <span className="text-xs font-medium text-gray-500 dark:text-gray-400 flex items-center gap-1">
                             #{index + 1}
+                            {(() => {
+                              const subtag = subtags.find(s => s.id === item.subtag_id)
+                              if (!subtag) return null
+                              return subtag.type === 'receita'
+                                ? <ArrowUpCircle size={14} className="text-green-600 dark:text-green-400" title="Receita" />
+                                : <ArrowDownCircle size={14} className="text-red-600 dark:text-red-400" title="Despesa" />
+                            })()}
                           </span>
                         </div>
 
@@ -430,20 +437,27 @@ const TemplateFormModal = ({ isOpen, onClose, onSuccess, template, availableIcon
                                 value={item.amount}
                                 onChange={(e) => {
                                   const value = e.target.value
-                                  if (value === '') {
-                                    updateItem(index, 'amount', '')
+                                  if (value === '') { updateItem(index, 'amount', ''); return }
+                                  const sanitized = value.replace(',', '.')
+                                  const subtag = subtags.find(s => s.id === item.subtag_id)
+                                  if (!/^-?\d{0,8}(\.\d{0,2})?$/.test(sanitized) && !sanitized.match(/^-?\d{0,8}\.$/)) return
+                                  // Preserva ponto flutuante (ex: "200.") antes de qualquer parseFloat
+                                  if (sanitized.endsWith('.')) {
+                                    let stored = sanitized
+                                    if (subtag?.type === 'despesa' && !sanitized.startsWith('-')) stored = '-' + sanitized
+                                    else if (subtag?.type === 'receita' && sanitized.startsWith('-')) stored = sanitized.slice(1)
+                                    updateItem(index, 'amount', stored)
                                     return
                                   }
-                                  const sanitized = value.replace(',', '.')
-                                  if (/^-?\d{0,8}(\.\d{0,2})?$/.test(sanitized)) {
-                                    const numValue = parseFloat(sanitized)
-                                    if (!isNaN(numValue) && Math.abs(numValue) <= 99999999.99) {
-                                      updateItem(index, 'amount', sanitized)
-                                    } else if (sanitized.endsWith('.') || sanitized.match(/^-?\d+\.$/)) {
-                                      updateItem(index, 'amount', sanitized)
-                                    } else if (sanitized === '-') {
-                                      updateItem(index, 'amount', '-')
-                                    }
+                                  if (sanitized === '-' && subtag?.type !== 'receita') {
+                                    updateItem(index, 'amount', '-'); return
+                                  }
+                                  let numValue = parseFloat(sanitized)
+                                  if (!isNaN(numValue)) {
+                                    if (subtag?.type === 'despesa' && numValue > 0) numValue = -numValue
+                                    else if (subtag?.type === 'receita' && numValue < 0) numValue = Math.abs(numValue)
+                                    if (Math.abs(numValue) <= 99999999.99)
+                                      updateItem(index, 'amount', numValue.toString())
                                   }
                                 }}
                                 onBlur={(e) => {
@@ -532,11 +546,19 @@ const TemplateFormModal = ({ isOpen, onClose, onSuccess, template, availableIcon
                             <select
                               value={item.subtag_id || 0}
                               onChange={(e) => {
+                                const subtagId = parseInt(e.target.value)
+                                const newSubtag = subtags.find(s => s.id === subtagId)
                                 const updated = [...items]
-                                updated[index] = {
-                                  ...updated[index],
-                                  subtag_id: parseInt(e.target.value)
+                                let newAmount = updated[index].amount
+                                // Auto-ajusta sinal do valor conforme tipo da subtag
+                                if (newSubtag && newAmount && newAmount !== '-') {
+                                  const num = parseFloat(newAmount)
+                                  if (!isNaN(num) && num !== 0) {
+                                    if (newSubtag.type === 'despesa' && num > 0) newAmount = (-num).toFixed(2)
+                                    else if (newSubtag.type === 'receita' && num < 0) newAmount = Math.abs(num).toFixed(2)
+                                  }
                                 }
+                                updated[index] = { ...updated[index], subtag_id: subtagId, amount: newAmount }
                                 setItems(updated)
                               }}
                               className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"

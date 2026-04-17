@@ -108,10 +108,10 @@ const SettingsPage: React.FC = () => {
           <div className="flex justify-between items-center mb-8">
             <div>
               <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
-                Configurações
+                Copiar Configurações
               </h1>
               <p className="text-lg text-gray-600 dark:text-gray-400">
-                Gerencie suas configurações e copie entre contas
+                Copie tags, subtags e mapeamentos entre contas
               </p>
             </div>
           </div>

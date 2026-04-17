@@ -426,8 +426,8 @@ const ExpenseTemplatesPage = () => {
                                 <div>
                                   {item.subtag && (
                                     item.subtag.type === 'receita'
-                                      ? <ArrowDownCircle size={14} className="text-green-600 dark:text-green-400" />
-                                      : <ArrowUpCircle size={14} className="text-red-600 dark:text-red-400" />
+                                      ? <ArrowUpCircle size={14} className="text-green-600 dark:text-green-400" title="Receita" />
+                                      : <ArrowDownCircle size={14} className="text-red-600 dark:text-red-400" title="Despesa" />
                                   )}
                                 </div>
 

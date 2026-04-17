@@ -4,7 +4,7 @@ Fornece endpoints para CRUD de expense_templates e expense_template_items.
 """
 
 from fastapi import APIRouter, HTTPException, Depends
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 from typing import List
 from decimal import Decimal
 from pydantic import BaseModel
@@ -169,8 +169,10 @@ async def listar_templates(
         raise HTTPException(status_code=400, detail="account_id não encontrado no token")
 
     query = db.query(ExpenseTemplate).options(
-        joinedload(ExpenseTemplate.items).joinedload(ExpenseTemplateItem.subtag).joinedload(Subtag.tag),
-        joinedload(ExpenseTemplate.items).joinedload(ExpenseTemplateItem.expense_sharing).joinedload(ExpenseSharingSetting.shared_account).joinedload(Account.bank)
+        selectinload(ExpenseTemplate.items).options(
+            joinedload(ExpenseTemplateItem.subtag).joinedload(Subtag.tag),
+            joinedload(ExpenseTemplateItem.expense_sharing).joinedload(ExpenseSharingSetting.shared_account).joinedload(Account.bank)
+        )
     ).filter(ExpenseTemplate.account_id == account_id)
 
     if not incluir_inativos:
@@ -214,8 +216,10 @@ async def obter_template(
         raise HTTPException(status_code=400, detail="account_id não encontrado no token")
 
     template = db.query(ExpenseTemplate).options(
-        joinedload(ExpenseTemplate.items).joinedload(ExpenseTemplateItem.subtag).joinedload(Subtag.tag),
-        joinedload(ExpenseTemplate.items).joinedload(ExpenseTemplateItem.expense_sharing).joinedload(ExpenseSharingSetting.shared_account).joinedload(Account.bank)
+        selectinload(ExpenseTemplate.items).options(
+            joinedload(ExpenseTemplateItem.subtag).joinedload(Subtag.tag),
+            joinedload(ExpenseTemplateItem.expense_sharing).joinedload(ExpenseSharingSetting.shared_account).joinedload(Account.bank)
+        )
     ).filter(
         ExpenseTemplate.id == template_id,
         ExpenseTemplate.account_id == account_id

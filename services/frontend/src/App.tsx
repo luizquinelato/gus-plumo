@@ -192,7 +192,7 @@ function App() {
                 }
               />
               <Route
-                path="/settings/colors"
+                path="/configuracoes/cores"
                 element={
                   <ProtectedRoute>
                     <ColorSettingsPage />
@@ -200,13 +200,16 @@ function App() {
                 }
               />
               <Route
-                path="/settings"
+                path="/configuracoes/copy-settings"
                 element={
                   <ProtectedRoute>
                     <SettingsPage />
                   </ProtectedRoute>
                 }
               />
+              {/* Redirects das rotas antigas */}
+              <Route path="/settings/colors" element={<Navigate to="/configuracoes/cores" replace />} />
+              <Route path="/settings" element={<Navigate to="/configuracoes/copy-settings" replace />} />
               <Route
                 path="/profile"
                 element={

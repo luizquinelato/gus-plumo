@@ -16,6 +16,7 @@ interface User {
   tenant_id: number
   theme_mode?: string
   account_id?: number
+  avatar_url?: string
 }
 
 interface AuthContextType {
@@ -70,7 +71,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
             is_admin: userData.is_admin,
             tenant_id: userData.tenant_id,
             theme_mode: userData.theme_mode,
-            account_id: userData.account_id
+            account_id: userData.account_id,
+            avatar_url: userData.avatar_url || undefined,
           })
 
           // Aplicar tema do usuário
@@ -166,7 +168,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
           is_admin: userData.is_admin,
           tenant_id: userData.tenant_id,
           theme_mode: userData.theme_mode,
-          account_id: userData.account_id
+          account_id: userData.account_id,
+          avatar_url: userData.avatar_url || undefined,
         })
 
         // Aplicar tema do usuário

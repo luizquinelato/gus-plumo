@@ -224,7 +224,7 @@ const addPlatformHeader = (doc: jsPDF, pageNumber?: number, closureData?: Closur
   // Nome da plataforma centralizado
   doc.setFontSize(16)
   doc.setFont('helvetica', 'bold')
-  const platformName = 'Gus Expenses'
+  const platformName = 'PLUMO'
   const platformNameWidth = doc.getTextWidth(platformName)
   const iconSize = 10
   const iconGap = 3

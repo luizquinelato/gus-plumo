@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { X, GripVertical, AlertTriangle, Lock, CheckSquare, Square, ArrowDownCircle, ArrowUpCircle } from 'lucide-react'
+import { X, GripVertical, AlertTriangle, ArrowDownCircle, ArrowUpCircle } from 'lucide-react'
 import axios from 'axios'
 import { formatSharedAccountDisplay } from '../utils/accountFormatter'
 import { useAlert } from '../hooks/useAlert'
@@ -83,7 +83,6 @@ interface EditableItem {
 const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTemplateModalProps) => {
   const { showError, showSuccess } = useAlert()
   const [items, setItems] = useState<EditableItem[]>([])
-  const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set())
   const [tags, setTags] = useState<Tag[]>([])
   const [subtags, setSubtags] = useState<Subtag[]>([])
   const [sharings, setSharings] = useState<ExpenseSharingSetting[]>([])
@@ -150,29 +149,6 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
     })
 
     setItems(editableItems)
-    // Inicia com todos os itens selecionados
-    setSelectedItems(new Set(editableItems.map((_, idx) => idx)))
-  }
-
-  // Toggle seleção de um item
-  const toggleItemSelection = (index: number) => {
-    const newSelected = new Set(selectedItems)
-    if (newSelected.has(index)) {
-      newSelected.delete(index)
-    } else {
-      newSelected.add(index)
-    }
-    setSelectedItems(newSelected)
-  }
-
-  // Selecionar todos os itens
-  const selectAllItems = () => {
-    setSelectedItems(new Set(items.map((_, idx) => idx)))
-  }
-
-  // Remover todos os itens da seleção
-  const deselectAllItems = () => {
-    setSelectedItems(new Set())
   }
 
   const updateItem = (index: number, field: keyof EditableItem, value: any) => {
@@ -236,9 +212,10 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
 
     if (!template) return
 
-    // Verifica se há itens selecionados
-    if (selectedItems.size === 0) {
-      showError('Erro de Validação', 'Selecione pelo menos um item para criar lançamentos')
+    // Verifica se há itens com valor preenchido
+    const activeItems = items.filter(item => !isNaN(parseFloat(item.amount)) && parseFloat(item.amount) !== 0)
+    if (activeItems.length === 0) {
+      showError('Erro de Validação', 'Preencha o valor de pelo menos um item para criar lançamentos')
       return
     }
 
@@ -246,9 +223,9 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
     setIsSaving(true)
 
     try {
-      // Validações básicas (apenas para itens selecionados)
+      // Validações básicas (apenas para itens com valor)
       for (let i = 0; i < items.length; i++) {
-        if (!selectedItems.has(i)) continue // Ignora itens não selecionados
+        if (isNaN(parseFloat(items[i].amount)) || parseFloat(items[i].amount) === 0) continue
 
         const item = items[i]
 
@@ -300,16 +277,13 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
         }
       }
 
-      // Filtra apenas itens selecionados para validação de período fechado
-      const selectedItemsList = items.filter((_, idx) => selectedItems.has(idx))
-
-      // Validação de período fechado (apenas para itens selecionados com compartilhamento)
-      const itemsWithSharing = selectedItemsList.filter(item => item.expense_sharing_id)
+      // Validação de período fechado (apenas para itens com valor e compartilhamento)
+      const itemsWithSharing = activeItems.filter(item => item.expense_sharing_id)
       if (itemsWithSharing.length > 0) {
         const closedItems: ClosedPeriodItem[] = []
 
         for (let i = 0; i < items.length; i++) {
-          if (!selectedItems.has(i)) continue // Ignora itens não selecionados
+          if (isNaN(parseFloat(items[i].amount)) || parseFloat(items[i].amount) === 0) continue
 
           const item = items[i]
           if (item.expense_sharing_id) {
@@ -344,10 +318,12 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
   const submitTemplate = async (itemsOverride?: EditableItem[]) => {
     setIsSaving(true)
 
-    // Filtra apenas os itens selecionados (ou usa itemsOverride se fornecido)
-    const itemsToSubmit = itemsOverride
-      ? itemsOverride.filter((_, idx) => selectedItems.has(idx))
-      : items.filter((_, idx) => selectedItems.has(idx))
+    // Filtra apenas itens com valor preenchido (diferente de zero)
+    const source = itemsOverride ?? items
+    const itemsToSubmit = source.filter(item => {
+      const num = parseFloat(item.amount)
+      return !isNaN(num) && num !== 0
+    })
 
     try {
       const request: ApplyTemplateRequest = {
@@ -434,27 +410,9 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
             </div>
           ) : (
             <div className="space-y-3">
-              {/* Header dos campos com botões de seleção */}
+              {/* Header dos campos */}
               <div className="flex items-end gap-2 pb-2 border-b border-gray-200 dark:border-gray-700">
-                {/* Espaço para o grip (6 pontinhos) */}
                 <div className="w-[14px]"></div>
-                {/* Checkbox header com botões */}
-                <div className="flex items-center justify-center">
-                  <button
-                    type="button"
-                    onClick={selectedItems.size === items.length ? deselectAllItems : selectAllItems}
-                    className="p-1 text-gray-500 hover:text-color-primary transition-colors"
-                    title={selectedItems.size === items.length ? 'Remover todos' : 'Selecionar todos'}
-                  >
-                    {selectedItems.size === items.length ? (
-                      <CheckSquare size={16} className="text-color-primary" />
-                    ) : selectedItems.size > 0 ? (
-                      <CheckSquare size={16} className="text-gray-400" />
-                    ) : (
-                      <Square size={16} />
-                    )}
-                  </button>
-                </div>
                 <div className="flex items-center w-6">
                   <span className="text-xs font-medium text-gray-500 dark:text-gray-400">#</span>
                 </div>
@@ -469,54 +427,16 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
                 </div>
               </div>
 
-              {/* Barra de seleção rápida */}
-              <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                <span>{selectedItems.size} de {items.length} selecionados</span>
-                <span className="text-gray-300 dark:text-gray-600">|</span>
-                <button
-                  type="button"
-                  onClick={selectAllItems}
-                  className="text-color-primary hover:underline"
-                >
-                  Selecionar todos
-                </button>
-                <button
-                  type="button"
-                  onClick={deselectAllItems}
-                  className="text-color-primary hover:underline"
-                >
-                  Remover todos
-                </button>
-              </div>
-
               {/* Itens */}
               {items.map((item, index) => {
-                // Busca a subtag selecionada para mostrar o ícone de tipo
                 const selectedSubtag = item.subtag_id ? subtags.find(s => s.id === item.subtag_id) : null
-
                 return (
                 <div
                   key={index}
-                  className={`flex items-center gap-2 transition-opacity ${!selectedItems.has(index) ? 'opacity-50' : ''}`}
+                  className="flex items-center gap-2"
                 >
-                  {/* Grip (6 pontinhos) - à esquerda do checkbox */}
                   <div className="flex items-center">
                     <GripVertical size={14} className="text-gray-400" />
-                  </div>
-                  {/* Checkbox do item */}
-                  <div className="flex items-center justify-center">
-                    <button
-                      type="button"
-                      onClick={() => toggleItemSelection(index)}
-                      className="p-1 transition-colors"
-                      title={selectedItems.has(index) ? 'Remover da seleção' : 'Adicionar à seleção'}
-                    >
-                      {selectedItems.has(index) ? (
-                        <CheckSquare size={16} className="text-color-primary" />
-                      ) : (
-                        <Square size={16} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" />
-                      )}
-                    </button>
                   </div>
                   {/* Número do item */}
                   <div className="flex items-center">
@@ -524,8 +444,8 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
                       #{index + 1}
                       {selectedSubtag && (
                         selectedSubtag.type === 'receita'
-                          ? <ArrowDownCircle size={14} className="text-green-600 dark:text-green-400" />
-                          : <ArrowUpCircle size={14} className="text-red-600 dark:text-red-400" />
+                          ? <ArrowUpCircle size={14} className="text-green-600 dark:text-green-400" title="Receita" />
+                          : <ArrowDownCircle size={14} className="text-red-600 dark:text-red-400" title="Despesa" />
                       )}
                     </span>
                   </div>
@@ -555,39 +475,27 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
                           value={item.amount}
                           onChange={(e) => {
                             const value = e.target.value
-                            if (value === '') {
-                              updateItem(index, 'amount', '')
+                            if (value === '') { updateItem(index, 'amount', ''); return }
+                            const subtag = subtags.find(s => s.id === item.subtag_id)
+                            const sanitized = value.replace(',', '.')
+                            if (!/^-?\d{0,8}(\.\d{0,2})?$/.test(sanitized) && !sanitized.match(/^-?\d{0,8}\.$/)) return
+                            // Preserva ponto flutuante (ex: "200.") antes de qualquer parseFloat
+                            if (sanitized.endsWith('.')) {
+                              let stored = sanitized
+                              if (subtag?.type === 'despesa' && !sanitized.startsWith('-')) stored = '-' + sanitized
+                              else if (subtag?.type === 'receita' && sanitized.startsWith('-')) stored = sanitized.slice(1)
+                              updateItem(index, 'amount', stored)
                               return
                             }
-
-                            // Busca o tipo da subtag selecionada
-                            const selectedSubtag = subtags.find(s => s.id === item.subtag_id)
-                            const subtagType = selectedSubtag?.type
-
-                            const sanitized = value.replace(',', '.')
-
-                            // Validação baseada no tipo da subtag
-                            if (/^-?\d{0,8}(\.\d{0,2})?$/.test(sanitized)) {
-                              const numValue = parseFloat(sanitized)
-
-                              // Impede valor positivo em subtag de despesa
-                              if (subtagType === 'despesa' && numValue > 0) {
-                                return
-                              }
-
-                              // Impede valor negativo em subtag de receita
-                              if (subtagType === 'receita' && numValue < 0) {
-                                return
-                              }
-
-                              if (!isNaN(numValue) && Math.abs(numValue) <= 99999999.99) {
-                                updateItem(index, 'amount', sanitized)
-                              } else if (sanitized.endsWith('.') || sanitized.match(/^-?\d+\.$/)) {
-                                updateItem(index, 'amount', sanitized)
-                              } else if (sanitized === '-' && subtagType !== 'receita') {
-                                // Permite '-' apenas se não for receita
-                                updateItem(index, 'amount', '-')
-                              }
+                            if (sanitized === '-' && subtag?.type !== 'receita') {
+                              updateItem(index, 'amount', '-'); return
+                            }
+                            let numValue = parseFloat(sanitized)
+                            if (!isNaN(numValue)) {
+                              if (subtag?.type === 'despesa' && numValue > 0) numValue = -numValue
+                              else if (subtag?.type === 'receita' && numValue < 0) numValue = Math.abs(numValue)
+                              if (Math.abs(numValue) <= 99999999.99)
+                                updateItem(index, 'amount', numValue.toString())
                             }
                           }}
                           onBlur={(e) => {
@@ -651,11 +559,19 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
                       <select
                         value={item.subtag_id || 0}
                         onChange={(e) => {
+                          const subtagId = parseInt(e.target.value)
+                          const newSubtag = subtags.find(s => s.id === subtagId)
                           const updated = [...items]
-                          updated[index] = {
-                            ...updated[index],
-                            subtag_id: parseInt(e.target.value)
+                          let newAmount = updated[index].amount
+                          // Auto-ajusta sinal do valor conforme tipo da subtag
+                          if (newSubtag && newAmount && newAmount !== '-') {
+                            const num = parseFloat(newAmount)
+                            if (!isNaN(num) && num !== 0) {
+                              if (newSubtag.type === 'despesa' && num > 0) newAmount = (-num).toFixed(2)
+                              else if (newSubtag.type === 'receita' && num < 0) newAmount = Math.abs(num).toFixed(2)
+                            }
                           }
+                          updated[index] = { ...updated[index], subtag_id: subtagId, amount: newAmount }
                           setItems(updated)
                         }}
                         className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
@@ -769,7 +685,7 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
             </button>
             <button
               type="submit"
-              disabled={isSaving || isLoading || selectedItems.size === 0}
+              disabled={isSaving || isLoading || items.every(item => isNaN(parseFloat(item.amount)) || parseFloat(item.amount) === 0)}
               className="px-4 py-2 text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-2 text-sm"
               style={{ backgroundColor: 'var(--crud-create)' }}
             >
@@ -779,7 +695,10 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
                   Criando Lançamentos...
                 </>
               ) : (
-                `Criar ${selectedItems.size} ${selectedItems.size === 1 ? 'Lançamento' : 'Lançamentos'}`
+                (() => {
+                  const count = items.filter(item => !isNaN(parseFloat(item.amount)) && parseFloat(item.amount) !== 0).length
+                  return `Criar ${count} ${count === 1 ? 'Lançamento' : 'Lançamentos'}`
+                })()
               )}
             </button>
           </div>

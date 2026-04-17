@@ -7,6 +7,7 @@ import os
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from .routers import import_router, cartoes_router, auth_router, tenant_colors_router, dashboard_router, expenses_router, reports_router, excel_import_router, user_preferences_router, accounts_router, expense_sharing_router, benefit_card_statements_router, settings_router, balance_router, balance_closure_router, expense_templates_router, loans_router, users_router
 from .core.logging_config import setup_logging, get_logger
@@ -92,6 +93,11 @@ app.include_router(settings_router.router)
 app.include_router(expense_templates_router.router)
 app.include_router(loans_router.router)
 app.include_router(users_router.router)
+
+# Servir arquivos estáticos (avatares, etc.)
+_uploads_dir = os.path.join(os.path.dirname(__file__), "..", "uploads")
+os.makedirs(os.path.join(_uploads_dir, "avatars"), exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=_uploads_dir), name="uploads")
 
 
 @app.get("/")

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 import httpx
 
 from ..database import get_db
-from ..models.auth_models import Tenant, TenantCores
+from ..models.auth_models import Tenant, TenantCores, Usuario
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -189,6 +189,16 @@ async def verify_token(
                     except Exception as color_error:
                         # Se falhar ao buscar cores, continua sem elas
                         print(f"⚠️ Erro ao buscar cores do tenant: {color_error}")
+
+                    # Buscar avatar_url do usuário no banco local
+                    try:
+                        user_id = user_data.get("id")
+                        if user_id:
+                            local_user = db.query(Usuario).filter(Usuario.id == user_id).first()
+                            if local_user and local_user.profile_image_filename:
+                                user_data["avatar_url"] = f"/uploads/avatars/{local_user.profile_image_filename}"
+                    except Exception:
+                        pass  # avatar é opcional
 
                 return TokenValidationResponse(
                     valid=data.get("valid", False),
