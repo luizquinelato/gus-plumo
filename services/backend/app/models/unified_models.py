@@ -442,6 +442,42 @@ class BalanceClosure(Base, BaseEntity):
 
     # Relacionamentos
     settler = relationship("Usuario", foreign_keys=[settled_by])
+    closure_payments = relationship("BalanceClosurePayment", back_populates="balance_closure", cascade="all, delete-orphan")
+
+
+class BalanceClosurePayment(Base, AccountBaseEntity):
+    """
+    Pagamentos parciais de fechamentos de balanço compartilhado.
+
+    Cada pagamento deduz do saldo devedor do fechamento.
+    Saldo restante = abs(net_balance) - SUM(balance_closure_payments.amount)
+    """
+    __tablename__ = 'balance_closure_payments'
+    __table_args__ = (
+        CheckConstraint("amount > 0", name='chk_balance_closure_payments_amount_positive'),
+        {'quote': False}
+    )
+
+    # Vínculo com o fechamento
+    balance_closure_id = Column(Integer, ForeignKey('balance_closures.id', ondelete='CASCADE'), nullable=False, index=True, name="balance_closure_id")
+
+    # Valor e data
+    amount = Column(Numeric(15, 2), nullable=False, name="amount")
+    payment_date = Column(TIMESTAMP, nullable=False, name="payment_date")
+
+    # Observações
+    notes = Column(Text, nullable=True, name="notes")
+
+    # Lançamento gerado automaticamente no extrato (bank_statement_id = NULL se não gerado)
+    bank_statement_id = Column(Integer, ForeignKey('bank_statements.id', ondelete='SET NULL'), nullable=True, name="bank_statement_id", index=True)
+
+    # Soft delete
+    active = Column(Boolean, nullable=False, default=True, name="active")
+
+    # Relacionamentos
+    balance_closure = relationship("BalanceClosure", back_populates="closure_payments")
+    account = relationship("Account", foreign_keys="[BalanceClosurePayment.account_id]")
+    bank_statement = relationship("BankStatement", foreign_keys="[BalanceClosurePayment.bank_statement_id]")
 
 
 class ExpenseTemplate(Base, AccountBaseEntity):

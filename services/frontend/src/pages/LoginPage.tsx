@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -11,6 +11,24 @@ export default function LoginPage() {
 
   const { login, isAuthenticated, user } = useAuth()
   const navigate = useNavigate()
+
+  // Força background claro no body/html enquanto a página de login está montada,
+  // impedindo que o tema dark vaze pelo body, html ou overscroll
+  useEffect(() => {
+    const savedBodyBg = document.body.style.backgroundColor
+    const savedHtmlBg = document.documentElement.style.backgroundColor
+    const savedColorScheme = document.documentElement.style.colorScheme
+
+    document.body.style.backgroundColor = '#f8fafc'
+    document.documentElement.style.backgroundColor = '#f8fafc'
+    document.documentElement.style.colorScheme = 'light'
+
+    return () => {
+      document.body.style.backgroundColor = savedBodyBg
+      document.documentElement.style.backgroundColor = savedHtmlBg
+      document.documentElement.style.colorScheme = savedColorScheme
+    }
+  }, [])
 
   // Redirecionar se já estiver autenticado
   if (isAuthenticated) {
@@ -48,7 +66,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen relative overflow-hidden" style={{ background: `linear-gradient(to bottom right, #f8fafc, ${colors.color1}10, ${colors.color4}10)` }}>
+    <div className="min-h-screen relative overflow-hidden" style={{ background: `linear-gradient(to bottom right, #f8fafc, ${colors.color1}10, ${colors.color4}10)`, colorScheme: 'light' }}>
       {/* Animated Background Elements */}
       <div className="absolute inset-0 overflow-hidden">
         {/* Floating Cards */}
