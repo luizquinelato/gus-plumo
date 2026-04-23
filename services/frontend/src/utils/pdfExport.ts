@@ -60,6 +60,13 @@ interface LoanPaymentItem {
   is_settled?: boolean
 }
 
+interface ClosurePaymentItem {
+  id: number
+  amount: number
+  payment_date: string
+  notes: string | null
+}
+
 interface BalanceClosure {
   id: number
   period_start_date: string
@@ -69,7 +76,11 @@ interface BalanceClosure {
   total_to_receive: number
   total_to_pay: number
   net_balance: number
+  is_settled?: boolean
+  total_paid?: number
+  remaining_balance?: number
   notes: string | null
+  closure_payments?: ClosurePaymentItem[]
   closure_data: {
     main_account_card: AccountBalanceCard
     partner_account_card: AccountBalanceCard
@@ -139,7 +150,8 @@ const SECTION_COLORS = {
   transactions: [40, 98, 235] as [number, number, number],   // --color-1: Azul #2862EB
   creditCards: [118, 61, 237] as [number, number, number],   // --color-2: Roxo #763DED
   benefits: [5, 150, 105] as [number, number, number],       // --color-3: Verde #059669
-  loans: [217, 119, 6] as [number, number, number]           // Amber #D97706 (amber-600)
+  loans: [217, 119, 6] as [number, number, number],          // Amber #D97706 (amber-600)
+  payments: [14, 165, 233] as [number, number, number]       // --color-4: Cyan #0EA5E9
 }
 
 // Função para obter cores do CSS (se disponível) ou usar fallback
@@ -577,6 +589,20 @@ export const exportBalanceClosureToPDF = (closure: BalanceClosure, isCounterpart
     addLoanPaymentsTable(doc, loanPayments, mainCard.account_name, absoluteValues)
   }
 
+  // --- SEÇÃO: PAGAMENTOS PARCIAIS ---
+  const closurePayments = closure.closure_payments || []
+  if (closurePayments.length > 0) {
+    addSectionDivider(doc, 'PAGAMENTOS PARCIAIS', SECTION_COLORS.payments)
+    const rawNet = parseNumeric(closure.net_balance)          // sinal real do fechamento
+    const netAbs = Math.abs(rawNet)
+    addClosurePaymentsTable(doc, closurePayments, {
+      netBalance: rawNet,                                      // com sinal real
+      totalPaid: parseNumeric(closure.total_paid ?? 0),
+      remainingAbs: parseNumeric(closure.remaining_balance ?? netAbs),  // sempre positivo (magnitude)
+      isSettled: closure.is_settled ?? false,
+    }, absoluteValues)
+  }
+
   // Adicionar cabeçalho temático em todas as páginas
   addHeaderToAllPages(doc, closureHeaderData)
 
@@ -850,6 +876,127 @@ const addBenefitCardTable = (doc: jsPDF, accountName: string, items: Transaction
     const cleanCardName = sanitizeText(cardName)
     const fullTitle = `${cleanCardName}${lastFour ? ` (****${lastFour})` : ''}`
     addTransactionTable(doc, fullTitle, cardItems, mainAccountName, partnerAccountName, absoluteValues)
+  })
+}
+
+// Função auxiliar para adicionar tabela de pagamentos parciais do fechamento
+const addClosurePaymentsTable = (
+  doc: jsPDF,
+  payments: ClosurePaymentItem[],
+  summary: { netBalance: number; totalPaid: number; remainingAbs: number; isSettled: boolean },
+  absoluteValues: boolean = false
+): void => {
+  if (!payments || payments.length === 0) return
+
+  let yPos = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 12 : HEADER_HEIGHT + 6
+
+  if (yPos > 250) {
+    doc.addPage()
+    yPos = HEADER_HEIGHT + 6
+  }
+
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const paymentColor = SECTION_COLORS.payments
+
+  // Sinal do fechamento: negativo = viewer deve, positivo = viewer recebe
+  const sign = summary.netBalance >= 0 ? 1 : -1
+  const netBalanceAbs = Math.abs(summary.netBalance)
+
+  // Formatação com sinal respeitando a flag absoluteValues
+  const fmtBalance = absoluteValues ? formatCurrency(netBalanceAbs) : formatCurrency(summary.netBalance)
+  const fmtRemaining = absoluteValues
+    ? formatCurrency(Math.max(0, summary.remainingAbs))
+    : formatCurrency(sign * Math.max(0, summary.remainingAbs))
+
+  // Título
+  doc.setFontSize(11)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(0, 0, 0)
+  doc.text('Histórico de Pagamentos', 14, yPos)
+  yPos += 5
+
+  // Linha de resumo: Saldo | Pago | Restante | Status
+  doc.setFontSize(8)
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(80, 80, 80)
+  const statusLabel = summary.isSettled ? 'Quitado' : 'Em aberto'
+  const summaryLine = `Saldo do fechamento: ${fmtBalance}   |   Total pago: ${formatCurrency(summary.totalPaid)}   |   Saldo restante: ${fmtRemaining}   |   Status: ${statusLabel}`
+  doc.text(summaryLine, 14, yPos)
+  yPos += 6
+  doc.setTextColor(0, 0, 0)
+
+  // Acumular saldo para mostrar na coluna
+  let accumulated = 0
+  const tableRows = payments.map(p => {
+    const amount = typeof p.amount === 'number' ? p.amount : parseFloat(String(p.amount)) || 0
+    accumulated += amount                                          // sempre positivo (magnitude paga)
+    const saldoRestanteAbs = Math.max(0, netBalanceAbs - accumulated)
+    const saldoRestanteDisplay = absoluteValues ? saldoRestanteAbs : sign * saldoRestanteAbs
+    return [
+      new Date(p.payment_date).toLocaleDateString('pt-BR'),
+      formatCurrency(amount),                                      // Valor Pago: sempre positivo
+      sanitizeText(p.notes || '-'),
+      formatCurrency(accumulated),                                 // Acumulado: sempre positivo
+      formatCurrency(saldoRestanteDisplay),
+    ]
+  })
+
+  autoTable(doc, {
+    startY: yPos,
+    margin: { top: HEADER_HEIGHT, left: 14, right: 14 },
+    tableWidth: pageWidth - 28,
+    head: [['Data', 'Valor Pago', 'Observações', 'Acumulado', 'Saldo Restante']],
+    body: tableRows,
+    foot: [['TOTAL', formatCurrency(summary.totalPaid), '', formatCurrency(accumulated), fmtRemaining]],
+    showFoot: 'lastPage',
+    theme: 'plain',
+    headStyles: {
+      fillColor: paymentColor,
+      textColor: 255,
+      fontStyle: 'bold',
+      fontSize: 8,
+      lineWidth: 0.1,
+      lineColor: [180, 180, 180]
+    },
+    footStyles: {
+      fillColor: [255, 250, 205],
+      textColor: [0, 0, 0],
+      fontStyle: 'bold',
+      fontSize: 8,
+      lineWidth: 0.1,
+      lineColor: [180, 180, 180]
+    },
+    styles: { fontSize: 7, cellPadding: 2, lineWidth: 0.1, lineColor: [200, 200, 200] },
+    columnStyles: {
+      0: { cellWidth: 22 },
+      1: { halign: 'right', cellWidth: 30 },
+      2: { cellWidth: 'auto' },
+      3: { halign: 'right', cellWidth: 30 },
+      4: { halign: 'right', cellWidth: 30 },
+    },
+    didParseCell: (data) => {
+      if (data.section === 'body') {
+        data.cell.styles.fillColor = data.row.index % 2 === 0 ? [255, 255, 255] : [240, 240, 240]
+        if (data.column.index === 1 || data.column.index === 3) {
+          data.cell.styles.textColor = greenColor
+        }
+        if (data.column.index === 4) {
+          // Cor baseada no saldo restante absoluto (quanto falta pagar/receber)
+          const paidSoFar = payments.slice(0, data.row.index + 1)
+            .reduce((s, p) => s + (typeof p.amount === 'number' ? p.amount : parseFloat(String(p.amount)) || 0), 0)
+          const restante = netBalanceAbs - paidSoFar
+          data.cell.styles.textColor = restante <= 0.01 ? greenColor : redColor
+        }
+      }
+      if (data.section === 'foot') {
+        if (data.column.index === 1) data.cell.styles.textColor = greenColor
+        if (data.column.index === 3) data.cell.styles.textColor = greenColor
+        if (data.column.index === 4) {
+          data.cell.styles.textColor = summary.remainingAbs <= 0.01 ? greenColor : redColor
+          data.cell.styles.halign = 'right'
+        }
+      }
+    }
   })
 }
 

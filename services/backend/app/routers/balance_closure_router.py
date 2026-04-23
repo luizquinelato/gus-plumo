@@ -5,7 +5,7 @@ Fornece endpoints para criar, listar e gerenciar fechamentos de balanço.
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import and_, desc, or_
+from sqlalchemy import and_, desc, or_, func
 from typing import List
 from decimal import Decimal
 from datetime import datetime, timedelta
@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from app.database import get_db
 from app.models.unified_models import (
-    BalanceClosure, ExpenseSharingSetting,
+    BalanceClosure, BalanceClosurePayment, ExpenseSharingSetting,
     Account, Bank, BankStatement, CreditCardInvoice, BenefitCardStatement,
     Tag, Subtag, Cartao, Loan, LoanPayment
 )
@@ -64,6 +64,40 @@ class BalanceClosureItemResponse(BaseModel):
         from_attributes = True
 
 
+class BalanceClosurePaymentCreate(BaseModel):
+    """Request para criar um pagamento parcial de fechamento"""
+    amount: Decimal
+    payment_date: str  # ISO format YYYY-MM-DD
+    notes: str | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class BalanceClosurePaymentUpdate(BaseModel):
+    """Request para editar um pagamento parcial de fechamento"""
+    amount: Decimal
+    payment_date: str  # ISO format YYYY-MM-DD
+    notes: str | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class BalanceClosurePaymentResponse(BaseModel):
+    """Response de um pagamento parcial de fechamento"""
+    id: int
+    balance_closure_id: int
+    amount: Decimal
+    payment_date: datetime
+    notes: str | None
+    account_id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class BalanceClosureResponse(BaseModel):
     """Response de um fechamento de balanço"""
     id: int
@@ -85,6 +119,10 @@ class BalanceClosureResponse(BaseModel):
     created_at: datetime
     tenant_id: int
     created_by: int
+    # Campos computados de pagamentos parciais
+    total_paid: Decimal = Decimal('0')
+    remaining_balance: Decimal = Decimal('0')
+    closure_payments: List[BalanceClosurePaymentResponse] = []
 
     class Config:
         from_attributes = True
@@ -120,6 +158,80 @@ class BalanceClosureListResponse(BaseModel):
     """Response de listagem de fechamentos"""
     closures: List[BalanceClosureResponse]
     total: int
+
+
+# ==================== HELPERS DE PAGAMENTO ====================
+
+def get_closure_payment_totals(closure_id: int, db: Session) -> tuple[Decimal, list]:
+    """Retorna (total_paid, payments_list) para um fechamento."""
+    payments = db.query(BalanceClosurePayment).filter(
+        BalanceClosurePayment.balance_closure_id == closure_id,
+        BalanceClosurePayment.active == True
+    ).order_by(desc(BalanceClosurePayment.payment_date)).all()
+
+    total_paid = sum(p.amount for p in payments) if payments else Decimal('0')
+    return total_paid, payments
+
+
+def enrich_closure_response(closure: BalanceClosure, db: Session) -> dict:
+    """Constrói dict de resposta de fechamento com totais de pagamentos."""
+    total_paid, payments = get_closure_payment_totals(closure.id, db)
+    remaining = abs(closure.net_balance) - total_paid
+
+    base = BalanceClosureResponse.model_validate(closure).model_dump()
+    base['total_paid'] = total_paid
+    base['remaining_balance'] = remaining
+    base['closure_payments'] = [
+        BalanceClosurePaymentResponse.model_validate(p).model_dump()
+        for p in payments
+    ]
+    return base
+
+
+def enrich_closures_bulk(closures: list, db: Session) -> list[dict]:
+    """Enriquece uma lista de fechamentos com totais de pagamentos (bulk, evita N+1)."""
+    if not closures:
+        return []
+
+    closure_ids = [c.id for c in closures]
+
+    # Total pago por fechamento (uma query só)
+    totals_rows = db.query(
+        BalanceClosurePayment.balance_closure_id,
+        func.sum(BalanceClosurePayment.amount).label('total_paid')
+    ).filter(
+        BalanceClosurePayment.balance_closure_id.in_(closure_ids),
+        BalanceClosurePayment.active == True
+    ).group_by(BalanceClosurePayment.balance_closure_id).all()
+
+    totals_map = {r.balance_closure_id: r.total_paid for r in totals_rows}
+
+    # Todos os pagamentos (uma query só)
+    all_payments = db.query(BalanceClosurePayment).filter(
+        BalanceClosurePayment.balance_closure_id.in_(closure_ids),
+        BalanceClosurePayment.active == True
+    ).order_by(desc(BalanceClosurePayment.payment_date)).all()
+
+    payments_map: dict[int, list] = {}
+    for p in all_payments:
+        payments_map.setdefault(p.balance_closure_id, []).append(p)
+
+    result = []
+    for closure in closures:
+        total_paid = totals_map.get(closure.id, Decimal('0')) or Decimal('0')
+        remaining = abs(closure.net_balance) - total_paid
+        payments = payments_map.get(closure.id, [])
+
+        base = BalanceClosureResponse.model_validate(closure).model_dump()
+        base['total_paid'] = total_paid
+        base['remaining_balance'] = remaining
+        base['closure_payments'] = [
+            BalanceClosurePaymentResponse.model_validate(p).model_dump()
+            for p in payments
+        ]
+        result.append(base)
+
+    return result
 
 
 class ClosedPeriodValidationResponse(BaseModel):
@@ -889,7 +1001,8 @@ def list_balance_closures(
     # Ordenar e paginar
     closures = query.order_by(desc(BalanceClosure.closing_date)).offset(skip).limit(limit).all()
 
-    return BalanceClosureListResponse(closures=closures, total=total)
+    enriched = enrich_closures_bulk(closures, db)
+    return {'closures': enriched, 'total': total}
 
 
 @router.get("/{closure_id}", response_model=BalanceClosureWithItemsResponse)
@@ -1000,6 +1113,51 @@ def settle_balance_closure(
     if closure.is_settled:
         raise HTTPException(status_code=400, detail="Fechamento já está quitado")
 
+    account_id = current_user.get("account_id")
+
+    # Calcular saldo restante (net_balance - total já pago)
+    total_paid, _ = get_closure_payment_totals(closure_id, db)
+    remaining = abs(closure.net_balance) - total_paid
+
+    # Criar pagamento para o saldo restante (se houver)
+    if remaining > Decimal('0.01'):
+        settled_at = datetime.now()
+        # Determinar sinal: viewer pagando (net < 0) → saída; recebendo (net > 0) → entrada
+        is_counterpart = (account_id != closure.account_id)
+        viewer_net = float(closure.net_balance or 0)
+        if is_counterpart:
+            viewer_net = -viewer_net
+        transaction_amount = -remaining if viewer_net < 0 else remaining
+
+        stmt_description = request.settlement_notes or f"Acerto de contas - Fechamento #{closure_id}"
+        bank_stmt = BankStatement(
+            tenant_id=tenant_id,
+            created_by=user_id,
+            account_id=account_id,
+            date=settled_at,
+            description=stmt_description,
+            amount=transaction_amount,
+            subtag_id=None,
+            expense_sharing_id=None,
+            ownership_percentage=Decimal('100.00'),
+            category=None,
+            transaction=None,
+        )
+        db.add(bank_stmt)
+        db.flush()
+
+        payment = BalanceClosurePayment(
+            balance_closure_id=closure_id,
+            amount=remaining,
+            payment_date=settled_at,
+            notes=request.settlement_notes or f"Quitação manual - Fechamento #{closure_id}",
+            bank_statement_id=bank_stmt.id,
+            account_id=account_id,
+            tenant_id=tenant_id,
+            created_by=user_id,
+        )
+        db.add(payment)
+
     # Marcar como quitado
     closure.is_settled = True
     closure.settled_at = datetime.now()
@@ -1009,7 +1167,7 @@ def settle_balance_closure(
     db.commit()
     db.refresh(closure)
 
-    return closure
+    return enrich_closure_response(closure, db)
 
 
 @router.delete("/{closure_id}/settle", response_model=BalanceClosureResponse)
@@ -1044,7 +1202,313 @@ def unsettle_balance_closure(
     db.commit()
     db.refresh(closure)
 
-    return closure
+    return enrich_closure_response(closure, db)
+
+
+# ==================== PAGAMENTOS PARCIAIS ====================
+
+@router.delete("/{closure_id}/payments", status_code=204)
+def clear_all_closure_payments(
+    closure_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Remove todos os pagamentos parciais de um fechamento.
+    Hard-delete dos BankStatements vinculados; soft-delete dos pagamentos.
+    """
+    tenant_id = current_user["tenant_id"]
+    account_id = current_user.get("account_id")
+
+    closure = db.query(BalanceClosure).filter(
+        BalanceClosure.id == closure_id,
+        BalanceClosure.tenant_id == tenant_id,
+        or_(
+            BalanceClosure.account_id == account_id,
+            BalanceClosure.shared_account_id == account_id
+        )
+    ).first()
+
+    if not closure:
+        raise HTTPException(status_code=404, detail="Fechamento não encontrado")
+
+    payments = db.query(BalanceClosurePayment).filter(
+        BalanceClosurePayment.balance_closure_id == closure_id,
+        BalanceClosurePayment.active == True
+    ).all()
+
+    for payment in payments:
+        if payment.bank_statement_id:
+            bank_stmt = db.query(BankStatement).filter(
+                BankStatement.id == payment.bank_statement_id
+            ).first()
+            if bank_stmt:
+                db.delete(bank_stmt)
+        payment.active = False
+        payment.bank_statement_id = None
+
+    db.commit()
+
+
+@router.get("/{closure_id}/payments", response_model=List[BalanceClosurePaymentResponse])
+def list_closure_payments(
+    closure_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Lista pagamentos parciais de um fechamento."""
+    tenant_id = current_user["tenant_id"]
+    account_id = current_user.get("account_id")
+
+    closure = db.query(BalanceClosure).filter(
+        BalanceClosure.id == closure_id,
+        BalanceClosure.tenant_id == tenant_id,
+        or_(
+            BalanceClosure.account_id == account_id,
+            BalanceClosure.shared_account_id == account_id
+        )
+    ).first()
+
+    if not closure:
+        raise HTTPException(status_code=404, detail="Fechamento não encontrado")
+
+    payments = db.query(BalanceClosurePayment).filter(
+        BalanceClosurePayment.balance_closure_id == closure_id,
+        BalanceClosurePayment.active == True
+    ).order_by(desc(BalanceClosurePayment.payment_date)).all()
+
+    return payments
+
+
+@router.post("/{closure_id}/payments", response_model=BalanceClosureResponse)
+def add_closure_payment(
+    closure_id: int,
+    request: BalanceClosurePaymentCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Adiciona um pagamento parcial a um fechamento."""
+    tenant_id = current_user["tenant_id"]
+    account_id = current_user.get("account_id")
+    created_by = current_user.get("user_id") or current_user.get("id")
+
+    if not account_id:
+        raise HTTPException(status_code=400, detail="account_id não encontrado no token")
+
+    closure = db.query(BalanceClosure).filter(
+        BalanceClosure.id == closure_id,
+        BalanceClosure.tenant_id == tenant_id,
+        or_(
+            BalanceClosure.account_id == account_id,
+            BalanceClosure.shared_account_id == account_id
+        )
+    ).first()
+
+    if not closure:
+        raise HTTPException(status_code=404, detail="Fechamento não encontrado")
+
+    if closure.is_settled:
+        raise HTTPException(status_code=400, detail="Fechamento já está quitado. Remova a quitação para adicionar pagamentos.")
+
+    if request.amount <= 0:
+        raise HTTPException(status_code=400, detail="Valor deve ser maior que zero")
+
+    # Verificar se não excede o saldo
+    total_paid, _ = get_closure_payment_totals(closure_id, db)
+    remaining = abs(closure.net_balance) - total_paid
+    if request.amount > remaining + Decimal('0.01'):  # tolerância de 1 centavo
+        raise HTTPException(
+            status_code=400,
+            detail=f"Valor excede saldo restante de R$ {remaining:.2f}"
+        )
+
+    # Parse da data
+    try:
+        payment_date = datetime.fromisoformat(request.payment_date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Data inválida. Use formato YYYY-MM-DD")
+
+    # Determinar sinal do lançamento baseado na perspectiva do viewer logado
+    # Se o viewer é a contraparte, o net_balance é invertido
+    is_counterpart = (account_id != closure.account_id)
+    viewer_net_balance = float(closure.net_balance or 0)
+    if is_counterpart:
+        viewer_net_balance = -viewer_net_balance
+    # viewer_net_balance < 0 → está pagando (saída = negativo no extrato)
+    # viewer_net_balance > 0 → está recebendo (entrada = positivo no extrato)
+    transaction_amount = -request.amount if viewer_net_balance < 0 else request.amount
+
+    # Criar lançamento no extrato (bank_statement)
+    stmt_description = request.notes or f"Acerto de contas - Fechamento #{closure_id}"
+    bank_stmt = BankStatement(
+        tenant_id=tenant_id,
+        created_by=created_by,
+        account_id=account_id,
+        date=payment_date,
+        description=stmt_description,
+        amount=transaction_amount,
+        subtag_id=None,
+        expense_sharing_id=None,
+        ownership_percentage=Decimal('100.00'),
+        category=None,
+        transaction=None,
+    )
+    db.add(bank_stmt)
+    db.flush()  # gera bank_stmt.id antes do commit
+
+    payment = BalanceClosurePayment(
+        balance_closure_id=closure_id,
+        amount=request.amount,
+        payment_date=payment_date,
+        notes=request.notes,
+        bank_statement_id=bank_stmt.id,
+        account_id=account_id,
+        tenant_id=tenant_id,
+        created_by=created_by
+    )
+    db.add(payment)
+
+    db.commit()
+    db.refresh(closure)
+
+    return enrich_closure_response(closure, db)
+
+
+@router.delete("/{closure_id}/payments/{payment_id}", response_model=BalanceClosureResponse)
+def delete_closure_payment(
+    closure_id: int,
+    payment_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Remove um pagamento parcial de um fechamento (soft delete)."""
+    tenant_id = current_user["tenant_id"]
+    account_id = current_user.get("account_id")
+
+    closure = db.query(BalanceClosure).filter(
+        BalanceClosure.id == closure_id,
+        BalanceClosure.tenant_id == tenant_id,
+        or_(
+            BalanceClosure.account_id == account_id,
+            BalanceClosure.shared_account_id == account_id
+        )
+    ).first()
+
+    if not closure:
+        raise HTTPException(status_code=404, detail="Fechamento não encontrado")
+
+    payment = db.query(BalanceClosurePayment).filter(
+        BalanceClosurePayment.id == payment_id,
+        BalanceClosurePayment.balance_closure_id == closure_id,
+        BalanceClosurePayment.active == True
+    ).first()
+
+    if not payment:
+        raise HTTPException(status_code=404, detail="Pagamento não encontrado")
+
+    # Hard delete do lançamento vinculado (bank_statements não tem soft delete)
+    if payment.bank_statement_id:
+        bank_stmt = db.query(BankStatement).filter(
+            BankStatement.id == payment.bank_statement_id
+        ).first()
+        if bank_stmt:
+            db.delete(bank_stmt)
+
+    payment.active = False
+    payment.bank_statement_id = None
+
+    # Se o fechamento estava quitado automaticamente, reverter
+    if closure.is_settled and closure.settlement_notes and "automática" in (closure.settlement_notes or ""):
+        closure.is_settled = False
+        closure.settled_at = None
+        closure.settled_by = None
+        closure.settlement_notes = None
+
+    db.commit()
+    db.refresh(closure)
+
+    return enrich_closure_response(closure, db)
+
+
+@router.put("/{closure_id}/payments/{payment_id}", response_model=BalanceClosureResponse)
+def update_closure_payment(
+    closure_id: int,
+    payment_id: int,
+    request: BalanceClosurePaymentUpdate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Edita data e valor de um pagamento parcial de fechamento."""
+    tenant_id = current_user["tenant_id"]
+    account_id = current_user.get("account_id")
+
+    closure = db.query(BalanceClosure).filter(
+        BalanceClosure.id == closure_id,
+        BalanceClosure.tenant_id == tenant_id,
+        or_(
+            BalanceClosure.account_id == account_id,
+            BalanceClosure.shared_account_id == account_id
+        )
+    ).first()
+
+    if not closure:
+        raise HTTPException(status_code=404, detail="Fechamento não encontrado")
+
+    payment = db.query(BalanceClosurePayment).filter(
+        BalanceClosurePayment.id == payment_id,
+        BalanceClosurePayment.balance_closure_id == closure_id,
+        BalanceClosurePayment.active == True
+    ).first()
+
+    if not payment:
+        raise HTTPException(status_code=404, detail="Pagamento não encontrado")
+
+    if request.amount <= 0:
+        raise HTTPException(status_code=400, detail="Valor deve ser maior que zero")
+
+    # Verificar se não excede o saldo (excluindo o pagamento atual)
+    payments = db.query(BalanceClosurePayment).filter(
+        BalanceClosurePayment.balance_closure_id == closure_id,
+        BalanceClosurePayment.active == True,
+        BalanceClosurePayment.id != payment_id
+    ).all()
+    other_paid = sum(p.amount for p in payments)
+    remaining = abs(closure.net_balance) - other_paid
+    if request.amount > remaining + Decimal('0.01'):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Valor excede saldo restante de R$ {remaining:.2f}"
+        )
+
+    try:
+        payment_date = datetime.fromisoformat(request.payment_date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Data inválida. Use formato YYYY-MM-DD")
+
+    payment.amount = request.amount
+    payment.payment_date = payment_date
+    payment.notes = request.notes
+
+    # Atualizar o lançamento vinculado se existir
+    if payment.bank_statement_id:
+        bank_stmt = db.query(BankStatement).filter(
+            BankStatement.id == payment.bank_statement_id
+        ).first()
+        if bank_stmt:
+            # Recalcular sinal (pode ter mudado se re-editado em contexto diferente)
+            is_counterpart = (account_id != closure.account_id)
+            viewer_net_balance = float(closure.net_balance or 0)
+            if is_counterpart:
+                viewer_net_balance = -viewer_net_balance
+            transaction_amount = -request.amount if viewer_net_balance < 0 else request.amount
+            bank_stmt.amount = transaction_amount
+            bank_stmt.date = payment_date
+            bank_stmt.description = request.notes or f"Acerto de contas - Fechamento #{closure_id}"
+
+    db.commit()
+    db.refresh(closure)
+
+    return enrich_closure_response(closure, db)
 
 
 @router.delete("/{closure_id}", status_code=204)

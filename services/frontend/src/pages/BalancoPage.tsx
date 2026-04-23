@@ -1,4 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
+import DatePicker from 'react-datepicker'
+import 'react-datepicker/dist/react-datepicker.css'
+import '../styles/datepicker-custom.css'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
 import Toast from '../components/Toast'
@@ -131,6 +134,16 @@ interface BalanceCalculation {
   calculation_date: string
 }
 
+interface ClosurePayment {
+  id: number
+  balance_closure_id: number
+  amount: number
+  payment_date: string
+  notes: string | null
+  account_id: number
+  created_at: string
+}
+
 interface BalanceClosure {
   id: number
   expense_sharing_id: number
@@ -152,6 +165,10 @@ interface BalanceClosure {
   created_at: string
   tenant_id: number
   created_by: number
+  // Campos computados de pagamentos parciais
+  total_paid: number
+  remaining_balance: number
+  closure_payments: ClosurePayment[]
 }
 
 interface BalanceClosureItem {
@@ -657,6 +674,28 @@ const BalancoPage = () => {
   const [showJsonModal, setShowJsonModal] = useState(false)
   const [jsonClosureData, setJsonClosureData] = useState<any>(null)
   const [jsonCopied, setJsonCopied] = useState(false)
+
+  // Estados para modal de Reabrir (remover quitação)
+  const [showUnsettleModal, setShowUnsettleModal] = useState(false)
+  const [unsettleClosure, setUnsettleClosure] = useState<BalanceClosure | null>(null)
+  const [unsettleClearingAll, setUnsettleClearingAll] = useState(false)
+
+  // Estados para pagamentos parciais de fechamentos
+  const [expandedClosureIds, setExpandedClosureIds] = useState<Set<number>>(new Set())
+  const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const [paymentClosure, setPaymentClosure] = useState<BalanceClosure | null>(null)
+  const [paymentAmountCents, setPaymentAmountCents] = useState('') // dígitos brutos (centavos)
+  const [paymentDate, setPaymentDate] = useState<Date | null>(null)
+  const [paymentNotes, setPaymentNotes] = useState('')
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false)
+  // Estados para modal de edição de pagamento
+  const [showEditPaymentModal, setShowEditPaymentModal] = useState(false)
+  const [editingPaymentId, setEditingPaymentId] = useState<number | null>(null)
+  const [editingPaymentClosure, setEditingPaymentClosure] = useState<BalanceClosure | null>(null)
+  const [editPaymentCents, setEditPaymentCents] = useState('')
+  const [editPaymentDate, setEditPaymentDate] = useState<Date | null>(null)
+  const [editPaymentNotes, setEditPaymentNotes] = useState('')
+  const [isSavingPaymentEdit, setIsSavingPaymentEdit] = useState(false)
 
   // Estados para modal de remoção de liquidações de empréstimos
   const [showRemoveLoanPaymentsModal, setShowRemoveLoanPaymentsModal] = useState(false)
@@ -1470,23 +1509,29 @@ const BalancoPage = () => {
     }
   }
 
-  const handleUnsettleClosure = (closureId: number) => {
-    showConfirm(
-      'Remover Quitação',
-      'Deseja realmente remover a quitação deste fechamento?',
-      async () => {
-        try {
-          await axios.delete(`/api/balance/closures/${closureId}/settle`)
-          setToast({ show: true, message: 'Quitação removida com sucesso!', type: 'success' })
-          loadClosures()
-        } catch (error: any) {
-          console.error('Erro ao remover quitação:', error)
-          setToast({ show: true, message: error.response?.data?.detail || 'Erro ao remover quitação', type: 'error' })
-        }
-      },
-      'Remover',
-      'Cancelar'
-    )
+  const handleUnsettleClosure = (closure: BalanceClosure) => {
+    setUnsettleClosure(closure)
+    setShowUnsettleModal(true)
+  }
+
+  const handleConfirmUnsettle = async (clearPayments: boolean) => {
+    if (!unsettleClosure) return
+    setUnsettleClearingAll(true)
+    try {
+      if (clearPayments) {
+        await axios.delete(`/api/balance/closures/${unsettleClosure.id}/payments`)
+      }
+      await axios.delete(`/api/balance/closures/${unsettleClosure.id}/settle`)
+      setToast({ show: true, message: 'Quitação removida com sucesso!', type: 'success' })
+      setShowUnsettleModal(false)
+      setUnsettleClosure(null)
+      loadClosures()
+    } catch (error: any) {
+      console.error('Erro ao remover quitação:', error)
+      setToast({ show: true, message: error.response?.data?.detail || 'Erro ao remover quitação', type: 'error' })
+    } finally {
+      setUnsettleClearingAll(false)
+    }
   }
 
   const handleReopenClosure = (closure: BalanceClosure) => {
@@ -1612,6 +1657,113 @@ const BalancoPage = () => {
       setToast({ show: true, message: error.response?.data?.detail || 'Erro ao remover liquidações de empréstimos', type: 'error' })
     } finally {
       setRemovingLoanPayments(false)
+    }
+  }
+
+  // ==================== PAGAMENTOS PARCIAIS ====================
+
+  const toggleClosureExpansion = (closureId: number) => {
+    setExpandedClosureIds(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(closureId)) {
+        newSet.delete(closureId)
+      } else {
+        newSet.add(closureId)
+      }
+      return newSet
+    })
+  }
+
+  const openPaymentModal = (closure: BalanceClosure) => {
+    setPaymentClosure(closure)
+    setPaymentAmountCents('')
+    setPaymentDate(new Date())
+    setPaymentNotes('')
+    setShowPaymentModal(true)
+  }
+
+  // Máscara BRL: dígitos brutos → "1.234,56"
+  const formatAmountMask = (cents: string): string => {
+    const num = parseInt(cents || '0', 10)
+    return (num / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  }
+
+  const handlePaymentAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const digits = e.target.value.replace(/\D/g, '')
+    setPaymentAmountCents(digits)
+  }
+
+  const handleAddPayment = async () => {
+    const amountValue = parseInt(paymentAmountCents || '0', 10) / 100
+    if (!paymentClosure || !amountValue || !paymentDate) return
+    setIsSubmittingPayment(true)
+    const dateStr = `${paymentDate.getFullYear()}-${String(paymentDate.getMonth() + 1).padStart(2, '0')}-${String(paymentDate.getDate()).padStart(2, '0')}`
+    try {
+      const response = await axios.post(
+        `/api/balance/closures/${paymentClosure.id}/payments`,
+        { amount: amountValue, payment_date: dateStr, notes: paymentNotes || null }
+      )
+      // Atualizar o fechamento na lista com os dados enriquecidos
+      setClosures(prev => prev.map(c => c.id === paymentClosure.id ? { ...c, ...response.data } : c))
+      setToast({ show: true, message: 'Pagamento registrado com sucesso!', type: 'success' })
+      setShowPaymentModal(false)
+      setPaymentClosure(null)
+      // Expandir a linha para mostrar o histórico
+      setExpandedClosureIds(prev => new Set([...prev, paymentClosure.id]))
+    } catch (error: any) {
+      setToast({ show: true, message: error.response?.data?.detail || 'Erro ao registrar pagamento', type: 'error' })
+    } finally {
+      setIsSubmittingPayment(false)
+    }
+  }
+
+  const handleDeletePayment = async (closure: BalanceClosure, paymentId: number) => {
+    try {
+      const response = await axios.delete(`/api/balance/closures/${closure.id}/payments/${paymentId}`)
+      setClosures(prev => prev.map(c => c.id === closure.id ? { ...c, ...response.data } : c))
+      setToast({ show: true, message: 'Pagamento removido com sucesso!', type: 'success' })
+    } catch (error: any) {
+      setToast({ show: true, message: error.response?.data?.detail || 'Erro ao remover pagamento', type: 'error' })
+    }
+  }
+
+  const openEditPayment = (payment: ClosurePayment, closure: BalanceClosure) => {
+    setEditingPaymentId(payment.id)
+    setEditingPaymentClosure(closure)
+    const cents = Math.round(parseFloat(String(payment.amount)) * 100)
+    setEditPaymentCents(String(cents))
+    setEditPaymentDate(new Date(payment.payment_date))
+    setEditPaymentNotes(payment.notes || '')
+    setShowEditPaymentModal(true)
+  }
+
+  const closeEditPaymentModal = () => {
+    setShowEditPaymentModal(false)
+    setEditingPaymentId(null)
+    setEditingPaymentClosure(null)
+    setEditPaymentCents('')
+    setEditPaymentDate(null)
+    setEditPaymentNotes('')
+  }
+
+  const handleSavePaymentEdit = async () => {
+    if (!editingPaymentId || !editingPaymentClosure) return
+    const amountValue = parseInt(editPaymentCents || '0', 10) / 100
+    if (!amountValue || !editPaymentDate) return
+    setIsSavingPaymentEdit(true)
+    const dateStr = `${editPaymentDate.getFullYear()}-${String(editPaymentDate.getMonth() + 1).padStart(2, '0')}-${String(editPaymentDate.getDate()).padStart(2, '0')}`
+    try {
+      const response = await axios.put(
+        `/api/balance/closures/${editingPaymentClosure.id}/payments/${editingPaymentId}`,
+        { amount: amountValue, payment_date: dateStr, notes: editPaymentNotes || null }
+      )
+      setClosures(prev => prev.map(c => c.id === editingPaymentClosure.id ? { ...c, ...response.data } : c))
+      setToast({ show: true, message: 'Pagamento atualizado com sucesso!', type: 'success' })
+      closeEditPaymentModal()
+    } catch (error: any) {
+      setToast({ show: true, message: error.response?.data?.detail || 'Erro ao editar pagamento', type: 'error' })
+    } finally {
+      setIsSavingPaymentEdit(false)
     }
   }
 
@@ -3356,6 +3508,8 @@ const BalancoPage = () => {
                     <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                       <thead className="bg-gray-50 dark:bg-gray-700">
                         <tr>
+                          {/* Coluna expand/colapso */}
+                          <th className="px-1 py-3 w-8"></th>
                           <th className="px-2 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                             <button
                               onClick={toggleSelectAll}
@@ -3375,6 +3529,7 @@ const BalancoPage = () => {
                           <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap">A Receber</th>
                           <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap">A Pagar</th>
                           <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap" title="Possui liquidações de empréstimos">Empréstimos</th>
+                          <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap" title="Pagamentos parciais realizados">Pagamentos</th>
                           <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap">Saldo</th>
                           <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap">Status</th>
                           <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap">Ações</th>
@@ -3421,8 +3576,8 @@ const BalancoPage = () => {
                                                    rootLoanPayments.length > 0)
 
                           return (
+                          <React.Fragment key={closure.id}>
                           <tr
-                            key={closure.id}
                             className={`border-l-4 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all ${
                               selectedClosureIds.has(closure.id)
                                 ? 'border-l-blue-600 bg-blue-50 dark:bg-blue-900/20'
@@ -3439,6 +3594,20 @@ const BalancoPage = () => {
                               }
                             }}
                           >
+                            {/* Coluna expand/colapso */}
+                            <td className="px-1 py-3 text-center w-8">
+                              {(closure.closure_payments || []).length > 0 ? (
+                                <button
+                                  onClick={() => toggleClosureExpansion(closure.id)}
+                                  className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors text-color-primary"
+                                  title={expandedClosureIds.has(closure.id) ? 'Colapsar pagamentos' : 'Expandir pagamentos'}
+                                >
+                                  {expandedClosureIds.has(closure.id) ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                                </button>
+                              ) : (
+                                <span className="w-6 inline-block" />
+                              )}
+                            </td>
                             <td className="px-2 py-3 text-center whitespace-nowrap">
                               <button
                                 onClick={() => toggleClosureSelection(closure.id)}
@@ -3538,15 +3707,47 @@ const BalancoPage = () => {
                                 <span className="text-gray-400 dark:text-gray-500">-</span>
                               )}
                             </td>
-                            <td className={`px-3 py-3 text-left whitespace-nowrap ${
-                              displayNetBalance > 0
-                                ? 'text-green-600 dark:text-green-400'
-                                : displayNetBalance < 0
-                                ? 'text-red-600 dark:text-red-400'
-                                : 'text-gray-600 dark:text-gray-400'
-                            }`}>
-                              {formatCurrency(displayNetBalance)}
+                            {/* Coluna Pagamentos (antes do Saldo) */}
+                            <td className="px-3 py-3 text-center whitespace-nowrap">
+                              {(() => {
+                                const totalPaid = parseFloat(String(closure.total_paid ?? 0))
+                                const paymentsCount = (closure.closure_payments || []).length
+                                return paymentsCount > 0 ? (
+                                  <div className="flex flex-col items-center gap-0.5">
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">
+                                      <CreditCard size={11} />
+                                      {paymentsCount}
+                                    </span>
+                                    <span className="text-[10px] text-green-600 dark:text-green-400 font-medium">{formatCurrency(totalPaid)}</span>
+                                  </div>
+                                ) : (
+                                  <span className="text-gray-300 dark:text-gray-600">—</span>
+                                )
+                              })()}
                             </td>
+                            {/* Coluna Saldo — mostra saldo restante (o que falta pagar) */}
+                            {(() => {
+                              const totalPaid = parseFloat(String(closure.total_paid ?? 0))
+                              const remaining = closure.is_settled ? 0 : (parseFloat(String(closure.remaining_balance ?? Math.abs(displayNetBalance))) - 0)
+                              const displayBalance = totalPaid > 0 ? remaining : displayNetBalance
+                              const isRemainingView = totalPaid > 0
+                              return (
+                                <td className={`px-3 py-3 text-left whitespace-nowrap ${
+                                  displayBalance > 0
+                                    ? 'text-green-600 dark:text-green-400'
+                                    : displayBalance < 0
+                                    ? 'text-red-600 dark:text-red-400'
+                                    : 'text-gray-600 dark:text-gray-400'
+                                }`}>
+                                  <div className="flex flex-col">
+                                    <span>{formatCurrency(displayBalance)}</span>
+                                    {isRemainingView && (
+                                      <span className="text-[10px] text-gray-400 dark:text-gray-500">restante</span>
+                                    )}
+                                  </div>
+                                </td>
+                              )
+                            })()}
                             <td className="px-3 py-3 text-left">
                               {closure.is_settled ? (
                                 <span
@@ -3597,6 +3798,20 @@ const BalancoPage = () => {
                                 >
                                   <Braces size={15} />
                                 </button>
+                                {/* Botão Adicionar Pagamento Parcial */}
+                                {!closure.is_settled && (() => {
+                                  const noBalance = parseFloat(String(closure.remaining_balance ?? Math.abs(parseFloat(String(closure.net_balance ?? 0))))) <= 0.01
+                                  return (
+                                    <button
+                                      onClick={() => !noBalance && openPaymentModal(closure)}
+                                      disabled={noBalance}
+                                      className={`p-1.5 rounded-lg transition-all ${noBalance ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed' : 'text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20'}`}
+                                      title={noBalance ? 'Saldo zerado' : 'Registrar pagamento parcial'}
+                                    >
+                                      <CreditCard size={15} />
+                                    </button>
+                                  )
+                                })()}
                                 {!closure.is_settled ? (
                                   <button
                                     onClick={() => {
@@ -3610,7 +3825,7 @@ const BalancoPage = () => {
                                   </button>
                                 ) : (
                                   <button
-                                    onClick={() => handleUnsettleClosure(closure.id)}
+                                    onClick={() => handleUnsettleClosure(closure)}
                                     className="p-1.5 text-green-600 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-all"
                                     title="Remover quitação"
                                   >
@@ -3649,6 +3864,60 @@ const BalancoPage = () => {
                               </div>
                             </td>
                           </tr>
+                          {/* Sub-linha expansível: histórico de pagamentos parciais */}
+                          {expandedClosureIds.has(closure.id) && (closure.closure_payments || []).length > 0 && (
+                            <tr className="bg-indigo-50 dark:bg-indigo-900/10">
+                              <td colSpan={14} className="px-6 py-3">
+                                <div className="flex flex-col gap-2">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <CreditCard size={14} className="text-indigo-600 dark:text-indigo-400" />
+                                    <span className="text-xs font-semibold text-indigo-700 dark:text-indigo-300 uppercase tracking-wide">
+                                      Histórico de Pagamentos Parciais
+                                    </span>
+                                    <span className="text-xs text-gray-500 dark:text-gray-400 ml-auto">
+                                      Total pago: <span className="font-semibold text-green-600 dark:text-green-400">{formatCurrency(parseFloat(String(closure.total_paid ?? 0)))}</span>
+                                    </span>
+                                  </div>
+                                  <div className="grid grid-cols-1 gap-1">
+                                    {(closure.closure_payments || []).map((payment) => (
+                                      <div key={payment.id} className="flex items-center gap-3 text-xs bg-white dark:bg-gray-800 rounded-lg px-3 py-2 border border-indigo-100 dark:border-indigo-800">
+                                        <span className="text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                          {new Date(payment.payment_date).toLocaleDateString('pt-BR')}
+                                        </span>
+                                        <span className="font-semibold text-green-600 dark:text-green-400 whitespace-nowrap">
+                                          {formatCurrency(parseFloat(String(payment.amount)))}
+                                        </span>
+                                        {payment.notes && (
+                                          <span className="text-gray-600 dark:text-gray-400 truncate flex-1">
+                                            {payment.notes}
+                                          </span>
+                                        )}
+                                        {!closure.is_settled && (
+                                          <div className="ml-auto flex items-center gap-1 flex-shrink-0">
+                                            <button
+                                              onClick={() => openEditPayment(payment, closure)}
+                                              className="p-1 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded transition-all"
+                                              title="Editar pagamento"
+                                            >
+                                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                            </button>
+                                            <button
+                                              onClick={() => handleDeletePayment(closure, payment.id)}
+                                              className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-all"
+                                              title="Remover pagamento"
+                                            >
+                                              <Trash2 size={12} />
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                          </React.Fragment>
                           )
                         })}
                       </tbody>
@@ -4311,6 +4580,85 @@ const BalancoPage = () => {
           </div>
         )}
 
+        {/* Modal: Reabrir (Remover Quitação) */}
+        {showUnsettleModal && unsettleClosure && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md">
+              {/* Header */}
+              <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-gray-700">
+                <div className="flex items-center gap-2">
+                  <Unlock size={20} className="text-amber-500" />
+                  <h2 className="text-lg font-bold text-gray-900 dark:text-white">Remover Quitação</h2>
+                </div>
+                <button
+                  onClick={() => { setShowUnsettleModal(false); setUnsettleClosure(null) }}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                >✕</button>
+              </div>
+
+              <div className="p-5">
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                  Fechamento <strong>{String(unsettleClosure.month).padStart(2, '0')}/{unsettleClosure.year}</strong> será reaberto.
+                </p>
+
+                {/* Lista de pagamentos existentes */}
+                {(unsettleClosure.closure_payments || []).filter(p => p.active !== false).length > 0 ? (
+                  <div className="mb-4">
+                    <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Pagamentos registrados</p>
+                    <div className="border border-gray-200 dark:border-gray-700 rounded-lg divide-y divide-gray-100 dark:divide-gray-700 max-h-48 overflow-y-auto">
+                      {(unsettleClosure.closure_payments || []).filter(p => p.active !== false).map((p: any) => (
+                        <div key={p.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                          <span className="text-gray-600 dark:text-gray-400">
+                            {p.payment_date ? new Date(p.payment_date).toLocaleDateString('pt-BR') : '—'}
+                            {p.notes && <span className="ml-2 text-xs text-gray-400 dark:text-gray-500">({p.notes})</span>}
+                          </span>
+                          <span className="font-semibold text-green-600 dark:text-green-400">
+                            {formatCurrency(parseFloat(String(p.amount ?? 0)))}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500 dark:text-gray-400 italic mb-4">Nenhum pagamento registrado.</p>
+                )}
+
+                {/* Botões de ação */}
+                <div className="flex flex-col gap-2">
+                  {(unsettleClosure.closure_payments || []).filter(p => p.active !== false).length > 0 && (
+                    <button
+                      onClick={() => handleConfirmUnsettle(true)}
+                      disabled={unsettleClearingAll}
+                      className="w-full px-4 py-2 rounded-lg font-semibold text-sm transition-all hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
+                      style={{ backgroundColor: 'var(--crud-delete)', color: 'var(--on-crud-delete)' }}
+                    >
+                      <Trash2 size={15} />
+                      {unsettleClearingAll ? 'Removendo...' : 'Reabrir e limpar todos os pagamentos'}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleConfirmUnsettle(false)}
+                    disabled={unsettleClearingAll}
+                    className="w-full px-4 py-2 rounded-lg font-semibold text-sm transition-all hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
+                    style={{ backgroundColor: 'var(--crud-edit)', color: 'var(--on-crud-edit)' }}
+                  >
+                    <Unlock size={15} />
+                    Reabrir sem alterar pagamentos
+                  </button>
+                  <button
+                    onClick={() => { setShowUnsettleModal(false); setUnsettleClosure(null) }}
+                    disabled={unsettleClearingAll}
+                    className="w-full px-4 py-2 rounded-lg font-semibold text-sm transition-all hover:opacity-90 disabled:opacity-50"
+                    style={{ backgroundColor: 'var(--crud-cancel)', color: 'var(--on-crud-cancel)' }}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Modal: Marcar como Quitado */}
         {showSettleModal && selectedClosure && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -4367,6 +4715,174 @@ const BalancoPage = () => {
                   style={{ backgroundColor: 'var(--crud-create)', color: 'var(--on-crud-create)' }}
                 >
                   Confirmar Quitação
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Registrar Pagamento Parcial */}
+        {showPaymentModal && paymentClosure && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md">
+              <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-gray-700">
+                <div className="flex items-center gap-2">
+                  <CreditCard size={20} className="text-color-primary" />
+                  <h2 className="text-lg font-bold text-gray-900 dark:text-white">Registrar Pagamento Parcial</h2>
+                </div>
+                <button
+                  onClick={() => { setShowPaymentModal(false); setPaymentClosure(null) }}
+                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="p-5 space-y-4">
+                {(() => {
+                  const remaining = parseFloat(String(paymentClosure.remaining_balance ?? Math.abs(paymentClosure.net_balance ?? 0)))
+                  const isFullyPaid = remaining <= 0
+                  return (
+                    <div className={`p-3 rounded-lg text-sm border ${isFullyPaid ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}>
+                      <p className="text-gray-600 dark:text-gray-400 text-xs mb-1">Saldo devedor restante</p>
+                      <p className={`font-bold text-lg ${isFullyPaid ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                        {isFullyPaid ? formatCurrency(0) : `- ${formatCurrency(remaining)}`}
+                      </p>
+                    </div>
+                  )
+                })()}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Valor do Pagamento *</label>
+                  <div className="relative">
+                    <span className={`absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold ${parseInt(paymentAmountCents || '0') > 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-400 dark:text-gray-500'}`}>R$</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={formatAmountMask(paymentAmountCents)}
+                      onChange={handlePaymentAmountChange}
+                      className={`w-full pl-9 pr-3 py-2 border rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 ring-color-primary ${
+                        parseInt(paymentAmountCents || '0') > 0
+                          ? 'border-green-400 dark:border-green-600 text-green-700 dark:text-green-300 font-semibold'
+                          : 'border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white'
+                      }`}
+                      placeholder="0,00"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Data do Pagamento *</label>
+                  <DatePicker
+                    selected={paymentDate}
+                    onChange={(date: Date | null) => setPaymentDate(date)}
+                    dateFormat="dd/MM/yyyy"
+                    placeholderText="Selecione a data..."
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 ring-color-primary"
+                    maxDate={new Date()}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Observações</label>
+                  <input
+                    type="text"
+                    value={paymentNotes}
+                    onChange={e => setPaymentNotes(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 ring-color-primary"
+                    placeholder="Ex: Transferência PIX..."
+                  />
+                </div>
+              </div>
+              <div className="flex items-center justify-end gap-3 p-5 border-t border-gray-200 dark:border-gray-700">
+                <button
+                  onClick={() => { setShowPaymentModal(false); setPaymentClosure(null) }}
+                  className="px-4 py-2 rounded-lg font-semibold transition-all hover:opacity-90"
+                  style={{ backgroundColor: 'var(--crud-cancel)', color: 'var(--on-crud-cancel)' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleAddPayment}
+                  disabled={!paymentAmountCents || parseInt(paymentAmountCents) === 0 || !paymentDate || isSubmittingPayment}
+                  className={`px-4 py-2 rounded-lg font-semibold flex items-center gap-2 transition-all ${
+                    !paymentAmountCents || parseInt(paymentAmountCents) === 0 || !paymentDate || isSubmittingPayment
+                      ? 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                      : 'text-white hover:opacity-90'
+                  }`}
+                  style={paymentAmountCents && parseInt(paymentAmountCents) > 0 && paymentDate && !isSubmittingPayment ? { backgroundColor: 'var(--crud-create)' } : undefined}
+                >
+                  {isSubmittingPayment ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Salvando...</> : <><Check size={16} />Registrar Pagamento</>}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Editar Pagamento */}
+        {showEditPaymentModal && editingPaymentClosure && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md">
+              <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-gray-700">
+                <div className="flex items-center gap-2">
+                  <CreditCard size={20} className="text-color-primary" />
+                  <h2 className="text-lg font-bold text-gray-900 dark:text-white">Editar Pagamento</h2>
+                </div>
+                <button onClick={closeEditPaymentModal} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="p-5 space-y-4">
+                {/* Valor */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Valor</label>
+                  <div className="relative">
+                    <span className={`absolute left-3 top-1/2 -translate-y-1/2 font-bold text-sm ${parseInt(editPaymentCents || '0') > 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}`}>R$</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={formatAmountMask(editPaymentCents)}
+                      onChange={e => setEditPaymentCents(e.target.value.replace(/\D/g, ''))}
+                      className={`w-full pl-10 pr-3 py-2.5 border rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 ring-color-primary transition-all ${parseInt(editPaymentCents || '0') > 0 ? 'border-green-400 text-green-700 dark:text-green-300 font-semibold' : 'border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white'}`}
+                      placeholder="0,00"
+                    />
+                  </div>
+                </div>
+                {/* Data */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Data</label>
+                  <DatePicker
+                    selected={editPaymentDate}
+                    onChange={(date: Date | null) => setEditPaymentDate(date)}
+                    dateFormat="dd/MM/yyyy"
+                    className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 ring-color-primary"
+                    maxDate={new Date()}
+                    placeholderText="Selecione a data"
+                  />
+                </div>
+                {/* Observações */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Observações <span className="text-gray-400 font-normal">(opcional)</span></label>
+                  <input
+                    type="text"
+                    value={editPaymentNotes}
+                    onChange={e => setEditPaymentNotes(e.target.value)}
+                    placeholder="Ex: Pago via PIX, Transferência bancária..."
+                    className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 ring-color-primary"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-3 px-5 pb-5">
+                <button
+                  onClick={closeEditPaymentModal}
+                  className="flex-1 px-4 py-2 rounded-lg font-semibold transition-all hover:opacity-90"
+                  style={{ backgroundColor: 'var(--crud-cancel)', color: 'var(--on-crud-cancel)' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleSavePaymentEdit}
+                  disabled={!editPaymentCents || parseInt(editPaymentCents) === 0 || !editPaymentDate || isSavingPaymentEdit}
+                  className="flex-1 px-4 py-2 rounded-lg font-semibold flex items-center justify-center gap-2 transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-white"
+                  style={{ backgroundColor: 'var(--crud-create)' }}
+                >
+                  {isSavingPaymentEdit ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Salvando...</> : <><Check size={16} />Salvar</>}
                 </button>
               </div>
             </div>
@@ -4640,7 +5156,7 @@ const BalancoPage = () => {
             if (format === 'pdf') {
               exportBalanceClosureToPDF(exportTargetClosure as any, isCounterpart, absoluteValues)
             } else {
-              exportBalanceClosureToExcel(exportTargetClosure as any, absoluteValues)
+              exportBalanceClosureToExcel(exportTargetClosure as any, absoluteValues, isCounterpart)
             }
           }}
         />

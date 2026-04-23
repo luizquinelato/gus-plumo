@@ -263,9 +263,21 @@ interface ClosureAccountCard {
   benefit_card_revenue_items?: ClosureTransactionItem[]
 }
 
+interface ClosurePaymentForExcel {
+  id: number
+  amount: number
+  payment_date: string
+  notes: string | null
+}
+
 interface BalanceClosureForExcel {
   period_start_date: string
   closing_date: string
+  net_balance?: number
+  total_paid?: number
+  remaining_balance?: number
+  is_settled?: boolean
+  closure_payments?: ClosurePaymentForExcel[]
   closure_data: {
     main_account_card: ClosureAccountCard
     partner_account_card: ClosureAccountCard
@@ -275,7 +287,7 @@ interface BalanceClosureForExcel {
 /**
  * Exporta fechamento de balanço para Excel com 3 abas: Extrato, Cartão e Benefício
  */
-export function exportBalanceClosureToExcel(closure: BalanceClosureForExcel, absoluteValues: boolean = false): void {
+export function exportBalanceClosureToExcel(closure: BalanceClosureForExcel, absoluteValues: boolean = false, isCounterpart: boolean = false): void {
   const mainCard = closure.closure_data?.main_account_card
   const partnerCard = closure.closure_data?.partner_account_card
   if (!mainCard || !partnerCard) return
@@ -381,6 +393,61 @@ export function exportBalanceClosureToExcel(closure: BalanceClosureForExcel, abs
   // Aba 3: Benefício (apenas se houver itens)
   if (benefitItems.length > 0) {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(toRows(benefitItems, true)), 'Benefício')
+  }
+
+  // Aba 4: Pagamentos Parciais (apenas se houver pagamentos)
+  const closurePayments = closure.closure_payments || []
+  if (closurePayments.length > 0) {
+    const parseNum = (v: any): number => {
+      if (typeof v === 'number') return v
+      if (typeof v === 'string') return parseFloat(v) || 0
+      return 0
+    }
+
+    // net_balance no objeto é sempre da perspectiva da conta principal;
+    // se o usuário logado é a contraparte, invertemos o sinal para a perspectiva correta
+    const rawNetBalance = parseNum(closure.net_balance ?? 0) * (isCounterpart ? -1 : 1)
+    const sign = rawNetBalance >= 0 ? 1 : -1                      // para propagar o sinal ao saldo restante
+    const netBalanceAbs = Math.abs(rawNetBalance)
+    const totalPaid = parseNum(closure.total_paid ?? 0)           // sempre positivo (magnitude paga)
+    const remainingAbs = parseNum(closure.remaining_balance ?? netBalanceAbs)  // sempre positivo (magnitude restante)
+    const isSettled = closure.is_settled ?? false
+
+    // Saldo do fechamento: respeita o sinal (negativo = devedor, positivo = credor)
+    const netBalanceDisplay = absoluteValues ? netBalanceAbs : rawNetBalance
+    // Saldo restante: mesmo sinal que o fechamento (reduz conforme pagamentos)
+    const remainingDisplay = absoluteValues ? Math.max(0, remainingAbs) : sign * Math.max(0, remainingAbs)
+
+    // Linhas de resumo no topo da aba
+    const summaryRows: Record<string, any>[] = [
+      { 'Campo': 'Saldo do fechamento', 'Valor': parseFloat(netBalanceDisplay.toFixed(2)) },
+      { 'Campo': 'Total pago', 'Valor': parseFloat(totalPaid.toFixed(2)) },
+      { 'Campo': 'Saldo restante', 'Valor': parseFloat(remainingDisplay.toFixed(2)) },
+      { 'Campo': 'Status', 'Valor': isSettled ? 'Quitado' : 'Em aberto' },
+      { 'Campo': '', 'Valor': '' }, // linha em branco separadora
+    ]
+
+    // Linhas de pagamentos com saldo acumulado
+    let accumulated = 0
+    const paymentRows: Record<string, any>[] = closurePayments.map(p => {
+      const amount = parseNum(p.amount)                           // sempre positivo
+      accumulated += amount
+      const saldoRestanteAbs = Math.max(0, netBalanceAbs - accumulated)
+      // Saldo restante por linha: herda o sinal do fechamento
+      const saldoRestanteDisplay = absoluteValues ? saldoRestanteAbs : sign * saldoRestanteAbs
+      return {
+        'Data': formatDateBR(p.payment_date),
+        'Valor Pago': parseFloat(amount.toFixed(2)),             // sempre positivo (o quanto foi pago)
+        'Observações': p.notes || '',
+        'Acumulado': parseFloat(accumulated.toFixed(2)),          // sempre positivo (total pago até aqui)
+        'Saldo Restante': parseFloat(saldoRestanteDisplay.toFixed(2)),
+      }
+    })
+
+    // Combinar resumo + pagamentos em uma única sheet
+    const wsSummary = XLSX.utils.json_to_sheet(summaryRows)
+    XLSX.utils.sheet_add_json(wsSummary, paymentRows, { origin: summaryRows.length + 1, skipHeader: false })
+    XLSX.utils.book_append_sheet(wb, wsSummary, 'Pagamentos')
   }
 
   // Nome do arquivo
