@@ -1122,36 +1122,12 @@ def settle_balance_closure(
     # Criar pagamento para o saldo restante (se houver)
     if remaining > Decimal('0.01'):
         settled_at = datetime.now()
-        # Determinar sinal: viewer pagando (net < 0) → saída; recebendo (net > 0) → entrada
-        is_counterpart = (account_id != closure.account_id)
-        viewer_net = float(closure.net_balance or 0)
-        if is_counterpart:
-            viewer_net = -viewer_net
-        transaction_amount = -remaining if viewer_net < 0 else remaining
-
-        stmt_description = request.settlement_notes or f"Acerto de contas - Fechamento #{closure_id}"
-        bank_stmt = BankStatement(
-            tenant_id=tenant_id,
-            created_by=user_id,
-            account_id=account_id,
-            date=settled_at,
-            description=stmt_description,
-            amount=transaction_amount,
-            subtag_id=None,
-            expense_sharing_id=None,
-            ownership_percentage=Decimal('100.00'),
-            category=None,
-            transaction=None,
-        )
-        db.add(bank_stmt)
-        db.flush()
 
         payment = BalanceClosurePayment(
             balance_closure_id=closure_id,
             amount=remaining,
             payment_date=settled_at,
             notes=request.settlement_notes or f"Quitação manual - Fechamento #{closure_id}",
-            bank_statement_id=bank_stmt.id,
             account_id=account_id,
             tenant_id=tenant_id,
             created_by=user_id,
@@ -1238,14 +1214,7 @@ def clear_all_closure_payments(
     ).all()
 
     for payment in payments:
-        if payment.bank_statement_id:
-            bank_stmt = db.query(BankStatement).filter(
-                BankStatement.id == payment.bank_statement_id
-            ).first()
-            if bank_stmt:
-                db.delete(bank_stmt)
         payment.active = False
-        payment.bank_statement_id = None
 
     db.commit()
 
@@ -1328,40 +1297,11 @@ def add_closure_payment(
     except ValueError:
         raise HTTPException(status_code=400, detail="Data inválida. Use formato YYYY-MM-DD")
 
-    # Determinar sinal do lançamento baseado na perspectiva do viewer logado
-    # Se o viewer é a contraparte, o net_balance é invertido
-    is_counterpart = (account_id != closure.account_id)
-    viewer_net_balance = float(closure.net_balance or 0)
-    if is_counterpart:
-        viewer_net_balance = -viewer_net_balance
-    # viewer_net_balance < 0 → está pagando (saída = negativo no extrato)
-    # viewer_net_balance > 0 → está recebendo (entrada = positivo no extrato)
-    transaction_amount = -request.amount if viewer_net_balance < 0 else request.amount
-
-    # Criar lançamento no extrato (bank_statement)
-    stmt_description = request.notes or f"Acerto de contas - Fechamento #{closure_id}"
-    bank_stmt = BankStatement(
-        tenant_id=tenant_id,
-        created_by=created_by,
-        account_id=account_id,
-        date=payment_date,
-        description=stmt_description,
-        amount=transaction_amount,
-        subtag_id=None,
-        expense_sharing_id=None,
-        ownership_percentage=Decimal('100.00'),
-        category=None,
-        transaction=None,
-    )
-    db.add(bank_stmt)
-    db.flush()  # gera bank_stmt.id antes do commit
-
     payment = BalanceClosurePayment(
         balance_closure_id=closure_id,
         amount=request.amount,
         payment_date=payment_date,
         notes=request.notes,
-        bank_statement_id=bank_stmt.id,
         account_id=account_id,
         tenant_id=tenant_id,
         created_by=created_by
@@ -1406,16 +1346,7 @@ def delete_closure_payment(
     if not payment:
         raise HTTPException(status_code=404, detail="Pagamento não encontrado")
 
-    # Hard delete do lançamento vinculado (bank_statements não tem soft delete)
-    if payment.bank_statement_id:
-        bank_stmt = db.query(BankStatement).filter(
-            BankStatement.id == payment.bank_statement_id
-        ).first()
-        if bank_stmt:
-            db.delete(bank_stmt)
-
     payment.active = False
-    payment.bank_statement_id = None
 
     # Se o fechamento estava quitado automaticamente, reverter
     if closure.is_settled and closure.settlement_notes and "automática" in (closure.settlement_notes or ""):
@@ -1488,22 +1419,6 @@ def update_closure_payment(
     payment.amount = request.amount
     payment.payment_date = payment_date
     payment.notes = request.notes
-
-    # Atualizar o lançamento vinculado se existir
-    if payment.bank_statement_id:
-        bank_stmt = db.query(BankStatement).filter(
-            BankStatement.id == payment.bank_statement_id
-        ).first()
-        if bank_stmt:
-            # Recalcular sinal (pode ter mudado se re-editado em contexto diferente)
-            is_counterpart = (account_id != closure.account_id)
-            viewer_net_balance = float(closure.net_balance or 0)
-            if is_counterpart:
-                viewer_net_balance = -viewer_net_balance
-            transaction_amount = -request.amount if viewer_net_balance < 0 else request.amount
-            bank_stmt.amount = transaction_amount
-            bank_stmt.date = payment_date
-            bank_stmt.description = request.notes or f"Acerto de contas - Fechamento #{closure_id}"
 
     db.commit()
     db.refresh(closure)

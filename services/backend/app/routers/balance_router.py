@@ -173,6 +173,8 @@ class TransactionItem(BaseModel):
     card_active: bool | None = None
     card_closing_day: int | None = None
     card_type: str | None = None  # "crédito" ou "benefício"
+    current_installment: int | None = None
+    total_installments: int | None = None
     card_id: int | None = None
     card_name: str | None = None
     card_number: str | None = None  # Número do cartão (últimos 4 dígitos)
@@ -1811,7 +1813,9 @@ async def calculate_balance(
             card_number=item.credit_card.number if item.credit_card else None,
             card_active=item.credit_card.active if item.credit_card else None,
             card_closing_day=item.credit_card.closing_day if item.credit_card else None,
-            card_type=item.credit_card.type if item.credit_card else None
+            card_type=item.credit_card.type if item.credit_card else None,
+            current_installment=item.current_installment,
+            total_installments=item.total_installments,
         )
         for item in main_cc_expense_items
     ]
@@ -1834,7 +1838,9 @@ async def calculate_balance(
             card_number=item.credit_card.number if item.credit_card else None,
             card_active=item.credit_card.active if item.credit_card else None,
             card_closing_day=item.credit_card.closing_day if item.credit_card else None,
-            card_type=item.credit_card.type if item.credit_card else None
+            card_type=item.credit_card.type if item.credit_card else None,
+            current_installment=item.current_installment,
+            total_installments=item.total_installments,
         )
         for item in main_cc_revenue_items
     ]
@@ -1857,7 +1863,9 @@ async def calculate_balance(
             card_number=item.credit_card.number if item.credit_card else None,
             card_active=item.credit_card.active if item.credit_card else None,
             card_closing_day=item.credit_card.closing_day if item.credit_card else None,
-            card_type=item.credit_card.type if item.credit_card else None
+            card_type=item.credit_card.type if item.credit_card else None,
+            current_installment=item.current_installment,
+            total_installments=item.total_installments,
         )
         for item in shared_cc_expense_items
     ]
@@ -1880,7 +1888,9 @@ async def calculate_balance(
             card_number=item.credit_card.number if item.credit_card else None,
             card_active=item.credit_card.active if item.credit_card else None,
             card_closing_day=item.credit_card.closing_day if item.credit_card else None,
-            card_type=item.credit_card.type if item.credit_card else None
+            card_type=item.credit_card.type if item.credit_card else None,
+            current_installment=item.current_installment,
+            total_installments=item.total_installments,
         )
         for item in shared_cc_revenue_items
     ]
