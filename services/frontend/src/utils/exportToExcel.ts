@@ -251,6 +251,8 @@ interface ClosureTransactionItem {
   card_name?: string | null
   card_number?: string | null
   year_month?: string | null
+  current_installment?: number | null
+  total_installments?: number | null
 }
 
 interface ClosureAccountCard {
@@ -360,7 +362,10 @@ export function exportBalanceClosureToExcel(closure: BalanceClosureForExcel, abs
       }
 
       row['Conta'] = (item as any)._account
-      row['Descrição'] = item.description || ''
+      const installmentSuffix = (item.current_installment && item.total_installments && item.total_installments > 1)
+        ? ` ${item.current_installment}/${item.total_installments}`
+        : ''
+      row['Descrição'] = (item.description || '') + installmentSuffix
       row['Tag'] = item.tag_name || ''
       row['Subtag'] = item.subtag_name || ''
 
@@ -427,19 +432,25 @@ export function exportBalanceClosureToExcel(closure: BalanceClosureForExcel, abs
       { 'Campo': '', 'Valor': '' }, // linha em branco separadora
     ]
 
-    // Linhas de pagamentos com saldo acumulado
+    // Linhas de pagamentos com saldo acumulado (do mais antigo para o mais novo)
+    const sortedPayments = [...closurePayments].sort(
+      (a, b) => new Date(a.payment_date).getTime() - new Date(b.payment_date).getTime()
+    )
     let accumulated = 0
-    const paymentRows: Record<string, any>[] = closurePayments.map(p => {
-      const amount = parseNum(p.amount)                           // sempre positivo
+    const paymentRows: Record<string, any>[] = sortedPayments.map(p => {
+      const amount = parseNum(p.amount)                           // magnitude sempre positiva
       accumulated += amount
       const saldoRestanteAbs = Math.max(0, netBalanceAbs - accumulated)
+      // Valor Pago e Acumulado: herdam o sinal do fechamento (se absoluto, sem sinal)
+      const valorPagoDisplay = absoluteValues ? amount : sign * amount
+      const acumuladoDisplay = absoluteValues ? accumulated : sign * accumulated
       // Saldo restante por linha: herda o sinal do fechamento
       const saldoRestanteDisplay = absoluteValues ? saldoRestanteAbs : sign * saldoRestanteAbs
       return {
         'Data': formatDateBR(p.payment_date),
-        'Valor Pago': parseFloat(amount.toFixed(2)),             // sempre positivo (o quanto foi pago)
+        'Valor Pago': parseFloat(valorPagoDisplay.toFixed(2)),
         'Observações': p.notes || '',
-        'Acumulado': parseFloat(accumulated.toFixed(2)),          // sempre positivo (total pago até aqui)
+        'Acumulado': parseFloat(acumuladoDisplay.toFixed(2)),
         'Saldo Restante': parseFloat(saldoRestanteDisplay.toFixed(2)),
       }
     })

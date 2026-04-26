@@ -18,6 +18,8 @@ interface BalanceItem {
   card_active?: boolean  // Se o cartão está ativo
   card_type?: string  // Tipo do cartão: "crédito" ou "benefício"
   card_closing_day?: number  // Dia de fechamento do cartão (1-31)
+  current_installment?: number | null
+  total_installments?: number | null
 }
 
 interface BalanceDetailsModalProps {
@@ -589,7 +591,7 @@ const BalanceDetailsModal = ({
                                   {new Date(item.date).toLocaleDateString('pt-BR')}
                                 </td>
                                 <td className="p-3 text-gray-900 dark:text-white font-medium">
-                                  {item.description}
+                                  {item.description}{item.current_installment && item.total_installments && item.total_installments > 1 ? ` ${item.current_installment}/${item.total_installments}` : ''}
                                 </td>
                                 <td className="p-3 text-gray-500 dark:text-gray-400">
                                   {item.tag_name ? (
@@ -751,7 +753,7 @@ const BalanceDetailsModal = ({
                           {new Date(item.date).toLocaleDateString('pt-BR')}
                         </td>
                         <td className="p-3 text-gray-900 dark:text-white font-medium">
-                          {item.description}
+                          {item.description}{item.current_installment && item.total_installments && item.total_installments > 1 ? ` ${item.current_installment}/${item.total_installments}` : ''}
                         </td>
                         <td className="p-3 text-gray-500 dark:text-gray-400">
                           {item.tag_name ? (

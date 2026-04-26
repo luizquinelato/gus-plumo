@@ -29,6 +29,8 @@ interface TransactionItem {
   year_month?: string
   card_name?: string
   card_number?: string
+  current_installment?: number | null
+  total_installments?: number | null
 }
 
 interface AccountBalanceCard {
@@ -708,8 +710,11 @@ const addTransactionTable = (doc: jsPDF, title: string, items: TransactionItem[]
     const isExpense = amount < 0
     itemSigns.push(isExpense)
 
-    // Sanitizar descrição e categoria
-    const cleanDescription = sanitizeText(item.description || '')
+    // Sanitizar descrição e categoria (concatenar parcela se existir)
+    const installmentSuffix = (item.current_installment && item.total_installments && item.total_installments > 1)
+      ? ` ${item.current_installment}/${item.total_installments}`
+      : ''
+    const cleanDescription = sanitizeText((item.description || '') + installmentSuffix)
     const truncatedDesc = cleanDescription.substring(0, 35) + (cleanDescription.length > 35 ? '...' : '')
     const cleanTag = item.tag_name ? sanitizeText(item.tag_name) : ''
     const cleanSubtag = item.subtag_name ? sanitizeText(item.subtag_name) : ''

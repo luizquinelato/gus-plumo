@@ -99,6 +99,8 @@ interface TransactionItem {
   card_id?: number
   card_name?: string
   card_number?: string  // Número do cartão (últimos 4 dígitos)
+  current_installment?: number | null
+  total_installments?: number | null
 }
 
 interface AccountBalanceCard {
@@ -4303,7 +4305,7 @@ const BalancoPage = () => {
                             }
                           </td>
                           <td className="p-3 text-gray-900 dark:text-white font-medium">
-                            {item.description || 'Sem descrição'}
+                            {item.description || 'Sem descrição'}{item.current_installment && item.total_installments && item.total_installments > 1 ? ` ${item.current_installment}/${item.total_installments}` : ''}
                           </td>
                           <td className="p-3 text-gray-900 dark:text-white text-xs">
                             {item.card_name ? (
