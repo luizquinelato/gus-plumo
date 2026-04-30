@@ -307,7 +307,7 @@ const Sidebar = () => {
                                   transition-colors duration-200 text-sm
                                   ${isSubActive ? '' : 'text-gray-300 hover:bg-gray-700 hover:text-white'}
                                 `}
-                                style={isSubActive ? { background: 'var(--gradient-3-4)', color: 'var(--on-gradient-3-4)' } : undefined}
+                                style={isSubActive ? { background: 'var(--gradient-1-2)', color: 'var(--on-gradient-1-2)' } : undefined}
                               >
                                 <SubIcon size={17} />
                                 <span className="font-medium">{subItem.label}</span>
@@ -394,7 +394,7 @@ const Sidebar = () => {
                               transition-colors duration-200 text-sm
                               ${isSubActive ? '' : 'text-gray-300 hover:bg-gray-700 hover:text-white'}
                             `}
-                            style={isSubActive ? { background: 'var(--gradient-3-4)', color: 'var(--on-gradient-3-4)' } : undefined}
+                            style={isSubActive ? { background: 'var(--gradient-1-2)', color: 'var(--on-gradient-1-2)' } : undefined}
                           >
                             <SubIcon size={17} />
                             <span className="font-medium">{subItem.label}</span>
