@@ -1611,7 +1611,7 @@ const ExtratoPage = () => {
                           return (
                             <tr
                               key={`${expense.source}-${expense.id}`}
-                              className={`border-l-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all ${
+                              className={`group border-l-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all ${
                                 isItemSelected(expense)
                                   ? 'border-l-blue-600 bg-blue-50 dark:bg-blue-900/20'
                                   : 'border-l-gray-300 dark:border-l-gray-600'
@@ -1750,8 +1750,8 @@ const ExtratoPage = () => {
                               {/* Ações */}
                               <td className={`px-4 py-4 text-left whitespace-nowrap sticky right-0 z-10 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.1)] ${
                                 isItemSelected(expense)
-                                  ? 'bg-blue-50 dark:bg-blue-900/20'
-                                  : 'bg-white dark:bg-gray-800'
+                                  ? 'bg-blue-50 dark:bg-blue-900/20 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/30'
+                                  : 'bg-white dark:bg-gray-800 group-hover:bg-gray-50 dark:group-hover:bg-gray-700'
                               }`}>
                                 <div className="flex items-center gap-1">
                                   <button

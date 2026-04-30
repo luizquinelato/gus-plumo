@@ -1024,22 +1024,21 @@ export default function EmprestimosPage() {
                         <p className="text-sm text-gray-500 dark:text-gray-400 italic p-4">Nenhum pagamento registrado</p>
                       ) : (
                         <table className="w-full">
-                          <thead>
-                            <tr className="bg-gray-50 dark:bg-gray-700/30 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                              <th className="px-4 py-2">Data</th>
-                              <th className="px-4 py-2">Observações</th>
-                              <th className="px-4 py-2 text-right">Valor</th>
-                              {loan.is_owner && <th className="px-4 py-2 text-right w-20">Ações</th>}
+                          <thead className="bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                            <tr>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Data</th>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Observações</th>
+                              <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Valor</th>
+                              {loan.is_owner && <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-20">Ações</th>}
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                             {loan.payments.map(payment => (
                               <tr
                                 key={payment.id}
-                                className="border-l-4 transition-all"
-                                style={{ borderLeftColor: 'transparent' }}
+                                className="border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all"
                                 onMouseEnter={(e) => { e.currentTarget.style.borderLeftColor = 'var(--color-1)' }}
-                                onMouseLeave={(e) => { e.currentTarget.style.borderLeftColor = 'transparent' }}
+                                onMouseLeave={(e) => { e.currentTarget.style.borderLeftColor = '' }}
                               >
                                 <td className="px-4 py-3 text-sm text-gray-900 dark:text-white whitespace-nowrap">
                                   {formatDateTime(payment.payment_date)}
@@ -1265,22 +1264,21 @@ export default function EmprestimosPage() {
                             <p className="text-sm text-gray-500 dark:text-gray-400 italic p-4">Nenhum pagamento registrado</p>
                           ) : (
                             <table className="w-full">
-                              <thead>
-                                <tr className="bg-gray-50 dark:bg-gray-700/30 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                                  <th className="px-4 py-2">Data</th>
-                                  <th className="px-4 py-2">Observações</th>
-                                  <th className="px-4 py-2 text-right">Valor</th>
-                                  {loan.is_owner && <th className="px-4 py-2 text-right w-20">Ações</th>}
+                              <thead className="bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                                <tr>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Data</th>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Observações</th>
+                                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Valor</th>
+                                  {loan.is_owner && <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-20">Ações</th>}
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                                 {loan.payments.map(payment => (
                                   <tr
                                     key={payment.id}
-                                    className="border-l-4 transition-all"
-                                    style={{ borderLeftColor: 'transparent' }}
+                                    className="border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all"
                                     onMouseEnter={(e) => { e.currentTarget.style.borderLeftColor = 'var(--color-1)' }}
-                                    onMouseLeave={(e) => { e.currentTarget.style.borderLeftColor = 'transparent' }}
+                                    onMouseLeave={(e) => { e.currentTarget.style.borderLeftColor = '' }}
                                   >
                                     <td className="px-4 py-3 text-sm text-gray-900 dark:text-white whitespace-nowrap">
                                       {formatDateTime(payment.payment_date)}

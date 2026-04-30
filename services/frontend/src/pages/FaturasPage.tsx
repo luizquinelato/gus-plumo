@@ -882,15 +882,15 @@ const FaturasPage = () => {
                         {/* Tabela de Itens */}
                         <div className="overflow-x-auto">
                           <table className="w-full">
-                            <thead className="bg-gray-50 dark:bg-gray-700/30">
+                            <thead className="bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
                               <tr>
-                                <th className="px-3 py-3 text-center text-xs font-medium text-gray-700 dark:text-gray-300 w-12">#</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 w-28">Data</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300">Descrição</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 w-48">Tag/Subtag</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 w-40">Compartilhamento</th>
-                                <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 dark:text-gray-300 w-32">Valor</th>
-                                <th className="px-3 py-3 text-center text-xs font-medium text-gray-700 dark:text-gray-300 w-16">Ações</th>
+                                <th className="px-3 py-3 text-center text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-12">#</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-28">Data</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Descrição</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-48">Tag/Subtag</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-40">Compartilhamento</th>
+                                <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-32">Valor</th>
+                                <th className="px-3 py-3 text-center text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-16">Ações</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -905,21 +905,21 @@ const FaturasPage = () => {
                                     e.currentTarget.style.borderLeftColor = ''
                                   }}
                                 >
-                                  <td className="px-3 py-2.5 text-sm text-center text-gray-500 dark:text-gray-400 w-12">
+                                  <td className="px-3 py-3 text-sm text-center text-gray-500 dark:text-gray-400 w-12">
                                     {idx + 1}
                                   </td>
-                                  <td className="px-4 py-2.5 text-sm text-gray-900 dark:text-white whitespace-nowrap w-28">
+                                  <td className="px-4 py-3 text-sm text-gray-900 dark:text-white whitespace-nowrap w-28">
                                     {formatDate(item.date)}
                                   </td>
-                                  <td className="px-4 py-2.5 text-sm text-gray-900 dark:text-white">
+                                  <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
                                     {item.description}
                                   </td>
-                                  <td className="px-4 py-2.5 text-sm text-gray-600 dark:text-gray-400 w-48">
+                                  <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400 w-48">
                                     {item.tag_name && item.subtag_name
                                       ? `${item.tag_name} > ${item.subtag_name}`
                                       : item.tag_name || '-'}
                                   </td>
-                                  <td className="px-4 py-2.5 text-sm text-left w-40">
+                                  <td className="px-4 py-3 text-sm text-left w-40">
                                     <SharedAccountDisplay
                                       account={item.shared_partner_name ? {
                                         id: 0,
@@ -931,10 +931,10 @@ const FaturasPage = () => {
                                       ownershipPercentage={item.ownership_percentage}
                                     />
                                   </td>
-                                  <td className={`px-4 py-2.5 text-sm text-right font-semibold w-32 ${Number(item.amount) < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                                  <td className={`px-4 py-3 text-sm text-right font-semibold w-32 ${Number(item.amount) < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
                                     {formatCurrency(Number(item.amount))}
                                   </td>
-                                  <td className="px-3 py-2.5 text-center w-16">
+                                  <td className="px-3 py-3 text-center w-16">
                                     <button
                                       onClick={() => handleEdit(item)}
                                       className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 transition-colors"

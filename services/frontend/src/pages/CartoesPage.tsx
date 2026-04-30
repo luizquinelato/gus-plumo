@@ -380,15 +380,8 @@ const CartoesPage = () => {
                           <tr
                             key={cartao.id}
                             className="border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all"
-                            style={{
-                              borderLeftColor: 'rgb(209 213 219)' // gray-300
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.borderLeftColor = 'var(--color-1)'
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.borderLeftColor = 'rgb(209 213 219)'
-                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.borderLeftColor = 'var(--color-1)' }}
+                            onMouseLeave={(e) => { e.currentTarget.style.borderLeftColor = '' }}
                           >
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                               {index + 1}
@@ -503,15 +496,8 @@ const CartoesPage = () => {
                           <tr
                             key={cartao.id}
                             className="border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all opacity-60"
-                            style={{
-                              borderLeftColor: 'rgb(209 213 219)' // gray-300
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.borderLeftColor = 'var(--color-1)'
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.borderLeftColor = 'rgb(209 213 219)'
-                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.borderLeftColor = 'var(--color-1)' }}
+                            onMouseLeave={(e) => { e.currentTarget.style.borderLeftColor = '' }}
                           >
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                 {index + 1}

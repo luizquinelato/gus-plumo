@@ -3026,7 +3026,12 @@ const BalancoPage = () => {
                                 const balanceIconColor = isLent ? 'text-green-500' : 'text-red-500'
 
                                 return (
-                                  <tr key={loan.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 ${payment?.ignore ? 'opacity-50' : ''}`}>
+                                  <tr
+                                    key={loan.id}
+                                    className={`border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all ${payment?.ignore ? 'opacity-50' : ''}`}
+                                    onMouseEnter={(e) => { e.currentTarget.style.borderLeftColor = 'var(--color-1)' }}
+                                    onMouseLeave={(e) => { e.currentTarget.style.borderLeftColor = '' }}
+                                  >
                                     <td className="px-3 py-3">
                                       <span
                                         className={`inline-flex items-center gap-1.5 px-3 py-1 rounded text-xs font-medium w-[100px] justify-center text-white ${
@@ -4984,12 +4989,14 @@ const BalancoPage = () => {
                               return (
                                 <tr
                                   key={payment.loan_id}
-                                  className={`transition-colors cursor-pointer ${
+                                  className={`border-l-4 transition-all cursor-pointer ${
                                     isSelected
-                                      ? 'bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30'
-                                      : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                                      ? 'border-l-blue-600 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30'
+                                      : 'border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50'
                                   }`}
                                   onClick={() => toggleLoanSelection(payment.loan_id)}
+                                  onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.borderLeftColor = 'var(--color-1)' }}
+                                  onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.borderLeftColor = '' }}
                                 >
                                   <td className="px-3 py-2">
                                     <button
