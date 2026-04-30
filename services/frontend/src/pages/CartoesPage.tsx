@@ -336,8 +336,8 @@ const CartoesPage = () => {
             </div>
           ) : (
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700" style={{ tableLayout: 'fixed' }}>
-                <thead className="bg-gray-50 dark:bg-gray-700">
+              <table className="min-w-full" style={{ tableLayout: 'fixed' }}>
+                <thead>
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap" style={{ width: '4%' }}>
                       #
@@ -365,7 +365,7 @@ const CartoesPage = () => {
                     </th>
                   </tr>
                 </thead>
-                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                <tbody className="bg-white dark:bg-gray-800">
                   {/* Cartões Ativos */}
                   {cartoesAtivos.length > 0 && (
                     <>
@@ -379,7 +379,7 @@ const CartoesPage = () => {
                         return (
                           <tr
                             key={cartao.id}
-                            className="border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all"
+                            className="border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all"
                             onMouseEnter={(e) => { e.currentTarget.style.borderLeftColor = 'var(--color-1)' }}
                             onMouseLeave={(e) => { e.currentTarget.style.borderLeftColor = '' }}
                           >
@@ -471,7 +471,7 @@ const CartoesPage = () => {
                   {/* Separador para Cartões Inativos */}
                   {cartoesInativos.length > 0 && (
                     <>
-                      <tr>
+                      <tr className="border-t border-t-gray-200 dark:border-t-gray-700">
                         <td colSpan={8} className="px-0 py-0">
                           <div className="relative py-4 bg-gray-50 dark:bg-gray-900">
                             <div className="absolute inset-0 flex items-center">
@@ -495,7 +495,7 @@ const CartoesPage = () => {
                         return (
                           <tr
                             key={cartao.id}
-                            className="border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all opacity-60"
+                            className="border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all opacity-60"
                             onMouseEnter={(e) => { e.currentTarget.style.borderLeftColor = 'var(--color-1)' }}
                             onMouseLeave={(e) => { e.currentTarget.style.borderLeftColor = '' }}
                           >

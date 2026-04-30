@@ -2974,7 +2974,7 @@ const BalancoPage = () => {
                       <div className="p-4">
                         <div className="overflow-x-auto">
                           <table className="w-full text-sm">
-                            <thead className="bg-gray-50 dark:bg-gray-700">
+                            <thead className="border-b border-gray-200 dark:border-gray-700">
                               <tr>
                                 <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 dark:text-gray-300 uppercase">Saldo</th>
                                 <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 dark:text-gray-300 uppercase">Descrição</th>
@@ -2987,7 +2987,7 @@ const BalancoPage = () => {
                                 <th className="px-3 py-2 text-center text-xs font-bold text-gray-700 dark:text-gray-300 uppercase">Ignorar</th>
                               </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                            <tbody>
                               {openLoans.loans.map((loan) => {
                                 const payment = loanPayments.find(lp => lp.loan_id === loan.id)
                                 const isLent = loan.loan_type === 'lent'
@@ -3028,7 +3028,7 @@ const BalancoPage = () => {
                                 return (
                                   <tr
                                     key={loan.id}
-                                    className={`border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all ${payment?.ignore ? 'opacity-50' : ''}`}
+                                    className={`border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all ${payment?.ignore ? 'opacity-50' : ''}`}
                                     onMouseEnter={(e) => { e.currentTarget.style.borderLeftColor = 'var(--color-1)' }}
                                     onMouseLeave={(e) => { e.currentTarget.style.borderLeftColor = '' }}
                                   >
@@ -3218,7 +3218,7 @@ const BalancoPage = () => {
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
-                        <thead className="bg-gray-100 dark:bg-gray-700">
+                        <thead className="border-b border-gray-200 dark:border-gray-700">
                           <tr>
                             <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 dark:text-gray-300 uppercase">Mês</th>
                             <th className="px-3 py-2 text-right text-xs font-bold text-gray-700 dark:text-gray-300 uppercase">A Receber</th>
@@ -3232,13 +3232,13 @@ const BalancoPage = () => {
                             </th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                        <tbody>
                           {annualHistoryData.months.map((monthData, index) => {
                             const balance = monthData.main_account_balance
                             return (
                               <tr
                                 key={monthData.month}
-                                className="border-l-4 border-l-gray-300 dark:border-l-gray-600 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all"
+                                className="border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all"
                                 onMouseEnter={(e) => {
                                   e.currentTarget.style.borderLeftColor = 'var(--color-1)'
                                 }}
@@ -3349,7 +3349,7 @@ const BalancoPage = () => {
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
-                        <thead className="bg-gray-100 dark:bg-gray-700">
+                        <thead className="border-b border-gray-200 dark:border-gray-700">
                           <tr>
                             <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 dark:text-gray-300 uppercase">Mês</th>
                             <th className="px-3 py-2 text-right text-xs font-bold text-gray-700 dark:text-gray-300 uppercase">A Receber</th>
@@ -3363,13 +3363,13 @@ const BalancoPage = () => {
                             </th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                        <tbody>
                           {annualHistoryData.months.map((monthData, index) => {
                             const balance = monthData.partner_account_balance
                             return (
                               <tr
                                 key={monthData.month}
-                                className="border-l-4 border-l-gray-300 dark:border-l-gray-600 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all"
+                                className="border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all"
                                 onMouseEnter={(e) => {
                                   e.currentTarget.style.borderLeftColor = 'var(--color-1)'
                                 }}
@@ -3512,8 +3512,8 @@ const BalancoPage = () => {
                   </div>
                 ) : (
                   <div className={`bg-white dark:bg-gray-800 rounded-lg shadow overflow-x-auto ${selectedClosureIds.size > 0 || showClosuresBackToTop ? 'pb-20' : ''}`}>
-                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                      <thead className="bg-gray-50 dark:bg-gray-700">
+                    <table className="min-w-full">
+                      <thead className="border-b border-gray-200 dark:border-gray-700">
                         <tr>
                           {/* Coluna expand/colapso */}
                           <th className="px-1 py-3 w-8"></th>
@@ -3542,7 +3542,7 @@ const BalancoPage = () => {
                           <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap">Ações</th>
                         </tr>
                       </thead>
-                      <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                      <tbody className="bg-white dark:bg-gray-800">
                         {closures.map((closure, index) => {
                           // Os valores são calculados a partir do closure_data JSON
                           // Cada card (main e partner) tem seus próprios valores de A Receber/A Pagar
@@ -3585,7 +3585,7 @@ const BalancoPage = () => {
                           return (
                           <React.Fragment key={closure.id}>
                           <tr
-                            className={`border-l-4 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all ${
+                            className={`border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all ${
                               selectedClosureIds.has(closure.id)
                                 ? 'border-l-blue-600 bg-blue-50 dark:bg-blue-900/20'
                                 : 'border-l-gray-300 dark:border-l-gray-600'
@@ -4238,8 +4238,8 @@ const BalancoPage = () => {
               {/* Tabela de Itens - Scrollable */}
               <div className="flex-1 overflow-auto px-6 pb-4">
                 <table className="w-full text-sm min-w-[1200px]">
-                  <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0 z-10 shadow-sm">
-                    <tr className="border-l-4 border-l-gray-300 dark:border-l-gray-600 border-b border-gray-300 dark:border-gray-600">
+                  <thead className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10 shadow-sm">
+                    <tr className="border-l-4 border-l-gray-300 dark:border-l-gray-600">
                       <th className="text-center p-3 font-semibold text-gray-700 dark:text-gray-300 w-12">#</th>
                       <th className="text-center p-3 font-semibold text-gray-700 dark:text-gray-300 w-12">Fonte</th>
                       <th className="text-left p-3 font-semibold text-gray-700 dark:text-gray-300">Data</th>
@@ -4281,7 +4281,7 @@ const BalancoPage = () => {
                       return (
                         <tr
                           key={`${item.id}-${index}`}
-                          className="border-l-4 border-l-gray-300 dark:border-l-gray-600 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all"
+                          className="border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all"
                           onMouseEnter={(e) => {
                             e.currentTarget.style.borderLeftColor = 'var(--color-1)'
                           }}
@@ -4375,8 +4375,8 @@ const BalancoPage = () => {
                       </h4>
                     </div>
                     <table className="w-full text-sm">
-                      <thead className="bg-gray-50 dark:bg-gray-700">
-                        <tr className="border-l-4 border-l-gray-300 dark:border-l-gray-600 border-b border-gray-200 dark:border-gray-700">
+                      <thead className="border-b border-gray-200 dark:border-gray-700">
+                        <tr className="border-l-4 border-l-gray-300 dark:border-l-gray-600">
                           <th className="text-center p-3 font-semibold text-gray-600 dark:text-gray-400 w-12">#</th>
                           <th className="text-left p-3 font-semibold text-gray-600 dark:text-gray-400">Tipo</th>
                           <th className="text-left p-3 font-semibold text-gray-600 dark:text-gray-400">Descrição</th>
@@ -4416,7 +4416,7 @@ const BalancoPage = () => {
                           return (
                             <tr
                               key={index}
-                              className="border-l-4 border-l-gray-300 dark:border-l-gray-600 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all"
+                              className="border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all"
                               onMouseEnter={(e) => {
                                 e.currentTarget.style.borderLeftColor = 'var(--color-1)'
                               }}
@@ -4947,7 +4947,7 @@ const BalancoPage = () => {
 
                       <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-lg">
                         <table className="w-full text-sm">
-                          <thead className="bg-gray-50 dark:bg-gray-700/50">
+                          <thead className="border-b border-gray-200 dark:border-gray-700">
                             <tr>
                               <th className="px-3 py-2 text-left w-10">
                                 <button
@@ -4981,7 +4981,7 @@ const BalancoPage = () => {
                               </th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                          <tbody>
                             {loanPayments.map((payment: any) => {
                               const isSelected = selectedLoanIdsToRemove.has(payment.loan_id)
                               const isLent = payment.loan_type === 'lent'
@@ -4989,7 +4989,7 @@ const BalancoPage = () => {
                               return (
                                 <tr
                                   key={payment.loan_id}
-                                  className={`border-l-4 transition-all cursor-pointer ${
+                                  className={`border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 transition-all cursor-pointer ${
                                     isSelected
                                       ? 'border-l-blue-600 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30'
                                       : 'border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50'

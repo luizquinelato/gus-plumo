@@ -1204,7 +1204,7 @@ const TransactionMappingsTab = () => {
       <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-sm overflow-hidden ${selectedMappings.size > 0 || showBackToTop ? 'mb-20' : ''}`}>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1350px]">
-            <thead className="bg-gray-50 dark:bg-gray-700">
+            <thead className="border-b border-gray-200 dark:border-gray-700">
               <tr>
                 <th className="px-2 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider w-10">
                   <button
@@ -1249,7 +1249,7 @@ const TransactionMappingsTab = () => {
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+            <tbody className="bg-white dark:bg-gray-800">
               {filteredMappings.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
@@ -1271,7 +1271,7 @@ const TransactionMappingsTab = () => {
                   return (
                   <tr
                     key={mapping.id}
-                    className={`group border-l-4 transition-all ${
+                    className={`group border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 transition-all ${
                       isSelected
                         ? 'border-l-blue-600 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30'
                         : 'border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'

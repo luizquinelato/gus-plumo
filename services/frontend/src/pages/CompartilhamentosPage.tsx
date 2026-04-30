@@ -299,8 +299,8 @@ const CompartilhamentosPage = () => {
               {/* Compartilhamentos Ativos */}
               {compartilhamentosAtivos.length > 0 && (
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700" style={{ tableLayout: 'fixed' }}>
-                    <thead className="bg-gray-50 dark:bg-gray-700">
+                  <table className="min-w-full" style={{ tableLayout: 'fixed' }}>
+                    <thead className="border-b border-gray-200 dark:border-gray-700">
                       <tr>
                         <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" style={{ width: '4%' }}>
                           #
@@ -354,7 +354,7 @@ const CompartilhamentosPage = () => {
                         return (
                           <tr
                             key={comp.id}
-                            className="border-l-4 border-l-gray-300 dark:border-l-gray-600 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all"
+                            className="border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all"
                             onMouseEnter={(e) => { e.currentTarget.style.borderLeftColor = 'var(--color-1)' }}
                             onMouseLeave={(e) => { e.currentTarget.style.borderLeftColor = '' }}
                           >
@@ -466,8 +466,8 @@ const CompartilhamentosPage = () => {
                   </div>
 
                   <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden opacity-60">
-                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700" style={{ tableLayout: 'fixed' }}>
-                      <thead className="bg-gray-50 dark:bg-gray-700">
+                    <table className="min-w-full" style={{ tableLayout: 'fixed' }}>
+                      <thead className="border-b border-gray-200 dark:border-gray-700">
                         <tr>
                           <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" style={{ width: '4%' }}>
                             #
@@ -506,7 +506,7 @@ const CompartilhamentosPage = () => {
                           return (
                             <tr
                               key={comp.id}
-                              className="border-l-4 border-l-gray-300 dark:border-l-gray-600 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all"
+                              className="border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all"
                               onMouseEnter={(e) => { e.currentTarget.style.borderLeftColor = 'var(--color-1)' }}
                               onMouseLeave={(e) => { e.currentTarget.style.borderLeftColor = '' }}
                             >

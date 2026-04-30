@@ -882,7 +882,7 @@ const FaturasPage = () => {
                         {/* Tabela de Itens */}
                         <div className="overflow-x-auto">
                           <table className="w-full">
-                            <thead className="bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                            <thead className="border-b border-gray-200 dark:border-gray-700">
                               <tr>
                                 <th className="px-3 py-3 text-center text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-12">#</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-28">Data</th>
@@ -893,11 +893,11 @@ const FaturasPage = () => {
                                 <th className="px-3 py-3 text-center text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-16">Ações</th>
                               </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                            <tbody>
                               {items.map((item, idx) => (
                                 <tr
                                   key={item.id}
-                                  className={`border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all ${idx % 2 === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50/50 dark:bg-gray-700/20'}`}
+                                  className={`border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all ${idx % 2 === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50/50 dark:bg-gray-700/20'}`}
                                   onMouseEnter={(e) => {
                                     e.currentTarget.style.borderLeftColor = 'var(--color-1)'
                                   }}

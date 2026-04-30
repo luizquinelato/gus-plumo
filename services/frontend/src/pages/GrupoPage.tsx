@@ -561,7 +561,7 @@ const GrupoPage = () => {
                         {isExpanded && (
                           <div className="bg-gray-50 dark:bg-gray-900/50 border-t border-gray-200 dark:border-gray-700">
                             {/* Cabeçalho */}
-                            <div className="grid grid-cols-[40px_50px_1fr_1.5fr_1fr_1fr_1fr_100px] gap-2 p-2.5 px-4 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                            <div className="grid grid-cols-[40px_50px_1fr_1.5fr_1fr_1fr_1fr_100px] gap-2 p-2.5 px-4 bg-gray-50 dark:bg-gray-700/50">
                               <span className="text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">#</span>
                               <span className="text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Origem</span>
                               <span className="text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Data/Hora</span>
@@ -572,13 +572,13 @@ const GrupoPage = () => {
                             </div>
 
                             {/* Linhas */}
-                            <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                            <div>
                               {group.items
                                 .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
                                 .map((item, index) => (
                                 <div
                                   key={`${item.source}-${item.id}`}
-                                  className="grid grid-cols-[40px_50px_1fr_1.5fr_1fr_1fr_1fr_100px] gap-2 p-2.5 px-4 border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all text-sm items-center"
+                                  className="grid grid-cols-[40px_50px_1fr_1.5fr_1fr_1fr_1fr_100px] gap-2 p-2.5 px-4 border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all text-sm items-center"
                                   onMouseEnter={(e) => { e.currentTarget.style.borderLeftColor = 'var(--color-1)' }}
                                   onMouseLeave={(e) => { e.currentTarget.style.borderLeftColor = '' }}
                                 >

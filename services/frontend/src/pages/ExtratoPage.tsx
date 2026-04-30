@@ -1553,7 +1553,7 @@ const ExtratoPage = () => {
             <div className={`${selectedItems.size > 0 || showBackToTop ? 'pb-20' : ''}`}>
               <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
                 <table className="w-full table-auto">
-                  <thead className="bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                  <thead className="border-b border-gray-200 dark:border-gray-700">
                     <tr>
                       {/* Checkbox Selecionar Todos */}
                       <th className="px-2 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap w-10">
@@ -1598,7 +1598,7 @@ const ExtratoPage = () => {
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                  <tbody>
                       {filteredExpenses
                         .slice(
                           itemsPerPage === 0 ? 0 : (currentPage - 1) * itemsPerPage,
@@ -1611,7 +1611,7 @@ const ExtratoPage = () => {
                           return (
                             <tr
                               key={`${expense.source}-${expense.id}`}
-                              className={`group border-l-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all ${
+                              className={`group border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all ${
                                 isItemSelected(expense)
                                   ? 'border-l-blue-600 bg-blue-50 dark:bg-blue-900/20'
                                   : 'border-l-gray-300 dark:border-l-gray-600'

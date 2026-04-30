@@ -2329,7 +2329,7 @@ const CuradoriaPage = () => {
                 <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
                 <div style={{ overflowX: 'clip' }}>
                   <table className="w-full table-auto">
-                    <thead className="bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600 sticky top-[175px] z-20 before:content-[''] before:absolute before:left-0 before:right-0 before:bottom-full before:h-[175px] before:bg-gray-50 before:dark:bg-gray-900" style={{ boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+                    <thead className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-[175px] z-20 before:content-[''] before:absolute before:left-0 before:right-0 before:bottom-full before:h-[175px] before:bg-white before:dark:bg-gray-800" style={{ boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
                       <tr>
                         {/* Coluna de Número - COMPACTA */}
                         <th className="px-1 py-3 text-center text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap w-10 bg-gray-50 dark:bg-gray-700">
@@ -2429,7 +2429,7 @@ const CuradoriaPage = () => {
                         </th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                    <tbody>
                       {paginatedGroups.map((group, index) => {
                         const isVirtualGroup = group.groupKey.startsWith('virtual_')
                         const isSaved = savedGroups.has(group.groupKey)
@@ -2457,7 +2457,7 @@ const CuradoriaPage = () => {
                         return (
                           <tr
                             key={group.groupKey}
-                            className={`border-l-4 border-b border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all ${
+                            className={`border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all ${
                               isSaved ? 'border-l-green-500 bg-green-50 dark:bg-green-900/20' : 'border-l-gray-300 dark:border-l-gray-600'
                             }`}
                             style={{

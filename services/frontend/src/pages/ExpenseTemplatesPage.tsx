@@ -372,7 +372,7 @@ const ExpenseTemplatesPage = () => {
                         ) : (
                           <div>
                             {/* Cabeçalho */}
-                            <div className="grid grid-cols-[0.5fr_0.5fr_1.5fr_1fr_1fr_1fr_0.7fr_1.5fr] gap-3 p-2.5 pl-4 bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+                            <div className="grid grid-cols-[0.5fr_0.5fr_1.5fr_1fr_1fr_1fr_0.7fr_1.5fr] gap-3 p-2.5 pl-4 bg-gray-50 dark:bg-gray-700/50">
                               <div>
                                 <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">#</span>
                               </div>
@@ -400,19 +400,16 @@ const ExpenseTemplatesPage = () => {
                             </div>
 
                             {/* Items */}
-                            <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                            <div>
                             {template.items.map((item, index) => (
                               <div
                                 key={item.id}
-                                className="grid grid-cols-[0.5fr_0.5fr_1.5fr_1fr_1fr_1fr_0.7fr_1.5fr] gap-3 p-2.5 pl-4 border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800/50 transition-all text-sm items-center"
-                                style={{
-                                  borderLeftColor: 'rgb(209 213 219)' // gray-300
-                                }}
+                                className="grid grid-cols-[0.5fr_0.5fr_1.5fr_1fr_1fr_1fr_0.7fr_1.5fr] gap-3 p-2.5 pl-4 border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800/50 transition-all text-sm items-center"
                                 onMouseEnter={(e) => {
                                   e.currentTarget.style.borderLeftColor = 'var(--color-1)'
                                 }}
                                 onMouseLeave={(e) => {
-                                  e.currentTarget.style.borderLeftColor = 'rgb(209 213 219)'
+                                  e.currentTarget.style.borderLeftColor = ''
                                 }}
                               >
                                 {/* Número */}

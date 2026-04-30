@@ -1024,7 +1024,7 @@ export default function EmprestimosPage() {
                         <p className="text-sm text-gray-500 dark:text-gray-400 italic p-4">Nenhum pagamento registrado</p>
                       ) : (
                         <table className="w-full">
-                          <thead className="bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                          <thead className="border-b border-gray-200 dark:border-gray-700">
                             <tr>
                               <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Data</th>
                               <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Observações</th>
@@ -1032,11 +1032,11 @@ export default function EmprestimosPage() {
                               {loan.is_owner && <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-20">Ações</th>}
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                          <tbody>
                             {loan.payments.map(payment => (
                               <tr
                                 key={payment.id}
-                                className="border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all"
+                                className="border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all"
                                 onMouseEnter={(e) => { e.currentTarget.style.borderLeftColor = 'var(--color-1)' }}
                                 onMouseLeave={(e) => { e.currentTarget.style.borderLeftColor = '' }}
                               >
@@ -1264,7 +1264,7 @@ export default function EmprestimosPage() {
                             <p className="text-sm text-gray-500 dark:text-gray-400 italic p-4">Nenhum pagamento registrado</p>
                           ) : (
                             <table className="w-full">
-                              <thead className="bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                              <thead className="border-b border-gray-200 dark:border-gray-700">
                                 <tr>
                                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Data</th>
                                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Observações</th>
@@ -1272,11 +1272,11 @@ export default function EmprestimosPage() {
                                   {loan.is_owner && <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-20">Ações</th>}
                                 </tr>
                               </thead>
-                              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                              <tbody>
                                 {loan.payments.map(payment => (
                                   <tr
                                     key={payment.id}
-                                    className="border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all"
+                                    className="border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all"
                                     onMouseEnter={(e) => { e.currentTarget.style.borderLeftColor = 'var(--color-1)' }}
                                     onMouseLeave={(e) => { e.currentTarget.style.borderLeftColor = '' }}
                                   >
