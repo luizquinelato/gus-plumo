@@ -73,6 +73,16 @@ class ImportConflict(BaseModel):
     credit_card_name: Optional[str] = None  # Para faturas
     account_name: Optional[str] = None  # Para extratos
 
+    # Contexto completo do item - valores atuais no banco (para identificar o registro exato)
+    existing_amount: Optional[float] = None      # Valor atual no banco
+    existing_tag_name: Optional[str] = None      # Tag atual no banco
+    existing_subtag_name: Optional[str] = None   # Subtag atual no banco
+
+    # Valores novos vindos do arquivo (para comparação, mesmo sem conflito)
+    new_tag_name: Optional[str] = None           # Tag do arquivo
+    new_subtag_name: Optional[str] = None        # Subtag do arquivo
+    new_ownership_percentage: Optional[float] = None  # % de contribuição do arquivo
+
     # Múltiplos matches - quando a chave retorna mais de um registro
     # e nenhum tem o mesmo valor do arquivo
     multiple_matches: Optional[List[MatchCandidate]] = None

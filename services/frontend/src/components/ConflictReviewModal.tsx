@@ -42,6 +42,25 @@ const ConflictReviewModal = ({ isOpen, onClose, conflicts, onResolve }: Conflict
   // Estado para controlar quais grupos estão expandidos (arquivos e cartões)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
 
+  // Deriva bulkState diretamente das resolutions — nunca sai de sincronia
+  const bulkState = useMemo<'ignore_all' | 'accept_all' | 'mixed'>(() => {
+    if (conflicts.length === 0) return 'ignore_all'
+    let allIgnored = true
+    let allAccepted = true
+    conflicts.forEach((conflict, index) => {
+      const key = getConflictKey(conflict, index)
+      const res = resolutions[key] || { acceptTag: false, acceptAmount: false }
+      if (res.acceptTag || res.acceptAmount) allIgnored = false
+      const expectTag = !!conflict.tag_conflict
+      const expectAmount = !!conflict.amount_conflict || !!conflict.multiple_matches
+      const isAccepted = (!expectTag || res.acceptTag) && (!expectAmount || res.acceptAmount)
+      if (!isAccepted) allAccepted = false
+    })
+    if (allIgnored) return 'ignore_all'
+    if (allAccepted) return 'accept_all'
+    return 'mixed'
+  }, [resolutions, conflicts])
+
   // Mapa de conflito -> índice global (para gerar chave única)
   const conflictIndexMap = useMemo(() => {
     const map = new Map<ImportConflict, number>()
@@ -368,6 +387,51 @@ const ConflictReviewModal = ({ isOpen, onClose, conflicts, onResolve }: Conflict
           </p>
         </div>
 
+        {/* Barra de contexto — valores do item para facilitar identificação */}
+        {(conflict.existing_amount != null || conflict.existing_tag_name || conflict.new_tag_name || (conflict.new_ownership_percentage != null && conflict.new_ownership_percentage < 100)) && (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-2 px-2 py-1.5 bg-gray-100 dark:bg-gray-800 rounded text-xs text-gray-500 dark:text-gray-400">
+            {/* Valor atual no banco (quando não há conflito de valor) */}
+            {conflict.existing_amount != null && !conflict.amount_conflict && (
+              <span className="flex items-center gap-1">
+                <DollarSign size={10} className="text-color-primary" />
+                <span className={`font-mono font-medium ${conflict.existing_amount >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                  {formatCurrency(conflict.existing_amount)}
+                </span>
+              </span>
+            )}
+            {/* Valor do arquivo (múltiplos matches — existing_amount indisponível) */}
+            {conflict.existing_amount == null && conflict.new_amount != null && !conflict.amount_conflict && (
+              <span className="flex items-center gap-1">
+                <DollarSign size={10} className="text-color-primary" />
+                <span className={`font-mono font-medium ${conflict.new_amount >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                  {formatCurrency(conflict.new_amount)}
+                </span>
+              </span>
+            )}
+            {/* Tag/Subtag atual no banco (quando não há conflito de tag) */}
+            {conflict.existing_tag_name && !conflict.tag_conflict && (
+              <span className="flex items-center gap-1">
+                <Tag size={10} className="text-color-primary" />
+                <span>{conflict.existing_tag_name} / {conflict.existing_subtag_name || '—'}</span>
+              </span>
+            )}
+            {/* Novo tag sendo atribuído pelo arquivo (quando existente não tinha tag) */}
+            {conflict.new_tag_name && !conflict.existing_tag_name && !conflict.tag_conflict && (
+              <span className="flex items-center gap-1 text-color-primary font-medium">
+                <Tag size={10} />
+                <span>→ {conflict.new_tag_name} / {conflict.new_subtag_name || '—'}</span>
+              </span>
+            )}
+            {/* Percentual de contribuição (quando diferente de 100%) */}
+            {conflict.new_ownership_percentage != null && conflict.new_ownership_percentage < 100 && (
+              <span className="flex items-center gap-1">
+                <span className="font-medium text-gray-700 dark:text-gray-300">{conflict.new_ownership_percentage.toFixed(0)}%</span>
+                <span>compartilhado</span>
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Linhas de conflito separadas */}
         <div className="space-y-2">
           {/* Linha Tag Conflict */}
@@ -516,22 +580,32 @@ const ConflictReviewModal = ({ isOpen, onClose, conflicts, onResolve }: Conflict
           {/* Botões de ação em massa */}
           <div className="flex items-center gap-2 mb-4">
             <button
-              onClick={handleRejectAll}
-              title="Ignorar todas as mudanças"
-              className="px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 text-white hover:opacity-90"
-              style={{ backgroundColor: 'var(--crud-cancel)' }}
-            >
-              <XIcon className="w-4 h-4" />
-              Ignorar Todos
-            </button>
-            <button
               onClick={handleAcceptAll}
+              disabled={bulkState === 'accept_all'}
               title="Aceitar todas as mudanças"
-              className="px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 text-white hover:opacity-90"
-              style={{ backgroundColor: 'var(--status-success)' }}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${
+                bulkState === 'accept_all'
+                  ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'
+                  : 'text-white hover:opacity-90'
+              }`}
+              style={bulkState !== 'accept_all' ? { backgroundColor: 'var(--status-success)' } : undefined}
             >
               <Check className="w-4 h-4" />
               Aceitar Todos
+            </button>
+            <button
+              onClick={handleRejectAll}
+              disabled={bulkState === 'ignore_all'}
+              title="Ignorar todas as mudanças"
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${
+                bulkState === 'ignore_all'
+                  ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'
+                  : 'text-white hover:opacity-90'
+              }`}
+              style={bulkState !== 'ignore_all' ? { backgroundColor: 'var(--crud-cancel)' } : undefined}
+            >
+              <XIcon className="w-4 h-4" />
+              Ignorar Todos
             </button>
           </div>
 

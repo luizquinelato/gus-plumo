@@ -591,7 +591,12 @@ const BalanceDetailsModal = ({
                                   {new Date(item.date).toLocaleDateString('pt-BR')}
                                 </td>
                                 <td className="p-3 text-gray-900 dark:text-white font-medium">
-                                  {item.description}{item.current_installment && item.total_installments && item.total_installments > 1 ? ` ${item.current_installment}/${item.total_installments}` : ''}
+                                  {item.description}
+                                  {item.current_installment && item.total_installments && item.total_installments > 1 && (
+                                    <span className="ml-1.5 text-xs text-gray-500 dark:text-gray-400 font-medium">
+                                      ({item.current_installment}/{item.total_installments})
+                                    </span>
+                                  )}
                                 </td>
                                 <td className="p-3 text-gray-500 dark:text-gray-400">
                                   {item.tag_name ? (
@@ -753,7 +758,12 @@ const BalanceDetailsModal = ({
                           {new Date(item.date).toLocaleDateString('pt-BR')}
                         </td>
                         <td className="p-3 text-gray-900 dark:text-white font-medium">
-                          {item.description}{item.current_installment && item.total_installments && item.total_installments > 1 ? ` ${item.current_installment}/${item.total_installments}` : ''}
+                          {item.description}
+                          {item.current_installment && item.total_installments && item.total_installments > 1 && (
+                            <span className="ml-1.5 text-xs text-gray-500 dark:text-gray-400 font-medium">
+                              ({item.current_installment}/{item.total_installments})
+                            </span>
+                          )}
                         </td>
                         <td className="p-3 text-gray-500 dark:text-gray-400">
                           {item.tag_name ? (

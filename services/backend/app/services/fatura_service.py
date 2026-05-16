@@ -670,6 +670,12 @@ class FaturaService:
                 # Suporta exact, pattern e regex com priorização correta
                 if descricao:
                     mapping_data = mapping_helper.find_mapping(descricao, tipo)
+                    # Fallback: tenta com 'Descrição Limpa' (sem parênteses de parcelas)
+                    # Necessário para compras parceladas: "Florapura (1/3)" não bate no mapeamento "Florapura"
+                    if not mapping_data:
+                        descricao_limpa_temp = str(row.get('Descrição Limpa', ''))
+                        if descricao_limpa_temp and descricao_limpa_temp != descricao:
+                            mapping_data = mapping_helper.find_mapping(descricao_limpa_temp, tipo)
                     if mapping_data:
                         subtag_id = mapping_data.get('subtag_id')
 
@@ -765,9 +771,17 @@ class FaturaService:
                             'date': data_compra.strftime('%Y-%m-%d') if hasattr(data_compra, 'strftime') else str(data_compra),
                             'description': descricao_limpa,
                             'amount': valor_invertido,
+                            'new_amount': valor_invertido,  # Para exibição de contexto
                             'new_subtag_id': subtag_id,
                             'year_month': year_month,
                             'card_number': card_number,  # Últimos 4 dígitos para agrupamento no frontend
+                            # Contexto completo - valores atuais no banco
+                            'existing_amount': existing_data.get('amount', 0.0),
+                            'existing_tag_name': existing_subtag.get('tag_name'),
+                            'existing_subtag_name': existing_subtag.get('name'),
+                            # Valores novos do arquivo
+                            'new_tag_name': new_subtag.get('tag_name'),
+                            'new_subtag_name': new_subtag.get('name'),
                             'tag_conflict': {
                                 'original_subtag_id': existing_subtag_id,
                                 'original_subtag_name': existing_subtag.get('name'),

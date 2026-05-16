@@ -895,6 +895,7 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
 
             # CASO 1: Múltiplos matches - usuário precisa selecionar qual atualizar
             if multiple_matches and detect_conflicts:
+                new_subtag_ctx = subtag_id_to_info.get(subtag_id, {}) if subtag_id else {}
                 conflict_record = {
                     'existing_id': None,  # Será definido pelo usuário
                     'record_type': 'bank_statement',
@@ -907,7 +908,10 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
                     'new_expense_sharing_id': expense_sharing_id,
                     'new_ownership_percentage': float(ownership_percentage),
                     'new_description': final_description if final_description != description else None,
-                    'multiple_matches': multiple_matches
+                    'multiple_matches': multiple_matches,
+                    # Contexto: existing_amount desconhecido (múltiplos candidatos)
+                    'new_tag_name': new_subtag_ctx.get('tag_name'),
+                    'new_subtag_name': new_subtag_ctx.get('name'),
                 }
                 conflicts.append(conflict_record)
                 # DEBUG: Registra como múltiplos matches
@@ -941,6 +945,9 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
                 )
 
                 if has_tag_conflict or has_amount_conflict:
+                    # Pré-computa contexto completo para exibição no modal
+                    existing_subtag_ctx = subtag_id_to_info.get(existing_subtag_id, {})
+                    new_subtag_ctx = subtag_id_to_info.get(subtag_id, {}) if subtag_id else {}
                     # Há conflito - adiciona à lista de conflitos ao invés de atualizar
                     conflict_record = {
                         'existing_id': existing_id,
@@ -953,7 +960,14 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
                         'new_transaction': transaction,
                         'new_expense_sharing_id': expense_sharing_id,
                         'new_ownership_percentage': float(ownership_percentage),
-                        'new_description': final_description if final_description != description else None
+                        'new_description': final_description if final_description != description else None,
+                        # Contexto completo - valores atuais no banco
+                        'existing_amount': existing_amount,
+                        'existing_tag_name': existing_subtag_ctx.get('tag_name'),
+                        'existing_subtag_name': existing_subtag_ctx.get('name'),
+                        # Valores novos do arquivo
+                        'new_tag_name': new_subtag_ctx.get('tag_name'),
+                        'new_subtag_name': new_subtag_ctx.get('name'),
                     }
 
                     if has_tag_conflict:

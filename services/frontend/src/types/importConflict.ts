@@ -54,6 +54,16 @@ export interface ImportConflict {
   tag_conflict?: TagConflict;
   amount_conflict?: AmountConflict;
 
+  // Contexto completo - valores atuais no banco (para identificar o registro exato)
+  existing_amount?: number | null;
+  existing_tag_name?: string | null;
+  existing_subtag_name?: string | null;
+
+  // Valores novos vindos do arquivo (para comparação, mesmo sem conflito)
+  new_tag_name?: string | null;
+  new_subtag_name?: string | null;
+  new_ownership_percentage?: number | null;
+
   // Múltiplos matches - quando a chave retorna mais de um registro
   // e nenhum tem o mesmo valor do arquivo
   multiple_matches?: MatchCandidate[];

@@ -712,7 +712,7 @@ const addTransactionTable = (doc: jsPDF, title: string, items: TransactionItem[]
 
     // Sanitizar descrição e categoria (concatenar parcela se existir)
     const installmentSuffix = (item.current_installment && item.total_installments && item.total_installments > 1)
-      ? ` ${item.current_installment}/${item.total_installments}`
+      ? ` (${item.current_installment}/${item.total_installments})`
       : ''
     const cleanDescription = sanitizeText((item.description || '') + installmentSuffix)
     const truncatedDesc = cleanDescription.substring(0, 35) + (cleanDescription.length > 35 ? '...' : '')

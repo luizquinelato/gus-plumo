@@ -73,6 +73,8 @@ interface InvoiceItem {
   card_id: number
   card_name: string
   card_number: string
+  current_installment?: number | null
+  total_installments?: number | null
   // Campos de compartilhamento
   shared_partner_id?: number | null
   shared_partner_name?: string
@@ -913,6 +915,11 @@ const FaturasPage = () => {
                                   </td>
                                   <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
                                     {item.description}
+                                    {item.current_installment && item.total_installments && (
+                                      <span className="ml-1.5 text-xs text-gray-500 dark:text-gray-400 font-medium">
+                                        ({item.current_installment}/{item.total_installments})
+                                      </span>
+                                    )}
                                   </td>
                                   <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400 w-48">
                                     {item.tag_name && item.subtag_name

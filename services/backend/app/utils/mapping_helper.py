@@ -313,9 +313,13 @@ class MappingHelper:
         Returns:
             str: Tag mapeada ou "Geral" se não encontrado
         """
-        # Determina o tipo baseado no valor
-        # Para extratos bancários: valor positivo = receita, negativo = despesa
-        tipo = "receita" if valor >= 0 else "despesa"
+        # Determina o tipo baseado no valor e na origem
+        # Extrato bancário (origem=1): positivo = receita, negativo = despesa
+        # Cartão de crédito (origem=2): positivo = despesa (débito na fatura), negativo = receita (estorno)
+        if origem == 2:
+            tipo = "despesa" if valor >= 0 else "receita"
+        else:
+            tipo = "receita" if valor >= 0 else "despesa"
 
         # Usa o novo método find_mapping COM filtro de tipo
         mapping = self.find_mapping(descricao, tipo=tipo)

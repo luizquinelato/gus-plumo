@@ -986,11 +986,12 @@ const BalancoPage = () => {
     const newValue = !payment.settleInFull
 
     if (newValue) {
-      // Ativar: preencher com o saldo integral
+      // Ativar: preencher com o saldo integral (em centavos)
       const fullAmount = Math.max(0, correctedBalance)
+      const cents = Math.round(fullAmount * 100).toString()
       setLoanPayments(prev => prev.map(lp =>
         lp.loan_id === loanId
-          ? { ...lp, settleInFull: true, amount: fullAmount, displayAmount: fullAmount.toFixed(2) }
+          ? { ...lp, settleInFull: true, amount: fullAmount, displayAmount: cents }
           : lp
       ))
     } else {
@@ -1003,44 +1004,16 @@ const BalancoPage = () => {
     }
   }
 
-  // Handler para máscara de valor (igual a EmprestimosPage)
+  // Handler para máscara de moeda (direita→esquerda, centavos como dígitos brutos)
   const handleLoanAmountChange = (loanId: number, value: string) => {
-    // Permite apenas números e um ponto decimal
-    const regex = /^\d*\.?\d*$/
-    if (value === '' || regex.test(value)) {
-      const numValue = parseFloat(value)
-      if (!isNaN(numValue) && numValue > 99999999.99) {
-        return // Não atualiza se exceder o limite
-      }
-      // Atualiza displayAmount e amount em uma única chamada para evitar race condition
-      setLoanPayments(prev => prev.map(lp =>
-        lp.loan_id === loanId
-          ? { ...lp, displayAmount: value, amount: isNaN(numValue) ? 0 : numValue }
-          : lp
-      ))
-    }
-  }
-
-  // Handler para blur do campo de valor (formata com 2 casas decimais)
-  const handleLoanAmountBlur = (loanId: number, maxValue: number) => {
-    const payment = loanPayments.find(lp => lp.loan_id === loanId)
-    if (!payment) return
-
-    const value = payment.displayAmount
-    if (value === '') {
-      updateLoanPayment(loanId, 'amount', 0)
-      return
-    }
-
-    const numValue = parseFloat(value)
-    if (!isNaN(numValue) && numValue >= 0) {
-      const finalValue = Math.min(numValue, maxValue)
-      updateLoanPayment(loanId, 'amount', finalValue)
-      updateLoanPayment(loanId, 'displayAmount', finalValue.toFixed(2))
-    } else {
-      updateLoanPayment(loanId, 'amount', 0)
-      updateLoanPayment(loanId, 'displayAmount', '')
-    }
+    const cents = value.replace(/\D/g, '')
+    const numValue = parseInt(cents || '0', 10) / 100
+    if (numValue > 99999999.99) return
+    setLoanPayments(prev => prev.map(lp =>
+      lp.loan_id === loanId
+        ? { ...lp, displayAmount: cents, amount: numValue }
+        : lp
+    ))
   }
 
   // Função para calcular o total dos pagamentos de empréstimos selecionados
@@ -3116,8 +3089,8 @@ const BalancoPage = () => {
                                           </span>
                                           <input
                                             type="text"
-                                            inputMode="decimal"
-                                            value={payment?.displayAmount || ''}
+                                            inputMode="numeric"
+                                            value={formatAmountMask(payment?.displayAmount || '')}
                                             onChange={(e) => {
                                               // Se está digitando manualmente, desativar o switch
                                               if (payment?.settleInFull) {
@@ -3125,10 +3098,9 @@ const BalancoPage = () => {
                                               }
                                               handleLoanAmountChange(loan.id, e.target.value)
                                             }}
-                                            onBlur={() => handleLoanAmountBlur(loan.id, correctedBalance)}
                                             disabled={payment?.ignore || payment?.settleInFull}
                                             className="w-28 pl-8 pr-2 py-1.5 text-sm text-right border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                                            placeholder="0.00"
+                                            placeholder="0,00"
                                           />
                                         </div>
                                       </div>
@@ -4310,7 +4282,12 @@ const BalancoPage = () => {
                             }
                           </td>
                           <td className="p-3 text-gray-900 dark:text-white font-medium">
-                            {item.description || 'Sem descrição'}{item.current_installment && item.total_installments && item.total_installments > 1 ? ` ${item.current_installment}/${item.total_installments}` : ''}
+                            {item.description || 'Sem descrição'}
+                            {item.current_installment && item.total_installments && item.total_installments > 1 && (
+                              <span className="ml-1.5 text-xs text-gray-500 dark:text-gray-400 font-medium">
+                                ({item.current_installment}/{item.total_installments})
+                              </span>
+                            )}
                           </td>
                           <td className="p-3 text-gray-900 dark:text-white text-xs">
                             {item.card_name ? (

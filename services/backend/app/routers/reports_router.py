@@ -2671,6 +2671,8 @@ class InvoiceReportItem(BaseModel):
     subtag_id: int | None = None
     tag_name: str | None = None
     subtag_name: str | None = None
+    current_installment: int | None = None
+    total_installments: int | None = None
     # Campos de compartilhamento
     shared_partner_id: int | None = None  # expense_sharing_id
     shared_partner_name: str | None = None
@@ -2753,6 +2755,8 @@ async def get_invoice_report(
         CreditCardInvoice.ownership_percentage,
         CreditCardInvoice.subtag_id,
         CreditCardInvoice.expense_sharing_id,
+        CreditCardInvoice.current_installment,
+        CreditCardInvoice.total_installments,
         Cartao.name.label('card_name'),
         Cartao.number.label('card_number'),
         Tag.name.label('tag_name'),
@@ -2831,12 +2835,12 @@ async def get_invoice_report(
             shared_partner_bank=r.shared_partner_bank,
             shared_partner_agency=r.shared_partner_agency,
             shared_partner_account_number=r.shared_partner_account_number,
-            ownership_percentage=r.ownership_percentage
+            ownership_percentage=r.ownership_percentage,
+            current_installment=r.current_installment,
+            total_installments=r.total_installments
         )
         for r in results
     ]
-
-    return InvoiceReportResponse(items=items)
 
     return InvoiceReportResponse(items=items)
 

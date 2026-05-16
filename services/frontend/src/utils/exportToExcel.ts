@@ -272,6 +272,17 @@ interface ClosurePaymentForExcel {
   notes: string | null
 }
 
+interface LoanPaymentItemForExcel {
+  loan_id: number
+  loan_type: 'lent' | 'borrowed'
+  description: string
+  original_amount: number
+  remaining_before: number
+  amount_paid: number
+  remaining_after: number
+  is_settled?: boolean
+}
+
 interface BalanceClosureForExcel {
   period_start_date: string
   closing_date: string
@@ -283,6 +294,7 @@ interface BalanceClosureForExcel {
   closure_data: {
     main_account_card: ClosureAccountCard
     partner_account_card: ClosureAccountCard
+    loan_payments?: LoanPaymentItemForExcel[]
   }
 }
 
@@ -363,7 +375,7 @@ export function exportBalanceClosureToExcel(closure: BalanceClosureForExcel, abs
 
       row['Conta'] = (item as any)._account
       const installmentSuffix = (item.current_installment && item.total_installments && item.total_installments > 1)
-        ? ` ${item.current_installment}/${item.total_installments}`
+        ? ` (${item.current_installment}/${item.total_installments})`
         : ''
       row['Descrição'] = (item.description || '') + installmentSuffix
       row['Tag'] = item.tag_name || ''
@@ -400,7 +412,34 @@ export function exportBalanceClosureToExcel(closure: BalanceClosureForExcel, abs
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(toRows(benefitItems, true)), 'Benefício')
   }
 
-  // Aba 4: Pagamentos Parciais (apenas se houver pagamentos)
+  // Aba 4: Empréstimos (apenas se houver pagamentos de empréstimo no fechamento)
+  const loanPayments = (closure.closure_data as any).loan_payments as LoanPaymentItemForExcel[] | undefined
+  if (loanPayments && loanPayments.length > 0) {
+    const loanRows = loanPayments.map(lp => {
+      const isLent = lp.loan_type === 'lent'
+      const typeLabel = isLent ? 'Emprestei' : 'Peguei'
+      // Lent: dinheiro saiu → principal negativo; Borrowed: dinheiro entrou → principal positivo
+      const sign = isLent ? -1 : 1
+      const principal   = absoluteValues ? Math.abs(lp.original_amount)  : sign * lp.original_amount
+      const saldoAntes  = absoluteValues ? Math.abs(lp.remaining_before) : sign * lp.remaining_before
+      // Valor quitado: sentido inverso (lent = recebe de volta; borrowed = paga)
+      const valorQuitado = absoluteValues ? Math.abs(lp.amount_paid) : -sign * lp.amount_paid
+      const saldoApos   = absoluteValues ? Math.abs(lp.remaining_after) : sign * lp.remaining_after
+      return {
+        'Tipo': typeLabel,
+        'Descrição': lp.description || 'Empréstimo',
+        'Principal': parseFloat(principal.toFixed(2)),
+        'Saldo Antes': parseFloat(saldoAntes.toFixed(2)),
+        'Valor Quitado': parseFloat(valorQuitado.toFixed(2)),
+        'Saldo Após': parseFloat(saldoApos.toFixed(2)),
+        'Status': lp.is_settled ? 'Quitado' : 'Parcial',
+      }
+    })
+    const wsLoans = XLSX.utils.json_to_sheet(loanRows)
+    XLSX.utils.book_append_sheet(wb, wsLoans, 'Empréstimos')
+  }
+
+  // Aba 5: Pagamentos Parciais (apenas se houver pagamentos)
   const closurePayments = closure.closure_payments || []
   if (closurePayments.length > 0) {
     const parseNum = (v: any): number => {
