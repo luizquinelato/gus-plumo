@@ -249,6 +249,7 @@ export default function EmprestimosPage() {
   // Form do modal de criação
   const [formLoanType, setFormLoanType] = useState<'lent' | 'borrowed'>('lent')
   const [formAmount, setFormAmount] = useState('')
+  const [formAmountCents, setFormAmountCents] = useState('')
   const [formDescription, setFormDescription] = useState('')
   const [formLoanDate, setFormLoanDate] = useState(dateToInputString(new Date()))
   const [formDueDate, setFormDueDate] = useState('')
@@ -326,21 +327,11 @@ export default function EmprestimosPage() {
     loadPartners()
   }, [])
 
-  // Ajusta o sinal do valor quando o tipo de empréstimo muda
-  useEffect(() => {
-    if (formAmount && formAmount !== '-') {
-      const numValue = parseFloat(formAmount)
-      if (!isNaN(numValue)) {
-        if (formLoanType === 'lent' && numValue > 0) {
-          // Emprestei precisa ser negativo
-          setFormAmount((-Math.abs(numValue)).toFixed(2))
-        } else if (formLoanType === 'borrowed' && numValue < 0) {
-          // Peguei emprestado precisa ser positivo
-          setFormAmount(Math.abs(numValue).toFixed(2))
-        }
-      }
-    }
-  }, [formLoanType])
+  // Máscara BRL: dígitos brutos → "1.234,56"
+  const formatAmountMask = (cents: string): string => {
+    const num = parseInt(cents || '0', 10)
+    return (num / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  }
 
   // Atalhos de teclado para modais
   useEffect(() => {
@@ -410,6 +401,7 @@ export default function EmprestimosPage() {
   const resetForm = () => {
     setFormLoanType('lent')
     setFormAmount('')
+    setFormAmountCents('')
     setFormDescription('')
     setFormLoanDate(dateToInputString(new Date()))
     setFormDueDate('')
@@ -426,7 +418,7 @@ export default function EmprestimosPage() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!formAmount || !formDescription) {
+    if (!formAmountCents || formAmountCents === '0' || !formDescription) {
       showToast('Preencha os campos obrigatórios', 'warning')
       return
     }
@@ -442,7 +434,7 @@ export default function EmprestimosPage() {
     setIsSubmitting(true)
     try {
       // Backend espera sempre valor positivo - o loan_type indica a direção
-      const principalAmount = Math.abs(parseFloat(formAmount))
+      const principalAmount = parseInt(formAmountCents || '0', 10) / 100
 
       const data: any = {
         loan_type: formLoanType,
@@ -485,9 +477,12 @@ export default function EmprestimosPage() {
     setEditingLoan(loan)
     setEditingSettled(settledMode)
     setFormLoanType(loan.loan_type)
-    // Aplicar sinal negativo para "lent" (emprestei = saída de dinheiro)
-    const amount = loan.loan_type === 'lent' ? -Math.abs(loan.principal_amount) : Math.abs(loan.principal_amount)
-    setFormAmount(amount.toFixed(2))
+    // Converter principal para centavos (sempre positivo — sinal derivado do formLoanType)
+    const absAmount = Math.abs(loan.principal_amount)
+    const centsStr = String(Math.round(absAmount * 100))
+    setFormAmountCents(centsStr)
+    const signedAmount = loan.loan_type === 'lent' ? -absAmount : absAmount
+    setFormAmount(signedAmount.toFixed(2))
     setFormDescription(loan.description)
     setFormLoanDate(loan.loan_date.split('T')[0])
     setFormDueDate(loan.due_date ? loan.due_date.split('T')[0] : '')
@@ -1388,11 +1383,17 @@ export default function EmprestimosPage() {
                       </span>
                       <input
                         type="text"
-                        inputMode="decimal"
-                        value={formAmount}
-                        onChange={(e) => handleAmountChange(e.target.value, setFormAmount, formLoanType === 'lent' ? 'negative' : 'positive')}
-                        onBlur={() => handleAmountBlur(formAmount, setFormAmount, formLoanType === 'lent' ? 'negative' : 'positive')}
-                        placeholder={formLoanType === 'lent' ? '-0.00' : '0.00'}
+                        inputMode="numeric"
+                        value={`${formLoanType === 'lent' && formAmountCents && formAmountCents !== '0' ? '-' : ''}${formatAmountMask(formAmountCents)}`}
+                        onChange={(e) => {
+                          const cents = e.target.value.replace(/\D/g, '')
+                          const absValue = parseInt(cents || '0', 10) / 100
+                          if (absValue > 99999999.99) return
+                          const signedValue = formLoanType === 'lent' ? -absValue : absValue
+                          setFormAmountCents(cents)
+                          setFormAmount(signedValue === 0 ? '' : signedValue.toFixed(2))
+                        }}
+                        placeholder="0,00"
                         required
                         disabled={editingSettled}
                         className={`w-full pl-12 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 font-semibold focus:ring-2 focus:ring-blue-500 focus:border-transparent ${

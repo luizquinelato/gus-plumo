@@ -1361,14 +1361,15 @@ async def calculate_balance(
     main_cc_expense_items = []
     main_cc_revenue_items = []
 
-    if main_cc_year_months_to_include:
+    if main_cc_year_months_to_include and main_card_ids:
+        # Filtra por credit_card_id para não duplicar itens de cartões com sharing no nível do item (Path B)
         main_cc_expense_items = db.query(CreditCardInvoice).options(
             joinedload(CreditCardInvoice.subtag).joinedload(Subtag.tag),
             joinedload(CreditCardInvoice.credit_card)
         ).filter(
             CreditCardInvoice.tenant_id == tenant_id,
             CreditCardInvoice.account_id == account_id,
-            CreditCardInvoice.expense_sharing_id.in_(sharing_ids),
+            CreditCardInvoice.credit_card_id.in_(main_card_ids),
             CreditCardInvoice.year_month.in_(main_cc_year_months_to_include),
             CreditCardInvoice.amount < 0
         ).order_by(CreditCardInvoice.date.desc()).all()
@@ -1379,7 +1380,7 @@ async def calculate_balance(
         ).filter(
             CreditCardInvoice.tenant_id == tenant_id,
             CreditCardInvoice.account_id == account_id,
-            CreditCardInvoice.expense_sharing_id.in_(sharing_ids),
+            CreditCardInvoice.credit_card_id.in_(main_card_ids),
             CreditCardInvoice.year_month.in_(main_cc_year_months_to_include),
             CreditCardInvoice.amount > 0
         ).order_by(CreditCardInvoice.date.desc()).all()
@@ -1567,14 +1568,15 @@ async def calculate_balance(
     shared_cc_expense_items = []
     shared_cc_revenue_items = []
 
-    if shared_cc_year_months_to_include:
+    if shared_cc_year_months_to_include and shared_card_ids:
+        # Filtra por credit_card_id para não duplicar itens de cartões com sharing no nível do item (Path B)
         shared_cc_expense_items = db.query(CreditCardInvoice).options(
             joinedload(CreditCardInvoice.subtag).joinedload(Subtag.tag),
             joinedload(CreditCardInvoice.credit_card)
         ).filter(
             CreditCardInvoice.tenant_id == tenant_id,
             CreditCardInvoice.account_id == partner_account_id,
-            CreditCardInvoice.expense_sharing_id.in_(sharing_ids),
+            CreditCardInvoice.credit_card_id.in_(shared_card_ids),
             CreditCardInvoice.year_month.in_(shared_cc_year_months_to_include),
             CreditCardInvoice.amount < 0
         ).order_by(CreditCardInvoice.date.desc()).all()
@@ -1585,7 +1587,7 @@ async def calculate_balance(
         ).filter(
             CreditCardInvoice.tenant_id == tenant_id,
             CreditCardInvoice.account_id == partner_account_id,
-            CreditCardInvoice.expense_sharing_id.in_(sharing_ids),
+            CreditCardInvoice.credit_card_id.in_(shared_card_ids),
             CreditCardInvoice.year_month.in_(shared_cc_year_months_to_include),
             CreditCardInvoice.amount > 0
         ).order_by(CreditCardInvoice.date.desc()).all()

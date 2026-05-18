@@ -73,7 +73,8 @@ interface EditableItem {
   template_item_id: number
   date: string
   description: string
-  amount: string
+  amount: string      // valor numérico com sinal para submissão (ex: "-150.00")
+  amountCents: string // dígitos brutos para máscara direita→esquerda (ex: "15000")
   tag_id: number
   subtag_id: number
   ownership_percentage: string
@@ -136,11 +137,16 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
         dateStr = dateToLocalString(now)
       }
 
+      // Converte amount para centavos brutos (ex: -150.00 → "15000")
+      const rawAmount = parseFloat(item.amount?.toString() || '0') || 0
+      const initialCents = rawAmount !== 0 ? String(Math.round(Math.abs(rawAmount) * 100)) : ''
+
       return {
         template_item_id: item.id,
         date: dateStr,
         description: item.description,
         amount: item.amount?.toString() || '',
+        amountCents: initialCents,
         tag_id: item.subtag?.tag_id || 0,
         subtag_id: item.subtag_id || 0,
         ownership_percentage: item.ownership_percentage?.toString() || '100.00',
@@ -155,6 +161,12 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
     const updated = [...items]
     updated[index] = { ...updated[index], [field]: value }
     setItems(updated)
+  }
+
+  // Máscara BRL: dígitos brutos → "1.234,56"
+  const formatAmountMask = (cents: string): string => {
+    const num = parseInt(cents || '0', 10)
+    return (num / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   }
 
   // Validar se a data/hora está em um período fechado
@@ -466,55 +478,43 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
                     {/* Valor com prefixo R$ */}
                     <div>
                       <div className="relative">
-                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 text-sm">
+                        <span className={`absolute left-2 top-1/2 -translate-y-1/2 text-sm font-semibold ${
+                          item.amount && parseFloat(item.amount) < 0
+                            ? 'text-red-500 dark:text-red-400'
+                            : item.amount && parseFloat(item.amount) > 0
+                            ? 'text-green-600 dark:text-green-400'
+                            : 'text-gray-500 dark:text-gray-400'
+                        }`}>
                           R$
                         </span>
                         <input
                           type="text"
-                          inputMode="decimal"
-                          value={item.amount}
+                          inputMode="numeric"
+                          value={`${parseFloat(item.amount) < 0 ? '-' : ''}${formatAmountMask(item.amountCents)}`}
                           onChange={(e) => {
-                            const value = e.target.value
-                            if (value === '') { updateItem(index, 'amount', ''); return }
+                            const cents = e.target.value.replace(/\D/g, '')
+                            const absValue = parseInt(cents || '0', 10) / 100
+                            if (absValue > 99999999.99) return
                             const subtag = subtags.find(s => s.id === item.subtag_id)
-                            const sanitized = value.replace(',', '.')
-                            if (!/^-?\d{0,8}(\.\d{0,2})?$/.test(sanitized) && !sanitized.match(/^-?\d{0,8}\.$/)) return
-                            // Preserva ponto flutuante (ex: "200.") antes de qualquer parseFloat
-                            if (sanitized.endsWith('.')) {
-                              let stored = sanitized
-                              if (subtag?.type === 'despesa' && !sanitized.startsWith('-')) stored = '-' + sanitized
-                              else if (subtag?.type === 'receita' && sanitized.startsWith('-')) stored = sanitized.slice(1)
-                              updateItem(index, 'amount', stored)
-                              return
+                            let signedValue: number
+                            if (subtag?.type === 'despesa') signedValue = -absValue
+                            else signedValue = absValue
+                            const updated = [...items]
+                            updated[index] = {
+                              ...updated[index],
+                              amountCents: cents,
+                              amount: signedValue === 0 ? '' : signedValue.toFixed(2)
                             }
-                            if (sanitized === '-' && subtag?.type !== 'receita') {
-                              updateItem(index, 'amount', '-'); return
-                            }
-                            let numValue = parseFloat(sanitized)
-                            if (!isNaN(numValue)) {
-                              if (subtag?.type === 'despesa' && numValue > 0) numValue = -numValue
-                              else if (subtag?.type === 'receita' && numValue < 0) numValue = Math.abs(numValue)
-                              if (Math.abs(numValue) <= 99999999.99)
-                                updateItem(index, 'amount', numValue.toString())
-                            }
-                          }}
-                          onBlur={(e) => {
-                            const value = e.target.value
-                            if (value && value !== '-') {
-                              const numValue = parseFloat(value)
-                              if (!isNaN(numValue)) {
-                                updateItem(index, 'amount', numValue.toFixed(2))
-                              }
-                            }
+                            setItems(updated)
                           }}
                           className={`w-full pl-8 pr-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-sm font-semibold ${
-                            item.amount && parseFloat(item.amount) >= 0
-                              ? 'text-green-600 dark:text-green-400'
-                              : item.amount && parseFloat(item.amount) < 0
+                            item.amount && parseFloat(item.amount) < 0
                               ? 'text-red-600 dark:text-red-400'
+                              : item.amount && parseFloat(item.amount) > 0
+                              ? 'text-green-600 dark:text-green-400'
                               : 'text-gray-900 dark:text-white'
                           }`}
-                          placeholder="0.00"
+                          placeholder="0,00"
                         />
                       </div>
                     </div>
