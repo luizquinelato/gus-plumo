@@ -213,7 +213,6 @@ interface LoanPaymentInput {
   loan_id: number
   amount: number
   displayAmount: string  // Valor de texto para exibição no input
-  ignore: boolean  // Flag para ignorar no fechamento
   settleInFull: boolean  // Switch para quitar integral
 }
 
@@ -956,7 +955,6 @@ const BalancoPage = () => {
         loan_id: loan.id,
         amount: 0,
         displayAmount: '',
-        ignore: false,
         settleInFull: false
       }))
       setLoanPayments(initialPayments)
@@ -970,7 +968,7 @@ const BalancoPage = () => {
   }
 
   // Função para atualizar o valor de um pagamento de empréstimo
-  const updateLoanPayment = (loanId: number, field: 'amount' | 'ignore' | 'displayAmount' | 'settleInFull', value: number | boolean | string) => {
+  const updateLoanPayment = (loanId: number, field: 'amount' | 'displayAmount' | 'settleInFull', value: number | boolean | string) => {
     setLoanPayments(prev => prev.map(lp =>
       lp.loan_id === loanId
         ? { ...lp, [field]: value }
@@ -1028,7 +1026,7 @@ const BalancoPage = () => {
     const hasBorrowedLoans = openLoans.loans.some(l => l.loan_type === 'borrowed')
 
     loanPayments
-      .filter(lp => !lp.ignore && lp.amount > 0)
+      .filter(lp => lp.amount > 0)
       .forEach(lp => {
         const loan = openLoans.loans.find(l => l.id === lp.loan_id)
         if (loan) {
@@ -1067,8 +1065,6 @@ const BalancoPage = () => {
     const errors: string[] = []
 
     loanPayments.forEach(lp => {
-      if (lp.ignore) return // Ignorar empréstimos marcados
-
       const loan = openLoans.loans.find(l => l.id === lp.loan_id)
       if (!loan) return
 
@@ -1183,7 +1179,7 @@ const BalancoPage = () => {
       // ✅ Filtrar loan_payments válidos (não ignorados e com valor > 0)
       // Inclui corrected_balance para o backend validar contra o mesmo valor que o frontend mostra
       const validLoanPayments = loanPayments
-        .filter(lp => !lp.ignore && lp.amount > 0)
+        .filter(lp => lp.amount > 0)
         .map(lp => {
           const loan = openLoans?.loans.find(l => l.id === lp.loan_id)
           if (!loan) return null
@@ -2946,18 +2942,17 @@ const BalancoPage = () => {
                     {loansExpanded && (
                       <div className="p-4">
                         <div className="overflow-x-auto">
-                          <table className="w-full text-sm">
+                          <table className="w-full text-sm table-fixed">
                             <thead className="border-b border-gray-200 dark:border-gray-700">
                               <tr>
-                                <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 dark:text-gray-300 uppercase">Saldo</th>
-                                <th className="px-3 py-2 text-left text-xs font-bold text-gray-700 dark:text-gray-300 uppercase">Descrição</th>
-                                <th className="px-3 py-2 text-right text-xs font-bold text-gray-700 dark:text-gray-300 uppercase">Principal</th>
-                                <th className="px-3 py-2 text-right text-xs font-bold text-gray-700 dark:text-gray-300 uppercase">Saldo Corrigido</th>
-                                <th className="px-3 py-2 text-right text-xs font-bold text-gray-700 dark:text-gray-300 uppercase">Já Pago</th>
-                                <th className="px-3 py-2 text-right text-xs font-bold text-gray-700 dark:text-gray-300 uppercase">Saldo Aberto</th>
-                                <th className="px-3 py-2 text-center text-xs font-bold text-gray-700 dark:text-gray-300 uppercase">Quitar Integral</th>
-                                <th className="px-3 py-2 text-center text-xs font-bold text-gray-700 dark:text-gray-300 uppercase">Valor a Quitar</th>
-                                <th className="px-3 py-2 text-center text-xs font-bold text-gray-700 dark:text-gray-300 uppercase">Ignorar</th>
+                                <th className="w-[11%] px-3 py-2 text-left text-xs font-bold text-gray-700 dark:text-gray-300 uppercase">Saldo</th>
+                                <th className="w-[23%] px-3 py-2 text-left text-xs font-bold text-gray-700 dark:text-gray-300 uppercase">Descrição</th>
+                                <th className="w-[11%] px-3 py-2 text-left text-xs font-bold text-gray-700 dark:text-gray-300 uppercase">Principal</th>
+                                <th className="w-[13%] px-3 py-2 text-left text-xs font-bold text-gray-700 dark:text-gray-300 uppercase">Saldo Corrigido</th>
+                                <th className="w-[11%] px-3 py-2 text-left text-xs font-bold text-gray-700 dark:text-gray-300 uppercase">Já Pago</th>
+                                <th className="w-[11%] px-3 py-2 text-left text-xs font-bold text-gray-700 dark:text-gray-300 uppercase">Saldo Aberto</th>
+                                <th className="w-[13%] px-3 py-2 text-left text-xs font-bold text-gray-700 dark:text-gray-300 uppercase">Valor a Quitar</th>
+                                <th className="w-[7%] px-3 py-2 text-left text-xs font-bold text-gray-700 dark:text-gray-300 uppercase">Integral</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -3001,7 +2996,7 @@ const BalancoPage = () => {
                                 return (
                                   <tr
                                     key={loan.id}
-                                    className={`border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all ${payment?.ignore ? 'opacity-50' : ''}`}
+                                    className="border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all"
                                     onMouseEnter={(e) => { e.currentTarget.style.borderLeftColor = 'var(--color-1)' }}
                                     onMouseLeave={(e) => { e.currentTarget.style.borderLeftColor = '' }}
                                   >
@@ -3024,13 +3019,13 @@ const BalancoPage = () => {
                                         {new Date(loan.loan_date).toLocaleDateString('pt-BR')}
                                       </div>
                                     </td>
-                                    <td className="px-3 py-3 text-right font-bold text-gray-900 dark:text-gray-100">
+                                    <td className="px-3 py-3 text-left font-bold text-gray-900 dark:text-gray-100">
                                       {formatCurrency(principalDisplay)}
                                     </td>
-                                    <td className="px-3 py-3 text-right">
+                                    <td className="px-3 py-3 text-left">
                                       {interestInfo ? (
                                         <div>
-                                          <div className="flex items-center justify-end gap-1">
+                                          <div className="flex items-center justify-start gap-1">
                                             <span className={`font-bold ${balanceColor}`}>
                                               {formatCurrency(correctedDisplay)}
                                             </span>
@@ -3051,20 +3046,44 @@ const BalancoPage = () => {
                                         <span className="text-gray-400 dark:text-gray-500">-</span>
                                       )}
                                     </td>
-                                    <td className="px-3 py-3 text-right text-gray-600 dark:text-gray-400">
+                                    <td className="px-3 py-3 text-left text-gray-600 dark:text-gray-400">
                                       {formatCurrency(loan.total_paid)}
                                     </td>
                                     <td className="px-3 py-3">
-                                      <div className={`flex items-center justify-end gap-1 font-bold ${balanceColor}`}>
+                                      <div className={`flex items-center justify-start gap-1 font-bold ${balanceColor}`}>
                                         {formatCurrency(balanceDisplay)}
+                                      </div>
+                                    </td>
+                                    {/* Valor a Quitar */}
+                                    <td className="px-3 py-3">
+                                      <div className="flex items-center justify-start">
+                                        <div className="relative">
+                                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 text-sm">
+                                            R$
+                                          </span>
+                                          <input
+                                            type="text"
+                                            inputMode="numeric"
+                                            value={formatAmountMask(payment?.displayAmount || '')}
+                                            onChange={(e) => {
+                                              if (payment?.settleInFull) {
+                                                updateLoanPayment(loan.id, 'settleInFull', false)
+                                              }
+                                              handleLoanAmountChange(loan.id, e.target.value)
+                                            }}
+                                            disabled={payment?.settleInFull}
+                                            className="w-28 pl-8 pr-2 py-1.5 text-sm text-right border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                            placeholder="0,00"
+                                          />
+                                        </div>
                                       </div>
                                     </td>
                                     {/* Switch Quitar Integral */}
                                     <td className="px-3 py-3">
-                                      <div className="flex items-center justify-center">
+                                      <div className="flex items-center justify-start">
                                         <button
                                           onClick={() => handleSettleInFullToggle(loan.id, correctedBalance)}
-                                          disabled={payment?.ignore || correctedBalance <= 0.01}
+                                          disabled={correctedBalance <= 0.01}
                                           className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-color-primary focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed ${
                                             !payment?.settleInFull ? 'bg-gray-200 dark:bg-gray-600' : ''
                                           }`}
@@ -3080,46 +3099,6 @@ const BalancoPage = () => {
                                           />
                                         </button>
                                       </div>
-                                    </td>
-                                    <td className="px-3 py-3">
-                                      <div className="flex items-center justify-center">
-                                        <div className="relative">
-                                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 text-sm">
-                                            R$
-                                          </span>
-                                          <input
-                                            type="text"
-                                            inputMode="numeric"
-                                            value={formatAmountMask(payment?.displayAmount || '')}
-                                            onChange={(e) => {
-                                              // Se está digitando manualmente, desativar o switch
-                                              if (payment?.settleInFull) {
-                                                updateLoanPayment(loan.id, 'settleInFull', false)
-                                              }
-                                              handleLoanAmountChange(loan.id, e.target.value)
-                                            }}
-                                            disabled={payment?.ignore || payment?.settleInFull}
-                                            className="w-28 pl-8 pr-2 py-1.5 text-sm text-right border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                                            placeholder="0,00"
-                                          />
-                                        </div>
-                                      </div>
-                                    </td>
-                                    <td className="px-3 py-3 text-center">
-                                      <input
-                                        type="checkbox"
-                                        checked={payment?.ignore || false}
-                                        onChange={(e) => {
-                                          // Apenas atualiza a flag - não limpa o valor
-                                          // O fechamento ignora essa linha independente do valor preenchido
-                                          updateLoanPayment(loan.id, 'ignore', e.target.checked)
-                                          // Se marcou ignorar e tinha quitar integral, desativa
-                                          if (e.target.checked && payment?.settleInFull) {
-                                            updateLoanPayment(loan.id, 'settleInFull', false)
-                                          }
-                                        }}
-                                        className="w-4 h-4 text-amber-600 border-gray-300 dark:border-gray-600 rounded focus:ring-amber-500"
-                                      />
                                     </td>
                                   </tr>
                                 )
