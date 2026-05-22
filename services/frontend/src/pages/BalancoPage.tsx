@@ -3487,7 +3487,7 @@ const BalancoPage = () => {
                           <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" title="Pagamentos parciais realizados">Pagamentos</th>
                           <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Saldo</th>
                           <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
-                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap w-[175px] sticky right-0 bg-white dark:bg-gray-800 z-10 border-l border-gray-200 dark:border-gray-700">Ações</th>
+                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap w-[240px] sticky right-0 bg-white dark:bg-gray-800 z-10 border-l border-gray-200 dark:border-gray-700">Ações</th>
                         </tr>
                       </thead>
                       <tbody className="bg-white dark:bg-gray-800">
@@ -3725,7 +3725,7 @@ const BalancoPage = () => {
                                 )}
                               </div>
                             </td>
-                            <td className={`px-3 py-3 text-left whitespace-nowrap sticky right-0 z-10 border-l border-gray-200 dark:border-gray-700 ${
+                            <td className={`px-3 py-3 text-left overflow-hidden sticky right-0 z-10 border-l border-gray-200 dark:border-gray-700 ${
                               selectedClosureIds.has(closure.id)
                                 ? 'bg-blue-50 dark:bg-blue-900/20'
                                 : 'bg-white dark:bg-gray-800 group-hover:bg-gray-50 dark:group-hover:bg-gray-700/50'
