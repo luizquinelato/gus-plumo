@@ -27,7 +27,7 @@
     },
 
     /* Suppress deprecation warnings for TypeScript 6.x */
-    "ignoreDeprecations": "6.0"
+    "ignoreDeprecations": "5.0"
   },
   "include": ["src"]
 }
