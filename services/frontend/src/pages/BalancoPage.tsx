@@ -3463,12 +3463,12 @@ const BalancoPage = () => {
                   </div>
                 ) : (
                   <div className={`bg-white dark:bg-gray-800 rounded-lg shadow overflow-x-auto ${selectedClosureIds.size > 0 || showClosuresBackToTop ? 'pb-20' : ''}`}>
-                    <table className="min-w-full">
+                    <table className="min-w-[980px] w-full table-fixed">
                       <thead className="border-b border-gray-200 dark:border-gray-700">
                         <tr>
                           {/* Coluna expand/colapso */}
-                          <th className="px-1 py-3 w-8"></th>
-                          <th className="px-2 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                          <th className="px-1 py-3 w-6"></th>
+                          <th className="px-2 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider w-8">
                             <button
                               onClick={toggleSelectAll}
                               className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
@@ -3479,18 +3479,15 @@ const BalancoPage = () => {
                               {selectedClosureIds.size === closures.length && closures.length > 0 && <CheckSquare size={18} className="text-blue-600" />}
                             </button>
                           </th>
-                          <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap">#</th>
-                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap">Início</th>
-                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap">Fim</th>
-                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap">Conta Principal</th>
-                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap">Contraparte</th>
-                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap">A Receber</th>
-                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap">A Pagar</th>
-                          <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap" title="Possui liquidações de empréstimos">Empréstimos</th>
-                          <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap" title="Pagamentos parciais realizados">Pagamentos</th>
-                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap">Saldo</th>
-                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap">Status</th>
-                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap">Ações</th>
+                          <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider w-10">#</th>
+                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Período</th>
+                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Conta Principal</th>
+                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Contraparte</th>
+                          <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Valores</th>
+                          <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" title="Pagamentos parciais realizados">Pagamentos</th>
+                          <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Saldo</th>
+                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
+                          <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap w-[175px] sticky right-0 bg-white dark:bg-gray-800 z-10 border-l border-gray-200 dark:border-gray-700">Ações</th>
                         </tr>
                       </thead>
                       <tbody className="bg-white dark:bg-gray-800">
@@ -3536,7 +3533,7 @@ const BalancoPage = () => {
                           return (
                           <React.Fragment key={closure.id}>
                           <tr
-                            className={`border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all ${
+                            className={`group border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all ${
                               selectedClosureIds.has(closure.id)
                                 ? 'border-l-blue-600 bg-blue-50 dark:bg-blue-900/20'
                                 : 'border-l-gray-300 dark:border-l-gray-600'
@@ -3582,22 +3579,21 @@ const BalancoPage = () => {
                             <td className="px-3 py-3 text-center text-sm text-gray-500 dark:text-gray-400">
                               {index + 1}
                             </td>
-                            {/* Coluna Início */}
+                            {/* Coluna Período — Início + Fim mesclados */}
                             <td className="px-3 py-3">
-                              <div className="flex items-baseline gap-1.5">
-                                <span className="text-sm text-gray-900 dark:text-white whitespace-nowrap">
-                                  {new Date(closure.period_start_date).toLocaleDateString('pt-BR')}
-                                </span>
-                                <span className="text-[10px] text-gray-400 dark:text-gray-500 whitespace-nowrap">
-                                  {new Date(closure.period_start_date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                                </span>
-                              </div>
-                            </td>
-                            {/* Coluna Fim */}
-                            <td className="px-3 py-3">
-                              <div className="flex flex-col gap-0.5">
+                              <div className="flex flex-col gap-1">
                                 <div className="flex items-baseline gap-1.5">
-                                  <span className="text-sm text-gray-900 dark:text-white whitespace-nowrap">
+                                  <span className="text-[10px] font-medium text-gray-400 dark:text-gray-500 w-5 shrink-0">De</span>
+                                  <span className="text-xs text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                                    {new Date(closure.period_start_date).toLocaleDateString('pt-BR')}
+                                  </span>
+                                  <span className="text-[10px] text-gray-400 dark:text-gray-500 whitespace-nowrap">
+                                    {new Date(closure.period_start_date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </div>
+                                <div className="flex items-baseline gap-1.5">
+                                  <span className="text-[10px] font-medium text-gray-400 dark:text-gray-500 w-5 shrink-0">Até</span>
+                                  <span className="text-xs font-semibold text-gray-900 dark:text-white whitespace-nowrap">
                                     {new Date(closure.closing_date).toLocaleDateString('pt-BR')}
                                   </span>
                                   <span className="text-[10px] text-gray-400 dark:text-gray-500 whitespace-nowrap">
@@ -3605,11 +3601,11 @@ const BalancoPage = () => {
                                   </span>
                                 </div>
                                 {closure.notes && (
-                                  <span className="text-xs text-gray-600 dark:text-gray-400">• {closure.notes}</span>
+                                  <span className="text-[10px] text-gray-500 dark:text-gray-400 truncate max-w-[130px]">• {closure.notes}</span>
                                 )}
                               </div>
                             </td>
-                            <td className="px-3 py-3">
+                            <td className="px-3 py-3 max-w-[150px]">
                               {/* Conta Principal: exibe viewerCard (conta logada) */}
                               {viewerCard?.account_id ? (
                                 <SharedAccountDisplay
@@ -3628,7 +3624,7 @@ const BalancoPage = () => {
                                 <span className="text-gray-400">-</span>
                               )}
                             </td>
-                            <td className="px-3 py-3">
+                            <td className="px-3 py-3 max-w-[150px]">
                               {/* Contraparte: exibe otherCard (outra conta) */}
                               {(() => {
                                 const otherCard = isCounterpart ? mainCard : partnerCard
@@ -3650,20 +3646,16 @@ const BalancoPage = () => {
                                 )
                               })()}
                             </td>
-                            <td className="px-3 py-3 text-left whitespace-nowrap text-green-600 dark:text-green-400">
-                              {formatCurrency(displayToReceive)}
-                            </td>
-                            <td className="px-3 py-3 text-left whitespace-nowrap text-red-600 dark:text-red-400">
-                              {formatCurrency(-displayToPay)}
-                            </td>
-                            <td className="px-3 py-3 text-center">
-                              {hasLoanPayments ? (
-                                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-green-600" title="Possui liquidações de empréstimos">
-                                  <Check size={14} className="text-white" />
+                            {/* Coluna Valores — A Receber e A Pagar empilhados */}
+                            <td className="px-3 py-3">
+                              <div className="flex flex-col gap-0.5 items-end">
+                                <span className="text-xs font-medium text-green-600 dark:text-green-400 whitespace-nowrap">
+                                  ↑ {formatCurrency(displayToReceive)}
                                 </span>
-                              ) : (
-                                <span className="text-gray-400 dark:text-gray-500">-</span>
-                              )}
+                                <span className="text-xs font-medium text-red-600 dark:text-red-400 whitespace-nowrap">
+                                  ↓ {formatCurrency(displayToPay)}
+                                </span>
+                              </div>
                             </td>
                             {/* Coluna Pagamentos (antes do Saldo) */}
                             <td className="px-3 py-3 text-center whitespace-nowrap">
@@ -3690,15 +3682,15 @@ const BalancoPage = () => {
                               const displayBalance = totalPaid > 0 ? remaining : displayNetBalance
                               const isRemainingView = totalPaid > 0
                               return (
-                                <td className={`px-3 py-3 text-left whitespace-nowrap ${
+                                <td className={`px-3 py-3 text-right whitespace-nowrap ${
                                   displayBalance > 0
                                     ? 'text-green-600 dark:text-green-400'
                                     : displayBalance < 0
                                     ? 'text-red-600 dark:text-red-400'
                                     : 'text-gray-600 dark:text-gray-400'
                                 }`}>
-                                  <div className="flex flex-col">
-                                    <span>{formatCurrency(displayBalance)}</span>
+                                  <div className="flex flex-col items-end">
+                                    <span className="font-medium">{formatCurrency(displayBalance)}</span>
                                     {isRemainingView && (
                                       <span className="text-[10px] text-gray-400 dark:text-gray-500">restante</span>
                                     )}
@@ -3706,30 +3698,38 @@ const BalancoPage = () => {
                                 </td>
                               )
                             })()}
-                            <td className="px-3 py-3 text-left">
-                              {closure.is_settled ? (
-                                <span
-                                  className="inline-block px-3 py-1 text-xs font-medium rounded text-center"
-                                  style={{
-                                    backgroundColor: 'var(--status-success)',
-                                    color: '#FFFFFF'
-                                  }}
-                                >
-                                  Quitado
-                                </span>
-                              ) : (
-                                <span
-                                  className="inline-block px-3 py-1 text-xs font-medium rounded text-center"
-                                  style={{
-                                    backgroundColor: 'var(--status-warning)',
-                                    color: '#FFFFFF'
-                                  }}
-                                >
-                                  Pendente
-                                </span>
-                              )}
+                            <td className="px-3 py-3">
+                              <div className="flex flex-col items-start gap-1">
+                                {closure.is_settled ? (
+                                  <span
+                                    className="inline-block px-2.5 py-0.5 text-xs font-medium rounded text-white"
+                                    style={{ backgroundColor: 'var(--status-success)' }}
+                                  >
+                                    Quitado
+                                  </span>
+                                ) : (
+                                  <span
+                                    className="inline-block px-2.5 py-0.5 text-xs font-medium rounded text-white"
+                                    style={{ backgroundColor: 'var(--status-warning)' }}
+                                  >
+                                    Pendente
+                                  </span>
+                                )}
+                                {hasLoanPayments && (
+                                  <span
+                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 whitespace-nowrap"
+                                    title="Possui liquidações de empréstimos"
+                                  >
+                                    <Banknote size={9} /> Empr.
+                                  </span>
+                                )}
+                              </div>
                             </td>
-                            <td className="px-3 py-3 text-left">
+                            <td className={`px-3 py-3 text-left whitespace-nowrap sticky right-0 z-10 border-l border-gray-200 dark:border-gray-700 ${
+                              selectedClosureIds.has(closure.id)
+                                ? 'bg-blue-50 dark:bg-blue-900/20'
+                                : 'bg-white dark:bg-gray-800 group-hover:bg-gray-50 dark:group-hover:bg-gray-700/50'
+                            }`}>
                               <div className="flex items-center gap-1">
                                 <button
                                   onClick={() => handleViewClosureDetails(closure)}
@@ -3822,58 +3822,98 @@ const BalancoPage = () => {
                               </div>
                             </td>
                           </tr>
-                          {/* Sub-linha expansível: histórico de pagamentos parciais */}
+                          {/* Sub-linhas expansíveis: histórico de pagamentos */}
                           {expandedClosureIds.has(closure.id) && (closure.closure_payments || []).length > 0 && (
-                            <tr className="bg-indigo-50 dark:bg-indigo-900/10">
-                              <td colSpan={14} className="px-6 py-3">
-                                <div className="flex flex-col gap-2">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <CreditCard size={14} className="text-indigo-600 dark:text-indigo-400" />
+                            <React.Fragment>
+                              {/* Barra de título da seção */}
+                              <tr className="bg-indigo-50 dark:bg-indigo-900/15 border-t border-indigo-200 dark:border-indigo-800">
+                                <td colSpan={10} className="pl-10 pr-4 py-2">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-1 h-4 rounded-full bg-indigo-500 dark:bg-indigo-400 shrink-0" />
+                                    <CreditCard size={13} className="text-indigo-600 dark:text-indigo-400" />
                                     <span className="text-xs font-semibold text-indigo-700 dark:text-indigo-300 uppercase tracking-wide">
-                                      Histórico de Pagamentos Parciais
+                                      Pagamentos Parciais
                                     </span>
-                                    <span className="text-xs text-gray-500 dark:text-gray-400 ml-auto">
+                                    <span className="text-xs text-indigo-400 dark:text-indigo-500">
+                                      ({(closure.closure_payments || []).length})
+                                    </span>
+                                    <span className="ml-auto text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
                                       Total pago: <span className="font-semibold text-green-600 dark:text-green-400">{formatCurrency(parseFloat(String(closure.total_paid ?? 0)))}</span>
                                     </span>
                                   </div>
-                                  <div className="grid grid-cols-1 gap-1">
-                                    {(closure.closure_payments || []).map((payment) => (
-                                      <div key={payment.id} className="flex items-center gap-3 text-xs bg-white dark:bg-gray-800 rounded-lg px-3 py-2 border border-indigo-100 dark:border-indigo-800">
-                                        <span className="text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                                          {new Date(payment.payment_date).toLocaleDateString('pt-BR')}
-                                        </span>
-                                        <span className="font-semibold text-green-600 dark:text-green-400 whitespace-nowrap">
-                                          {formatCurrency(parseFloat(String(payment.amount)))}
-                                        </span>
-                                        {payment.notes && (
-                                          <span className="text-gray-600 dark:text-gray-400 truncate flex-1">
-                                            {payment.notes}
-                                          </span>
-                                        )}
-                                        {!closure.is_settled && (
-                                          <div className="ml-auto flex items-center gap-1 flex-shrink-0">
-                                            <button
-                                              onClick={() => openEditPayment(payment, closure)}
-                                              className="p-1 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded transition-all"
-                                              title="Editar pagamento"
-                                            >
-                                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                                            </button>
-                                            <button
-                                              onClick={() => handleDeletePayment(closure, payment.id)}
-                                              className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-all"
-                                              title="Remover pagamento"
-                                            >
-                                              <Trash2 size={12} />
-                                            </button>
-                                          </div>
-                                        )}
+                                </td>
+                                <td className="sticky right-0 z-10 bg-indigo-50 dark:bg-indigo-900/15 border-l border-gray-200 dark:border-gray-700 py-2 px-3" />
+                              </tr>
+                              {/* Cabeçalho das colunas — alinhado com as colunas da tabela pai */}
+                              <tr className="bg-gray-50 dark:bg-gray-700/40 border-t border-gray-200 dark:border-gray-700 text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
+                                <td className="px-1 py-1.5 w-6" />
+                                <td className="px-2 py-1.5 w-8 text-center">#</td>
+                                <td className="px-3 py-1.5 w-10" />
+                                <td className="px-3 py-1.5">Data</td>
+                                <td className="px-3 py-1.5 text-right">Valor pago</td>
+                                <td className="px-3 py-1.5" colSpan={5}>Observação</td>
+                                <td className="sticky right-0 z-10 bg-gray-50 dark:bg-gray-700/40 border-l border-gray-200 dark:border-gray-700 px-3 py-1.5 w-[175px]">Ações</td>
+                              </tr>
+                              {/* Uma linha por pagamento — células alinhadas às colunas da tabela */}
+                              {(closure.closure_payments || []).map((payment, payIdx) => {
+                                const rowBg = payIdx % 2 === 0
+                                  ? 'bg-white dark:bg-gray-800'
+                                  : 'bg-gray-50/70 dark:bg-gray-700/20'
+                                return (
+                                <tr
+                                  key={payment.id}
+                                  className={`border-t border-gray-100 dark:border-gray-700/60 hover:bg-indigo-50/60 dark:hover:bg-indigo-900/20 transition-colors ${rowBg}`}
+                                >
+                                  {/* expand — vazio */}
+                                  <td className="px-1 py-2 w-6" />
+                                  {/* select — índice do pagamento */}
+                                  <td className="px-2 py-2 w-8 text-center text-xs text-gray-400 dark:text-gray-500 font-medium">
+                                    {payIdx + 1}
+                                  </td>
+                                  {/* # — vazio */}
+                                  <td className="px-3 py-2 w-10" />
+                                  {/* Período → data do pagamento */}
+                                  <td className="px-3 py-2 text-xs text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                                    {new Date(payment.payment_date).toLocaleDateString('pt-BR')}
+                                  </td>
+                                  {/* Conta Principal → valor pago (alinhado à direita) */}
+                                  <td className="px-3 py-2 text-right text-xs font-semibold text-green-600 dark:text-green-400 whitespace-nowrap">
+                                    {formatCurrency(parseFloat(String(payment.amount)))}
+                                  </td>
+                                  {/* Contraparte + Valores + Pagamentos + Saldo + Status → observação (colSpan=5) */}
+                                  <td colSpan={5} className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400 truncate overflow-hidden">
+                                    {payment.notes || <span className="italic text-gray-300 dark:text-gray-600">—</span>}
+                                  </td>
+                                  {/* Ações — sticky */}
+                                  <td className={`sticky right-0 z-10 border-l border-gray-200 dark:border-gray-700 py-2 px-3 ${rowBg} hover:bg-indigo-50/60 dark:hover:bg-indigo-900/20`}>
+                                    {!closure.is_settled && (
+                                      <div className="flex items-center gap-1">
+                                        <button
+                                          onClick={() => openEditPayment(payment, closure)}
+                                          className="p-1 text-gray-400 hover:text-indigo-600 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 rounded transition-all"
+                                          title="Editar pagamento"
+                                        >
+                                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                        </button>
+                                        <button
+                                          onClick={() => handleDeletePayment(closure, payment.id)}
+                                          className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-all"
+                                          title="Remover pagamento"
+                                        >
+                                          <Trash2 size={12} />
+                                        </button>
                                       </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
+                                    )}
+                                  </td>
+                                </tr>
+                                )
+                              })}
+                              {/* Fechamento visual da seção */}
+                              <tr className="border-t border-indigo-200 dark:border-indigo-800/60">
+                                <td colSpan={10} className="pb-0"></td>
+                                <td className="sticky right-0 z-10 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 pb-0"></td>
+                              </tr>
+                            </React.Fragment>
                           )}
                           </React.Fragment>
                           )
