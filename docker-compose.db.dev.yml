@@ -5,7 +5,7 @@ name: gus-plumo-dev
 
 services:
   postgres-dev:
-    image: postgres:17
+    image: postgres:18
     container_name: plumo-postgres-dev
     environment:
       POSTGRES_DB: plumo_dev
