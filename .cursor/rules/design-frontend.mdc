@@ -1,0 +1,51 @@
+---
+description: Design system, cores, roteamento, ícones e chamadas HTTP no frontend React
+globs: services/frontend/**/*
+alwaysApply: false
+---
+# Design System e Frontend
+
+Regras para `services/frontend/`. Stack detalhada em [tech-stack.mdc](tech-stack.mdc).
+
+## 1. Cores e variáveis CSS
+
+- Evite cores Tailwind hardcoded em telas que suportam personalização (`bg-blue-500`, `text-red-600`).
+- Prefira variáveis CSS do tenant: `--color-1` … `--color-N`, `--on-color-*`, `--gradient-*`, `--crud-create`, `--crud-edit`, `--crud-cancel`, etc.
+- Aplicar via `style={{ … }}` ou classes que referenciem essas variáveis (ver `ColorSettingsPage`, `BalancoPage`).
+- Cinzas neutros de layout (`gray-*`, `dark:*`) são aceitáveis para estrutura (sidebar, bordas, fundos base).
+- Sistema multi-tenant: ver `docs/cores.md` e hooks `useColorApplication`.
+
+## 2. Roteamento de abas
+
+- Não use apenas `useState` para abas principais que deveriam ser compartilháveis por URL.
+- Use rotas do React Router (`App.tsx`): ex. `/relatorios/extrato`, `/configuracoes/cores`.
+- Redirects legados estão centralizados em `App.tsx` — mantenha compatibilidade ao renomear rotas.
+
+## 3. Ícones
+
+- Biblioteca do projeto: **`lucide-react`** (não Phosphor, Heroicons, etc.).
+- Import: `import { IconName } from 'lucide-react'`.
+- Mapeamento dinâmico de ícones: `src/utils/iconMapper.tsx`.
+
+## 4. Componentes reutilizáveis
+
+- Encapsule lógica repetida em `src/components/`.
+- Modais: ESC fecha, Enter confirma — ver [starting_point.mdc](starting_point.mdc).
+- Datas: `BrazilianDatePicker` (`dd/mm/aaaa`, valor interno `YYYY-MM-DD`).
+- Conta compartilhada: `SharedAccountDisplay`.
+- UI específica do Balanço: [balanco-ui.mdc](balanco-ui.mdc).
+- Radix UI: apenas `@radix-ui/react-slot` hoje; preferir componentes existentes antes de adicionar libs.
+
+## 5. Chamadas de API
+
+- Padrão atual: **`axios`** importado nas páginas/serviços (`AuthContext` configura base URL e token).
+- Agrupe chamadas relacionadas em `src/services/` (ex.: `expenseTemplatesApi.ts`).
+- Evite `fetch` avulso salvo casos pontuais.
+- **Meta (não implementado ainda):** instância centralizada `apiClient` + React Query — não introduzir sem decisão explícita.
+
+## 6. Padrões de código
+
+- TypeScript estrito; tipos compartilhados em `src/types/`.
+- Utilitários puros em `src/utils/` (`dateUtils`, `exportToExcel`, `currency.tsx`).
+- Tailwind v3 — não migrar para v4 sem decisão (ver tech-stack).
+- Sidebar global: `Sidebar.tsx` — alterações de navegação refletem em todas as páginas.

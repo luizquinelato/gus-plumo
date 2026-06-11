@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import '../styles/datepicker-custom.css'
+import BrazilianDatePicker, { BrazilianDatePickerHandle } from '../components/BrazilianDatePicker'
+import { formatDateBR, parseLocalDate, dateToLocalString, getTodayLocalDate } from '../utils/dateUtils'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
 import Toast from '../components/Toast'
@@ -586,24 +588,8 @@ const BalancoPage = () => {
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear())
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1)
   const [loggedAccountId, setLoggedAccountId] = useState<number | null>(null)
-
-  // Helper: Pegar data local no formato YYYY-MM-DD (sem conversão UTC)
-  const getTodayLocalDate = () => {
-    const now = new Date()
-    const year = now.getFullYear()
-    const month = String(now.getMonth() + 1).padStart(2, '0')
-    const day = String(now.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
-  }
-
-  // Helper: Converter Date para YYYY-MM-DD local (sem conversão UTC)
-  const dateToLocalString = (date: Date | string) => {
-    const d = typeof date === 'string' ? new Date(date) : date
-    const year = d.getFullYear()
-    const month = String(d.getMonth() + 1).padStart(2, '0')
-    const day = String(d.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
-  }
+  const startDatePickerRef = useRef<BrazilianDatePickerHandle>(null)
+  const endDatePickerRef = useRef<BrazilianDatePickerHandle>(null)
 
   // Helper: Converter Date para YYYY-MM-DD HH:MM:SS (timestamp completo)
   const dateToTimestampString = (date: Date | string) => {
@@ -759,18 +745,10 @@ const BalancoPage = () => {
         // ✅ Armazena o timestamp completo do fechamento (closing_date)
         setLastClosureTimestamp(lastClosure.closing_date)
 
-        // ✅ Calcula a data/hora inicial: closing_date + 1 segundo
-        // Isso garante que o novo período comece APÓS o último fechamento
-        const closureDate = new Date(lastClosure.closing_date)
-        const nextSecond = new Date(closureDate.getTime() + 1000) // +1 segundo
-
-        // Data mínima para o input (apenas data, sem hora)
-        const minDate = dateToLocalString(closureDate)
-        setMinStartDate(minDate)
-
-        // ✅ Define a data inicial como o mesmo dia do fechamento
-        // O backend vai usar o timestamp do último fechamento + 1 segundo automaticamente
-        setStartDate(minDate)
+        // Usa apenas a parte da data (YYYY-MM-DD) — evita shift de timezone
+        const closureDateOnly = dateToLocalString(lastClosure.closing_date)
+        setMinStartDate(closureDateOnly)
+        setStartDate(closureDateOnly)
       } else {
         // Sem fechamentos: permite qualquer data
         setMinStartDate(null)
@@ -874,15 +852,18 @@ const BalancoPage = () => {
   //   }
   // }, [activeTab])
 
-  const loadBalanceCalculation = async () => {
+  const loadBalanceCalculation = async (overrides?: { startDate?: string; endDate?: string }) => {
+    const effectiveStartDate = overrides?.startDate ?? startDate
+    const effectiveEndDate = overrides?.endDate ?? endDate
+
     if (!selectedPartnerAccountId) return
-    if (!startDate || !endDate) {
+    if (!effectiveStartDate || !effectiveEndDate) {
       setToast({ show: true, message: 'Por favor, selecione as datas de início e fim', type: 'warning' })
       return
     }
 
     // Validação: data de fim não pode ser menor que data de início
-    if (endDate < startDate) {
+    if (effectiveEndDate < effectiveStartDate) {
       setToast({ show: true, message: 'A data de fim não pode ser anterior à data de início', type: 'warning' })
       return
     }
@@ -891,31 +872,28 @@ const BalancoPage = () => {
     // Se a data de fim é anterior a hoje → usar endDate + 23:59:59
     // Se a data de fim é hoje ou futura → usar a data/hora atual
     const now = new Date()
-    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const todayStr = getTodayLocalDate()
 
     let clickTimestamp: string
-    if (endDate < todayStr) {
+    if (effectiveEndDate < todayStr) {
       // Data de fim é no passado - usar 23:59:59 desse dia
-      clickTimestamp = `${endDate} 23:59:59`
+      clickTimestamp = `${effectiveEndDate} 23:59:59`
     } else {
       // Data de fim é hoje ou no futuro - usar hora atual
-      const year = now.getFullYear()
-      const month = String(now.getMonth() + 1).padStart(2, '0')
-      const day = String(now.getDate()).padStart(2, '0')
-      const hours = String(now.getHours()).padStart(2, '0')
-      const minutes = String(now.getMinutes()).padStart(2, '0')
-      const seconds = String(now.getSeconds()).padStart(2, '0')
-      clickTimestamp = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
+      clickTimestamp = dateToTimestampString(now)
     }
     setCalculationTimestamp(clickTimestamp)
+
+    if (effectiveStartDate !== startDate) setStartDate(effectiveStartDate)
+    if (effectiveEndDate !== endDate) setEndDate(effectiveEndDate)
 
     setLoading(true)
     try {
       const params: any = {
         partner_account_id: selectedPartnerAccountId,
         year: selectedYear,
-        custom_start_date: startDate,
-        custom_end_date: endDate
+        custom_start_date: effectiveStartDate,
+        custom_end_date: effectiveEndDate
       }
 
       // Se houver timestamp do último fechamento, enviar para filtrar corretamente
@@ -927,7 +905,7 @@ const BalancoPage = () => {
       setBalanceData(response.data)
 
       // ✅ Carregar empréstimos abertos junto com o balanço
-      await loadOpenLoans()
+      await loadOpenLoans(effectiveEndDate)
     } catch (error) {
       console.error('Erro ao calcular balanço:', error)
       setToast({ show: true, message: 'Erro ao calcular balanço', type: 'error' })
@@ -936,8 +914,14 @@ const BalancoPage = () => {
     }
   }
 
+  const handleApplyBalance = () => {
+    const committedStart = startDatePickerRef.current?.commitPending() ?? startDate
+    const committedEnd = endDatePickerRef.current?.commitPending() ?? endDate
+    loadBalanceCalculation({ startDate: committedStart, endDate: committedEnd })
+  }
+
   // Função para carregar empréstimos abertos com o parceiro selecionado
-  const loadOpenLoans = async () => {
+  const loadOpenLoans = async (maxDateOverride?: string) => {
     if (!selectedPartnerAccountId) return
 
     setLoansLoading(true)
@@ -945,7 +929,7 @@ const BalancoPage = () => {
       const response = await axios.get('/api/balance/open-loans', {
         params: {
           partner_account_id: selectedPartnerAccountId,
-          max_date: endDate  // Filtrar apenas empréstimos que existiam até a data final do período
+          max_date: maxDateOverride ?? endDate  // Filtrar apenas empréstimos que existiam até a data final do período
         }
       })
       setOpenLoans(response.data)
@@ -2090,51 +2074,19 @@ const BalancoPage = () => {
 
                 {/* Data de Início */}
                 <div className="flex-1">
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">
+                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
                     <Calendar size={14} className="inline mr-1 text-color-primary" />
                     Data de Início
                   </label>
-                  <div className="relative">
-                    <input
-                      ref={(el) => {
-                        if (el) {
-                          (el as any)._openPicker = () => {
-                            try {
-                              if ('showPicker' in el) {
-                                (el as any).showPicker()
-                              }
-                            } catch (error) {
-                              // Silently fail
-                            }
-                          }
-                        }
-                      }}
-                      type="date"
-                      value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
-                      min={minStartDate || undefined}
-                      max={endDate || undefined}
-                      style={{
-                        colorScheme: 'light dark'
-                      }}
-                      className="w-full px-3 py-2 pr-10 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-color-primary focus:border-color-primary transition-all shadow-sm"
-                      title={minStartDate ? `Data mínima: ${new Date(minStartDate).toLocaleDateString('pt-BR')} (mesmo dia ou após o último fechamento)` : undefined}
-                      placeholder="dd/mm/aaaa"
-                    />
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        const input = e.currentTarget.previousElementSibling as any
-                        if (input && input._openPicker) {
-                          input._openPicker()
-                        }
-                      }}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-color-primary transition-colors"
-                      title="Abrir calendário"
-                    >
-                      <Calendar size={18} />
-                    </button>
-                  </div>
+                  <BrazilianDatePicker
+                    ref={startDatePickerRef}
+                    value={startDate}
+                    onChange={setStartDate}
+                    minDate={minStartDate ? parseLocalDate(minStartDate) ?? undefined : undefined}
+                    maxDate={endDate ? parseLocalDate(endDate) ?? undefined : undefined}
+                    className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-color-primary focus:border-color-primary transition-all shadow-sm"
+                    title={minStartDate ? `Data mínima: ${formatDateBR(minStartDate)} (mesmo dia ou após o último fechamento)` : undefined}
+                  />
                   {lastClosureTimestamp && (
                     <div className="mt-1.5 text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
                       <Clock size={12} className="text-color-primary" />
@@ -2154,50 +2106,18 @@ const BalancoPage = () => {
 
                 {/* Data de Fim */}
                 <div className="flex-1">
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">
+                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
                     <Calendar size={14} className="inline mr-1 text-color-primary" />
                     Data de Fim
                   </label>
-                  <div className="relative">
-                    <input
-                      ref={(el) => {
-                        if (el) {
-                          (el as any)._openPicker = () => {
-                            try {
-                              if ('showPicker' in el) {
-                                (el as any).showPicker()
-                              }
-                            } catch (error) {
-                              // Silently fail
-                            }
-                          }
-                        }
-                      }}
-                      type="date"
-                      value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
-                      min={startDate || undefined}
-                      max={getTodayLocalDate()}
-                      style={{
-                        colorScheme: 'light dark'
-                      }}
-                      className="w-full px-3 py-2 pr-10 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-color-primary focus:border-color-primary transition-all shadow-sm"
-                      placeholder="dd/mm/aaaa"
-                    />
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        const input = e.currentTarget.previousElementSibling as any
-                        if (input && input._openPicker) {
-                          input._openPicker()
-                        }
-                      }}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-color-primary transition-colors"
-                      title="Abrir calendário"
-                    >
-                      <Calendar size={18} />
-                    </button>
-                  </div>
+                  <BrazilianDatePicker
+                    ref={endDatePickerRef}
+                    value={endDate}
+                    onChange={setEndDate}
+                    minDate={startDate ? parseLocalDate(startDate) ?? undefined : undefined}
+                    maxDate={new Date()}
+                    className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-color-primary focus:border-color-primary transition-all shadow-sm"
+                  />
                   {calculationTimestamp && (
                     <div className="mt-1.5 text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
                       <Clock size={12} className="text-color-primary" />
@@ -2221,7 +2141,7 @@ const BalancoPage = () => {
                     &nbsp;
                   </label>
                   <button
-                    onClick={loadBalanceCalculation}
+                    onClick={handleApplyBalance}
                     disabled={!selectedPartnerAccountId || !startDate || !endDate}
                     className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg transition-all font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md hover:opacity-90 whitespace-nowrap"
                     style={{ minWidth: '110px', height: '38px', backgroundColor: 'var(--crud-create)', color: 'var(--on-crud-create)' }}
@@ -2235,10 +2155,10 @@ const BalancoPage = () => {
 
             {/* Abas: Histórico Anual e Fechamentos */}
             {(activeTab === 'history' || activeTab === 'closures') && (
-              <div className="flex flex-col md:flex-row gap-4">
+              <div className="flex flex-col md:flex-row gap-2 md:items-end">
                 {/* Conta Compartilhada */}
                 <div className="flex-1">
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">
+                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
                     <Building2 size={14} className="inline mr-1 text-color-primary" />
                     Conta Compartilhada
                   </label>
@@ -2271,7 +2191,7 @@ const BalancoPage = () => {
 
                 {/* Ano */}
                 <div className="w-full md:w-32">
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">
+                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
                     <Calendar size={14} className="inline mr-1 text-color-primary" />
                     Ano
                   </label>

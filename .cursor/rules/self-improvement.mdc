@@ -1,0 +1,79 @@
+---
+description: Diretrizes para melhorar continuamente as Cursor rules com base em padrões de código emergentes e boas práticas.
+globs: **/*
+alwaysApply: true
+---
+## Gatilhos para Melhoria de Rules
+
+- Novos padrões de código não cobertos pelas rules existentes
+- Implementações similares repetidas em vários arquivos
+- Padrões de erro comuns que poderiam ser prevenidos
+- Novas bibliotecas ou ferramentas usadas de forma consistente
+- Boas práticas emergentes na base de código
+
+# Processo de Análise:
+- Comparar o novo código com as rules existentes
+- Identificar padrões que devem ser padronizados
+- Buscar referências à documentação externa
+- Verificar padrões consistentes de tratamento de erros
+- Monitorar padrões de teste e cobertura
+
+# Atualizações de Rules:
+
+- **Adicionar Novas Rules Quando:**
+  - Uma nova tecnologia/padrão é usada em 3+ arquivos
+  - Bugs comuns poderiam ser prevenidos por uma rule
+  - Code reviews mencionam repetidamente o mesmo feedback
+  - Novos padrões de segurança ou performance emergem
+
+- **Modificar Rules Existentes Quando:**
+  - Melhores exemplos existem na base de código
+  - Casos extremos adicionais são descobertos
+  - Rules relacionadas foram atualizadas
+  - Detalhes de implementação mudaram
+
+- **Exemplo de Reconhecimento de Padrões:**
+
+  ```typescript
+  // Se você vir padrões repetidos como:
+  const data = await prisma.user.findMany({
+    select: { id: true, email: true },
+    where: { status: 'ACTIVE' }
+  });
+
+  // Considere adicionar em [prisma.mdc](mdc:shipixen/.cursor/rules/prisma.mdc):
+  // - Campos de select padrão
+  // - Condições where comuns
+  // - Padrões de otimização de performance
+  ```
+
+- **Verificações de Qualidade das Rules:**
+- Rules devem ser acionáveis e específicas
+- Exemplos devem vir do código real
+- Referências devem estar atualizadas
+- Padrões devem ser aplicados de forma consistente
+
+## Melhoria Contínua:
+
+- Monitorar comentários de code review
+- Acompanhar perguntas comuns de desenvolvimento
+- Atualizar rules após grandes refatorações
+- Adicionar links para documentação relevante
+- Fazer referências cruzadas entre rules relacionadas
+
+## Depreciação de Rules
+
+- Marcar padrões desatualizados como depreciados
+- Remover rules que não se aplicam mais
+- Atualizar referências a rules depreciadas
+- Documentar caminhos de migração para padrões antigos
+
+## Atualizações de Documentação:
+
+- Manter exemplos sincronizados com o código
+- Atualizar referências a docs externos
+- Manter links entre rules relacionadas
+- Documentar breaking changes
+
+Siga [cursor-rules.mdc](mdc:.cursor/rules/cursor-rules.mdc) para formatação e estrutura adequadas das rules.
+

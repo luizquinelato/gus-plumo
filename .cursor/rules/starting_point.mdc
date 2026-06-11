@@ -183,4 +183,4 @@ interface SharedAccountDisplayProps {
 
 Para regras de UI específicas de páginas, consulte:
 
-- **[balanco-ui.md](balanco-ui.md)** - Regras de UI da página de Balanço (estrutura de cards, CSS variables, layout, **lógica de inversão de perspectiva na aba Fechamentos**)
+- **[balanco-ui.mdc](balanco-ui.mdc)** - Regras de UI da página de Balanço (estrutura de cards, CSS variables, layout, **lógica de inversão de perspectiva na aba Fechamentos**)

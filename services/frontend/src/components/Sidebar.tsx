@@ -340,8 +340,46 @@ const Sidebar = () => {
         </ul>
       </nav>
 
+      {/* Theme Toggle — acima de Configurações */}
+      <div className={`pb-2 pt-2 border-t border-gray-800 ${collapsed ? 'px-2' : 'px-3'}`}>
+        {collapsed ? (
+          <button
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Modo Claro' : 'Modo Escuro'}
+            className="w-full flex items-center justify-center py-2 rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white transition-colors duration-200"
+          >
+            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
+        ) : (
+          <div
+            className="flex rounded-lg p-0.5"
+            style={{ background: theme === 'dark' ? 'rgba(0,0,0,0.30)' : 'rgba(255,255,255,0.08)' }}
+          >
+            {([
+              { label: 'Claro', Icon: Sun, active: theme === 'light', onClick: () => theme === 'dark' && toggleTheme() },
+              { label: 'Escuro', Icon: Moon, active: theme === 'dark', onClick: () => theme === 'light' && toggleTheme() },
+            ] as const).map(({ label, Icon, active, onClick }) => (
+              <button
+                key={label}
+                onClick={onClick}
+                className="flex flex-1 items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-all duration-200"
+                style={{
+                  background: active ? (theme === 'dark' ? '#2A2D3E' : 'rgba(255,255,255,0.15)') : 'transparent',
+                  color: active ? (theme === 'dark' ? '#F1F5F9' : 'white') : (theme === 'dark' ? '#64748b' : 'rgba(255,255,255,0.5)'),
+                  boxShadow: active ? '0 1px 4px rgba(0,0,0,.25)' : 'none',
+                  fontWeight: active ? 600 : 500,
+                }}
+              >
+                <Icon size={12} />
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Settings Menu - Separado, antes do perfil */}
-      <div className={`pb-3 border-t border-gray-800 pt-3 ${collapsed ? 'px-2' : 'px-2'}`}>
+      <div className={`pb-3 ${collapsed ? 'px-2' : 'px-2'}`}>
         <ul>
           {(() => {
             const item = settingsMenuItem
@@ -409,44 +447,6 @@ const Sidebar = () => {
             )
           })()}
         </ul>
-      </div>
-
-      {/* Theme Toggle */}
-      <div className={`pb-2 pt-2 border-t border-gray-800 ${collapsed ? 'px-2' : 'px-3'}`}>
-        {collapsed ? (
-          <button
-            onClick={toggleTheme}
-            title={theme === 'dark' ? 'Modo Claro' : 'Modo Escuro'}
-            className="w-full flex items-center justify-center py-2 rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white transition-colors duration-200"
-          >
-            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-          </button>
-        ) : (
-          <div
-            className="flex rounded-lg p-0.5"
-            style={{ background: theme === 'dark' ? 'rgba(0,0,0,0.30)' : 'rgba(255,255,255,0.08)' }}
-          >
-            {([
-              { label: 'Claro', Icon: Sun, active: theme === 'light', onClick: () => theme === 'dark' && toggleTheme() },
-              { label: 'Escuro', Icon: Moon, active: theme === 'dark', onClick: () => theme === 'light' && toggleTheme() },
-            ] as const).map(({ label, Icon, active, onClick }) => (
-              <button
-                key={label}
-                onClick={onClick}
-                className="flex flex-1 items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-all duration-200"
-                style={{
-                  background: active ? (theme === 'dark' ? '#2A2D3E' : 'rgba(255,255,255,0.15)') : 'transparent',
-                  color: active ? (theme === 'dark' ? '#F1F5F9' : 'white') : (theme === 'dark' ? '#64748b' : 'rgba(255,255,255,0.5)'),
-                  boxShadow: active ? '0 1px 4px rgba(0,0,0,.25)' : 'none',
-                  fontWeight: active ? 600 : 500,
-                }}
-              >
-                <Icon size={12} />
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
 
       {/* User Profile Section */}

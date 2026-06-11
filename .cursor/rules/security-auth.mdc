@@ -1,0 +1,50 @@
+---
+description: Segurança, autenticação, multi-tenant e gestão de segredos — regras inegociáveis
+globs: services/**/*
+alwaysApply: true
+---
+# Segurança e Autenticação
+
+Regras **inegociáveis** para backend, frontend e auth.
+
+## 1. Autenticação obrigatória
+
+- Nenhuma rota de **negócio** pode ser pública.
+- Backend: proteger endpoints com dependências FastAPI em `services/backend/app/dependencies/auth.py`:
+  - `get_current_user` — usuário autenticado
+  - `require_account` — autenticado **e** com conta selecionada (`account_id` no token)
+  - `require_admin` — apenas administradores
+- Frontend: rotas privadas devem usar `ProtectedRoute` (`src/components/ProtectedRoute.tsx`).
+- Exceções públicas: `/login`, `/api/auth/login`, health checks explícitos.
+
+## 2. Isolamento do Auth Service
+
+- O frontend **nunca** chama o Auth Service diretamente.
+- Fluxo de login: `Frontend → Backend (/api/auth/login) → Auth Service → Backend → Frontend`.
+- Token JWT armazenado e enviado via `Authorization: Bearer` (ver `AuthContext.tsx`).
+- Auth Service: `services/auth/` (porta padrão 8001). Backend usa `AUTH_SERVICE_URL`.
+
+## 3. Multi-tenant nativo
+
+- Tabelas de negócio devem incluir `tenant_id` (e frequentemente `account_id`).
+- Base SQLAlchemy: `AccountBaseEntity` em `app/models/base_entity.py`.
+- **Toda query** de negócio deve filtrar por `tenant_id` (e `account_id` quando aplicável). Nunca retornar dados de outro tenant.
+- Modelos principais: `app/models/unified_models.py`.
+
+## 4. Gestão de segredos
+
+- Proibido hardcode de secrets, API keys, tokens ou senhas.
+- Backend: variáveis de ambiente (`.env.dev` / `.env.prod` na raiz do monorepo).
+- Frontend: apenas variáveis `VITE_*` via `import.meta.env` (ex.: `VITE_API_URL`).
+- Nunca commitar `.env` com credenciais reais.
+
+## 5. Controle de acesso (RBAC)
+
+- RBAC definido em `services/auth/app/core/rbac.py`.
+- Rotas que alteram dados sensíveis devem validar permissões quando o domínio exigir.
+- Preferir `require_admin` para configurações de tenant (cores, usuários, etc.).
+
+## Referências cruzadas
+
+- Migrations e schema: [starting_point.mdc](starting_point.mdc)
+- Estrutura auth/backend: [project-structure.mdc](project-structure.mdc)

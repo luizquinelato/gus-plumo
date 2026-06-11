@@ -4,10 +4,8 @@ import Sidebar from '../components/Sidebar'
 import SharedAccountDisplay from '../components/SharedAccountDisplay'
 import LoadingSpinner from '../components/LoadingSpinner'
 import { Layers, Search, X, ChevronDown, ChevronRight, Landmark, CreditCard, Gift, Filter, Calendar, Info, TrendingUp, TrendingDown, Minus, BarChart3, ArrowUp } from 'lucide-react'
-import DatePicker from 'react-datepicker'
-import 'react-datepicker/dist/react-datepicker.css'
-import '../styles/datepicker-custom.css'
-import { dateToLocalString } from '../utils/dateUtils'
+import BrazilianDatePicker from '../components/BrazilianDatePicker'
+import { dateToLocalString, parseLocalDate } from '../utils/dateUtils'
 import { formatCurrency } from '../utils/currency'
 import { MultiSelectDropdown, SourceMultiSelectDropdown } from '../components/MultiSelectDropdown'
 
@@ -378,13 +376,11 @@ const GrupoPage = () => {
                     <Calendar size={12} className="inline mr-1 text-color-primary" />
                     Data Início
                   </label>
-                  <DatePicker
-                    selected={startDate}
-                    onChange={(date) => setStartDate(date)}
-                    dateFormat="dd/MM/yyyy"
-                    placeholderText="Selecione..."
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:border-color-primary focus:outline-none"
-                    isClearable
+                  <BrazilianDatePicker
+                    value={startDate ? dateToLocalString(startDate) : ''}
+                    onChange={(value) => setStartDate(value ? parseLocalDate(value) : null)}
+                    maxDate={endDate ?? undefined}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-color-primary focus:border-color-primary transition-all"
                   />
                 </div>
 
@@ -394,13 +390,11 @@ const GrupoPage = () => {
                     <Calendar size={12} className="inline mr-1 text-color-primary" />
                     Data Fim
                   </label>
-                  <DatePicker
-                    selected={endDate}
-                    onChange={(date) => setEndDate(date)}
-                    dateFormat="dd/MM/yyyy"
-                    placeholderText="Selecione..."
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:border-color-primary focus:outline-none"
-                    isClearable
+                  <BrazilianDatePicker
+                    value={endDate ? dateToLocalString(endDate) : ''}
+                    onChange={(value) => setEndDate(value ? parseLocalDate(value) : null)}
+                    minDate={startDate ?? undefined}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-color-primary focus:border-color-primary transition-all"
                   />
                 </div>
               </div>

@@ -8,11 +8,10 @@ import EditExpenseModal from '../components/EditExpenseModal'
 import BatchEditExpenseModal from '../components/BatchEditExpenseModal'
 import SharedAccountDisplay from '../components/SharedAccountDisplay'
 import { MultiSelectDropdown, SourceMultiSelectDropdown } from '../components/MultiSelectDropdown'
+import BrazilianDatePicker from '../components/BrazilianDatePicker'
 import { FileText, Edit2, Trash2, Split, ArrowDownCircle, ArrowUpCircle, Search, X, Filter, Calendar, Landmark, CreditCard, Gift, ArrowUpDown, ArrowUp, ArrowDown, CheckSquare, Square, MinusSquare, Database, Tag, Tags, Users, TrendingUp, BarChart3, Download, Wallet, PlusCircle, ArrowLeftRight, Building2, AlertTriangle, ArrowRight } from 'lucide-react'
-import 'react-datepicker/dist/react-datepicker.css'
-import '../styles/datepicker-custom.css'
 import { useConfirm } from '../hooks/useConfirm'
-import { dateToLocalString } from '../utils/dateUtils'
+import { dateToLocalString, parseLocalDate } from '../utils/dateUtils'
 import ExportModal from '../components/ExportModal'
 import SendToLoanModal from '../components/SendToLoanModal'
 import ManualTransactionModal from '../components/ManualTransactionModal'
@@ -1311,53 +1310,43 @@ const ExtratoPage = () => {
               <div className="hidden lg:block w-px h-6 bg-gray-300 dark:bg-gray-600"></div>
 
               {/* Data de Início */}
-              <div className="flex-1 flex items-center gap-2 min-w-[180px]">
+              <div className="flex-1 flex items-center gap-2 min-w-[200px]">
                 <label className="text-xs font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap flex items-center gap-1">
                   <Calendar size={12} className="text-color-primary" />
                   Início
                 </label>
-                <input
-                  type="date"
+                <BrazilianDatePicker
                   value={startDate ? dateToLocalString(startDate) : ''}
-                  onChange={(e) => {
-                    const value = e.target.value
-                    // Só atualiza quando tiver data completa válida (YYYY-MM-DD)
-                    // Ignora valores vazios ou parciais durante digitação
-                    if (value && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
-                      const newDate = new Date(value + 'T00:00:00')
-                      if (!isNaN(newDate.getTime())) {
-                        setStartDate(newDate)
-                      }
+                  onChange={(value) => {
+                    if (!value) {
+                      setStartDate(null)
+                      return
                     }
+                    const parsed = parseLocalDate(value)
+                    if (parsed) setStartDate(new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate(), 0, 0, 0, 0))
                   }}
-                  max={endDate ? dateToLocalString(endDate) : undefined}
-                  style={{ colorScheme: 'light dark' }}
+                  maxDate={endDate ? parseLocalDate(dateToLocalString(endDate)) ?? undefined : undefined}
                   className="flex-1 px-2 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-color-primary focus:border-color-primary transition-all"
                 />
               </div>
 
               {/* Data de Fim */}
-              <div className="flex-1 flex items-center gap-2 min-w-[180px]">
+              <div className="flex-1 flex items-center gap-2 min-w-[200px]">
                 <label className="text-xs font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap flex items-center gap-1">
                   <Calendar size={12} className="text-color-primary" />
                   Fim
                 </label>
-                <input
-                  type="date"
+                <BrazilianDatePicker
                   value={endDate ? dateToLocalString(endDate) : ''}
-                  onChange={(e) => {
-                    const value = e.target.value
-                    // Só atualiza quando tiver data completa válida (YYYY-MM-DD)
-                    // Ignora valores vazios ou parciais durante digitação
-                    if (value && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
-                      const newDate = new Date(value + 'T23:59:59')
-                      if (!isNaN(newDate.getTime())) {
-                        setEndDate(newDate)
-                      }
+                  onChange={(value) => {
+                    if (!value) {
+                      setEndDate(null)
+                      return
                     }
+                    const parsed = parseLocalDate(value)
+                    if (parsed) setEndDate(new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate(), 23, 59, 59, 999))
                   }}
-                  min={startDate ? dateToLocalString(startDate) : undefined}
-                  style={{ colorScheme: 'light dark' }}
+                  minDate={startDate ? parseLocalDate(dateToLocalString(startDate)) ?? undefined : undefined}
                   className="flex-1 px-2 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-color-primary focus:border-color-primary transition-all"
                 />
               </div>

@@ -1,0 +1,84 @@
+---
+description: Stack tecnológico do projeto — versões e boas práticas (Plumo / gus-plumo)
+globs: services/**/*
+alwaysApply: false
+---
+# Stack Tecnológico
+
+Versões de referência: `services/frontend/package.json` e `services/backend/requirements/install.txt`.
+
+## Frontend — `services/frontend`
+
+| Categoria | Biblioteca | Versão (package.json) | Notas |
+|---|---|---|---|
+| UI | `react` + `react-dom` | **18.3.x** | SPA client-side |
+| Roteamento | `react-router-dom` | **6.28.x** | `<Routes>` / `<Route>` em `App.tsx` |
+| Build | `vite` | **5.4.x** | `vite.config.ts` |
+| Linguagem | `typescript` | **~5.6** | `tsconfig.json` |
+| Estilos | `tailwindcss` | **3.4.x** | **Tailwind v3** — não migrar para v4 sem decisão |
+| HTTP | `axios` | **1.13.x** | Usado em páginas/contextos; ver [design-frontend.mdc](design-frontend.mdc) |
+| Ícones | `lucide-react` | **0.344.x** | Biblioteca exclusiva de ícones |
+| Datas | `react-datepicker` | **9.x** | + `BrazilianDatePicker` para filtros BR |
+| Gráficos | `recharts` | **3.x** | Dashboard / relatórios |
+| Export | `jspdf`, `xlsx` | — | PDF e Excel |
+| UI utils | `clsx`, `tailwind-merge`, `class-variance-authority` | — | Composição de classes |
+| Radix | `@radix-ui/react-slot` | **1.1.x** | Slot primitivo apenas |
+
+### Observações — Frontend
+
+1. **Tailwind v3** via `tailwind.config.js` + `postcss.config.js`.
+2. **Cores tenant:** variáveis CSS `--color-*`, `--gradient-*` — ver [design-frontend.mdc](design-frontend.mdc).
+3. **Auth:** token e base URL em `AuthContext.tsx`.
+4. Não há React Query, TipTap, Sonner ou `apiClient` centralizado no estado atual.
+
+---
+
+## Backend — `services/backend`
+
+| Biblioteca | Versão (install.txt) | Notas |
+|---|---|---|
+| `fastapi` | **0.115.5** | Routers em `app/routers/` |
+| `uvicorn` | **0.32.1** | `dev_server.py` com `--reload` em dev |
+| `pydantic` | **2.12.5** | v2: `model_dump()`, `@field_validator` |
+| `pydantic-settings` | **2.12.0** | Config via env |
+| `sqlalchemy` | **2.0.36** | Estilo 2.0: `select()`, `session.execute()` |
+| `psycopg2-binary` | **2.9.12** | Driver sync (app + migrations) |
+| `alembic` | **1.14.0** | Presente; migrations custom em `scripts/migrations/` |
+| `httpx` | **0.27.0** | Chamadas ao Auth Service |
+| `PyJWT` | — | Validação de token no backend |
+| `pandas`, `openpyxl`, `pyexcel*` | — | Importação Excel |
+| `PyPDF2` | — | Parsing PDF |
+| `pika` | — | Mensageria (quando usado) |
+
+### Observações — Backend
+
+1. Migrations: `scripts/migrations/0001` (schema), `0002+` (dados) — [starting_point.mdc](starting_point.mdc).
+2. Auth deps: `get_current_user`, `require_account`, `require_admin`.
+3. Logging: `app/core/logging_config.py` — nunca `print()` em produção.
+
+---
+
+## Auth — `services/auth`
+
+FastAPI + `local_provider` + RBAC (`app/core/rbac.py`). Requirements em `services/auth/requirements/install.txt`.
+
+---
+
+## Infraestrutura
+
+| Componente | Local |
+|---|---|
+| PostgreSQL | `docker-compose.db.yml`, `docker-compose.db.dev.yml` |
+| Env | `.env.dev`, `.env.prod` na raiz (não commitar segredos) |
+| Backups | `scripts/database/*.bat`, pasta `backups/` |
+
+---
+
+## Resumo
+
+```
+Frontend : React 18 + React Router 6 + Vite 5 + TS 5.6 + Tailwind 3 + axios + lucide-react
+Backend  : FastAPI 0.115 + Pydantic v2 + SQLAlchemy 2.0 + psycopg2
+Auth     : FastAPI (serviço separado, porta 8001)
+DB       : PostgreSQL 17 (Docker Compose)
+```

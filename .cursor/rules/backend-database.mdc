@@ -1,0 +1,60 @@
+---
+description: Soft delete, logging, schema SQL, validação Pydantic e performance no backend
+globs: services/backend/**/*
+alwaysApply: false
+---
+# Backend e Banco de Dados
+
+Regras para `services/backend/`. Migrations: [starting_point.mdc](starting_point.mdc).
+
+## 1. Soft delete
+
+- Evite `DELETE FROM` em dados de negócio.
+- Use exclusão lógica: `active = false` (coluna presente em várias entidades).
+- Queries padrão devem filtrar `active == True` (SQLAlchemy).
+- Exemplo: `balance_closure_router.py` desativa pagamentos com `payment.active = False`.
+
+## 2. Logging estruturado
+
+- Proibido `print()` em código de produção.
+- Use `logger = logging.getLogger(__name__)` por módulo.
+- Configuração: `app/core/logging_config.py` e `LOGGING_EXAMPLES.md`.
+- Níveis: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`.
+
+## 3. Idioma e nomenclatura do banco
+
+- Schema, tabelas e colunas **sempre em inglês**.
+- `DB_LANGUAGE` / locale afeta charset/collation e dados, não nomes de objetos.
+- Nome do banco segue `PROJECT_KEY`:
+  - **PROD:** `DB_NAME={PROJECT_KEY}`, `DB_USER={PROJECT_KEY}`
+  - **DEV:** `DB_NAME={PROJECT_KEY}_dev`
+- Evite sufixos `_db`, `_database`, `_prod` no nome do banco.
+- Detalhes: `docs/banco-de-dados.md`, `docs/ambientes.md`.
+
+## 4. Migrations
+
+- **Schema (DDL):** editar `0001_schema_inicial_multi-tenant.py` — não criar `ALTER TABLE` avulsos.
+- **Dados iniciais (DML):** `0002_seed_data_inicial.py` e JSONs associados.
+- Novos migrations (`0003+`) apenas quando explicitamente necessário ou lógica de dados complexa.
+- Runner: `scripts/migration_runner.py`.
+
+## 5. Validação de dados
+
+- FastAPI + **Pydantic** para request/response em routers.
+- Schemas tipados; evitar `dict` genérico em contratos públicos.
+- Sessão DB via `get_db` em `app/database.py`.
+
+## 6. Paginação e performance
+
+- Listas grandes devem usar paginação (`limit`, `offset` ou equivalente).
+- Índices em colunas de filtro frequente: `tenant_id`, `account_id`, `active`, datas.
+- Lógica pesada em `app/services/`, não inline nos routers.
+
+## 7. ETL e importação
+
+- Pipeline de extrato: `app/etl/` (`extrato_extractor`, `extrato_transformer`, `extrato_etl`).
+- Documentação: `app/etl/README.md`, `docs/importacao.md`.
+
+## Nota sobre regras legadas
+
+A seção "Integrações e IA" da pasta `rules/` (tabela `integrations`, fallback OpenAI/Anthropic) **não se aplica** ao Plumo atual — omitida até existir no schema.

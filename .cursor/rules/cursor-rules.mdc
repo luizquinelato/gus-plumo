@@ -1,0 +1,67 @@
+---
+description: Como adicionar ou editar Cursor rules neste projeto
+globs:
+alwaysApply: false
+---
+# Localização das Cursor Rules
+
+Como adicionar novas cursor rules ao projeto
+
+1. Sempre coloque os arquivos de rule em PROJECT_ROOT/.cursor/rules/:
+    ```
+    .cursor/rules/
+    ├── nome-da-sua-rule.mdc
+    ├── outra-rule.mdc
+    └── ...
+    ```
+
+2. Siga a convenção de nomenclatura:
+    - Use kebab-case nos nomes dos arquivos
+    - Sempre use a extensão .mdc
+    - Dê nomes descritivos que reflitam o propósito da rule
+
+3. Estrutura de diretórios:
+    ```
+    PROJECT_ROOT/
+    ├── .cursor/
+    │   └── rules/
+    │       ├── nome-da-sua-rule.mdc
+    │       └── ...
+    └── ...
+    ```
+
+4. Nunca coloque arquivos de rule:
+    - Na raiz do projeto
+    - Em subdiretórios fora de .cursor/rules
+    - Em qualquer outro local
+
+5. As Cursor rules possuem a seguinte estrutura:
+
+```
+---
+description: Descrição curta do propósito da rule
+globs: caminho/opcional/padrão/**/*
+alwaysApply: false
+---
+# Título da Rule
+
+Conteúdo principal explicando a rule com formatação markdown.
+
+1. Instruções passo a passo
+2. Exemplos de código
+3. Diretrizes
+
+Exemplo:
+
+```typescript
+// Bom exemplo
+function bomExemplo() {
+  // Implementação seguindo as diretrizes
+}
+
+// Mau exemplo
+function mauExemplo() {
+  // Implementação que não segue as diretrizes
+}
+```
+

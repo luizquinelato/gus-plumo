@@ -3,6 +3,8 @@ import axios from 'axios'
 import Sidebar from '../components/Sidebar'
 import LoadingSpinner from '../components/LoadingSpinner'
 import Toast from '../components/Toast'
+import BrazilianDatePicker from '../components/BrazilianDatePicker'
+import { parseLocalDate } from '../utils/dateUtils'
 import { Wallet, Plus, Edit2, Trash2, ChevronDown, ChevronRight, Search, X, Filter, Calendar, Users, TrendingUp, TrendingDown, CheckCircle, Check, Clock, AlertTriangle, Percent, DollarSign, ArrowUp, ArrowDown, Building2, UserX, Link2, Lock, HelpCircle } from 'lucide-react'
 import { useConfirm } from '../hooks/useConfirm'
 
@@ -263,7 +265,7 @@ export default function EmprestimosPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Form do modal de pagamento
-  const [paymentAmount, setPaymentAmount] = useState('')
+  const [paymentAmountCents, setPaymentAmountCents] = useState('')
   const [paymentDate, setPaymentDate] = useState(dateToInputString(new Date()))
   const [paymentNotes, setPaymentNotes] = useState('')
   const [editingPayment, setEditingPayment] = useState<LoanPayment | null>(null)
@@ -557,7 +559,7 @@ export default function EmprestimosPage() {
   const handleOpenPayment = (loan: Loan, payment?: LoanPayment) => {
     setPayingLoan(loan)
     setEditingPayment(payment || null)
-    setPaymentAmount(payment ? payment.amount.toString() : '')
+    setPaymentAmountCents(payment ? String(Math.round(payment.amount * 100)) : '')
     setPaymentDate(payment ? payment.payment_date.split('T')[0] : dateToInputString(new Date()))
     setPaymentNotes(payment?.notes || '')
     setShowPaymentModal(true)
@@ -565,16 +567,10 @@ export default function EmprestimosPage() {
 
   const handleAddPayment = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!payingLoan || !paymentAmount) {
+    const amount = parseInt(paymentAmountCents || '0', 10) / 100
+
+    if (!payingLoan || !paymentAmountCents || amount <= 0) {
       showToast('Informe o valor do pagamento', 'warning')
-      return
-    }
-
-    const amount = parseFloat(paymentAmount)
-
-    // Validação: valor deve ser positivo
-    if (amount <= 0) {
-      showToast('O valor deve ser maior que zero', 'warning')
       return
     }
 
@@ -1407,44 +1403,12 @@ export default function EmprestimosPage() {
                       <Calendar size={16} />
                       Data *
                     </label>
-                    <div className="relative">
-                      <input
-                        ref={(el) => {
-                          if (el) {
-                            (el as any)._openPicker = () => {
-                              try {
-                                if ('showPicker' in el) {
-                                  (el as any).showPicker()
-                                }
-                              } catch (error) {
-                                // Silently fail
-                              }
-                            }
-                          }
-                        }}
-                        type="date"
-                        value={formLoanDate}
-                        onChange={(e) => setFormLoanDate(e.target.value)}
-                        disabled={editingSettled}
-                        required
-                        style={{ colorScheme: 'light dark' }}
-                        className={`w-full px-3 py-2 pr-10 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent ${editingSettled ? 'cursor-not-allowed' : ''}`}
-                      />
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          const input = e.currentTarget.previousElementSibling as any
-                          if (input && input._openPicker) {
-                            input._openPicker()
-                          }
-                        }}
-                        disabled={editingSettled}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-color-primary transition-colors disabled:opacity-50"
-                        title="Abrir calendário"
-                      >
-                        <Calendar size={16} />
-                      </button>
-                    </div>
+                    <BrazilianDatePicker
+                      value={formLoanDate}
+                      onChange={setFormLoanDate}
+                      disabled={editingSettled}
+                      className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent ${editingSettled ? 'cursor-not-allowed opacity-50' : ''}`}
+                    />
                   </div>
                 </div>
                 <div>
@@ -1494,43 +1458,13 @@ export default function EmprestimosPage() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     <Calendar size={14} className="inline mr-1" /> Vencimento (opcional)
                   </label>
-                  <div className="relative">
-                    <input
-                      ref={(el) => {
-                        if (el) {
-                          (el as any)._openPicker = () => {
-                            try {
-                              if ('showPicker' in el) {
-                                (el as any).showPicker()
-                              }
-                            } catch (error) {
-                              // Silently fail
-                            }
-                          }
-                        }
-                      }}
-                      type="date"
-                      value={formDueDate}
-                      onChange={(e) => setFormDueDate(e.target.value)}
-                      disabled={editingSettled}
-                      style={{ colorScheme: 'light dark' }}
-                      className={`w-full px-3 py-2 pr-10 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent ${editingSettled ? 'cursor-not-allowed' : ''}`}
-                    />
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        const input = e.currentTarget.previousElementSibling as any
-                        if (input && input._openPicker) {
-                          input._openPicker()
-                        }
-                      }}
-                      disabled={editingSettled}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-color-primary transition-colors disabled:opacity-50"
-                      title="Abrir calendário"
-                    >
-                      <Calendar size={16} />
-                    </button>
-                  </div>
+                  <BrazilianDatePicker
+                    value={formDueDate}
+                    onChange={setFormDueDate}
+                    minDate={formLoanDate ? parseLocalDate(formLoanDate) ?? undefined : undefined}
+                    disabled={editingSettled}
+                    className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent ${editingSettled ? 'cursor-not-allowed opacity-50' : ''}`}
+                  />
                 </div>
                 {/* Juros */}
                 <div className={`border-t border-gray-200 dark:border-gray-700 pt-4 ${editingSettled ? 'opacity-50 pointer-events-none' : ''}`}>
@@ -1600,26 +1534,23 @@ export default function EmprestimosPage() {
                     </label>
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 font-semibold text-green-600 dark:text-green-400">
-                        $
+                        R$
                       </span>
                       <input
                         type="text"
-                        inputMode="decimal"
-                        value={paymentAmount}
+                        inputMode="numeric"
+                        value={formatAmountMask(paymentAmountCents)}
                         onChange={(e) => {
-                          // Limitar ao saldo restante durante digitação
-                          const value = e.target.value.replace(',', '.')
-                          const numValue = parseFloat(value)
-                          if (!editingPayment && !isNaN(numValue) && numValue > payingLoan.remaining_balance) {
-                            setPaymentAmount(payingLoan.remaining_balance.toFixed(2))
-                          } else {
-                            handleAmountChange(e.target.value, setPaymentAmount)
+                          let cents = e.target.value.replace(/\D/g, '')
+                          const amountValue = parseInt(cents || '0', 10) / 100
+                          if (!editingPayment && amountValue > payingLoan.remaining_balance) {
+                            cents = String(Math.round(payingLoan.remaining_balance * 100))
                           }
+                          setPaymentAmountCents(cents)
                         }}
-                        onBlur={() => handleAmountBlur(paymentAmount, setPaymentAmount)}
-                        placeholder="0.00"
+                        placeholder="0,00"
                         required
-                        className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 font-semibold text-green-600 dark:text-green-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full pl-12 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 font-semibold text-green-600 dark:text-green-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </div>
                     {!editingPayment && (
@@ -1633,42 +1564,12 @@ export default function EmprestimosPage() {
                       <Calendar size={16} />
                       Data *
                     </label>
-                    <div className="relative">
-                      <input
-                        ref={(el) => {
-                          if (el) {
-                            (el as any)._openPicker = () => {
-                              try {
-                                if ('showPicker' in el) {
-                                  (el as any).showPicker()
-                                }
-                              } catch (error) {
-                                // Silently fail
-                              }
-                            }
-                          }
-                        }}
-                        type="date"
-                        value={paymentDate}
-                        onChange={(e) => setPaymentDate(e.target.value)}
-                        required
-                        style={{ colorScheme: 'light dark' }}
-                        className="w-full px-3 py-2 pr-10 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          const input = e.currentTarget.previousElementSibling as any
-                          if (input && input._openPicker) {
-                            input._openPicker()
-                          }
-                        }}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-color-primary transition-colors"
-                        title="Abrir calendário"
-                      >
-                        <Calendar size={16} />
-                      </button>
-                    </div>
+                    <BrazilianDatePicker
+                      value={paymentDate}
+                      onChange={setPaymentDate}
+                      maxDate={new Date()}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
                   </div>
                 </div>
                 <div>

@@ -1,8 +1,7 @@
 import React, { useState } from 'react'
-import DatePicker from 'react-datepicker'
-import 'react-datepicker/dist/react-datepicker.css'
-import '../styles/datepicker-custom.css'
+import BrazilianDatePicker from './BrazilianDatePicker'
 import { Filter } from 'lucide-react'
+import { dateToLocalString, parseLocalDate } from '../utils/dateUtils'
 
 interface TagOption {
   id: number
@@ -157,12 +156,11 @@ const ReportFilters: React.FC<ReportFiltersProps> = ({
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Data Inicial
                 </label>
-                <DatePicker
-                  selected={startDate}
-                  onChange={(date: Date | null) => setStartDate(date)}
-                  dateFormat="dd/MM/yyyy"
-                  className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
-                  placeholderText="Selecione..."
+                <BrazilianDatePicker
+                  value={startDate ? dateToLocalString(startDate) : ''}
+                  onChange={(value) => setStartDate(value ? parseLocalDate(value) : null)}
+                  maxDate={endDate ?? undefined}
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-color-primary focus:border-color-primary"
                 />
               </div>
             )}
@@ -173,12 +171,11 @@ const ReportFilters: React.FC<ReportFiltersProps> = ({
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Data Final
                 </label>
-                <DatePicker
-                  selected={endDate}
-                  onChange={(date: Date | null) => setEndDate(date)}
-                  dateFormat="dd/MM/yyyy"
-                  className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
-                  placeholderText="Selecione..."
+                <BrazilianDatePicker
+                  value={endDate ? dateToLocalString(endDate) : ''}
+                  onChange={(value) => setEndDate(value ? parseLocalDate(value) : null)}
+                  minDate={startDate ?? undefined}
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-color-primary focus:border-color-primary"
                 />
               </div>
             )}
