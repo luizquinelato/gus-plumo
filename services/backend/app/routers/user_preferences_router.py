@@ -26,6 +26,19 @@ class ThemePreferenceResponse(BaseModel):
         from_attributes = True
 
 
+class SidebarPreferenceUpdate(BaseModel):
+    """Schema para atualizar preferência do sidebar"""
+    sidebar_collapsed: bool
+
+
+class SidebarPreferenceResponse(BaseModel):
+    """Schema de resposta de preferência do sidebar"""
+    sidebar_collapsed: bool
+
+    class Config:
+        from_attributes = True
+
+
 @router.patch("/theme", response_model=ThemePreferenceResponse)
 async def update_theme_preference(
     theme_data: ThemePreferenceUpdate,
@@ -90,4 +103,39 @@ async def get_theme_preference(
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
 
     return ThemePreferenceResponse(theme_mode=user.theme_mode or 'light')
+
+
+@router.patch("/sidebar", response_model=SidebarPreferenceResponse)
+async def update_sidebar_preference(
+    sidebar_data: SidebarPreferenceUpdate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Atualiza a preferência de sidebar colapsado do usuário."""
+    user_id = current_user.get("id") or current_user.get("user_id")
+
+    user = db.query(Usuario).filter(Usuario.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    user.sidebar_collapsed = sidebar_data.sidebar_collapsed
+    db.commit()
+    db.refresh(user)
+
+    return SidebarPreferenceResponse(sidebar_collapsed=user.sidebar_collapsed)
+
+
+@router.get("/sidebar", response_model=SidebarPreferenceResponse)
+async def get_sidebar_preference(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Obtém a preferência de sidebar colapsado do usuário."""
+    user_id = current_user.get("id") or current_user.get("user_id")
+
+    user = db.query(Usuario).filter(Usuario.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    return SidebarPreferenceResponse(sidebar_collapsed=user.sidebar_collapsed or False)
 

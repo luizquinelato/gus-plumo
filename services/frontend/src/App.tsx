@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { useEffect } from 'react'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider } from './contexts/AuthContext'
+import { SidebarProvider } from './contexts/SidebarContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import LoginPage from './pages/LoginPage'
 import SelectAccountPage from './pages/SelectAccountPage'
@@ -43,6 +44,7 @@ function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
+        <SidebarProvider>
         <ColorApplicationWrapper>
           <DevTitleEffect />
           <Router
@@ -221,6 +223,7 @@ function App() {
             </Routes>
           </Router>
         </ColorApplicationWrapper>
+        </SidebarProvider>
       </AuthProvider>
     </ThemeProvider>
   )

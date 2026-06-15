@@ -121,8 +121,8 @@ class FaturaService:
             "Restaurante (1/3)" -> (True, 1, 3)
             "Supermercado" -> (False, None, None)
         """
-        # Padrão: (X/Y) no final da descrição
-        pattern = r'\((\d+)/(\d+)\)\s*$'
+        # Padrão: (X/Y) na descrição — ex: "Compra Mercado (2/12)"
+        pattern = r'\((\d+)/(\d+)\)'
         match = re.search(pattern, descricao)
 
         if match:
@@ -594,40 +594,50 @@ class FaturaService:
             CreditCardInvoice.date,
             CreditCardInvoice.id,
             CreditCardInvoice.subtag_id,
-            CreditCardInvoice.amount
+            CreditCardInvoice.amount,
+            CreditCardInvoice.current_installment,
+            CreditCardInvoice.total_installments,
         ).filter(
             CreditCardInvoice.tenant_id == tenant_id
         ).all()
 
-        # Dict para verificação rápida de duplicatas (O(1))
-        # Chave inclui VALOR para diferenciar compras similares com valores diferentes
-        # Estrutura: { (year_month, credit_card_id, description, amount, date?) : [lista de IDs] }
+        # Chave inclui valor para distinguir compras distintas com mesma descrição/parcela/data
+        # Ex: dois "Eventim (3/3)" no mesmo dia com R$ 663,60 e R$ 821,60
         existing_keys = {}
-        # Dict com dados completos para detecção de conflitos
+        existing_keys_base = {}
         existing_records_data = {}
         for e in existing_keys_query:
             amount_rounded = round(float(e.amount), 2) if e.amount else 0.0
 
-            # Chave SEM data (para compras à vista) - inclui valor
-            key_no_date = (e.year_month, e.credit_card_id, e.description, amount_rounded)
-            # Chave COM data (para parceladas) - inclui valor
-            key_with_date = (e.year_month, e.credit_card_id, e.description, amount_rounded, e.date)
+            key = (
+                e.year_month,
+                e.credit_card_id,
+                e.description,
+                e.date,
+                e.current_installment,
+                e.total_installments,
+                amount_rounded,
+            )
+            key_base = (e.year_month, e.credit_card_id, e.description, e.date)
 
-            # Usa lista para permitir múltiplos registros com mesma chave
-            if key_no_date not in existing_keys:
-                existing_keys[key_no_date] = []
-            existing_keys[key_no_date].append(e.id)
+            if key not in existing_keys:
+                existing_keys[key] = []
+            existing_keys[key].append(e.id)
 
-            if key_with_date not in existing_keys:
-                existing_keys[key_with_date] = []
-            existing_keys[key_with_date].append(e.id)
+            if key_base not in existing_keys_base:
+                existing_keys_base[key_base] = []
+            existing_keys_base[key_base].append(e.id)
 
-            # Dados para conflitos
             existing_records_data[e.id] = {
                 'subtag_id': e.subtag_id,
-                'amount': amount_rounded
+                'amount': amount_rounded,
+                'current_installment': e.current_installment,
+                'total_installments': e.total_installments,
             }
         logger.info(f"   ✅ {len(existing_keys_query)} registros existentes carregados")
+
+        batch_keys = {}
+        consumed_ids = set()
 
         # Cache reverso de subtags para exibir nomes nos conflitos
         subtag_id_to_info = {s.id: {'name': s.name, 'tag_name': s.tag_name, 'type': s.type} for s in subtags_query}
@@ -712,28 +722,38 @@ class FaturaService:
                 mes = str(row['Mês']).zfill(2)  # Garante 2 dígitos (01, 02, etc)
                 year_month = f"{ano}-{mes}"
 
-                # Verifica se é duplicata (lookup em dict - O(1))
+                # Verifica duplicata (mesma estratégia da importação Excel)
                 descricao_limpa = row.get('Descrição Limpa', descricao)
-
-                # Inverte o sinal do valor (positivo → negativo, negativo → positivo)
-                # Faturas são despesas, então valores positivos viram negativos
                 valor_invertido = round(-float(row['Valor']), 2)
 
-                # Chave INCLUI valor para identificação precisa
-                # Tenta com data (para parceladas)
-                if parcela_atual is not None:
-                    key = (year_month, cartao_id, descricao_limpa, valor_invertido, data_compra)
-                else:
-                    key = (year_month, cartao_id, descricao_limpa, valor_invertido)
+                key = (year_month, cartao_id, descricao_limpa, data_compra, parcela_atual, total_parcelas, valor_invertido)
+                key_base = (year_month, cartao_id, descricao_limpa, data_compra)
 
-                existing_ids = existing_keys.get(key, [])
-
-                # Pega o primeiro ID disponível (se houver múltiplos)
-                # Usa set para rastrear IDs já consumidos nesta importação
                 existing_id = None
-                if existing_ids:
-                    # Usa o primeiro ID que ainda não foi consumido
-                    existing_id = existing_ids[0]
+
+                # 1) Match exato no lote atual (mesma linha repetida no PDF)
+                batch_indices = batch_keys.get(key, [])
+                if batch_indices:
+                    existing_id = f"batch:{batch_indices[0]}"
+
+                # 2) Match exato no banco
+                if not existing_id:
+                    available_ids = [i for i in existing_keys.get(key, []) if i not in consumed_ids]
+                    if available_ids:
+                        existing_id = available_ids[0]
+
+                # 3) Fallback: mesma descrição/data, parcelas ausentes no banco — exige match de valor
+                if not existing_id:
+                    available_ids = [i for i in existing_keys_base.get(key_base, []) if i not in consumed_ids]
+                    for candidate_id in available_ids:
+                        candidate_amount = existing_records_data.get(candidate_id, {}).get('amount', 0.0)
+                        if abs(candidate_amount - valor_invertido) < 0.005:
+                            existing_id = candidate_id
+                            break
+
+                if isinstance(existing_id, str) and existing_id.startswith('batch:'):
+                    # Duplicata dentro do mesmo arquivo - ignora linha repetida
+                    continue
 
                 if existing_id:
                     # Registro duplicado - verifica se há conflitos de tag/subtag
@@ -802,6 +822,7 @@ class FaturaService:
                             'current_installment': parcela_atual,
                             'total_installments': total_parcelas
                         })
+                        consumed_ids.add(existing_id)
                         linhas_atualizadas += 1
                 else:
                     # Busca configurações de ajuste do cartão (cache)
@@ -825,7 +846,7 @@ class FaturaService:
                             final_ownership_percentage = Decimal(str(mapping_data['my_contribution_percentage']))
 
                     # Novo registro - adiciona para insert
-                    records_to_insert.append({
+                    insert_record = {
                         'tenant_id': tenant_id,
                         'credit_card_id': cartao_id,
                         'date': data_compra,
@@ -839,7 +860,12 @@ class FaturaService:
                         'account_id': adjustment_config['account_id'],
                         'ownership_percentage': final_ownership_percentage,
                         'created_by': user_id  # ✅ Campo obrigatório do BaseEntity
-                    })
+                    }
+                    records_to_insert.append(insert_record)
+                    batch_idx = len(records_to_insert) - 1
+                    if key not in batch_keys:
+                        batch_keys[key] = []
+                    batch_keys[key].append(batch_idx)
                     linhas_salvas += 1
 
                     # Adiciona aos registros não mapeados se necessário

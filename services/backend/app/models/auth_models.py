@@ -49,6 +49,7 @@ class Usuario(Base):
     auth_provider = Column(String(50), nullable=False, default='local')
     password_hash = Column(String(255))
     theme_mode = Column(String(10), default='light')
+    sidebar_collapsed = Column(Boolean, default=False)
     high_contrast_mode = Column(Boolean, default=False)
     reduce_motion = Column(Boolean, default=False)
     colorblind_safe_palette = Column(Boolean, default=False)

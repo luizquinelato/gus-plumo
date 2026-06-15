@@ -6,6 +6,7 @@ import BrazilianDatePicker, { BrazilianDatePickerHandle } from '../components/Br
 import { formatDateBR, parseLocalDate, dateToLocalString, getTodayLocalDate } from '../utils/dateUtils'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
+import FloatingFooterBar from '../components/FloatingFooterBar'
 import Toast from '../components/Toast'
 import LoadingSpinner from '../components/LoadingSpinner'
 import BalanceDetailsModal from '../components/BalanceDetailsModal'
@@ -3876,7 +3877,7 @@ const BalancoPage = () => {
           const hasSettledSelected = closures.some(c => selectedClosureIds.has(c.id) && c.is_settled)
           const hasUnsettledSelected = closures.some(c => selectedClosureIds.has(c.id) && !c.is_settled)
           return (
-            <div className="fixed bottom-0 left-64 right-0 z-50 bg-white dark:bg-gray-800 border-t-2 border-color-primary shadow-[0_-4px_12px_rgba(0,0,0,0.15)] px-6 py-3">
+            <FloatingFooterBar>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
                   <span className="font-medium text-color-primary">
@@ -3933,13 +3934,13 @@ const BalancoPage = () => {
                   )}
                 </div>
               </div>
-            </div>
+            </FloatingFooterBar>
           )
         })()}
 
         {/* Barra Flutuante Back to Top - Aparece só quando não há seleção */}
         {activeTab === 'closures' && showClosuresBackToTop && selectedClosureIds.size === 0 && (
-          <div className="fixed bottom-0 left-64 right-0 z-50 bg-white dark:bg-gray-800 border-t-2 border-color-primary shadow-[0_-4px_12px_rgba(0,0,0,0.15)] px-6 py-3">
+          <FloatingFooterBar>
             <div className="flex items-center justify-end">
               <button
                 onClick={scrollToTopClosures}
@@ -3950,7 +3951,7 @@ const BalancoPage = () => {
                 Voltar ao Topo
               </button>
             </div>
-          </div>
+          </FloatingFooterBar>
         )}
 
         {/* Modals */}

@@ -2,11 +2,15 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
+import FloatingFooterBar from '../components/FloatingFooterBar'
 import LoadingSpinner from '../components/LoadingSpinner'
 import SharedAccountDisplay from '../components/SharedAccountDisplay'
 import EditExpenseModal from '../components/EditExpenseModal'
+import BatchEditExpenseModal from '../components/BatchEditExpenseModal'
+import Toast from '../components/Toast'
+import { useConfirm } from '../hooks/useConfirm'
 import { MultiSelectDropdown } from '../components/MultiSelectDropdown'
-import { CreditCard, Calendar, FileText, Receipt, Filter, X, Search, Gift, ArrowDownCircle, ArrowUpCircle, Tag, Tags, Users, ArrowUp, Edit2 } from 'lucide-react'
+import { CreditCard, Calendar, FileText, Receipt, Filter, X, Search, Gift, ArrowDownCircle, ArrowUpCircle, Tag, Tags, Users, ArrowUp, Edit2, Trash2, CheckSquare, Square, MinusSquare } from 'lucide-react'
 
 // Interface para state de navegação
 interface NavigationState {
@@ -133,6 +137,18 @@ const FaturasPage = () => {
   // Estados do modal de edição
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [itemToEdit, setItemToEdit] = useState<InvoiceItem | null>(null)
+  const [isBatchEditModalOpen, setIsBatchEditModalOpen] = useState(false)
+
+  // Seleção em lote
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
+  const [selectionType, setSelectionType] = useState<'despesa' | 'receita' | null>(null)
+
+  // Toast
+  const [showToast, setShowToast] = useState(false)
+  const [toastMessage, setToastMessage] = useState('')
+  const [toastType, setToastType] = useState<'success' | 'error'>('success')
+
+  const { showConfirm, ConfirmComponent } = useConfirm()
 
   // Estado para botão Back to Top
   const [showBackToTop, setShowBackToTop] = useState(false)
@@ -395,6 +411,137 @@ const FaturasPage = () => {
   const handleEditSuccess = () => {
     loadInvoiceData()
   }
+
+  const handleShowToast = (message: string, type: 'success' | 'error') => {
+    setToastMessage(message)
+    setToastType(type)
+    setShowToast(true)
+  }
+
+  const filteredItems = useMemo(() => {
+    if (!invoiceData?.items) return []
+
+    return invoiceData.items.filter(item => {
+      const matchesText = !searchTerm || item.description.toLowerCase().includes(searchTerm.toLowerCase())
+
+      let matchesAmount = true
+      if (searchAmount && searchAmount.trim() !== '') {
+        const normalizedSearch = searchAmount.trim().replace(',', '.')
+        const searchValue = parseFloat(normalizedSearch)
+        if (!isNaN(searchValue)) {
+          matchesAmount = Math.abs(Math.abs(item.amount) - searchValue) < 0.01
+        }
+      }
+
+      return matchesText && matchesAmount
+    })
+  }, [invoiceData, searchTerm, searchAmount])
+
+  const currentItems = useMemo(() => {
+    if (!activeMonth) return []
+    return filteredItems.filter(item => item.year_month === activeMonth)
+  }, [filteredItems, activeMonth])
+
+  const getItemKey = (item: InvoiceItem) => `card:${item.id}`
+  const getItemType = (item: InvoiceItem): 'despesa' | 'receita' =>
+    Number(item.amount) < 0 ? 'despesa' : 'receita'
+
+  const isItemSelected = (item: InvoiceItem) => selectedItems.has(getItemKey(item))
+
+  const canSelectItem = (item: InvoiceItem) => {
+    if (selectionType === null) return true
+    return getItemType(item) === selectionType
+  }
+
+  const toggleItemSelection = (item: InvoiceItem) => {
+    const key = getItemKey(item)
+    const newSelected = new Set(selectedItems)
+
+    if (newSelected.has(key)) {
+      newSelected.delete(key)
+      if (newSelected.size === 0) {
+        setSelectionType(null)
+      }
+    } else {
+      if (newSelected.size === 0) {
+        setSelectionType(getItemType(item))
+      }
+      newSelected.add(key)
+    }
+
+    setSelectedItems(newSelected)
+  }
+
+  const selectAllFiltered = () => {
+    if (currentItems.length === 0) return
+
+    const targetType = selectionType || getItemType(currentItems[0])
+    const newSelected = new Set<string>()
+
+    currentItems.forEach(item => {
+      if (getItemType(item) === targetType) {
+        newSelected.add(getItemKey(item))
+      }
+    })
+
+    setSelectedItems(newSelected)
+    setSelectionType(targetType)
+  }
+
+  const clearSelection = () => {
+    setSelectedItems(new Set())
+    setSelectionType(null)
+  }
+
+  const getSelectedItemsForApi = () => {
+    return Array.from(selectedItems).map(key => {
+      const [, id] = key.split(':')
+      return { id: parseInt(id), source: 'card' as const }
+    })
+  }
+
+  const selectAllState = useMemo(() => {
+    if (selectedItems.size === 0) return 'none'
+
+    const targetType = selectionType || 'despesa'
+    const selectableItems = currentItems.filter(item => getItemType(item) === targetType)
+
+    if (selectableItems.length === 0) return 'none'
+
+    const selectedCount = selectableItems.filter(item => selectedItems.has(getItemKey(item))).length
+    if (selectedCount === 0) return 'none'
+    if (selectedCount === selectableItems.length) return 'all'
+    return 'partial'
+  }, [selectedItems, currentItems, selectionType])
+
+  const handleBatchDelete = async () => {
+    const confirmed = await showConfirm({
+      title: 'Excluir em Lote',
+      message: `Tem certeza que deseja excluir ${selectedItems.size} registro(s)? Esta ação não pode ser desfeita.`,
+      confirmText: 'Excluir',
+      cancelText: 'Cancelar',
+      type: 'danger',
+    })
+
+    if (!confirmed) return
+
+    try {
+      await axios.delete('/api/expenses/batch-delete', {
+        data: { items: getSelectedItemsForApi() },
+      })
+      handleShowToast(`${selectedItems.size} registro(s) excluído(s) com sucesso!`, 'success')
+      clearSelection()
+      loadInvoiceData()
+    } catch (error: any) {
+      console.error('Erro ao excluir em lote:', error)
+      handleShowToast(error.response?.data?.detail || 'Erro ao excluir registros', 'error')
+    }
+  }
+
+  useEffect(() => {
+    setSelectedItems(new Set())
+    setSelectionType(null)
+  }, [activeMonth])
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -670,26 +817,8 @@ const FaturasPage = () => {
 
           {/* Conteúdo com Abas */}
           {!loading && !error && invoiceData && invoiceData.items.length > 0 && (
-            <div className={`${showBackToTop ? 'pb-20' : ''}`}>
+            <div className={`${selectedItems.size > 0 || showBackToTop ? 'pb-20' : ''}`}>
           {(() => {
-            // Filtra itens por busca de texto e valor
-            const filteredItems = invoiceData.items.filter(item => {
-              // Filtro de texto
-              const matchesText = !searchTerm || item.description.toLowerCase().includes(searchTerm.toLowerCase())
-
-              // Filtro de valor
-              let matchesAmount = true
-              if (searchAmount && searchAmount.trim() !== '') {
-                const normalizedSearch = searchAmount.trim().replace(',', '.')
-                const searchValue = parseFloat(normalizedSearch)
-                if (!isNaN(searchValue)) {
-                  matchesAmount = Math.abs(Math.abs(item.amount) - searchValue) < 0.01
-                }
-              }
-
-              return matchesText && matchesAmount
-            })
-
             // Agrupa itens por year_month
             const groupedByMonth = filteredItems.reduce((acc, item) => {
               const month = item.year_month || 'Sem mês'
@@ -738,10 +867,10 @@ const FaturasPage = () => {
             }
 
             // Itens do mês ativo
-            const currentItems = activeMonth ? (groupedByMonth[activeMonth] || []) : []
+            const monthItems = activeMonth ? (groupedByMonth[activeMonth] || []) : []
 
             // Agrupa itens por cartão
-            const groupedByCard = currentItems.reduce((acc, item) => {
+            const groupedByCard = monthItems.reduce((acc, item) => {
               const cardKey = `${item.card_name}|${item.card_number}`
               if (!acc[cardKey]) acc[cardKey] = []
               acc[cardKey].push(item)
@@ -760,7 +889,7 @@ const FaturasPage = () => {
               })
 
             // Total geral do mês
-            const totalAmount = currentItems.reduce((sum, item) => sum + Number(item.amount), 0)
+            const totalAmount = monthItems.reduce((sum, item) => sum + Number(item.amount), 0)
 
             // Total geral (todos os itens filtrados)
             const totalAllItems = filteredItems.reduce((sum, item) => sum + Number(item.amount), 0)
@@ -800,7 +929,7 @@ const FaturasPage = () => {
                         </div>
                       </div>
                       <span className="text-xs text-gray-500 dark:text-gray-500">
-                        {currentItems.length} trans.
+                        {monthItems.length} trans.
                       </span>
                     </div>
                   </div>
@@ -850,6 +979,30 @@ const FaturasPage = () => {
                   </div>
                 </div>
 
+                {/* Seleção em lote */}
+                {monthItems.length > 0 && (
+                  <div className="flex items-center gap-3 mb-4 px-1">
+                    <button
+                      onClick={() => {
+                        if (selectAllState === 'none') {
+                          selectAllFiltered()
+                        } else {
+                          clearSelection()
+                        }
+                      }}
+                      className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+                      title={selectAllState === 'none' ? 'Selecionar todos do mês' : 'Limpar seleção'}
+                    >
+                      {selectAllState === 'none' && <Square size={18} className="text-gray-400" />}
+                      {selectAllState === 'partial' && <MinusSquare size={18} className="text-blue-600" />}
+                      {selectAllState === 'all' && <CheckSquare size={18} className="text-blue-600" />}
+                    </button>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">
+                      Selecionar todos do mês ({monthItems.length} transações)
+                    </span>
+                  </div>
+                )}
+
                 {/* Cards de Cartões - Separados e com scroll pela página */}
                 <div className="space-y-8">
                   {sortedCardGroups.map(({ cardName, cardNumber, items }, cardIndex) => {
@@ -886,10 +1039,11 @@ const FaturasPage = () => {
                           <table className="w-full">
                             <thead className="border-b border-gray-200 dark:border-gray-700">
                               <tr>
+                                <th className="px-2 py-3 text-center text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-10"></th>
                                 <th className="px-3 py-3 text-center text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-12">#</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-28">Data</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Descrição</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-48">Tag/Subtag</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider min-w-[280px] w-72">Tag/Subtag</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-40">Compartilhamento</th>
                                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-32">Valor</th>
                                 <th className="px-3 py-3 text-center text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-16">Ações</th>
@@ -899,14 +1053,46 @@ const FaturasPage = () => {
                               {items.map((item, idx) => (
                                 <tr
                                   key={item.id}
-                                  className={`border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all ${idx % 2 === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50/50 dark:bg-gray-700/20'}`}
+                                  className={`border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all ${
+                                    isItemSelected(item)
+                                      ? 'border-l-blue-600 bg-blue-50 dark:bg-blue-900/20'
+                                      : 'border-l-gray-300 dark:border-l-gray-600'
+                                  } ${idx % 2 === 0 && !isItemSelected(item) ? 'bg-white dark:bg-gray-800' : ''} ${idx % 2 !== 0 && !isItemSelected(item) ? 'bg-gray-50/50 dark:bg-gray-700/20' : ''}`}
                                   onMouseEnter={(e) => {
-                                    e.currentTarget.style.borderLeftColor = 'var(--color-1)'
+                                    if (!isItemSelected(item)) {
+                                      e.currentTarget.style.borderLeftColor = 'var(--color-1)'
+                                    }
                                   }}
                                   onMouseLeave={(e) => {
-                                    e.currentTarget.style.borderLeftColor = ''
+                                    if (!isItemSelected(item)) {
+                                      e.currentTarget.style.borderLeftColor = ''
+                                    }
                                   }}
                                 >
+                                  <td className="px-2 py-3 text-center w-10">
+                                    <button
+                                      onClick={() => toggleItemSelection(item)}
+                                      disabled={!canSelectItem(item)}
+                                      className={`p-1 rounded transition-colors ${
+                                        !canSelectItem(item)
+                                          ? 'opacity-30 cursor-not-allowed'
+                                          : 'hover:bg-gray-200 dark:hover:bg-gray-600'
+                                      }`}
+                                      title={
+                                        !canSelectItem(item)
+                                          ? `Não é possível selecionar ${getItemType(item) === 'despesa' ? 'despesas' : 'receitas'} junto com ${selectionType}`
+                                          : isItemSelected(item)
+                                            ? 'Remover seleção'
+                                            : 'Selecionar'
+                                      }
+                                    >
+                                      {isItemSelected(item) ? (
+                                        <CheckSquare size={18} className="text-blue-600" />
+                                      ) : (
+                                        <Square size={18} className={canSelectItem(item) ? 'text-gray-400' : 'text-gray-300'} />
+                                      )}
+                                    </button>
+                                  </td>
                                   <td className="px-3 py-3 text-sm text-center text-gray-500 dark:text-gray-400 w-12">
                                     {idx + 1}
                                   </td>
@@ -921,7 +1107,7 @@ const FaturasPage = () => {
                                       </span>
                                     )}
                                   </td>
-                                  <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400 w-48">
+                                  <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400 min-w-[280px] w-72">
                                     {item.tag_name && item.subtag_name
                                       ? `${item.tag_name} > ${item.subtag_name}`
                                       : item.tag_name || '-'}
@@ -944,8 +1130,13 @@ const FaturasPage = () => {
                                   <td className="px-3 py-3 text-center w-16">
                                     <button
                                       onClick={() => handleEdit(item)}
-                                      className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 transition-colors"
-                                      title="Editar tag/subtag e compartilhamento"
+                                      disabled={selectedItems.size > 0}
+                                      className={`transition-colors ${
+                                        selectedItems.size > 0
+                                          ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
+                                          : 'text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300'
+                                      }`}
+                                      title={selectedItems.size > 0 ? 'Limpe a seleção para editar' : 'Editar tag/subtag e compartilhamento'}
                                     >
                                       <Edit2 size={15} />
                                     </button>
@@ -977,9 +1168,57 @@ const FaturasPage = () => {
         </div>
       </div>
 
+      {/* Barra Flutuante de Ações em Lote */}
+      {selectedItems.size > 0 && (
+        <FloatingFooterBar>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <span className="font-medium text-color-primary">
+                {selectedItems.size} {selectionType === 'receita' ? 'receita(s)' : 'despesa(s)'} selecionada(s)
+              </span>
+              <button
+                onClick={clearSelection}
+                className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 flex items-center gap-1"
+              >
+                <X size={14} />
+                Limpar
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsBatchEditModalOpen(true)}
+                className="px-3 py-1.5 text-white rounded-lg transition-colors flex items-center gap-1.5 hover:opacity-90 text-sm font-semibold"
+                style={{ backgroundColor: 'var(--crud-edit)' }}
+              >
+                <Edit2 size={14} />
+                Editar em Lote
+              </button>
+              <button
+                onClick={handleBatchDelete}
+                className="px-3 py-1.5 text-white rounded-lg transition-colors flex items-center gap-1.5 hover:opacity-90 text-sm font-semibold"
+                style={{ backgroundColor: 'var(--crud-delete)' }}
+              >
+                <Trash2 size={14} />
+                Excluir
+              </button>
+              {showBackToTop && (
+                <button
+                  onClick={scrollToTop}
+                  className="px-3 py-1.5 bg-color-primary text-white rounded-lg transition-colors flex items-center gap-1.5 hover:opacity-90 text-sm font-semibold"
+                  title="Voltar ao topo"
+                >
+                  <ArrowUp size={14} />
+                  Topo
+                </button>
+              )}
+            </div>
+          </div>
+        </FloatingFooterBar>
+      )}
+
       {/* Barra Flutuante Back to Top */}
-      {showBackToTop && (
-        <div className="fixed bottom-0 left-64 right-0 z-50 bg-white dark:bg-gray-800 border-t-2 border-color-primary shadow-[0_-4px_12px_rgba(0,0,0,0.15)] px-6 py-3">
+      {showBackToTop && selectedItems.size === 0 && (
+        <FloatingFooterBar>
           <div className="flex items-center justify-end">
             <button
               onClick={scrollToTop}
@@ -990,8 +1229,33 @@ const FaturasPage = () => {
               Voltar ao Topo
             </button>
           </div>
-        </div>
+        </FloatingFooterBar>
       )}
+
+      <ConfirmComponent />
+
+      {showToast && (
+        <Toast
+          message={toastMessage}
+          type={toastType}
+          onClose={() => setShowToast(false)}
+        />
+      )}
+
+      {/* Modal de Edição em Lote */}
+      <BatchEditExpenseModal
+        isOpen={isBatchEditModalOpen}
+        onClose={() => setIsBatchEditModalOpen(false)}
+        selectedItems={getSelectedItemsForApi()}
+        expenseType={selectionType || 'despesa'}
+        onSuccess={(message) => {
+          clearSelection()
+          loadInvoiceData()
+          if (message) {
+            handleShowToast(message, 'success')
+          }
+        }}
+      />
 
       {/* Modal de Edição */}
       <EditExpenseModal

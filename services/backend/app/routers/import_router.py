@@ -3,6 +3,7 @@
 Import Router - Endpoints para importação de extratos e faturas
 """
 import os
+import re
 import tempfile
 import shutil
 import logging
@@ -27,6 +28,38 @@ from ..models.unified_models import Account
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/import", tags=["import"])
+
+CONVERSION_TXT_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "logs", "pdf_conversion")
+
+
+def _persist_conversion_txt_files(txt_folder: str, original_filenames: List[str]) -> List[dict]:
+    """Copia arquivos TXT de conversão PDF para armazenamento persistente."""
+    if not os.path.isdir(txt_folder):
+        return []
+
+    txt_files = sorted(f for f in os.listdir(txt_folder) if f.endswith(".txt"))
+    if not txt_files:
+        return []
+
+    os.makedirs(CONVERSION_TXT_DIR, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    results = []
+
+    for i, txt_name in enumerate(txt_files):
+        src = os.path.join(txt_folder, txt_name)
+        orig = original_filenames[i] if i < len(original_filenames) else txt_name
+        safe_base = re.sub(r"[^\w\-_.]", "_", os.path.splitext(orig)[0])[:80]
+        suffix = f"_{i}" if len(txt_files) > 1 else ""
+        dest_name = f"{timestamp}{suffix}_{safe_base}.txt"
+        dest_path = os.path.join(CONVERSION_TXT_DIR, dest_name)
+        shutil.copy2(src, dest_path)
+        results.append({
+            "original_filename": orig,
+            "download_filename": dest_name,
+            "download_url": f"/api/import/cartao/conversion-txt/{dest_name}",
+        })
+
+    return results
 
 
 @router.post("/extrato")
@@ -177,11 +210,32 @@ async def import_extrato(
         raise HTTPException(status_code=500, detail=f"Erro ao processar extratos: {str(e)}")
 
 
+@router.get("/cartao/conversion-txt/{filename}")
+async def download_conversion_txt(
+    filename: str,
+    current_user: dict = Depends(require_account),
+):
+    """Download do arquivo TXT gerado na conversão de fatura PDF."""
+    if not re.match(r"^[\w\-_.]+\.txt$", filename):
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado")
+
+    file_path = os.path.join(CONVERSION_TXT_DIR, filename)
+    if not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado")
+
+    return FileResponse(
+        file_path,
+        media_type="text/plain; charset=utf-8",
+        filename=filename,
+    )
+
+
 @router.post("/cartao")
 async def import_cartao(
     files: List[UploadFile] = File(...),
     years: List[str] = Form(...),
     months: List[str] = Form(...),
+    save_conversion_txt: Optional[str] = Form("false"),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_account)
 ):
@@ -195,6 +249,7 @@ async def import_cartao(
         files: Lista de arquivos PDF de fatura para processar
         years: Lista de anos correspondentes a cada arquivo
         months: Lista de meses correspondentes a cada arquivo
+        save_conversion_txt: Se "true", salva o TXT da conversão PDF para download
 
     Returns:
         Dados da importação (linhas salvas, atualizadas, não mapeadas)
@@ -252,14 +307,23 @@ async def import_cartao(
         psycopg2_conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
         mapping_helper = MappingHelper(db_connection=psycopg2_conn, user_id=user_id, tenant_id=tenant_id, account_id=account_id)
         converter = CartaoConverter(mapping_helper)
+        keep_conversion_txt = save_conversion_txt.lower() == "true" if save_conversion_txt else False
         combined_df = converter.process_pdf_files(
             file_paths=file_paths,
             output_folder=output_dir,
             save_individually=False,
-            save_temp_files=False,
+            save_temp_files=keep_conversion_txt,
             years=file_years,
             months=file_months
         )
+
+        conversion_txt_files = []
+        if keep_conversion_txt:
+            original_filenames = [f.filename for f in files]
+            conversion_txt_files = _persist_conversion_txt_files(
+                os.path.join(output_dir, "txt"),
+                original_filenames,
+            )
 
         if combined_df.empty:
             raise HTTPException(status_code=400, detail="Nenhum dado foi processado dos arquivos")
@@ -283,7 +347,8 @@ async def import_cartao(
             "linhas_nao_mapeadas": stats.get('linhas_nao_mapeadas', 0),
             "registros_nao_mapeados": stats.get('registros_nao_mapeados', []),
             "conflicts": conflicts,
-            "conflicts_count": len(conflicts)
+            "conflicts_count": len(conflicts),
+            "conversion_txt": conversion_txt_files,
         }
 
     except Exception as e:

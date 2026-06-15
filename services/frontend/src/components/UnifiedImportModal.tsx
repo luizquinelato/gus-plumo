@@ -30,6 +30,8 @@ interface ImportResult {
   isPdf?: boolean
   skippedRows?: any[]  // Dados completos das linhas ignoradas
   conflicts_count?: number  // Número de conflitos detectados neste arquivo
+  conversionTxtUrl?: string
+  conversionTxtFilename?: string
 }
 
 const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
@@ -60,6 +62,8 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
 
   // Flag para ativar tracing/debug (gera JSON com detalhes)
   const [enableTracing, setEnableTracing] = useState(false)
+  // Flag para salvar TXT da conversão PDF (somente faturas PDF)
+  const [saveConversionTxt, setSaveConversionTxt] = useState(false)
   // Armazena dados de debug para salvar no final (após resolução/descarte de conflitos)
   const [importDebugData, setImportDebugData] = useState<Record<string, unknown> | null>(null)
 
@@ -343,12 +347,14 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
             formData.append('files', config.file)
             formData.append('years', config.year!)
             formData.append('months', config.month!)
-            formData.append('enable_tracing', enableTracing ? 'true' : 'false')
+            formData.append('save_conversion_txt', saveConversionTxt ? 'true' : 'false')
             // Não envia account_id - os cartões são identificados automaticamente do PDF
 
             const response = await axios.post('/api/import/cartao', formData, {
               headers: { 'Content-Type': 'multipart/form-data' }
             })
+
+            const conversionTxt = response.data?.conversion_txt?.[0]
 
             // Fatura salva direto no banco
             result = {
@@ -361,7 +367,9 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
               isPdf: true, // Flag para identificar PDFs
               // Inclui conflitos detectados (tag/subtag ou valor diferente)
               conflicts: response.data?.conflicts || [],
-              conflicts_count: response.data?.conflicts_count || 0
+              conflicts_count: response.data?.conflicts_count || 0,
+              conversionTxtUrl: conversionTxt?.download_url,
+              conversionTxtFilename: conversionTxt?.download_filename,
             }
 
             // Conta registros não mapeados do PDF
@@ -559,6 +567,7 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
       setDiscardedConflicts(0)
       setResolvedConflicts(0)
       setEnableTracing(false)  // Reseta checkbox de tracing
+      setSaveConversionTxt(false)  // Reseta checkbox de TXT de conversão PDF
       setImportDebugData(null)  // Limpa dados de debug
       onClose()
     }
@@ -582,6 +591,30 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
 
     // Download
     XLSX.writeFile(wb, fileName)
+  }
+
+  const downloadConversionTxt = async (result: ImportResult) => {
+    if (!result.conversionTxtUrl) {
+      return
+    }
+
+    try {
+      const response = await axios.get(result.conversionTxtUrl, {
+        responseType: 'blob',
+      })
+      const blob = new Blob([response.data], { type: 'text/plain;charset=utf-8' })
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = result.conversionTxtFilename || `${result.fileName.replace(/\.pdf$/i, '')}_conversao.txt`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('Erro ao baixar TXT de conversão:', err)
+      setError('Erro ao baixar arquivo TXT de conversão do PDF')
+    }
   }
 
   const hasPDFs = fileConfigs.some(config => config.needsYearMonth)
@@ -769,6 +802,18 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
                         Aplicar Ano
                       </button>
                     </div>
+                    <label className="flex items-center gap-2 mt-2.5 ml-0 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={saveConversionTxt}
+                        onChange={(e) => setSaveConversionTxt(e.target.checked)}
+                        disabled={isProcessing || isDetecting}
+                        className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                      />
+                      <span className="text-xs text-gray-700 dark:text-gray-300">
+                        Salvar TXT da conversão do PDF (debug)
+                      </span>
+                    </label>
                   </div>
                 </div>
               )}
@@ -1081,6 +1126,20 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
                                 <span className="flex items-center gap-1">
                                   <span className="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
                                   Nenhum lançamento novo
+                                </span>
+                              )}
+                              {result.conversionTxtUrl && (
+                                <span className="flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
+                                  TXT de conversão
+                                  <button
+                                    onClick={() => downloadConversionTxt(result)}
+                                    className="ml-1 px-2 py-0.5 bg-purple-600 hover:bg-purple-700 text-white text-xs rounded flex items-center gap-1 transition-colors"
+                                    title="Baixar texto extraído do PDF"
+                                  >
+                                    <Download className="w-3 h-3" />
+                                    Baixar
+                                  </button>
                                 </span>
                               )}
                             </div>

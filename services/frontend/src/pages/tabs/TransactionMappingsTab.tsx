@@ -4,6 +4,7 @@ import { Plus, Edit2, Trash2, Tag, Tags, Search, AlertCircle, Eye, EyeOff, X, Ar
 import { useConfirm } from '../../hooks/useConfirm'
 import { useEscapeKey } from '../../hooks/useEscapeKey'
 import Toast from '../../components/Toast'
+import FloatingFooterBar from '../../components/FloatingFooterBar'
 import SharedAccountDisplay from '../../components/SharedAccountDisplay'
 import { getIconComponent } from '../../utils/iconMapper'
 import { formatAccountDisplay } from '../../utils/accountFormatter'
@@ -2490,7 +2491,7 @@ const TransactionMappingsTab = () => {
 
       {/* Barra Flutuante de Ações - Com seleção */}
       {selectedMappings.size > 0 && (
-        <div className="fixed bottom-0 left-64 right-0 z-50 bg-white dark:bg-gray-800 border-t-2 border-color-primary shadow-[0_-4px_12px_rgba(0,0,0,0.15)] px-6 py-3">
+        <FloatingFooterBar>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <span className="font-medium text-color-primary">
@@ -2546,12 +2547,12 @@ const TransactionMappingsTab = () => {
               )}
             </div>
           </div>
-        </div>
+        </FloatingFooterBar>
       )}
 
       {/* Barra Flutuante Back to Top - Aparece só quando não há seleção */}
       {showBackToTop && selectedMappings.size === 0 && (
-        <div className="fixed bottom-0 left-64 right-0 z-50 bg-white dark:bg-gray-800 border-t-2 border-color-primary shadow-[0_-4px_12px_rgba(0,0,0,0.15)] px-6 py-3">
+        <FloatingFooterBar>
           <div className="flex items-center justify-end">
             <button
               onClick={scrollToTop}
@@ -2562,7 +2563,7 @@ const TransactionMappingsTab = () => {
               Voltar ao Topo
             </button>
           </div>
-        </div>
+        </FloatingFooterBar>
       )}
 
       {/* Dialogs */}

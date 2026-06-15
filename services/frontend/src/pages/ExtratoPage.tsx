@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useLocation } from 'react-router-dom'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
+import FloatingFooterBar from '../components/FloatingFooterBar'
 import LoadingSpinner from '../components/LoadingSpinner'
 import SplitExpenseModal from '../components/SplitExpenseModal'
 import EditExpenseModal from '../components/EditExpenseModal'
@@ -2303,7 +2304,7 @@ const ExtratoPage = () => {
 
       {/* Barra Flutuante de Ações em Lote - Fixed no rodapé, respeita o sidebar */}
       {selectedItems.size > 0 && (
-        <div className="fixed bottom-0 left-64 right-0 z-50 bg-white dark:bg-gray-800 border-t-2 border-color-primary shadow-[0_-4px_12px_rgba(0,0,0,0.15)] px-6 py-3">
+        <FloatingFooterBar>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <span className="font-medium text-color-primary">
@@ -2360,12 +2361,12 @@ const ExtratoPage = () => {
               )}
             </div>
           </div>
-        </div>
+        </FloatingFooterBar>
       )}
 
       {/* Barra Flutuante Back to Top - Aparece só quando não há seleção */}
       {showBackToTop && selectedItems.size === 0 && (
-        <div className="fixed bottom-0 left-64 right-0 z-50 bg-white dark:bg-gray-800 border-t-2 border-color-primary shadow-[0_-4px_12px_rgba(0,0,0,0.15)] px-6 py-3">
+        <FloatingFooterBar>
           <div className="flex items-center justify-end">
             <button
               onClick={scrollToTop}
@@ -2376,7 +2377,7 @@ const ExtratoPage = () => {
               Voltar ao Topo
             </button>
           </div>
-        </div>
+        </FloatingFooterBar>
       )}
     </div>
   )

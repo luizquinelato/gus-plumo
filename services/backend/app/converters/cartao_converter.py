@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import os
 import re
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import pandas as pd
 from PyPDF2 import PdfReader
 from ..utils.mapping_helper import MappingHelper
@@ -74,6 +74,66 @@ class CartaoConverter:
     @staticmethod
     def limpar_descricao(descricao: str) -> str:
         return re.sub(r'\s*\(.*?\)', '', descricao)
+
+    @staticmethod
+    def parse_linha_lancamento_completa(line: str) -> Optional[Dict[str, Any]]:
+        """
+        Parse linhas completas de lançamento no formato comum do PDF:
+        '15 Jan LOJA X (2/12) R$ 100,00'
+        """
+        line = line.strip()
+        if not line:
+            return None
+
+        match = re.match(
+            r'^(\d{1,2})\s+([A-Za-z]{3})\s+(.+?)\s+(R\$|US\$)\s*([\d.,]+)\s*$',
+            line,
+            re.IGNORECASE,
+        )
+        if not match:
+            return None
+
+        dia, mes_abbr, descricao, moeda, valor_str = match.groups()
+        valor = float(valor_str.replace('.', '').replace(',', '.'))
+        descricao = descricao.strip()
+
+        return {
+            'data': f"{dia} {mes_abbr}",
+            'descricao': descricao,
+            'descricao_simples': CartaoConverter.limpar_descricao(descricao),
+            'valor': valor,
+            'dollar': moeda.upper() == 'US$',
+        }
+
+    @staticmethod
+    def parse_linha_lancamento_valor_primeiro(line: str) -> Optional[Dict[str, Any]]:
+        """
+        Parse linhas no formato inverso comum em alguns PDFs:
+        'R$ 663,60 Eventim (3/3) 19 Mar'
+        """
+        line = line.strip()
+        if not line:
+            return None
+
+        months_pattern = "|".join(MONTHS)
+        match = re.match(
+            rf"^(R\$|US\$)\s*([\d.,]+)\s+(.+?)\s+(\d{{1,2}})\s+({months_pattern})\s*$",
+            line,
+            re.IGNORECASE,
+        )
+        if not match:
+            return None
+
+        moeda, valor_str, descricao, dia, mes_abbr = match.groups()
+        valor = float(valor_str.replace(".", "").replace(",", "."))
+
+        return {
+            "data": f"{dia} {mes_abbr}",
+            "descricao": descricao.strip(),
+            "descricao_simples": CartaoConverter.limpar_descricao(descricao.strip()),
+            "valor": valor,
+            "dollar": moeda.upper() == "US$",
+        }
     
     @staticmethod
     def separar_linhas_duplicadas(line: str) -> List[str]:
@@ -108,6 +168,8 @@ class CartaoConverter:
         Problemas comuns no PDF:
         1. Data colada com R$ da proxima transacao: "19 JanR$ 176,45" -> "19 Jan\nR$ 176,45"
         2. Data colada com total: "24 JanR$ 456,32" -> "24 Jan\nR$ 456,32"
+        3. Multiplas transacoes (valor primeiro): "R$ 663,60 ... 19 Mar R$ 821,60" -> quebra entre elas
+        4. Valor colado com data: "100,0015 Jan" -> "100,00\n15 Jan"
 
         Args:
             content: Conteudo de texto do PDF
@@ -115,11 +177,34 @@ class CartaoConverter:
         Returns:
             Conteudo pre-processado com quebras de linha onde necessario
         """
+        months_pattern = "|".join(MONTHS)
+
+        # Data seguida de nova transacao R$/US$ na mesma linha (formato valor primeiro)
+        # Ex: "R$ 663,60 Eventim (3/3) 19 Mar R$ 821,60" -> "... 19 Mar\nR$ 821,60"
+        content = re.sub(
+            rf"(\d{{1,2}}\s+(?:{months_pattern}))\s+(R\$|US\$)",
+            r"\1\n\2",
+            content,
+            flags=re.IGNORECASE,
+        )
+
         # Padrao: DD Mmm colado com R$ ou US$ (sem espaco)
         # Ex: "19 JanR$ 176,45" -> "19 Jan\nR$ 176,45"
-        # Ex: "24 JanR$ 456,32" -> "24 Jan\nR$ 456,32"
-        pattern = r'(\d{1,2}\s+[A-Za-z]{3})(R\$|US\$)'
-        content = re.sub(pattern, r'\1\n\2', content)
+        content = re.sub(
+            rf"(\d{{1,2}}\s+(?:{months_pattern}))(R\$|US\$)",
+            r"\1\n\2",
+            content,
+            flags=re.IGNORECASE,
+        )
+
+        # Valor monetario colado com data na mesma linha (somente meses validos)
+        # Ex: "100,0015 Jan" -> "100,00\n15 Jan"  (nao quebra "19 Mar" em "1" + "9 Mar")
+        content = re.sub(
+            rf"(\d+,\d{{2}})(\d{{1,2}}\s+(?:{months_pattern}))",
+            r"\1\n\2",
+            content,
+            flags=re.IGNORECASE,
+        )
 
         return content
 
@@ -579,6 +664,43 @@ class CartaoConverter:
 
                     if line and compras_e_despesas:
                         while compras_e_despesas:
+                            parsed_line = (
+                                CartaoConverter.parse_linha_lancamento_completa(line)
+                                or CartaoConverter.parse_linha_lancamento_valor_primeiro(line)
+                            )
+                            if parsed_line:
+                                descricao = parsed_line['descricao']
+                                descricao_simples = parsed_line['descricao_simples']
+                                valor_lancamento = parsed_line['valor']
+                                data_lancamento = parsed_line['data']
+                                tag = mapping.get_mapped_tag(None, None, descricao_simples, valor_lancamento, 2)
+                                rows.append({
+                                    "Ano": year,
+                                    "Mês": mes,
+                                    "Cartão": card_number,
+                                    "Titular": mapping.get_mapped_credit_card_owner(card_number),
+                                    "Data": data_lancamento,
+                                    "Descrição": mapping.get_mapped_description(descricao),
+                                    "Descrição Limpa": mapping.get_mapped_description(descricao_simples),
+                                    "Valor": valor_lancamento,
+                                    "Tag": tag,
+                                    "Subtag": mapping.get_mapped_subtag(descricao_simples, tag)
+                                })
+                                dollar = parsed_line['dollar']
+                                month_check = False
+                                try:
+                                    line = next(all_lines).strip()
+                                    if "Lançamentos do cartão" in line:
+                                        compras_e_despesas = False
+                                        month_check = False
+                                    elif "Taxas e encargos" in line:
+                                        compras_e_despesas = False
+                                        month_check = False
+                                        break
+                                except StopIteration:
+                                    break
+                                continue
+
                             if "da moeda -" in line:
                                 if len(line.split()) >= 2:
                                     data_lancamento = f"{line.split()[0]} {line.split()[1].removesuffix('Cotação')}"
@@ -800,20 +922,22 @@ class CartaoConverter:
                                         data_lancamento = f"{line.split()[0]} {line.split()[1]}"
                                     else:
                                         data_lancamento = line
-                                    item = {
-                                        "Ano": year,
-                                        "Mês": mes,
-                                        "Cartão": card_number,
-                                        "Titular": mapping.get_mapped_credit_card_owner(card_number),
-                                        "Data": data_lancamento,
-                                        "Descrição": mapping.get_mapped_description(descricao),
-                                        "Descrição Limpa": mapping.get_mapped_description(descricao_simples),
-                                        "Valor": valor_lancamento,
-                                        "Tag": tag,
-                                        "Subtag": mapping.get_mapped_subtag(descricao_simples, tag)
-                                    }
-
-                                    rows.append(item)
+                                    # Só cria lançamento se já temos descrição e valor definidos
+                                    # (formato em que valor vem antes da data em linhas separadas)
+                                    if descricao and valor_lancamento:
+                                        item = {
+                                            "Ano": year,
+                                            "Mês": mes,
+                                            "Cartão": card_number,
+                                            "Titular": mapping.get_mapped_credit_card_owner(card_number),
+                                            "Data": data_lancamento,
+                                            "Descrição": mapping.get_mapped_description(descricao),
+                                            "Descrição Limpa": mapping.get_mapped_description(descricao_simples),
+                                            "Valor": valor_lancamento,
+                                            "Tag": tag,
+                                            "Subtag": mapping.get_mapped_subtag(descricao_simples, tag)
+                                        }
+                                        rows.append(item)
 
                                 month_check = False
                             try:

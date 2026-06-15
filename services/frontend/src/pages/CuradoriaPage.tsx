@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
+import FloatingFooterBar from '../components/FloatingFooterBar'
 import Toast from '../components/Toast'
 import LoadingSpinner from '../components/LoadingSpinner'
 import { Check, Loader2, Copy, FileText, ArrowDownCircle, ArrowUpCircle, Save, ArrowUpDown, ArrowUp, ArrowDown, X, AlertTriangle, Search, Landmark, CreditCard, Gift, Sparkles, Users, Tag as TagIcon, Tags as TagsIcon } from 'lucide-react'
@@ -3093,7 +3094,7 @@ const CuradoriaPage = () => {
 
       {/* Barra Flutuante Back to Top */}
       {showBackToTop && (
-        <div className="fixed bottom-0 left-64 right-0 z-50 bg-white dark:bg-gray-800 border-t-2 border-color-primary shadow-[0_-4px_12px_rgba(0,0,0,0.15)] px-6 py-3">
+        <FloatingFooterBar>
           <div className="flex items-center justify-end">
             <button
               onClick={scrollToTop}
@@ -3104,7 +3105,7 @@ const CuradoriaPage = () => {
               Voltar ao Topo
             </button>
           </div>
-        </div>
+        </FloatingFooterBar>
       )}
 
       {/* Toast de notificações */}

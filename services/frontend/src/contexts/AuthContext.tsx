@@ -15,6 +15,7 @@ interface User {
   is_admin: boolean
   tenant_id: number
   theme_mode?: string
+  sidebar_collapsed?: boolean
   account_id?: number
   avatar_url?: string
 }
@@ -71,6 +72,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             is_admin: userData.is_admin,
             tenant_id: userData.tenant_id,
             theme_mode: userData.theme_mode,
+            sidebar_collapsed: userData.sidebar_collapsed ?? false,
             account_id: userData.account_id,
             avatar_url: userData.avatar_url || undefined,
           })
@@ -80,6 +82,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
             const event = new CustomEvent('user-theme-loaded', { detail: userData.theme_mode })
             window.dispatchEvent(event)
           }
+
+          // Aplicar preferência do sidebar do usuário
+          const sidebarEvent = new CustomEvent('user-sidebar-loaded', {
+            detail: userData.sidebar_collapsed ?? false,
+          })
+          window.dispatchEvent(sidebarEvent)
 
           // Atualizar cores do tenant (sincronização no refresh)
           if (response.data.color_schema_mode) {
@@ -168,6 +176,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
           is_admin: userData.is_admin,
           tenant_id: userData.tenant_id,
           theme_mode: userData.theme_mode,
+          sidebar_collapsed: userData.sidebar_collapsed ?? false,
           account_id: userData.account_id,
           avatar_url: userData.avatar_url || undefined,
         })
@@ -177,6 +186,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
           const event = new CustomEvent('user-theme-loaded', { detail: userData.theme_mode })
           window.dispatchEvent(event)
         }
+
+        // Aplicar preferência do sidebar do usuário
+        const sidebarEvent = new CustomEvent('user-sidebar-loaded', {
+          detail: userData.sidebar_collapsed ?? false,
+        })
+        window.dispatchEvent(sidebarEvent)
 
         return true
       }

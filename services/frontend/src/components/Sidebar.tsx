@@ -2,6 +2,7 @@ import { Home, Palette, TrendingUp, Sun, Moon, CreditCard, LogOut, Tags, Clipboa
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
+import { useSidebar } from '../contexts/SidebarContext'
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import axios from 'axios'
@@ -30,7 +31,7 @@ const Sidebar = () => {
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
   const { user, logout, updateUser } = useAuth()
-  const [collapsed, setCollapsed] = useState(false)
+  const { collapsed, toggleCollapsed } = useSidebar()
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false)
   const [selectedAccount, setSelectedAccount] = useState<SelectedAccount | null>(null)
   const [avatarHov, setAvatarHov] = useState(false)
@@ -189,7 +190,7 @@ const Sidebar = () => {
       {/* Botão de colapso — centro vertical, borda direita */}
       <div style={{ position: 'absolute', top: '50%', right: -13, transform: 'translateY(-50%)', zIndex: 10 }}>
         <button
-          onClick={() => setCollapsed(v => !v)}
+          onClick={toggleCollapsed}
           title={collapsed ? 'Expandir sidebar' : 'Recolher sidebar'}
           style={{
             width: 26, height: 26, borderRadius: '50%', cursor: 'pointer',
