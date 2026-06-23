@@ -7,18 +7,19 @@ Creates venvs and installs dependencies. Reads requirements/install.txt.
 Entry types (detected by filename):
   services/backend/requirements/install.txt  â†’ pip: .venv at services/backend/
   requirements/common.txt                    â†’ pip: .venv at project root
-  services/frontend/package.json             â†’ npm install (always idempotent)
+  services/frontend/package.json             → npm install; --force removes node_modules
   services/backend                           â†’ delegates to setup_venv.py (legacy)
 
 The venv location for pip entries is always path.parent.parent.
---force only affects pip entries (recreates .venv); npm is always idempotent.
+--force recreates .venv (pip) and node_modules (npm) from scratch.
 
 Usage:
     python scripts/setup_envs.py                   # all services
     python scripts/setup_envs.py --backend         # backend only
     python scripts/setup_envs.py --auth            # auth only
-    python scripts/setup_envs.py --force / -f      # recreate Python venvs
+    python scripts/setup_envs.py --force / -f      # recreate Python venvs and npm node_modules
     python scripts/setup_envs.py --backend -f      # backend venv recreated
+    python scripts/setup_envs.py --frontend -f     # frontend node_modules recreated
 """
 import argparse
 import os
@@ -128,15 +129,32 @@ def setup_requirements_file(entry: dict, force: bool) -> bool:
     return result
 
 
-def setup_npm(entry: dict) -> bool:
-    """Run npm install in the service directory (always idempotent, ignores --force)."""
+def setup_npm(entry: dict, force: bool) -> bool:
+    """Run npm install in the service directory; --force removes node_modules first."""
     service_root = entry["path"].parent
+    node_modules = service_root / "node_modules"
     close = _svc_banner(entry["name"])
+
+    if force and node_modules.exists():
+        print("   Removing existing node_modules...")
+        try:
+            _rmtree(node_modules)
+        except PermissionError as exc:
+            print("   \u26a0\ufe0f  node_modules parcialmente removido \u2014 arquivos em uso por outro processo.")
+            print(f"      {exc}")
+            print("      Feche dev servers ou terminais usando este diret\u00f3rio e tente novamente.")
+            print(close)
+            return False
+        if node_modules.exists():
+            print("   \u26a0\ufe0f  node_modules parcialmente removido \u2014 arquivos em uso por outro processo.")
+            print("      Feche dev servers ou terminais usando este diret\u00f3rio e tente novamente.")
+            print(close)
+            return False
+
     print("   Running npm install...")
     result = subprocess.run(["npm", "install"], cwd=service_root, shell=sys.platform == "win32").returncode == 0
     print(close)
     return result
-
 
 def setup_service_dir(entry: dict, force: bool) -> bool:
     """Delegate to the service's own scripts/setup_venv.py (legacy)."""
@@ -162,7 +180,7 @@ def main() -> None:
     parser.add_argument("--auth",         action="store_true", help="Setup auth only")
     parser.add_argument("--frontend",     action="store_true", help="Setup frontend only")
     parser.add_argument("--frontend-etl", action="store_true", dest="frontend_etl", help="Setup frontend-etl only")
-    parser.add_argument("--force", "-f",  action="store_true", help="Recreate venv from scratch")
+    parser.add_argument("--force", "-f",  action="store_true", help="Recreate .venv (pip) and node_modules (npm) from scratch")
     args = parser.parse_args()
 
     any_flag = args.backend or args.auth or args.frontend or args.frontend_etl
@@ -182,7 +200,7 @@ def main() -> None:
     ok = 0
     for e in targets:
         if e["kind"] == "npm":
-            ok += setup_npm(e)
+            ok += setup_npm(e, args.force)
         elif e["kind"] == "requirements_file":
             ok += setup_requirements_file(e, args.force)
         else:
