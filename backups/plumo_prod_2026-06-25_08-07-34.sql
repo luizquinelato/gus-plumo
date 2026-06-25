@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict Nsnfih6zfMJFCiErHD5dm6gbVyREJ9Bx55G9D0VfXn4VbFDftZA16KWi3iIzdny
+\restrict bMg20SHvhc14QCachOQQg0lVbWZxeXxoa5AH2XOdoCZTCuzZYphKgE9aC5iinqB
 
 -- Dumped from database version 18.4 (Debian 18.4-1.pgdg13+1)
 -- Dumped by pg_dump version 18.4 (Debian 18.4-1.pgdg13+1)
@@ -1541,11 +1541,19 @@ CREATE TABLE public.users (
     tenant_id integer NOT NULL,
     created_at timestamp without time zone DEFAULT now(),
     last_updated_at timestamp without time zone DEFAULT now(),
-    active boolean DEFAULT true NOT NULL
+    active boolean DEFAULT true NOT NULL,
+    sidebar_collapsed boolean DEFAULT false NOT NULL
 );
 
 
 ALTER TABLE public.users OWNER TO plumo;
+
+--
+-- Name: COLUMN users.sidebar_collapsed; Type: COMMENT; Schema: public; Owner: plumo
+--
+
+COMMENT ON COLUMN public.users.sidebar_collapsed IS 'Preferência do usuário para sidebar recolhido (true) ou expandido (false).';
+
 
 --
 -- Name: users_id_seq; Type: SEQUENCE; Schema: public; Owner: plumo
@@ -1863,6 +1871,10 @@ COPY public.balance_closure_payments (id, balance_closure_id, amount, payment_da
 21	100	2942.81	2026-06-11 08:51:56.211406	Quitação manual - Fechamento #100	1	1	1	2026-06-11 08:51:56.215657	2026-06-11 08:51:56.215663	t	\N
 22	101	663.60	2026-06-11 08:54:56.765832	Quitação manual - Fechamento #101	1	1	1	2026-06-11 08:54:56.767477	2026-06-11 08:54:56.767481	t	\N
 23	102	3731.79	2026-06-11 09:17:23.839814	Quitação manual - Fechamento #102	1	1	1	2026-06-11 09:17:23.841854	2026-06-11 09:17:23.841859	t	\N
+24	103	663.60	2026-06-15 10:22:24.966368	Quitação manual - Fechamento #103	1	1	1	2026-06-15 10:22:24.969044	2026-06-15 10:22:24.969048	t	\N
+25	104	4897.38	2026-06-25 08:04:24.070197	Quitação manual - Fechamento #104	1	1	1	2026-06-25 08:04:24.084488	2026-06-25 08:04:24.084492	t	\N
+26	106	3011.27	2026-06-25 08:04:31.057395	Quitação manual - Fechamento #106	1	1	1	2026-06-25 08:04:31.060211	2026-06-25 08:04:31.060215	t	\N
+27	105	6469.13	2026-06-25 08:06:41.874626	Quitação manual - Fechamento #105	1	1	1	2026-06-25 08:06:41.876526	2026-06-25 08:06:41.876531	t	\N
 \.
 
 
@@ -1891,6 +1903,10 @@ COPY public.balance_closures (id, expense_sharing_id, account_id, shared_account
 100	3	1	3	2026-04-17 13:53:33	2026-05-15 23:59:59	2026	6	2942.81	0.00	2942.81	\N	t	2026-06-11 08:51:56.21152	1	\N	{"year": 2026, "end_date": "2026-05-15T23:59:59", "start_date": "2026-04-17T13:53:33", "calculation_date": "2026-06-11T08:51:10.297545", "main_account_card": {"agency": "0020", "status": "to_receive", "bank_name": "BTG Pactual", "account_id": 1, "net_amount": 2942.81, "loan_to_pay": 0, "account_name": "Gustavo", "total_to_pay": 0, "expense_items": [], "revenue_items": [], "account_number": 3046547, "loan_to_receive": 0, "total_to_receive": 2942.81, "net_amount_before_loans": 2942.81, "credit_card_expense_items": [{"id": 6417, "date": "2026-05-14T00:00:00", "amount": "-115.14", "card_id": 4, "tag_name": "Saúde & Bem estar", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "3501", "description": "Droga Raia", "subtag_name": "Farmácia", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6416, "date": "2026-05-09T00:00:00", "amount": "-74.00", "card_id": 4, "tag_name": "Lazer", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "3501", "description": "Loterias", "subtag_name": "Aposta", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6414, "date": "2026-05-09T00:00:00", "amount": "-136.20", "card_id": 4, "tag_name": "Alimentação", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "3501", "description": "Casa De Carnes Kl", "subtag_name": "Açougue", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6413, "date": "2026-05-09T00:00:00", "amount": "-271.48", "card_id": 4, "tag_name": "Alimentação", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "3501", "description": "Supermercado Savegnago", "subtag_name": "Supermercado", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6415, "date": "2026-05-09T00:00:00", "amount": "-129.90", "card_id": 4, "tag_name": "Vestuário", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "3501", "description": "Claudiamelo", "subtag_name": "Roupa, Sapato & Acessório", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6412, "date": "2026-05-08T00:00:00", "amount": "-167.58", "card_id": 4, "tag_name": "Geral", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "3501", "description": "Cnd 27 Rio Claro 0001", "subtag_name": "Outro", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6411, "date": "2026-05-04T00:00:00", "amount": "-94.98", "card_id": 4, "tag_name": "Vestuário", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "3501", "description": "Montreal", "subtag_name": "Roupa, Sapato & Acessório", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6409, "date": "2026-05-02T00:00:00", "amount": "-97.34", "card_id": 4, "tag_name": "Saúde & Bem estar", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "3501", "description": "Drogal", "subtag_name": "Farmácia", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6408, "date": "2026-05-02T00:00:00", "amount": "-128.95", "card_id": 4, "tag_name": "Alimentação", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "3501", "description": "Supermercado Savegnago", "subtag_name": "Supermercado", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6410, "date": "2026-05-02T00:00:00", "amount": "-140.00", "card_id": 4, "tag_name": "Vestuário", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "3501", "description": "Malitcia", "subtag_name": "Roupa, Sapato & Acessório", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6407, "date": "2026-04-27T00:00:00", "amount": "-152.93", "card_id": 4, "tag_name": "Geral", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "3501", "description": "Cnd 27 Rio Claro 0001", "subtag_name": "Outro", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6406, "date": "2026-04-25T00:00:00", "amount": "-60.00", "card_id": 4, "tag_name": "Lazer", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "3501", "description": "Loterias", "subtag_name": "Aposta", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6405, "date": "2026-04-25T00:00:00", "amount": "-160.00", "card_id": 4, "tag_name": "Saúde & Bem estar", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "3501", "description": "Salão Hellus", "subtag_name": "Cabelo", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6404, "date": "2026-04-25T00:00:00", "amount": "-279.09", "card_id": 4, "tag_name": "Alimentação", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "3501", "description": "Savegnago", "subtag_name": "Supermercado", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6403, "date": "2026-04-24T00:00:00", "amount": "-116.93", "card_id": 4, "tag_name": "Saúde & Bem estar", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "3501", "description": "Droga Raia", "subtag_name": "Farmácia", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6402, "date": "2026-04-24T00:00:00", "amount": "-150.00", "card_id": 4, "tag_name": "Carro", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "3501", "description": "Posto Mackey", "subtag_name": "Combustível", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6401, "date": "2026-04-23T00:00:00", "amount": "-151.78", "card_id": 4, "tag_name": "Alimentação", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "3501", "description": "Supermercado Savegnago", "subtag_name": "Supermercado", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6400, "date": "2026-04-21T00:00:00", "amount": "-44.00", "card_id": 4, "tag_name": "Alimentação", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "3501", "description": "Crazy Shake", "subtag_name": "Café, Doce, Sorvete & Suco", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6399, "date": "2026-04-18T00:00:00", "amount": "-300.18", "card_id": 4, "tag_name": "Alimentação", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "3501", "description": "Supermercado Savegnago", "subtag_name": "Supermercado", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6398, "date": "2026-04-01T00:00:00", "amount": "-172.33", "card_id": 4, "tag_name": "Carro", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "3501", "description": "Rio Fiat Oficina Mecan", "subtag_name": "Manutenção", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 3, "current_installment": 2, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}], "credit_card_revenue_items": [], "benefit_card_expense_items": [], "benefit_card_revenue_items": []}, "partner_account_card": {"agency": "8046", "status": "to_pay", "bank_name": "Itaú", "account_id": 3, "net_amount": -2942.81, "loan_to_pay": 0, "account_name": "Lurdes", "total_to_pay": -2942.81, "expense_items": [], "revenue_items": [], "account_number": 377027, "loan_to_receive": 0, "total_to_receive": 0, "net_amount_before_loans": -2942.81, "credit_card_expense_items": [], "credit_card_revenue_items": [], "benefit_card_expense_items": [], "benefit_card_revenue_items": []}}	1	1	2026-06-11 08:51:16.214136	2026-06-11 08:51:56.211985
 101	6	1	5	2026-04-17 13:50:39	2026-05-15 23:59:59	2026	6	663.60	0.00	663.60	\N	t	2026-06-11 08:54:56.765918	1	\N	{"year": 2026, "end_date": "2026-05-15T23:59:59", "start_date": "2026-04-17T13:50:39", "calculation_date": "2026-06-11T08:54:36.701258", "main_account_card": {"agency": "0020", "status": "to_receive", "bank_name": "BTG Pactual", "account_id": 1, "net_amount": 663.6, "loan_to_pay": 0, "account_name": "Gustavo", "total_to_pay": 0, "expense_items": [], "revenue_items": [], "account_number": 3046547, "loan_to_receive": 0, "total_to_receive": 663.6, "net_amount_before_loans": 663.6, "credit_card_expense_items": [{"id": 6394, "date": "2026-03-19T00:00:00", "amount": "-663.60", "card_id": 8, "tag_name": "Lazer", "card_name": "Virtual", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "6916", "description": "Eventim", "subtag_name": "Festa & Entretenimento", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 3, "current_installment": 2, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}], "credit_card_revenue_items": [], "benefit_card_expense_items": [], "benefit_card_revenue_items": []}, "partner_account_card": {"agency": "123456", "status": "to_pay", "bank_name": "Banco Fictício", "account_id": 5, "net_amount": -663.6, "loan_to_pay": 0, "account_name": "André", "total_to_pay": -663.6, "expense_items": [], "revenue_items": [], "account_number": 69, "loan_to_receive": 0, "total_to_receive": 0, "net_amount_before_loans": -663.6, "credit_card_expense_items": [], "credit_card_revenue_items": [], "benefit_card_expense_items": [], "benefit_card_revenue_items": []}}	1	1	2026-06-11 08:54:42.43259	2026-06-11 08:54:56.766264
 102	1	1	2	2026-04-23 00:00:00	2026-05-18 23:59:59	2026	6	3731.79	0.00	3731.79	\N	t	2026-06-11 09:17:23.839901	1	\N	{"year": 2026, "end_date": "2026-05-18T23:59:59", "start_date": "2026-04-23T00:00:00", "loan_payments": [{"loan_id": 36, "loan_type": "lent", "is_settled": true, "period_end": "2026-05-18 23:59:59", "amount_paid": 399.81, "description": "Celular Cida Parcela 1", "period_start": "2026-04-23 00:00:00", "original_amount": 399.81, "remaining_after": 0.0, "remaining_before": 399.81}], "calculation_date": "2026-06-11T09:17:06.618471", "main_account_card": {"agency": "0020", "status": "to_receive", "bank_name": "BTG Pactual", "account_id": 1, "net_amount": 3731.785, "loan_to_pay": 0, "account_name": "Gustavo", "total_to_pay": -451.61, "expense_items": [{"id": 2827, "date": "2026-05-18T08:15:00", "amount": "-178.89", "card_id": null, "tag_name": "Cida", "card_name": null, "card_type": null, "year_month": null, "card_active": null, "card_number": null, "description": "Gps Codigo De Barras", "subtag_name": "GPS", "source_table": "bank_statements", "card_closing_day": null, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}], "revenue_items": [], "account_number": 3046547, "loan_to_receive": 399.81, "total_to_receive": 3783.585, "net_amount_before_loans": 3331.975, "credit_card_expense_items": [{"id": 6452, "date": "2026-05-12T00:00:00", "amount": "-28.00", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Brunasso Gourmet", "subtag_name": "Café, Doce, Sorvete & Suco", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6453, "date": "2026-05-12T00:00:00", "amount": "-10.00", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Hortifrittidow", "subtag_name": "Hortifruti", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6451, "date": "2026-05-09T00:00:00", "amount": "-60.00", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Restaurante Plataforma", "subtag_name": "Restaurante", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6449, "date": "2026-05-07T00:00:00", "amount": "-9.00", "card_id": 2, "tag_name": "Carro", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Zul Regularizacao 239y", "subtag_name": "Estacionamento", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6450, "date": "2026-05-07T00:00:00", "amount": "-76.50", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Petiscao", "subtag_name": "Restaurante", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6448, "date": "2026-05-06T00:00:00", "amount": "-484.04", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Supermercado Brasil Fr", "subtag_name": "Supermercado", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6447, "date": "2026-05-04T00:00:00", "amount": "-99.00", "card_id": 2, "tag_name": "Moradia", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Contato Materiais De", "subtag_name": "Limpeza & Higiene", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6446, "date": "2026-05-03T00:00:00", "amount": "-381.80", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Casa De Carnes Kl", "subtag_name": "Açougue", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6445, "date": "2026-05-02T00:00:00", "amount": "-38.00", "card_id": 2, "tag_name": "Geral", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "H E D", "subtag_name": "Outro", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6444, "date": "2026-05-02T00:00:00", "amount": "-322.77", "card_id": 2, "tag_name": "Moradia", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Certeza Higiene E Limp", "subtag_name": "Limpeza & Higiene", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6441, "date": "2026-04-28T00:00:00", "amount": "-42.00", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Brunasso Gourmet", "subtag_name": "Café, Doce, Sorvete & Suco", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6443, "date": "2026-04-28T00:00:00", "amount": "-118.00", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Baby Pastelaria", "subtag_name": "Restaurante", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6442, "date": "2026-04-28T00:00:00", "amount": "-12.00", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Hortifrittidow", "subtag_name": "Hortifruti", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6440, "date": "2026-04-27T00:00:00", "amount": "-39.19", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Padaria Alema", "subtag_name": "Padaria", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6439, "date": "2026-04-26T00:00:00", "amount": "-137.00", "card_id": 2, "tag_name": "Geral", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Erika Cristina Laras", "subtag_name": "Outro", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6438, "date": "2026-04-25T00:00:00", "amount": "-49.09", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Padaria Alema", "subtag_name": "Padaria", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6435, "date": "2026-04-25T00:00:00", "amount": "-18.40", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Padaria Alema", "subtag_name": "Padaria", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6436, "date": "2026-04-25T00:00:00", "amount": "-16.00", "card_id": 2, "tag_name": "Moradia", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Marco Antonio Contato", "subtag_name": "Limpeza & Higiene", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6437, "date": "2026-04-25T00:00:00", "amount": "-596.56", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Supermercado Savegnago", "subtag_name": "Supermercado", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6434, "date": "2026-04-24T00:00:00", "amount": "-197.40", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Fridas Burguer", "subtag_name": "Restaurante", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6432, "date": "2026-04-24T00:00:00", "amount": "-40.00", "card_id": 2, "tag_name": "Geral", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Waldomiro Silva", "subtag_name": "Outro", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6433, "date": "2026-04-24T00:00:00", "amount": "-52.24", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Empório Lila", "subtag_name": "Natural", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6431, "date": "2026-04-24T00:00:00", "amount": "-125.00", "card_id": 2, "tag_name": "Moradia", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Gas Ecia", "subtag_name": "Água, Energia & Gás", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6430, "date": "2026-04-24T00:00:00", "amount": "-279.82", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Mercado Qualidade", "subtag_name": "Café, Doce, Sorvete & Suco", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6429, "date": "2026-04-22T00:00:00", "amount": "-200.25", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Supermercado Brasil Fr", "subtag_name": "Supermercado", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6428, "date": "2026-04-21T00:00:00", "amount": "-75.00", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Casa De Carnes Kl", "subtag_name": "Açougue", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6427, "date": "2026-04-20T00:00:00", "amount": "-25.99", "card_id": 2, "tag_name": "Lazer", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Piatto Caixas Premiada", "subtag_name": "Aposta", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6425, "date": "2026-04-19T00:00:00", "amount": "-588.50", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Casa De Carnes Kl", "subtag_name": "Açougue", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6426, "date": "2026-04-19T00:00:00", "amount": "-104.00", "card_id": 2, "tag_name": "Geral", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Erika Cristina Laras", "subtag_name": "Outro", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6424, "date": "2026-04-18T00:00:00", "amount": "-134.45", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Jp Restaurante Ara", "subtag_name": "Restaurante", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6423, "date": "2026-04-18T00:00:00", "amount": "-178.30", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Mercado Qualidade", "subtag_name": "Café, Doce, Sorvete & Suco", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6422, "date": "2026-04-17T00:00:00", "amount": "-158.00", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Pastelaria Roberto Jap", "subtag_name": "Restaurante", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6419, "date": "2026-04-15T00:00:00", "amount": "-132.71", "card_id": 2, "tag_name": "Moradia", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "V7 Serv", "subtag_name": "Água, Energia & Gás", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6421, "date": "2026-04-15T00:00:00", "amount": "-54.80", "card_id": 2, "tag_name": "Saúde & Bem estar", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Drogal", "subtag_name": "Farmácia", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6420, "date": "2026-04-15T00:00:00", "amount": "-73.00", "card_id": 2, "tag_name": "Moradia", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Marco Antonio Contato", "subtag_name": "Limpeza & Higiene", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6418, "date": "2026-04-14T00:00:00", "amount": "-102.56", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "9833", "description": "Padaria Central", "subtag_name": "Padaria", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6369, "date": "2026-03-31T00:00:00", "amount": "-399.81", "card_id": 3, "tag_name": "Compra Online", "card_name": "Gustavo", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "3529", "description": "Casas Bahia", "subtag_name": "Casas Bahia", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 6, "current_installment": 2, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}], "credit_card_revenue_items": [], "benefit_card_expense_items": [{"id": 93, "date": "2026-05-15T07:59:00", "amount": "-242.82", "card_id": 9, "tag_name": "Alimentação", "card_name": "Flash", "card_type": "beneficios", "year_month": null, "card_active": true, "card_number": "0366", "description": "MERCADO QUALIDADE RIO CLARO BRA", "subtag_name": "Café, Doce, Sorvete & Suco", "source_table": "benefit_card_statements", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 94, "date": "2026-05-11T08:01:00", "amount": "-238.76", "card_id": 9, "tag_name": "Alimentação", "card_name": "Flash", "card_type": "beneficios", "year_month": null, "card_active": true, "card_number": "0366", "description": "MERCADO QUALIDADE RIO CLARO BRA", "subtag_name": "Café, Doce, Sorvete & Suco", "source_table": "benefit_card_statements", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 95, "date": "2026-05-11T06:10:00", "amount": "-14.76", "card_id": 9, "tag_name": "Alimentação", "card_name": "Flash", "card_type": "beneficios", "year_month": null, "card_active": true, "card_number": "0366", "description": "PADARIA ALEMA RIO CLARO BRA", "subtag_name": "Padaria", "source_table": "benefit_card_statements", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 96, "date": "2026-05-10T10:37:00", "amount": "-53.66", "card_id": 9, "tag_name": "Alimentação", "card_name": "Flash", "card_type": "beneficios", "year_month": null, "card_active": true, "card_number": "0366", "description": "DEPOSITO SKINA DA CERVEJA RIO CLARO BRA", "subtag_name": "Bebida", "source_table": "benefit_card_statements", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 97, "date": "2026-05-10T06:45:00", "amount": "-22.65", "card_id": 9, "tag_name": "Alimentação", "card_name": "Flash", "card_type": "beneficios", "year_month": null, "card_active": true, "card_number": "0366", "description": "PADARIA ALEMA RIO CLARO BRA", "subtag_name": "Padaria", "source_table": "benefit_card_statements", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 98, "date": "2026-05-09T06:39:00", "amount": "-23.61", "card_id": 9, "tag_name": "Alimentação", "card_name": "Flash", "card_type": "beneficios", "year_month": null, "card_active": true, "card_number": "0366", "description": "PADARIA ALEMA RIO CLARO BRA", "subtag_name": "Padaria", "source_table": "benefit_card_statements", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 99, "date": "2026-05-08T08:06:00", "amount": "-90.40", "card_id": 9, "tag_name": "Alimentação", "card_name": "Flash", "card_type": "beneficios", "year_month": null, "card_active": true, "card_number": "0366", "description": "SAVEGNAGO LJ 300 RIO CLARO BRA", "subtag_name": "Supermercado", "source_table": "benefit_card_statements", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 100, "date": "2026-05-04T07:53:00", "amount": "-131.86", "card_id": 9, "tag_name": "Alimentação", "card_name": "Flash", "card_type": "beneficios", "year_month": null, "card_active": true, "card_number": "0366", "description": "MERCADO QUALIDADE RIO CLARO BRA", "subtag_name": "Café, Doce, Sorvete & Suco", "source_table": "benefit_card_statements", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 101, "date": "2026-05-03T06:40:00", "amount": "-21.03", "card_id": 9, "tag_name": "Alimentação", "card_name": "Flash", "card_type": "beneficios", "year_month": null, "card_active": true, "card_number": "0366", "description": "PADARIA ALEMA RIO CLARO BRA", "subtag_name": "Padaria", "source_table": "benefit_card_statements", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 102, "date": "2026-05-02T19:10:00", "amount": "-177.80", "card_id": 9, "tag_name": "Geral", "card_name": "Flash", "card_type": "beneficios", "year_month": null, "card_active": true, "card_number": "0366", "description": "RIO CLARO DRIVE RIO CLARO BRA", "subtag_name": "Outro", "source_table": "benefit_card_statements", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 103, "date": "2026-05-02T06:39:00", "amount": "-20.27", "card_id": 9, "tag_name": "Alimentação", "card_name": "Flash", "card_type": "beneficios", "year_month": null, "card_active": true, "card_number": "0366", "description": "PADARIA ALEMA RIO CLARO BRA", "subtag_name": "Padaria", "source_table": "benefit_card_statements", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 104, "date": "2026-04-30T19:51:00", "amount": "-103.00", "card_id": 9, "tag_name": "Geral", "card_name": "Flash", "card_type": "beneficios", "year_month": null, "card_active": true, "card_number": "0366", "description": "VanessaMijolaroDo RIO CLARO BRA", "subtag_name": "Outro", "source_table": "benefit_card_statements", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 105, "date": "2026-04-29T07:53:00", "amount": "-209.78", "card_id": 9, "tag_name": "Alimentação", "card_name": "Flash", "card_type": "beneficios", "year_month": null, "card_active": true, "card_number": "0366", "description": "MERCADO QUALIDADE RIO CLARO BRA", "subtag_name": "Café, Doce, Sorvete & Suco", "source_table": "benefit_card_statements", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}], "benefit_card_revenue_items": [{"id": 106, "date": "2026-04-29T00:31:00", "amount": "1187.28", "card_id": 9, "tag_name": "Geral", "card_name": "Flash", "card_type": "beneficios", "year_month": null, "card_active": true, "card_number": "0366", "description": "Depósito transferido", "subtag_name": "Outro", "source_table": "benefit_card_statements", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 107, "date": "2026-04-29T00:23:00", "amount": "155.25", "card_id": 9, "tag_name": "Geral", "card_name": "Flash", "card_type": "beneficios", "year_month": null, "card_active": true, "card_number": "0366", "description": "Depósito transferido", "subtag_name": "Outro", "source_table": "benefit_card_statements", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}]}, "partner_account_card": {"agency": "1", "status": "to_pay", "bank_name": "Banco Fictício", "account_id": 2, "net_amount": -3731.785, "loan_to_pay": -399.81, "account_name": "Polezel", "total_to_pay": -3783.585, "expense_items": [{"id": 2866, "date": "2026-05-01T00:00:00", "amount": "-200.14", "card_id": null, "tag_name": "Moradia", "card_name": null, "card_type": null, "year_month": null, "card_active": null, "card_number": null, "description": "DAAE", "subtag_name": "Água, Energia & Gás", "source_table": "bank_statements", "card_closing_day": null, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 2868, "date": "2026-05-01T00:00:00", "amount": "-274.60", "card_id": null, "tag_name": "Moradia", "card_name": null, "card_type": null, "year_month": null, "card_active": null, "card_number": null, "description": "Claro", "subtag_name": "Internet & Telefone", "source_table": "bank_statements", "card_closing_day": null, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 2867, "date": "2026-05-01T00:00:00", "amount": "-428.48", "card_id": null, "tag_name": "Moradia", "card_name": null, "card_type": null, "year_month": null, "card_active": null, "card_number": null, "description": "Elektro (Energia)", "subtag_name": "Água, Energia & Gás", "source_table": "bank_statements", "card_closing_day": null, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}], "revenue_items": [], "account_number": 111111, "loan_to_receive": 0, "total_to_receive": 451.61, "net_amount_before_loans": -3331.975, "credit_card_expense_items": [], "credit_card_revenue_items": [], "benefit_card_expense_items": [], "benefit_card_revenue_items": []}}	1	1	2026-06-11 09:17:17.805777	2026-06-11 09:17:23.840253
+103	6	1	5	2026-05-16 00:00:00	2026-06-15 10:22:12	2026	6	663.60	0.00	663.60	\N	t	2026-06-15 10:22:24.966473	1	\N	{"year": 2026, "end_date": "2026-06-15T23:59:59", "start_date": "2026-05-16T00:00:00", "calculation_date": "2026-06-15T10:22:13.333525", "main_account_card": {"agency": "0020", "status": "to_receive", "bank_name": "BTG Pactual", "account_id": 1, "net_amount": 663.6, "loan_to_pay": 0, "account_name": "Gustavo", "total_to_pay": 0, "expense_items": [], "revenue_items": [], "account_number": 3046547, "loan_to_receive": 0, "total_to_receive": 663.6, "net_amount_before_loans": 663.6, "credit_card_expense_items": [{"id": 6539, "date": "2026-03-19T00:00:00", "amount": "-663.60", "card_id": 8, "tag_name": "Lazer", "card_name": "Virtual", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "6916", "description": "Eventim", "subtag_name": "Festa & Entretenimento", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 3, "current_installment": 3, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}], "credit_card_revenue_items": [], "benefit_card_expense_items": [], "benefit_card_revenue_items": []}, "partner_account_card": {"agency": "123456", "status": "to_pay", "bank_name": "Banco Fictício", "account_id": 5, "net_amount": -663.6, "loan_to_pay": 0, "account_name": "André", "total_to_pay": -663.6, "expense_items": [], "revenue_items": [], "account_number": 69, "loan_to_receive": 0, "total_to_receive": 0, "net_amount_before_loans": -663.6, "credit_card_expense_items": [], "credit_card_revenue_items": [], "benefit_card_expense_items": [], "benefit_card_revenue_items": []}}	1	1	2026-06-15 10:22:19.051284	2026-06-15 10:22:24.967191
+104	3	1	3	2026-05-16 00:00:00	2026-06-15 10:22:33	2026	6	4897.38	0.00	4897.38	\N	t	2026-06-25 08:04:24.070349	1	\N	{"year": 2026, "end_date": "2026-06-15T23:59:59", "start_date": "2026-05-16T00:00:00", "calculation_date": "2026-06-15T10:22:34.006812", "main_account_card": {"agency": "0020", "status": "to_receive", "bank_name": "BTG Pactual", "account_id": 1, "net_amount": 4897.38, "loan_to_pay": 0, "account_name": "Gustavo", "total_to_pay": 0, "expense_items": [], "revenue_items": [], "account_number": 3046547, "loan_to_receive": 0, "total_to_receive": 4897.38, "net_amount_before_loans": 4897.38, "credit_card_expense_items": [{"id": 6564, "date": "2026-06-13T00:00:00", "amount": "-279.90", "card_id": 4, "tag_name": "Vestuário", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "3501", "description": "Armenia Calcados", "subtag_name": "Roupa, Sapato & Acessório", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6561, "date": "2026-06-13T00:00:00", "amount": "-271.29", "card_id": 4, "tag_name": "Alimentação", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "3501", "description": "Savegnago", "subtag_name": "Supermercado", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6562, "date": "2026-06-13T00:00:00", "amount": "-94.90", "card_id": 4, "tag_name": "Alimentação", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "3501", "description": "Casa De Carnes Kl", "subtag_name": "Açougue", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6563, "date": "2026-06-13T00:00:00", "amount": "-114.90", "card_id": 4, "tag_name": "Vestuário", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "3501", "description": "Claudiamelo", "subtag_name": "Roupa, Sapato & Acessório", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6560, "date": "2026-06-10T00:00:00", "amount": "-192.40", "card_id": 4, "tag_name": "Vestuário", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "3501", "description": "Claudiamelo", "subtag_name": "Roupa, Sapato & Acessório", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 2, "current_installment": 1, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6559, "date": "2026-06-06T00:00:00", "amount": "-206.07", "card_id": 4, "tag_name": "Alimentação", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "3501", "description": "Savegnago", "subtag_name": "Supermercado", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6558, "date": "2026-06-05T00:00:00", "amount": "-367.62", "card_id": 4, "tag_name": "Saúde & Bem estar", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "3501", "description": "Droga Raia", "subtag_name": "Farmácia", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6556, "date": "2026-06-01T00:00:00", "amount": "-222.98", "card_id": 4, "tag_name": "Lazer", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "3501", "description": "Indu Presentes", "subtag_name": "Festa & Entretenimento", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6557, "date": "2026-06-01T00:00:00", "amount": "-150.00", "card_id": 4, "tag_name": "Carro", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "3501", "description": "Posto Mackey", "subtag_name": "Combustível", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6553, "date": "2026-05-30T00:00:00", "amount": "-249.97", "card_id": 4, "tag_name": "Vestuário", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "3501", "description": "Mini Modinha E Cia", "subtag_name": "Roupa, Sapato & Acessório - Crianças", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6554, "date": "2026-05-30T00:00:00", "amount": "-57.66", "card_id": 4, "tag_name": "Alimentação", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "3501", "description": "Examine", "subtag_name": "Supermercado", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6551, "date": "2026-05-30T00:00:00", "amount": "-343.25", "card_id": 4, "tag_name": "Alimentação", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "3501", "description": "Supermercado Savegnago", "subtag_name": "Supermercado", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6552, "date": "2026-05-30T00:00:00", "amount": "-79.90", "card_id": 4, "tag_name": "Vestuário", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "3501", "description": "Claudiamelo", "subtag_name": "Roupa, Sapato & Acessório", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6555, "date": "2026-05-30T00:00:00", "amount": "-132.89", "card_id": 4, "tag_name": null, "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "3501", "description": "Cnd 27 Rio Claro 0001", "subtag_name": null, "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6550, "date": "2026-05-27T00:00:00", "amount": "-130.00", "card_id": 4, "tag_name": null, "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "3501", "description": "Alex Da Silva Pereira", "subtag_name": null, "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6549, "date": "2026-05-23T00:00:00", "amount": "-293.66", "card_id": 4, "tag_name": "Alimentação", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "3501", "description": "Savegnago", "subtag_name": "Supermercado", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6548, "date": "2026-05-21T00:00:00", "amount": "-29.01", "card_id": 4, "tag_name": "Alimentação", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "3501", "description": "Padaria Alema", "subtag_name": "Padaria", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6546, "date": "2026-05-20T00:00:00", "amount": "-239.60", "card_id": 4, "tag_name": "Vestuário", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "3501", "description": "Claudiamelo", "subtag_name": "Roupa, Sapato & Acessório", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6547, "date": "2026-05-20T00:00:00", "amount": "-75.00", "card_id": 4, "tag_name": "Moradia", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "3501", "description": "Eletronica Mauricio", "subtag_name": "Manutenção", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6545, "date": "2026-05-20T00:00:00", "amount": "-403.34", "card_id": 4, "tag_name": "Moradia", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "3501", "description": "Goseguranca", "subtag_name": "Manutenção", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 3, "current_installment": 1, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6542, "date": "2026-05-16T00:00:00", "amount": "-353.15", "card_id": 4, "tag_name": "Alimentação", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "3501", "description": "Supermercado Savegnago", "subtag_name": "Supermercado", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6543, "date": "2026-05-16T00:00:00", "amount": "-306.20", "card_id": 4, "tag_name": "Alimentação", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "3501", "description": "Casa De Carnes Kl", "subtag_name": "Açougue", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6544, "date": "2026-05-16T00:00:00", "amount": "-36.00", "card_id": 4, "tag_name": "Lazer", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "3501", "description": "Loterias", "subtag_name": "Aposta", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6541, "date": "2026-05-14T00:00:00", "amount": "-95.36", "card_id": 4, "tag_name": "Moradia", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "3501", "description": "Certeza Higiene E Limp", "subtag_name": "Limpeza & Higiene", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6540, "date": "2026-04-01T00:00:00", "amount": "-172.33", "card_id": 4, "tag_name": "Carro", "card_name": "Lurdes", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "3501", "description": "Rio Fiat Oficina Mecan", "subtag_name": "Manutenção", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 3, "current_installment": 3, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}], "credit_card_revenue_items": [], "benefit_card_expense_items": [], "benefit_card_revenue_items": []}, "partner_account_card": {"agency": "8046", "status": "to_pay", "bank_name": "Itaú", "account_id": 3, "net_amount": -4897.38, "loan_to_pay": 0, "account_name": "Lurdes", "total_to_pay": -4897.38, "expense_items": [], "revenue_items": [], "account_number": 377027, "loan_to_receive": 0, "total_to_receive": 0, "net_amount_before_loans": -4897.38, "credit_card_expense_items": [], "credit_card_revenue_items": [], "benefit_card_expense_items": [], "benefit_card_revenue_items": []}}	1	1	2026-06-15 10:22:39.033718	2026-06-25 08:04:24.081189
+106	1	1	2	2026-05-19 00:00:00	2026-06-17 08:44:20	2026	6	3011.27	0.00	3011.27	\N	t	2026-06-25 08:04:31.057517	1	\N	{"year": 2026, "end_date": "2026-06-17T23:59:59", "start_date": "2026-05-19T00:00:00", "loan_payments": [{"loan_id": 37, "loan_type": "lent", "is_settled": true, "period_end": "2026-06-17 08:44:20", "amount_paid": 122.6, "description": "Acerto casa", "period_start": "2026-05-19 00:00:00", "original_amount": 122.6, "remaining_after": 0.0, "remaining_before": 122.6}], "calculation_date": "2026-06-17T08:44:21.437871", "main_account_card": {"agency": "0020", "status": "to_receive", "bank_name": "BTG Pactual", "account_id": 1, "net_amount": 3011.27, "loan_to_pay": 0, "account_name": "Gustavo", "total_to_pay": -1140.525, "expense_items": [{"id": 2887, "date": "2026-06-17T08:41:00", "amount": "-179.48", "card_id": null, "tag_name": "Cida", "card_name": null, "card_type": null, "year_month": null, "card_active": null, "card_number": null, "description": "Gps Codigo De Barras", "subtag_name": "GPS", "source_table": "bank_statements", "card_closing_day": null, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 2851, "date": "2026-06-01T08:46:00", "amount": "-161.50", "card_id": null, "tag_name": "Moradia", "card_name": null, "card_type": null, "year_month": null, "card_active": null, "card_number": null, "description": "Serv Agua", "subtag_name": "Água, Energia & Gás", "source_table": "bank_statements", "card_closing_day": null, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}], "revenue_items": [], "account_number": 3046547, "loan_to_receive": 122.6, "total_to_receive": 4029.195, "net_amount_before_loans": 2888.67, "credit_card_expense_items": [{"id": 6620, "date": "2026-06-13T00:00:00", "amount": "-66.00", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Roberto De Moraes E", "subtag_name": "Restaurante", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6618, "date": "2026-06-12T00:00:00", "amount": "-18.00", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Empório Lila", "subtag_name": "Natural", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6617, "date": "2026-06-12T00:00:00", "amount": "-44.00", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Brunasso Gourmet", "subtag_name": "Café, Doce, Sorvete & Suco", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6616, "date": "2026-06-12T00:00:00", "amount": "-50.00", "card_id": 2, "tag_name": "Moradia", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Marco Antonio Contato", "subtag_name": "Limpeza & Higiene", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6619, "date": "2026-06-12T00:00:00", "amount": "-56.00", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Mochila Food Truck", "subtag_name": "Restaurante", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6614, "date": "2026-06-11T00:00:00", "amount": "-9.00", "card_id": 2, "tag_name": "Carro", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Zul Regularizacao 2638", "subtag_name": "Estacionamento", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6615, "date": "2026-06-11T00:00:00", "amount": "-76.75", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Pastelaria Roberto Jap", "subtag_name": "Restaurante", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6613, "date": "2026-06-09T00:00:00", "amount": "-9.00", "card_id": 2, "tag_name": "Carro", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Zul Regularizacao 25wq", "subtag_name": "Estacionamento", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6612, "date": "2026-06-09T00:00:00", "amount": "-30.00", "card_id": 2, "tag_name": "Geral", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Roseli Schiavi Franco", "subtag_name": "Outro", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6609, "date": "2026-06-09T00:00:00", "amount": "-116.09", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Supermercado Brasil Fr", "subtag_name": "Supermercado", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6610, "date": "2026-06-09T00:00:00", "amount": "-10.00", "card_id": 2, "tag_name": "Moradia", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Marco Antonio Contato", "subtag_name": "Limpeza & Higiene", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6611, "date": "2026-06-09T00:00:00", "amount": "-14.00", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Brunasso Gourmet", "subtag_name": "Café, Doce, Sorvete & Suco", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6607, "date": "2026-06-08T00:00:00", "amount": "-35.00", "card_id": 2, "tag_name": "Moradia", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Marco Antonio Contato", "subtag_name": "Limpeza & Higiene", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6608, "date": "2026-06-08T00:00:00", "amount": "-50.06", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Padaria Alema", "subtag_name": "Padaria", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6606, "date": "2026-06-08T00:00:00", "amount": "-14.75", "card_id": 2, "tag_name": "Geral", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Agropecuaria Brasil", "subtag_name": "Outro", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6605, "date": "2026-06-06T00:00:00", "amount": "-356.24", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Supermercado Brasil Fr", "subtag_name": "Supermercado", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6604, "date": "2026-06-06T00:00:00", "amount": "-295.68", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Mercado Qualidade", "subtag_name": "Supermercado", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "100.00", "partner_contribution_percentage": "0.00"}, {"id": 6586, "date": "2026-06-05T00:00:00", "amount": "-84.02", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Empório Lila", "subtag_name": "Natural", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6585, "date": "2026-06-05T00:00:00", "amount": "-20.00", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Brunasso Gourmet", "subtag_name": "Café, Doce, Sorvete & Suco", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6584, "date": "2026-06-04T00:00:00", "amount": "-401.00", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Casa De Carnes Kl", "subtag_name": "Açougue", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6583, "date": "2026-06-03T00:00:00", "amount": "-66.00", "card_id": 2, "tag_name": "Moradia", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Marco Antonio Contato", "subtag_name": "Limpeza & Higiene", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6582, "date": "2026-06-02T00:00:00", "amount": "-123.60", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Baby Pastelaria", "subtag_name": "Restaurante", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6581, "date": "2026-06-02T00:00:00", "amount": "-14.00", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Brunasso Gourmet", "subtag_name": "Café, Doce, Sorvete & Suco", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6580, "date": "2026-05-30T00:00:00", "amount": "-97.00", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Petiscao", "subtag_name": "Restaurante", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6576, "date": "2026-05-29T00:00:00", "amount": "-265.92", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Mercado Qualidade", "subtag_name": "Supermercado", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "100.00", "partner_contribution_percentage": "0.00"}, {"id": 6579, "date": "2026-05-29T00:00:00", "amount": "-28.00", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Brunasso Gourmet", "subtag_name": "Café, Doce, Sorvete & Suco", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6577, "date": "2026-05-29T00:00:00", "amount": "-60.00", "card_id": 2, "tag_name": "Geral", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Donna Vertini", "subtag_name": "Outro", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6578, "date": "2026-05-29T00:00:00", "amount": "-17.00", "card_id": 2, "tag_name": "Geral", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Roseli Schiavi Franco", "subtag_name": "Outro", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6603, "date": "2026-05-28T00:00:00", "amount": "-9.00", "card_id": 2, "tag_name": "Carro", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Zul Regularizacao 251q", "subtag_name": "Estacionamento", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6602, "date": "2026-05-27T00:00:00", "amount": "-186.60", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Mc Donald's", "subtag_name": "Restaurante", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6601, "date": "2026-05-27T00:00:00", "amount": "-35.00", "card_id": 2, "tag_name": "Moradia", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Marco Antonio Contato", "subtag_name": "Limpeza & Higiene", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6600, "date": "2026-05-27T00:00:00", "amount": "-125.00", "card_id": 2, "tag_name": "Moradia", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Gas Ecia", "subtag_name": "Água, Energia & Gás", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6598, "date": "2026-05-26T00:00:00", "amount": "-148.00", "card_id": 2, "tag_name": "Moradia", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Contato Materiais De", "subtag_name": "Limpeza & Higiene", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6599, "date": "2026-05-26T00:00:00", "amount": "-314.86", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Mercado Qualidade", "subtag_name": "Supermercado", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "100.00", "partner_contribution_percentage": "0.00"}, {"id": 6597, "date": "2026-05-25T00:00:00", "amount": "-53.39", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Padaria Alema", "subtag_name": "Padaria", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6596, "date": "2026-05-25T00:00:00", "amount": "-60.30", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Nova Fazenda", "subtag_name": "Padaria", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6595, "date": "2026-05-24T00:00:00", "amount": "-293.00", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Rei Do Cupim", "subtag_name": "Restaurante", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6593, "date": "2026-05-23T00:00:00", "amount": "-83.47", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Nova Fazenda", "subtag_name": "Padaria", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6592, "date": "2026-05-23T00:00:00", "amount": "-112.74", "card_id": 2, "tag_name": "Geral", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Mercedes Ap Degea", "subtag_name": "Outro", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6594, "date": "2026-05-23T00:00:00", "amount": "-354.00", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Casa De Carnes Kl", "subtag_name": "Açougue", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6590, "date": "2026-05-22T00:00:00", "amount": "-62.32", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Padaria Alema", "subtag_name": "Padaria", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6591, "date": "2026-05-22T00:00:00", "amount": "-28.00", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Brunasso Gourmet", "subtag_name": "Café, Doce, Sorvete & Suco", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6589, "date": "2026-05-20T00:00:00", "amount": "-136.80", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Baby Pastelaria", "subtag_name": "Restaurante", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6588, "date": "2026-05-19T00:00:00", "amount": "-42.00", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Empório Lila", "subtag_name": "Natural", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6575, "date": "2026-05-19T00:00:00", "amount": "-31.00", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Brunasso Gourmet", "subtag_name": "Café, Doce, Sorvete & Suco", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6574, "date": "2026-05-19T00:00:00", "amount": "-15.00", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Hortifrittidow", "subtag_name": "Hortifruti", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6587, "date": "2026-05-19T00:00:00", "amount": "-30.00", "card_id": 2, "tag_name": "Geral", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Roseli Schiavi Franco", "subtag_name": "Outro", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6572, "date": "2026-05-17T00:00:00", "amount": "-98.00", "card_id": 2, "tag_name": "Geral", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Erika Cristina Laras", "subtag_name": "Outro", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6573, "date": "2026-05-17T00:00:00", "amount": "-643.05", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Supermercado Savegnago", "subtag_name": "Supermercado", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6571, "date": "2026-05-16T00:00:00", "amount": "-151.00", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Roberto De Moraes E", "subtag_name": "Restaurante", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6567, "date": "2026-05-15T00:00:00", "amount": "-59.98", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Examine", "subtag_name": "Supermercado", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6568, "date": "2026-05-15T00:00:00", "amount": "-50.00", "card_id": 2, "tag_name": "Geral", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Dela­cias Pan", "subtag_name": "Outro", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6569, "date": "2026-05-15T00:00:00", "amount": "-60.00", "card_id": 2, "tag_name": "Geral", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Donna Vertini", "subtag_name": "Outro", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6570, "date": "2026-05-15T00:00:00", "amount": "-64.00", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Brunasso Gourmet", "subtag_name": "Café, Doce, Sorvete & Suco", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6565, "date": "2026-05-14T00:00:00", "amount": "-457.00", "card_id": 2, "tag_name": "Alimentação", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Casa De Carnes Kl", "subtag_name": "Açougue", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6566, "date": "2026-05-14T00:00:00", "amount": "-125.00", "card_id": 2, "tag_name": "Geral", "card_name": "Polezel", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "9833", "description": "Vanessa Mijolaro Do", "subtag_name": "Outro", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6487, "date": "2026-05-22T00:00:00", "amount": "-173.05", "card_id": 1, "tag_name": "Alimentação", "card_name": "Acalento", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "0323", "description": "Mercado Qualidade", "subtag_name": "Supermercado", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6488, "date": "2026-05-22T00:00:00", "amount": "-446.11", "card_id": 1, "tag_name": "Alimentação", "card_name": "Acalento", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "0323", "description": "Mercado Qualidade", "subtag_name": "Supermercado", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6500, "date": "2026-03-31T00:00:00", "amount": "-399.81", "card_id": 3, "tag_name": "Compra Online", "card_name": "Gustavo", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "3529", "description": "Casas Bahia", "subtag_name": "Casas Bahia", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 6, "current_installment": 3, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}], "credit_card_revenue_items": [], "benefit_card_expense_items": [{"id": 108, "date": "2026-06-11T19:19:00", "amount": "-85.60", "card_id": 9, "tag_name": "Alimentação", "card_name": "Flash", "card_type": "beneficios", "year_month": null, "card_active": true, "card_number": "0366", "description": "BABY PASTELARIA RIO CLARO BRA", "subtag_name": "Restaurante", "source_table": "benefit_card_statements", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 82, "date": "2026-06-09T22:32:00", "amount": "-129.95", "card_id": 9, "tag_name": "Alimentação", "card_name": "Flash", "card_type": "beneficios", "year_month": null, "card_active": true, "card_number": "0366", "description": "CLASSICO COMERCIO DE RE SAO PAULO BRA", "subtag_name": "Restaurante", "source_table": "benefit_card_statements", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 83, "date": "2026-06-06T18:25:00", "amount": "-163.54", "card_id": 9, "tag_name": "Alimentação", "card_name": "Flash", "card_type": "beneficios", "year_month": null, "card_active": true, "card_number": "0366", "description": "IFD*BR OSASCO BRA", "subtag_name": "Restaurante", "source_table": "benefit_card_statements", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 84, "date": "2026-06-06T06:57:00", "amount": "-17.15", "card_id": 9, "tag_name": "Alimentação", "card_name": "Flash", "card_type": "beneficios", "year_month": null, "card_active": true, "card_number": "0366", "description": "PADARIA ALEMA RIO CLARO BRA", "subtag_name": "Padaria", "source_table": "benefit_card_statements", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 85, "date": "2026-06-03T19:57:00", "amount": "-244.34", "card_id": 9, "tag_name": "Alimentação", "card_name": "Flash", "card_type": "beneficios", "year_month": null, "card_active": true, "card_number": "0366", "description": "SAVEGNAGO LJ 300 RIO CLARO BRA", "subtag_name": "Supermercado", "source_table": "benefit_card_statements", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 86, "date": "2026-06-02T06:18:00", "amount": "-27.14", "card_id": 9, "tag_name": "Alimentação", "card_name": "Flash", "card_type": "beneficios", "year_month": null, "card_active": true, "card_number": "0366", "description": "PADARIA ALEMA RIO CLARO BRA", "subtag_name": "Padaria", "source_table": "benefit_card_statements", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 87, "date": "2026-05-31T12:16:00", "amount": "-32.99", "card_id": 9, "tag_name": "Alimentação", "card_name": "Flash", "card_type": "beneficios", "year_month": null, "card_active": true, "card_number": "0366", "description": "PADARIA ALEMA RIO CLARO BRA", "subtag_name": "Padaria", "source_table": "benefit_card_statements", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 88, "date": "2026-05-31T07:05:00", "amount": "-17.70", "card_id": 9, "tag_name": "Alimentação", "card_name": "Flash", "card_type": "beneficios", "year_month": null, "card_active": true, "card_number": "0366", "description": "PADARIA ALEMA RIO CLARO BRA", "subtag_name": "Padaria", "source_table": "benefit_card_statements", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 92, "date": "2026-05-25T06:15:00", "amount": "-21.58", "card_id": 9, "tag_name": "Alimentação", "card_name": "Flash", "card_type": "beneficios", "year_month": null, "card_active": true, "card_number": "0366", "description": "PADARIA ALEMA RIO CLARO BRA", "subtag_name": "Padaria", "source_table": "benefit_card_statements", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}], "benefit_card_revenue_items": [{"id": 90, "date": "2026-05-28T00:23:00", "amount": "1187.28", "card_id": 9, "tag_name": "Geral", "card_name": "Flash", "card_type": "beneficios", "year_month": null, "card_active": true, "card_number": "0366", "description": "Depósito transferido", "subtag_name": "Outro", "source_table": "benefit_card_statements", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 91, "date": "2026-05-28T00:18:00", "amount": "155.25", "card_id": 9, "tag_name": "Geral", "card_name": "Flash", "card_type": "beneficios", "year_month": null, "card_active": true, "card_number": "0366", "description": "Depósito transferido", "subtag_name": "Outro", "source_table": "benefit_card_statements", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}]}, "partner_account_card": {"agency": "1", "status": "to_pay", "bank_name": "Banco Fictício", "account_id": 2, "net_amount": -3011.27, "loan_to_pay": -122.6, "account_name": "Polezel", "total_to_pay": -4029.195, "expense_items": [{"id": 2877, "date": "2026-06-14T22:01:44", "amount": "-202.00", "card_id": null, "tag_name": null, "card_name": null, "card_type": null, "year_month": null, "card_active": null, "card_number": null, "description": "Mercado", "subtag_name": null, "source_table": "bank_statements", "card_closing_day": null, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 2876, "date": "2026-06-01T22:01:01", "amount": "-856.40", "card_id": null, "tag_name": "Geral", "card_name": null, "card_type": null, "year_month": null, "card_active": null, "card_number": null, "description": "Acertos casa", "subtag_name": "Outro", "source_table": "bank_statements", "card_closing_day": null, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 2869, "date": "2026-06-01T00:00:00", "amount": "-494.54", "card_id": null, "tag_name": "Moradia", "card_name": null, "card_type": null, "year_month": null, "card_active": null, "card_number": null, "description": "DAAE", "subtag_name": "Água, Energia & Gás", "source_table": "bank_statements", "card_closing_day": null, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 2870, "date": "2026-06-01T00:00:00", "amount": "-456.56", "card_id": null, "tag_name": "Moradia", "card_name": null, "card_type": null, "year_month": null, "card_active": null, "card_number": null, "description": "Elektro (Energia)", "subtag_name": "Água, Energia & Gás", "source_table": "bank_statements", "card_closing_day": null, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 2871, "date": "2026-06-01T00:00:00", "amount": "-271.55", "card_id": null, "tag_name": "Moradia", "card_name": null, "card_type": null, "year_month": null, "card_active": null, "card_number": null, "description": "Claro", "subtag_name": "Internet & Telefone", "source_table": "bank_statements", "card_closing_day": null, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}], "revenue_items": [], "account_number": 111111, "loan_to_receive": 0, "total_to_receive": 1140.525, "net_amount_before_loans": -2888.67, "credit_card_expense_items": [], "credit_card_revenue_items": [], "benefit_card_expense_items": [], "benefit_card_revenue_items": []}}	1	1	2026-06-17 08:44:35.661264	2026-06-25 08:04:31.057963
+105	2	1	4	2026-05-16 00:00:00	2026-06-15 10:22:48	2026	6	6469.13	0.00	6469.13	\N	t	2026-06-25 08:06:41.874745	1	\N	{"year": 2026, "end_date": "2026-06-15T23:59:59", "start_date": "2026-05-16T00:00:00", "calculation_date": "2026-06-15T10:22:49.384623", "main_account_card": {"agency": "0020", "status": "to_receive", "bank_name": "BTG Pactual", "account_id": 1, "net_amount": 6469.13, "loan_to_pay": 0, "account_name": "Gustavo", "total_to_pay": 0, "expense_items": [{"id": 2865, "date": "2026-06-10T18:28:00", "amount": "-73.20", "card_id": null, "tag_name": "Acalento", "card_name": null, "card_type": null, "year_month": null, "card_active": null, "card_number": null, "description": "Khor Cosmetics", "subtag_name": "Produto", "source_table": "bank_statements", "card_closing_day": null, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}], "revenue_items": [], "account_number": 3046547, "loan_to_receive": 0, "total_to_receive": 6469.13, "net_amount_before_loans": 6469.13, "credit_card_expense_items": [{"id": 6497, "date": "2026-06-11T00:00:00", "amount": "-844.35", "card_id": 1, "tag_name": "Acalento", "card_name": "Acalento", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "0323", "description": "Pink Cheeks Comerc", "subtag_name": "Produto", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 4, "current_installment": 1, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6495, "date": "2026-06-10T00:00:00", "amount": "-422.44", "card_id": 1, "tag_name": "Acalento", "card_name": "Acalento", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "0323", "description": "Khor Cosmetics", "subtag_name": "Produto", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 3, "current_installment": 1, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6494, "date": "2026-06-10T00:00:00", "amount": "-169.00", "card_id": 1, "tag_name": null, "card_name": "Acalento", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "0323", "description": "Industrias Suavetex L", "subtag_name": null, "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6493, "date": "2026-06-10T00:00:00", "amount": "-147.40", "card_id": 1, "tag_name": null, "card_name": "Acalento", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "0323", "description": "Zig Anh Biobrazil 2026", "subtag_name": null, "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6492, "date": "2026-06-10T00:00:00", "amount": "-169.26", "card_id": 1, "tag_name": "Acalento", "card_name": "Acalento", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "0323", "description": "Alva Personal Care", "subtag_name": "Produto", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 6, "current_installment": 1, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6496, "date": "2026-06-10T00:00:00", "amount": "-372.18", "card_id": 1, "tag_name": null, "card_name": "Acalento", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "0323", "description": "Jim.com* Casa Maria P", "subtag_name": null, "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 3, "current_installment": 1, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6491, "date": "2026-05-29T00:00:00", "amount": "-188.34", "card_id": 1, "tag_name": "Acalento", "card_name": "Acalento", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "0323", "description": "Produtos Alva", "subtag_name": "Produto", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 6, "current_installment": 1, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6489, "date": "2026-05-29T00:00:00", "amount": "-130.00", "card_id": 1, "tag_name": null, "card_name": "Acalento", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "0323", "description": "Valmir Costa Barbosa", "subtag_name": null, "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6490, "date": "2026-05-29T00:00:00", "amount": "-100.00", "card_id": 1, "tag_name": null, "card_name": "Acalento", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "0323", "description": "Valmir Costa Barbosa", "subtag_name": null, "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6487, "date": "2026-05-22T00:00:00", "amount": "-173.05", "card_id": 1, "tag_name": "Alimentação", "card_name": "Acalento", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "0323", "description": "Mercado Qualidade", "subtag_name": "Supermercado", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6486, "date": "2026-05-22T00:00:00", "amount": "-265.65", "card_id": 1, "tag_name": "Acalento", "card_name": "Acalento", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "0323", "description": "Ferus Cosmetico", "subtag_name": "Produto", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 2, "current_installment": 1, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6488, "date": "2026-05-22T00:00:00", "amount": "-446.11", "card_id": 1, "tag_name": "Alimentação", "card_name": "Acalento", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "0323", "description": "Mercado Qualidade", "subtag_name": "Supermercado", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "50.00", "partner_contribution_percentage": "50.00"}, {"id": 6485, "date": "2026-05-22T00:00:00", "amount": "-162.33", "card_id": 1, "tag_name": "Acalento", "card_name": "Acalento", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "0323", "description": "Asa Chlorophylla Indus", "subtag_name": "Produto", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 5, "current_installment": 1, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6484, "date": "2026-05-21T00:00:00", "amount": "-373.06", "card_id": 1, "tag_name": "Acalento", "card_name": "Acalento", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "0323", "description": "Melmatte", "subtag_name": "Produto", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 2, "current_installment": 1, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6483, "date": "2026-05-21T00:00:00", "amount": "-378.99", "card_id": 1, "tag_name": "Acalento", "card_name": "Acalento", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "0323", "description": "Fios Da Terra Cosmetic", "subtag_name": "Produto", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 3, "current_installment": 1, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6482, "date": "2026-05-20T00:00:00", "amount": "-50.00", "card_id": 1, "tag_name": "Carro", "card_name": "Acalento", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "0323", "description": "Posto Mackey", "subtag_name": "Combustível", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6481, "date": "2026-05-16T00:00:00", "amount": "-26.34", "card_id": 1, "tag_name": "Alimentação", "card_name": "Acalento", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "0323", "description": "Covabra", "subtag_name": "Supermercado", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": null, "current_installment": null, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6480, "date": "2026-05-11T00:00:00", "amount": "-281.07", "card_id": 1, "tag_name": "Acalento", "card_name": "Acalento", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "0323", "description": "Pink Cheeks Comerc", "subtag_name": "Produto", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 2, "current_installment": 2, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6479, "date": "2026-05-07T00:00:00", "amount": "-270.66", "card_id": 1, "tag_name": "Acalento", "card_name": "Acalento", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "0323", "description": "Florapura", "subtag_name": "Produto", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 3, "current_installment": 2, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6478, "date": "2026-04-30T00:00:00", "amount": "-262.24", "card_id": 1, "tag_name": "Acalento", "card_name": "Acalento", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "0323", "description": "Chlorophylla Fhytocos", "subtag_name": "Produto", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 5, "current_installment": 2, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6477, "date": "2026-04-29T00:00:00", "amount": "-326.96", "card_id": 1, "tag_name": "Acalento", "card_name": "Acalento", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "0323", "description": "Melmatte", "subtag_name": "Produto", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 2, "current_installment": 2, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6476, "date": "2026-04-18T00:00:00", "amount": "-178.22", "card_id": 1, "tag_name": "Acalento", "card_name": "Acalento", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "0323", "description": "Ditacuja", "subtag_name": "Produto", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 5, "current_installment": 2, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6475, "date": "2026-04-16T00:00:00", "amount": "-232.70", "card_id": 1, "tag_name": null, "card_name": "Acalento", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "0323", "description": "Janaina S Silva C", "subtag_name": null, "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 4, "current_installment": 2, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6474, "date": "2026-04-13T00:00:00", "amount": "-274.33", "card_id": 1, "tag_name": "Acalento", "card_name": "Acalento", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "0323", "description": "Florapura", "subtag_name": "Produto", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 3, "current_installment": 3, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6473, "date": "2026-04-08T00:00:00", "amount": "-290.93", "card_id": 1, "tag_name": "Acalento", "card_name": "Acalento", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "0323", "description": "Chlorophylla Fhytocos", "subtag_name": "Produto", "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 4, "current_installment": 3, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 6472, "date": "2026-03-23T00:00:00", "amount": "-169.90", "card_id": 1, "tag_name": null, "card_name": "Acalento", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "0323", "description": "Jim Com All Trails", "subtag_name": null, "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 6, "current_installment": 3, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}], "credit_card_revenue_items": [], "benefit_card_expense_items": [], "benefit_card_revenue_items": []}, "partner_account_card": {"agency": "1", "status": "to_pay", "bank_name": "Banco Fictício", "account_id": 4, "net_amount": -6469.13, "loan_to_pay": 0, "account_name": "Acalento", "total_to_pay": -6469.13, "expense_items": [], "revenue_items": [], "account_number": 222222, "loan_to_receive": 0, "total_to_receive": 0, "net_amount_before_loans": -6469.13, "credit_card_expense_items": [], "credit_card_revenue_items": [], "benefit_card_expense_items": [], "benefit_card_revenue_items": []}}	1	1	2026-06-15 10:23:36.991891	2026-06-25 08:06:41.87518
 \.
 
 
@@ -1956,7 +1972,6 @@ COPY public.bank_statements (id, category, transaction, description, date, amoun
 59	Contas	Pagamento de conta	Vivo	2021-08-13 15:20:00	-111.98	130	100.00	\N	\N	1	1	1	2026-02-13 10:18:48.697765	2026-02-13 10:18:48.697768	\N	\N
 2604	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Amanda De Mello Fabiao	2026-02-10 14:25:00	-120.00	100	100.00	\N	\N	1	1	1	2026-02-13 14:00:51.834049	2026-02-13 14:05:05.428691	\N	\N
 62	Alimentação	Compra no débito autorizada	Padaria Alema	2021-08-15 16:44:00	-30.10	14	100.00	\N	\N	1	1	1	2026-02-13 10:18:48.699552	2026-02-13 10:18:48.699556	\N	\N
-63	Supermercado	Compra no débito autorizada	Mercado Qualidade	2021-08-16 19:32:00	-25.02	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:48.699558	2026-02-13 10:18:48.69956	\N	\N
 64	Contas	Pagamento de conta	Oi	2021-08-17 18:09:00	-102.50	130	100.00	\N	\N	1	1	1	2026-02-13 10:18:48.699562	2026-02-13 10:18:48.699564	\N	\N
 65	Contas	Pagamento de conta	Vivo	2021-08-17 21:08:00	-65.99	130	100.00	\N	\N	1	1	1	2026-02-13 10:18:48.699566	2026-02-13 10:18:48.699568	\N	\N
 66	Alimentação	Compra no débito autorizada	Padaria Alema	2021-08-19 13:05:00	-12.50	14	100.00	\N	\N	1	1	1	2026-02-13 10:18:48.699571	2026-02-13 10:18:48.699573	\N	\N
@@ -2052,7 +2067,6 @@ COPY public.bank_statements (id, category, transaction, description, date, amoun
 152	Compras	Compra no débito autorizada	Bibello	2021-11-06 10:34:00	-10.90	100	100.00	\N	\N	1	1	1	2026-02-13 10:18:48.740479	2026-02-13 14:03:25.224436	\N	\N
 166	Saúde	Pagamento de boleto	Unimed	2021-11-08 16:14:00	-457.71	149	100.00	\N	\N	1	1	1	2026-02-13 10:18:48.74569	2026-02-13 10:18:48.745696	\N	\N
 167	Alimentação	Compra no débito autorizada	Sorvetes Gelace	2021-11-08 20:44:00	-24.25	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:48.745699	2026-02-13 10:18:48.745701	\N	\N
-170	Supermercado	Compra no débito autorizada	Mercado Qualidade	2021-11-09 20:26:00	-22.99	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:48.747721	2026-02-13 10:18:48.747726	\N	\N
 826	Transferência	Pix recebido	Luiz Gustavo G Quinelato	2023-06-29 17:56:00	5588.68	158	100.00	\N	\N	1	1	1	2026-02-13 10:18:49.053801	2026-02-17 19:08:14.336599	\N	\N
 174	Alimentação	Compra no débito autorizada	Padaria Claret	2021-11-11 07:24:00	-5.24	14	100.00	\N	\N	1	1	1	2026-02-13 10:18:48.74942	2026-02-13 10:18:48.749425	\N	\N
 842	Transferência	Pix recebido	Luiz Gustavo G Quinelato	2023-07-14 17:45:00	6000.00	158	100.00	\N	\N	1	1	1	2026-02-13 10:18:49.059863	2026-02-17 19:08:14.336599	\N	\N
@@ -2084,7 +2098,6 @@ COPY public.bank_statements (id, category, transaction, description, date, amoun
 205	Contas	Pagamento de conta	Vivo	2021-12-08 10:25:00	-249.98	130	100.00	\N	\N	1	1	1	2026-02-13 10:18:48.767486	2026-02-13 10:18:48.767488	\N	\N
 210	Educação	Pagamento de boleto	Koelle Ltda Educacao E Cultura	2021-12-10 07:32:00	-376.60	89	100.00	\N	\N	1	1	1	2026-02-13 10:18:48.769751	2026-02-13 10:18:48.769756	\N	\N
 212	Alimentação	Compra no débito autorizada	Cacau Show	2021-12-11 15:37:00	-17.55	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:48.771744	2026-02-13 10:18:48.771751	\N	\N
-214	Supermercado	Compra no débito autorizada	Mercado Qualidade	2021-12-16 13:11:00	-29.03	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:48.773554	2026-02-13 10:18:48.773559	\N	\N
 215	Outra Categoria	Pix enviado	Guilherme Ottaviani	2021-12-16 14:46:00	-230.00	116	100.00	\N	\N	1	1	1	2026-02-13 10:18:48.773562	2026-02-13 10:18:48.773564	\N	\N
 171	Outra Categoria	Pix enviado	Janete Aparecida Boscariol	2021-11-10 11:57:00	-50.00	100	100.00	\N	\N	1	1	1	2026-02-13 10:18:48.74849	2026-02-13 14:03:13.449027	\N	\N
 173	Transferência	Pix enviado	Kelly Alessandra Bianchi	2021-11-10 17:44:00	-92.20	100	100.00	\N	\N	1	1	1	2026-02-13 10:18:48.748504	2026-02-13 14:03:13.449028	\N	\N
@@ -2927,7 +2940,6 @@ COPY public.bank_statements (id, category, transaction, description, date, amoun
 1121	Seguro	Pagamento de boleto	Travessia Securitizadora	2024-02-16 12:13:00	-2000.00	125	100.00	\N	\N	1	1	1	2026-02-13 10:18:49.194875	2026-02-13 10:18:49.194877	\N	\N
 1122	Alimentação	Compra no débito autorizada	Padaria Vila Alema	2024-02-16 12:21:00	-13.00	14	100.00	\N	\N	1	1	1	2026-02-13 10:18:49.19488	2026-02-13 10:18:49.194882	\N	\N
 1123	Alimentação	Compra no débito autorizada	Gelace	2024-02-16 12:39:00	-120.00	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:49.194884	2026-02-13 10:18:49.194886	\N	\N
-1124	Supermercado	Compra no débito autorizada	Mercado Qualidade	2024-02-17 18:22:00	-18.99	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:49.194888	2026-02-13 10:18:49.19489	\N	\N
 1144	Transferência	Pix recebido	Luiz Gustavo G Quinelato	2024-02-28 11:52:00	5694.68	158	100.00	\N	\N	1	1	1	2026-02-13 10:18:49.203982	2026-02-17 19:08:14.336599	\N	\N
 1127	Alimentação	Pix enviado	Serv Agua	2024-02-19 10:52:00	-187.50	123	50.00	1	\N	1	1	1	2026-02-13 10:18:49.197628	2026-02-13 10:18:49.197632	\N	\N
 1140	Outra Categoria	Compra no débito autorizada	Ricardo	2024-02-25 19:09:00	-6.99	100	100.00	\N	\N	1	1	1	2026-02-13 10:18:49.202941	2026-02-13 14:03:01.8531	\N	\N
@@ -3604,6 +3616,7 @@ COPY public.bank_statements (id, category, transaction, description, date, amoun
 1852	Pets	Pix enviado	Zapizi	2025-03-15 13:15:00	-10.00	100	100.00	\N	\N	1	1	1	2026-02-13 10:18:49.506829	2026-02-13 14:02:56.643369	\N	\N
 752	Outra Categoria	Pix enviado	Sf Franquias	2023-04-23 19:34:00	-102.50	100	100.00	\N	\N	1	1	1	2026-02-13 10:18:49.015371	2026-02-13 14:03:01.853068	\N	\N
 905	Outra Categoria	Canc. Transferência Pix enviada	Shp Br Inst P Svc P	2023-09-14 17:48:00	73.18	99	100.00	\N	\N	1	1	1	2026-02-13 10:18:49.082325	2026-02-13 14:03:01.853076	\N	\N
+2876	\N	\N	Acertos casa	2026-06-01 22:01:01	-856.40	261	50.00	1	\N	2	1	1	2026-06-16 22:01:44.273634	2026-06-16 22:01:44.273655	\N	\N
 1828	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Nathalia Sartori Meira	2025-02-21 16:29:00	-84.00	100	100.00	\N	\N	1	1	1	2026-02-13 10:18:49.491559	2026-02-13 14:03:06.099844	\N	\N
 1840	Transferência	Pix enviado	Manoela Santana 40627481850	2025-03-12 16:26:00	-5.00	100	100.00	\N	\N	1	1	1	2026-02-13 10:18:49.499311	2026-02-13 14:03:09.586301	\N	\N
 1867	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Marcela Marto Da Silva	2025-03-24 11:52:00	-50.00	100	100.00	\N	\N	1	1	1	2026-02-13 10:18:49.513111	2026-02-13 14:03:09.586305	\N	\N
@@ -4562,6 +4575,7 @@ COPY public.bank_statements (id, category, transaction, description, date, amoun
 2577	Investimentos	Transferência recebida	Luiz Gustavo Giacomelo Quinelato	2023-09-19 15:58:00	6290.00	98	100.00	\N	\N	1	1	1	2026-02-13 10:18:54.159213	2026-02-13 13:22:57.913031	\N	\N
 2578	Investimentos	Transferência recebida	Luiz Gustavo Giacomelo Quinelato	2023-10-20 10:11:00	6974.68	98	100.00	\N	\N	1	1	1	2026-02-13 10:18:54.159215	2026-02-13 13:22:57.913034	\N	\N
 2579	Investimentos	Transferência recebida	Luiz Gustavo Giacomelo Quinelato	2023-11-21 12:25:00	3000.00	98	100.00	\N	\N	1	1	1	2026-02-13 10:18:54.159218	2026-02-13 13:22:57.913035	\N	\N
+2869	\N	\N	DAAE	2026-06-01 00:00:00	-494.54	282	50.00	1	\N	2	1	1	2026-06-12 19:04:20.376052	2026-06-12 19:04:20.376076	\N	\N
 2580	Investimentos	Transferência recebida	Luiz Gustavo Giacomelo Quinelato	2024-01-19 14:59:00	5010.99	98	100.00	\N	\N	1	1	1	2026-02-13 10:18:54.159221	2026-02-13 13:22:57.913036	\N	\N
 2581	Investimentos	Transferência recebida	Luiz Gustavo Giacomelo Quinelato	2024-02-28 13:09:00	1744.67	98	100.00	\N	\N	1	1	1	2026-02-13 10:18:54.159223	2026-02-13 13:22:57.913038	\N	\N
 2582	Investimentos	Transferência recebida	Luiz Gustavo Giacomelo Quinelato	2024-03-19 09:33:00	2400.00	98	100.00	\N	\N	1	1	1	2026-02-13 10:18:54.159226	2026-02-13 13:22:57.913039	\N	\N
@@ -4661,7 +4675,6 @@ COPY public.bank_statements (id, category, transaction, description, date, amoun
 2805	Supermercado	Pix enviado por Natália Cristina Polezel Quinelato	Casa De Bolos	2026-05-08 09:01:00	-25.00	7	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.579448	2026-06-11 08:35:05.579452	\N	\N
 2806	Crédito e Financiamento	Pagamento de boleto	Rodobens Adm De Consorcio	2026-05-08 13:47:00	-4446.59	127	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.579454	2026-06-11 08:35:05.579455	\N	\N
 2807	Educação	Pagamento de boleto	Koelle Educacao E Cultura	2026-05-08 13:48:00	-306.00	89	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.579457	2026-06-11 08:35:05.579458	\N	\N
-2808	Supermercado	Compra no débito autorizada	Mercado Qualidade	2026-05-09 13:00:00	-29.90	7	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.579459	2026-06-11 08:35:05.579461	\N	\N
 2814	Transferência	Pix recebido	Luiz Gustavo G Quinelato	2026-05-13 08:26:00	200.00	158	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.581583	2026-06-11 08:35:05.581587	\N	\N
 2815	Crédito e Financiamento	Pagamento de boleto	Porto Seguro Seguros	2026-05-13 08:38:00	-1541.26	51	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.581588	2026-06-11 08:35:05.58159	\N	\N
 2816	Alimentação	Pix enviado por Natália Cristina Polezel Quinelato	Restaurante Seu Bento	2026-05-13 12:29:00	-61.30	16	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.581591	2026-06-11 08:35:05.581593	\N	\N
@@ -4670,41 +4683,26 @@ COPY public.bank_statements (id, category, transaction, description, date, amoun
 2821	Transferência	Pix recebido	Danieli Cristina Polezel	2026-05-16 10:25:00	300.00	99	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.583503	2026-06-11 08:35:05.583505	\N	\N
 2822	Casa	Compra no débito autorizada	Fonte Luz	2026-05-16 11:03:00	-57.00	132	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.583506	2026-06-11 08:35:05.583507	\N	\N
 2787	Cuidados Pessoais	Pix enviado por Natália Cristina Polezel Quinelato	Francisco Carlos Sferra	2026-04-28 16:48:00	-9.50	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.57219	2026-06-11 08:40:15.933669	\N	\N
-2824	Saúde	Pix enviado por Natália Cristina Polezel Quinelato	Espaco Do Bem E Administracao	2026-05-18 06:07:00	-257.00	114	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.583512	2026-06-11 08:35:05.583513	\N	\N
-2825	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Flaviane Caroline Marques Sanches	2026-05-18 06:10:00	-140.00	114	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.583514	2026-06-11 08:35:05.583516	\N	\N
-2826	Outra Categoria	Pix enviado	Mercado Pago Instituicao De Pagamento	2026-05-18 07:55:00	-345.90	62	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.583517	2026-06-11 08:35:05.583518	\N	\N
-2827	Tarifas	Pagamento de conta	Gps Codigo De Barras	2026-05-18 08:15:00	-178.89	66	0.00	1	\N	1	1	1	2026-06-11 08:35:05.585297	2026-06-11 08:35:05.5853	\N	\N
-2828	Transferência	Pix recebido	Danieli Cristina Polezel	2026-05-18 13:07:00	400.00	99	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.586298	2026-06-11 08:35:05.586302	\N	\N
-2829	Outra Categoria	Pix recebido	Andre Luis Carrilho	2026-05-18 15:23:00	663.60	99	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.586303	2026-06-11 08:35:05.586305	\N	\N
-2830	Contas	Pagamento de fatura do cartão	Fatura do cartão BTG Pactual	2026-05-19 00:31:00	-21312.63	62	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.586306	2026-06-11 08:35:05.586307	\N	\N
-2831	Transferência	Pix recebido	Luiz Gustavo G Quinelato	2026-05-19 08:35:00	2942.81	158	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.586309	2026-06-11 08:35:05.58631	\N	\N
-2832	Transferência	Pix recebido	Danieli Cristina Polezel	2026-05-19 12:01:00	300.00	99	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.586311	2026-06-11 08:35:05.586313	\N	\N
-2833	Transferência	Pix recebido	Danieli Cristina Polezel	2026-05-20 11:17:00	400.00	99	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.586314	2026-06-11 08:35:05.586315	\N	\N
-2834	Transferência	Pix recebido	Natalia Cristina Polezel	2026-05-20 19:42:00	3732.00	99	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.586317	2026-06-11 08:35:05.586318	\N	\N
-2835	Transferência	Pix recebido	Danieli Cristina Polezel	2026-05-21 08:38:00	500.00	99	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.586319	2026-06-11 08:35:05.586321	\N	\N
-2838	Alimentação	Pix enviado por Natália Cristina Polezel Quinelato	Narizinho Cantinas	2026-05-26 08:22:00	-50.00	16	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.588326	2026-06-11 08:35:05.58833	\N	\N
-2839	Transferência	Pix recebido	Danieli Cristina Polezel	2026-05-26 12:03:00	900.00	99	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.588331	2026-06-11 08:35:05.588333	\N	\N
-2840	Transferência	Pix recebido	Danieli Cristina Polezel	2026-05-26 12:05:00	400.00	99	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.588334	2026-06-11 08:35:05.588336	\N	\N
-2841	Investimentos	Transferência recebida	Luiz Gustavo Giacomelo Quinelato	2026-05-27 09:20:00	5447.86	96	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.588337	2026-06-11 08:35:05.588338	\N	\N
-2843	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Natalia Generoso	2026-05-27 20:59:00	-174.00	140	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.590299	2026-06-11 08:35:05.590302	\N	\N
-2846	Transferência	Pix recebido	Luiz Gustavo G Quinelato	2026-05-30 08:59:00	6861.14	158	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.591843	2026-06-11 08:35:05.591846	\N	\N
-2847	Contas	Pix enviado	Claro	2026-05-30 16:57:00	-60.11	130	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.591848	2026-06-11 08:35:05.59185	\N	\N
-2850	Impostos e Tributos	IOF limite da conta	IOF limite da conta	2026-06-01 08:25:00	-44.84	38	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.59346	2026-06-11 08:35:05.593464	\N	\N
-2851	Alimentação	Pix enviado	Serv Agua	2026-06-01 08:46:00	-161.50	123	50.00	1	\N	1	1	1	2026-06-11 08:35:05.594191	2026-06-11 08:35:05.594194	\N	\N
-2852	Crédito e Financiamento	Pagamento de boleto	Rodobens Adm De Consorcio	2026-06-01 08:58:00	-4446.59	127	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.594901	2026-06-11 08:35:05.594904	\N	\N
-2853	Transferência	Pix enviado	Natalia Generoso	2026-06-02 10:24:00	-190.00	140	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.594906	2026-06-11 08:35:05.594907	\N	\N
-2857	Outra Categoria	Pix enviado por Natália Cristina Polezel Quinelato	Festa Cia	2026-06-02 17:38:00	-13.90	115	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.596608	2026-06-11 08:35:05.596611	\N	\N
-2861	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Valter Marques	2026-06-09 15:21:00	-65.00	140	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.598264	2026-06-11 08:35:05.598268	\N	\N
-2862	Transporte	Compra no débito autorizada	Uber	2026-06-09 21:05:00	-24.04	56	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.59827	2026-06-11 08:35:05.598272	\N	\N
-2863	Transporte	Compra no débito autorizada	Uber	2026-06-09 22:35:00	-19.49	56	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.598275	2026-06-11 08:35:05.598277	\N	\N
-2864	Alimentação	Pix enviado por Natália Cristina Polezel Quinelato	Narizinho Cantinas	2026-06-10 06:42:00	-50.00	16	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.598279	2026-06-11 08:35:05.598282	\N	\N
-2865	Cuidados Pessoais	Pix enviado por Natália Cristina Polezel Quinelato	Khor Cosmetics	2026-06-10 18:28:00	-73.20	4	0.00	2	\N	1	1	1	2026-06-11 08:35:05.599196	2026-06-11 08:35:05.599199	\N	\N
+2808	Supermercado	Compra no débito autorizada	Mercado Qualidade	2026-05-09 13:00:00	-29.90	18	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.579459	2026-06-15 08:37:17.023396	\N	\N
 2736	Saúde	Pix enviado por Natália Cristina Polezel Quinelato	Espaco Do Bem E Administracao	2026-04-13 16:01:00	-257.00	114	100.00	\N	\N	1	1	1	2026-04-16 07:57:13.955123	2026-06-11 08:35:05.601071	\N	\N
 2737	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Silvana Regina Picelli Mainardi	2026-04-13 16:09:00	-635.00	150	100.00	\N	\N	1	1	1	2026-04-16 07:57:13.955126	2026-06-11 08:35:05.601075	\N	\N
 2739	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Josiane Zorzer Paes	2026-04-14 14:13:00	-90.00	7	100.00	\N	\N	1	1	1	2026-04-16 07:57:13.956774	2026-06-11 08:35:05.601078	\N	\N
 2740	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Flaviane Caroline Marques Sanches	2026-04-14 14:14:00	-140.00	114	100.00	\N	\N	1	1	1	2026-04-16 07:57:13.956779	2026-06-11 08:35:05.60108	\N	\N
 2738	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Amanda De Mello Fabiao	2026-04-14 10:15:00	-130.00	100	100.00	\N	\N	1	1	1	2026-04-16 07:57:13.956036	2026-06-11 08:40:15.933658	\N	\N
-2836	Compras	Pix enviado	Zapizi	2026-05-23 17:09:00	-12.00	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.587524	2026-06-11 08:40:15.933701	\N	\N
+2870	\N	\N	Elektro (Energia)	2026-06-01 00:00:00	-456.56	282	50.00	1	\N	2	1	1	2026-06-12 19:04:20.383325	2026-06-12 19:04:20.38333	\N	\N
+2871	\N	\N	Claro	2026-06-01 00:00:00	-271.55	289	50.00	1	\N	2	1	1	2026-06-12 19:04:20.384824	2026-06-12 19:04:20.384829	\N	\N
+2824	Saúde	Pix enviado por Natália Cristina Polezel Quinelato	Espaco Do Bem E Administracao	2026-05-18 06:07:00	-257.00	114	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.583512	2026-06-16 22:05:53.641794	\N	\N
+2825	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Flaviane Caroline Marques Sanches	2026-05-18 06:10:00	-140.00	114	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.583514	2026-06-16 22:05:53.6418	\N	\N
+2826	Outra Categoria	Pix enviado	Mercado Pago Instituicao De Pagamento	2026-05-18 07:55:00	-345.90	62	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.583517	2026-06-16 22:05:53.641803	\N	\N
+2827	Tarifas	Pagamento de conta	Gps Codigo De Barras	2026-05-18 08:15:00	-178.89	66	0.00	1	\N	1	1	1	2026-06-11 08:35:05.585297	2026-06-16 22:05:53.641806	\N	\N
+2828	Transferência	Pix recebido	Danieli Cristina Polezel	2026-05-18 13:07:00	400.00	99	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.586298	2026-06-16 22:05:53.641809	\N	\N
+2829	Outra Categoria	Pix recebido	Andre Luis Carrilho	2026-05-18 15:23:00	663.60	99	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.586303	2026-06-16 22:05:53.641811	\N	\N
+2830	Contas	Pagamento de fatura do cartão	Fatura do cartão BTG Pactual	2026-05-19 00:31:00	-21312.63	62	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.586306	2026-06-16 22:05:53.641814	\N	\N
+2831	Transferência	Pix recebido	Luiz Gustavo G Quinelato	2026-05-19 08:35:00	2942.81	158	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.586309	2026-06-16 22:05:53.641816	\N	\N
+2832	Transferência	Pix recebido	Danieli Cristina Polezel	2026-05-19 12:01:00	300.00	99	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.586311	2026-06-16 22:05:53.641819	\N	\N
+2833	Transferência	Pix recebido	Danieli Cristina Polezel	2026-05-20 11:17:00	400.00	99	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.586314	2026-06-16 22:05:53.64183	\N	\N
+2834	Transferência	Pix recebido	Natalia Cristina Polezel	2026-05-20 19:42:00	3732.00	99	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.586317	2026-06-16 22:05:53.641832	\N	\N
+2835	Transferência	Pix recebido	Danieli Cristina Polezel	2026-05-21 08:38:00	500.00	99	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.586319	2026-06-16 22:05:53.641834	\N	\N
 2742	Outra Categoria	Saque	Saque Banco24horas	2026-04-15 08:02:00	-750.00	102	100.00	\N	\N	1	1	1	2026-04-16 07:57:13.958417	2026-06-11 08:35:05.601082	\N	\N
 2744	Educação	Pagamento de boleto	Koelle Educacao E Cultura	2026-04-15 08:35:00	-2000.21	89	100.00	\N	\N	1	1	1	2026-04-16 07:57:13.958424	2026-06-11 08:35:05.601084	\N	\N
 2745	Educação	Pagamento de boleto	Koelle Educacao E Cultura	2026-04-15 08:35:00	-2200.76	89	100.00	\N	\N	1	1	1	2026-04-16 07:57:13.958427	2026-06-11 08:35:05.601085	\N	\N
@@ -4720,7 +4718,6 @@ COPY public.bank_statements (id, category, transaction, description, date, amoun
 2776	Transferência	Pix recebido	Danieli Cristina Polezel	2026-04-24 09:26:00	1400.00	99	100.00	\N	\N	1	1	1	2026-04-25 18:46:39.195027	2026-06-11 08:35:05.601099	\N	\N
 2779	Alimentação	Compra no débito autorizada	Narizinho Cantinas	2026-04-25 11:27:00	-15.50	16	100.00	\N	\N	1	1	1	2026-04-25 18:46:39.195058	2026-06-11 08:35:05.601101	\N	\N
 2780	Alimentação	Compra no débito autorizada	Narizinho Cantina	2026-04-25 12:19:00	-10.00	17	100.00	\N	\N	1	1	1	2026-04-25 18:46:39.202189	2026-06-11 08:35:05.601102	\N	\N
-2849	Crédito e Financiamento	Juros - limite da conta	Juros - limite da conta	2026-06-01 08:25:00	-155.65	39	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.592655	2026-06-11 08:37:05.908756	\N	\N
 2741	Cuidados Pessoais	Pix enviado por Natália Cristina Polezel Quinelato	Francisco Carlos Sferra	2026-04-14 16:49:00	-5.00	100	100.00	\N	\N	1	1	1	2026-04-16 07:57:13.957707	2026-06-11 08:40:15.933667	\N	\N
 2793	Transporte	Compra no débito autorizada	On The Boats	2026-05-02 15:24:00	-35.00	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.574967	2026-06-11 08:40:15.933672	\N	\N
 2794	Lazer e Entretenimento	Compra no débito autorizada	Vmt Rio Claro	2026-05-02 15:45:00	-20.00	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.574973	2026-06-11 08:40:15.933674	\N	\N
@@ -4734,20 +4731,83 @@ COPY public.bank_statements (id, category, transaction, description, date, amoun
 2813	Cuidados Pessoais	Pix enviado por Natália Cristina Polezel Quinelato	Francisco Carlos Sferra	2026-05-12 16:51:00	-9.50	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.580436	2026-06-11 08:40:15.933694	\N	\N
 2818	Compras	Pix enviado	Escriba Papelaria	2026-05-14 12:21:00	-82.40	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.58264	2026-06-11 08:40:15.933696	\N	\N
 2819	Cuidados Pessoais	Pix enviado por Natália Cristina Polezel Quinelato	Francisco Carlos Sferra	2026-05-14 16:41:00	-8.50	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.582645	2026-06-11 08:40:15.933698	\N	\N
-2837	Outra Categoria	Pix enviado	Contalex Assessoria Contabil	2026-05-26 08:09:00	-800.00	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.587531	2026-06-11 08:40:15.933703	\N	\N
-2842	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	António Carlos Madeira	2026-05-27 16:55:00	-50.00	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.589349	2026-06-11 08:40:15.933706	\N	\N
-2844	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Janaina Queiroz De Lima Goncalves	2026-05-28 09:39:00	-95.00	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.591046	2026-06-11 08:40:15.933709	\N	\N
-2845	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Rosangela Cristina Rufino Bona	2026-05-28 10:13:00	-170.00	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.591053	2026-06-11 08:40:15.933712	\N	\N
-2848	Seguro	Pix enviado por Natália Cristina Polezel Quinelato	53 825 982 Andressa Yasmin Das Neves Elias	2026-05-31 16:46:00	-285.00	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.59265	2026-06-11 08:40:15.933715	\N	\N
-2854	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Larissa Correa	2026-06-02 15:45:00	-35.00	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.595732	2026-06-11 08:40:15.933717	\N	\N
-2855	Outra Categoria	Pix enviado por Natália Cristina Polezel Quinelato	17 914 699 Maria Cleia De Sousa Mendes Da Silva	2026-06-02 16:03:00	-6.50	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.595737	2026-06-11 08:40:15.93372	\N	\N
-2856	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	António Carlos Madeira	2026-06-02 17:24:00	-166.00	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.595739	2026-06-11 08:40:15.933722	\N	\N
-2858	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Maria Da Vitoria De Moura Guilherme	2026-06-03 09:11:00	-878.00	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.59736	2026-06-11 08:40:15.933725	\N	\N
-2859	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Rafaella Villela Dos Reis	2026-06-04 14:45:00	-54.17	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.597365	2026-06-11 08:40:15.933727	\N	\N
-2860	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Maisa Topanotti Daros De Souza	2026-06-04 17:04:00	-45.00	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.597368	2026-06-11 08:40:15.93373	\N	\N
 2866	\N	\N	DAAE	2026-05-01 00:00:00	-200.14	282	50.00	1	\N	2	1	1	2026-06-11 08:56:43.713312	2026-06-11 09:13:34.80614	\N	\N
 2867	\N	\N	Elektro (Energia)	2026-05-01 00:00:00	-428.48	282	50.00	1	\N	2	1	1	2026-06-11 08:56:43.719451	2026-06-11 09:13:54.704974	\N	\N
 2868	\N	\N	Claro	2026-05-01 00:00:00	-274.60	289	50.00	1	\N	2	1	1	2026-06-11 08:56:43.720707	2026-06-11 09:16:45.664891	\N	\N
+2872	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Jessica Cristina Carlos De Santana	2026-06-11 14:53:00	-125.00	140	100.00	\N	\N	1	1	1	2026-06-15 08:08:42.178186	2026-06-25 08:04:44.128888	\N	\N
+2873	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Josiane Zorzer Paes	2026-06-12 09:59:00	-122.60	7	100.00	\N	\N	1	1	1	2026-06-15 08:08:42.17823	2026-06-25 08:04:44.128889	\N	\N
+2874	Alimentação	Pix enviado por Natália Cristina Polezel Quinelato	Restaurante E Pizzaria Mgm Rio Claro Ltda	2026-06-12 11:52:00	-100.44	16	100.00	\N	\N	1	1	1	2026-06-15 08:08:42.178239	2026-06-25 08:04:44.128891	\N	\N
+2875	Transferência	Pix recebido	Andre Luis Carrilho	2026-06-14 20:57:00	663.60	99	100.00	\N	\N	1	1	1	2026-06-15 08:08:42.178247	2026-06-25 08:04:44.128892	\N	\N
+63	Supermercado	Compra no débito autorizada	Mercado Qualidade	2021-08-16 19:32:00	-25.02	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:48.699558	2026-06-15 08:37:17.023396	\N	\N
+170	Supermercado	Compra no débito autorizada	Mercado Qualidade	2021-11-09 20:26:00	-22.99	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:48.747721	2026-06-15 08:37:17.023396	\N	\N
+214	Supermercado	Compra no débito autorizada	Mercado Qualidade	2021-12-16 13:11:00	-29.03	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:48.773554	2026-06-15 08:37:17.023396	\N	\N
+1124	Supermercado	Compra no débito autorizada	Mercado Qualidade	2024-02-17 18:22:00	-18.99	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:49.194888	2026-06-15 08:37:17.023396	\N	\N
+2838	Alimentação	Pix enviado por Natália Cristina Polezel Quinelato	Narizinho Cantinas	2026-05-26 08:22:00	-50.00	16	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.588326	2026-06-16 22:05:53.641842	\N	\N
+2839	Transferência	Pix recebido	Danieli Cristina Polezel	2026-05-26 12:03:00	900.00	99	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.588331	2026-06-16 22:05:53.641844	\N	\N
+2840	Transferência	Pix recebido	Danieli Cristina Polezel	2026-05-26 12:05:00	400.00	99	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.588334	2026-06-16 22:05:53.641847	\N	\N
+2837	Outra Categoria	Pix enviado	Contalex Assessoria Contabil	2026-05-26 08:09:00	-800.00	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.587531	2026-06-16 22:06:51.62407	\N	\N
+2841	Investimentos	Transferência recebida	Luiz Gustavo Giacomelo Quinelato	2026-05-27 09:20:00	5447.86	96	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.588337	2026-06-25 08:04:44.128851	\N	\N
+2843	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Natalia Generoso	2026-05-27 20:59:00	-174.00	140	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.590299	2026-06-25 08:04:44.128857	\N	\N
+2846	Transferência	Pix recebido	Luiz Gustavo G Quinelato	2026-05-30 08:59:00	6861.14	158	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.591843	2026-06-25 08:04:44.128861	\N	\N
+2847	Contas	Pix enviado	Claro	2026-05-30 16:57:00	-60.11	130	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.591848	2026-06-25 08:04:44.128863	\N	\N
+2849	Crédito e Financiamento	Juros - limite da conta	Juros - limite da conta	2026-06-01 08:25:00	-155.65	39	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.592655	2026-06-25 08:04:44.128866	\N	\N
+2850	Impostos e Tributos	IOF limite da conta	IOF limite da conta	2026-06-01 08:25:00	-44.84	38	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.59346	2026-06-25 08:04:44.128867	\N	\N
+2842	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	António Carlos Madeira	2026-05-27 16:55:00	-50.00	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.589349	2026-06-25 08:05:24.924964	\N	\N
+2844	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Janaina Queiroz De Lima Goncalves	2026-05-28 09:39:00	-95.00	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.591046	2026-06-25 08:05:24.924971	\N	\N
+2845	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Rosangela Cristina Rufino Bona	2026-05-28 10:13:00	-170.00	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.591053	2026-06-25 08:05:24.924973	\N	\N
+2848	Seguro	Pix enviado por Natália Cristina Polezel Quinelato	53 825 982 Andressa Yasmin Das Neves Elias	2026-05-31 16:46:00	-285.00	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.59265	2026-06-25 08:05:24.924975	\N	\N
+2877	\N	\N	Mercado	2026-06-14 22:01:44	-202.00	\N	50.00	1	\N	2	1	1	2026-06-16 22:02:14.400792	2026-06-16 22:02:14.400798	\N	\N
+2836	Compras	Pix enviado	Zapizi	2026-05-23 17:09:00	-12.00	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.587524	2026-06-16 22:06:51.624063	\N	\N
+2889	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Aparecida Luzia Garcia Barbosa	2026-06-17 09:15:00	-50.00	100	100.00	\N	\N	1	1	1	2026-06-25 08:04:44.118708	2026-06-25 08:05:24.924993	\N	\N
+2888	Investimentos	Transferência enviada	Luiz Gustavo Giacomelo Quinelato	2026-06-17 08:56:00	-510.00	100	100.00	\N	\N	1	1	1	2026-06-25 08:04:44.113808	2026-06-25 08:04:44.113815	\N	\N
+2890	Doações	Pix enviado por Natália Cristina Polezel Quinelato	Apm	2026-06-17 12:04:00	-420.00	89	100.00	\N	\N	1	1	1	2026-06-25 08:04:44.120368	2026-06-25 08:04:44.120373	\N	\N
+2891	Transferência	Pix recebido	Danieli Cristina Polezel	2026-06-17 17:09:00	500.00	99	100.00	\N	\N	1	1	1	2026-06-25 08:04:44.120375	2026-06-25 08:04:44.120376	\N	\N
+2892	Transferência	Pix recebido	Danieli Cristina Polezel	2026-06-18 08:42:00	460.00	99	100.00	\N	\N	1	1	1	2026-06-25 08:04:44.120378	2026-06-25 08:04:44.120379	\N	\N
+2893	Alimentação	Pix enviado por Natália Cristina Polezel Quinelato	Restaurante E Pizzaria Mgm Rio Claro Ltda	2026-06-18 12:46:00	-57.97	16	100.00	\N	\N	1	1	1	2026-06-25 08:04:44.12038	2026-06-25 08:04:44.120382	\N	\N
+2897	Transferência	Pix recebido	Danieli Cristina Polezel	2026-06-18 17:57:00	98.00	99	100.00	\N	\N	1	1	1	2026-06-25 08:04:44.123774	2026-06-25 08:04:44.123779	\N	\N
+2899	Saúde	Pix enviado por Natália Cristina Polezel Quinelato	Clinica Medica B Begalli	2026-06-18 19:38:00	-600.00	138	100.00	\N	\N	1	1	1	2026-06-25 08:04:44.1256	2026-06-25 08:04:44.125604	\N	\N
+2900	Contas	Pagamento de fatura do cartão	Fatura do cartão BTG Pactual	2026-06-19 00:41:00	-31274.45	62	100.00	\N	\N	1	1	1	2026-06-25 08:04:44.125607	2026-06-25 08:04:44.125609	\N	\N
+2901	Transferência	Pix recebido	Danieli Cristina Polezel	2026-06-19 10:30:00	170.00	99	100.00	\N	\N	1	1	1	2026-06-25 08:04:44.125612	2026-06-25 08:04:44.125614	\N	\N
+2902	Transferência	Pix recebido	Danieli Cristina Polezel	2026-06-19 17:42:00	190.00	99	100.00	\N	\N	1	1	1	2026-06-25 08:04:44.125616	2026-06-25 08:04:44.125618	\N	\N
+2903	Transferência	Pix recebido	Danieli Cristina Polezel	2026-06-19 18:23:00	200.00	99	100.00	\N	\N	1	1	1	2026-06-25 08:04:44.125621	2026-06-25 08:04:44.125623	\N	\N
+2904	Transferência	Pix recebido	Danieli Cristina Polezel	2026-06-19 20:14:00	100.00	99	100.00	\N	\N	1	1	1	2026-06-25 08:04:44.125625	2026-06-25 08:04:44.125628	\N	\N
+2905	Doações	Compra no débito autorizada	Apm	2026-06-20 14:47:00	-4.00	89	100.00	\N	\N	1	1	1	2026-06-25 08:04:44.12563	2026-06-25 08:04:44.125632	\N	\N
+2851	Alimentação	Pix enviado	Serv Agua	2026-06-01 08:46:00	-161.50	123	50.00	1	\N	1	1	1	2026-06-11 08:35:05.594191	2026-06-25 08:04:44.128868	\N	\N
+2852	Crédito e Financiamento	Pagamento de boleto	Rodobens Adm De Consorcio	2026-06-01 08:58:00	-4446.59	127	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.594901	2026-06-25 08:04:44.128869	\N	\N
+2894	Educação	Pix enviado por Natália Cristina Polezel Quinelato	Aline De Araujo Godoy Santana	2026-06-18 12:48:00	-49.90	100	100.00	\N	\N	1	1	1	2026-06-25 08:04:44.122714	2026-06-25 08:05:24.924995	\N	\N
+2895	Tarifas	Pix enviado por Natália Cristina Polezel Quinelato	Zoop Brasil	2026-06-18 16:53:00	-5.00	100	100.00	\N	\N	1	1	1	2026-06-25 08:04:44.122722	2026-06-25 08:05:24.924997	\N	\N
+2896	Alimentação	Pix enviado por Natália Cristina Polezel Quinelato	Jose Roberto Lunardi	2026-06-18 17:19:00	-8.00	100	100.00	\N	\N	1	1	1	2026-06-25 08:04:44.122725	2026-06-25 08:05:24.924998	\N	\N
+2898	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Arcos Dourados Comercio De Alimentos Sa	2026-06-18 18:42:00	-3.00	100	100.00	\N	\N	1	1	1	2026-06-25 08:04:44.124672	2026-06-25 08:05:24.925	\N	\N
+2906	Alimentação	Compra no débito autorizada	The Best Açaí	2026-06-21 14:50:00	-4.00	7	100.00	\N	\N	1	1	1	2026-06-25 08:04:44.125635	2026-06-25 08:04:44.125637	\N	\N
+2907	Transferência	Pix recebido	Cirineu Arcanjo Polezel	2026-06-22 06:38:00	4752.00	99	100.00	\N	\N	1	1	1	2026-06-25 08:04:44.125639	2026-06-25 08:04:44.125642	\N	\N
+2908	Transferência	Pix recebido	Natalia Cristina Polezel	2026-06-22 18:29:00	1000.00	99	100.00	\N	\N	1	1	1	2026-06-25 08:04:44.125644	2026-06-25 08:04:44.125647	\N	\N
+2909	Transferência	Pix recebido	Natalia Cristina Polezel	2026-06-23 10:21:00	1612.00	99	100.00	\N	\N	1	1	1	2026-06-25 08:04:44.125649	2026-06-25 08:04:44.125651	\N	\N
+2910	Investimentos	Transferência recebida	Luiz Gustavo Giacomelo Quinelato	2026-06-23 14:00:00	12632.94	96	100.00	\N	\N	1	1	1	2026-06-25 08:04:44.125654	2026-06-25 08:04:44.125656	\N	\N
+2911	Cuidados Pessoais	Pix enviado por Natália Cristina Polezel Quinelato	Encanto Moda Intima Praia E Fitness	2026-06-23 17:08:00	-178.70	162	100.00	\N	\N	1	1	1	2026-06-25 08:04:44.125659	2026-06-25 08:04:44.125661	\N	\N
+2912	Compras	Pix enviado por Natália Cristina Polezel Quinelato	Xiao Comercio De Eletronicos	2026-06-23 17:41:00	-42.50	132	100.00	\N	\N	1	1	1	2026-06-25 08:04:44.125664	2026-06-25 08:04:44.125666	\N	\N
+2853	Transferência	Pix enviado	Natalia Generoso	2026-06-02 10:24:00	-190.00	140	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.594906	2026-06-25 08:04:44.128871	\N	\N
+2857	Outra Categoria	Pix enviado por Natália Cristina Polezel Quinelato	Festa Cia	2026-06-02 17:38:00	-13.90	115	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.596608	2026-06-25 08:04:44.128876	\N	\N
+2861	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Valter Marques	2026-06-09 15:21:00	-65.00	140	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.598264	2026-06-25 08:04:44.128881	\N	\N
+2862	Transporte	Compra no débito autorizada	Uber	2026-06-09 21:05:00	-24.04	56	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.59827	2026-06-25 08:04:44.128883	\N	\N
+2863	Transporte	Compra no débito autorizada	Uber	2026-06-09 22:35:00	-19.49	56	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.598275	2026-06-25 08:04:44.128884	\N	\N
+2864	Alimentação	Pix enviado por Natália Cristina Polezel Quinelato	Narizinho Cantinas	2026-06-10 06:42:00	-50.00	16	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.598279	2026-06-25 08:04:44.128885	\N	\N
+2865	Cuidados Pessoais	Pix enviado por Natália Cristina Polezel Quinelato	Khor Cosmetics	2026-06-10 18:28:00	-73.20	4	0.00	2	\N	1	1	1	2026-06-11 08:35:05.599196	2026-06-25 08:04:44.128887	\N	\N
+2878	Transferência	Pix recebido	Luiz Gustavo G Quinelato	2026-06-15 10:28:00	4897.38	158	100.00	\N	\N	1	1	1	2026-06-16 22:05:53.633636	2026-06-25 08:04:44.128894	\N	\N
+2879	Transferência	Pix recebido	Luiz Gustavo G Quinelato	2026-06-15 10:29:00	8018.40	158	100.00	\N	\N	1	1	1	2026-06-16 22:05:53.633644	2026-06-25 08:04:44.128895	\N	\N
+2880	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Flaviane Caroline Marques Sanches	2026-06-15 17:49:00	-140.00	114	100.00	\N	\N	1	1	1	2026-06-16 22:05:53.633647	2026-06-25 08:04:44.128896	\N	\N
+2881	Saúde	Pix enviado por Natália Cristina Polezel Quinelato	Nova Fazenda	2026-06-15 18:47:00	-73.95	14	100.00	\N	\N	1	1	1	2026-06-16 22:05:53.63365	2026-06-25 08:04:44.128898	\N	\N
+2882	Educação	Pagamento de boleto	Koelle Educacao E Cultura	2026-06-15 23:23:00	-306.00	89	100.00	\N	\N	1	1	1	2026-06-16 22:05:53.633652	2026-06-25 08:04:44.128899	\N	\N
+2883	Saúde	Pix enviado por Natália Cristina Polezel Quinelato	Espaco Do Bem E Administracao	2026-06-16 09:55:00	-257.00	114	100.00	\N	\N	1	1	1	2026-06-16 22:05:53.633655	2026-06-25 08:04:44.1289	\N	\N
+2885	Cuidados Pessoais	Pix enviado por Natália Cristina Polezel Quinelato	Bella Fabrica Divertida De Lacos	2026-06-16 14:35:00	-48.00	163	100.00	\N	\N	1	1	1	2026-06-16 22:05:53.638952	2026-06-25 08:04:44.128903	\N	\N
+2887	Tarifas	Pagamento de conta	Gps Codigo De Barras	2026-06-17 08:41:00	-179.48	66	0.00	1	\N	1	1	1	2026-06-17 08:43:39.408295	2026-06-25 08:04:44.128906	\N	\N
+2854	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Larissa Correa	2026-06-02 15:45:00	-35.00	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.595732	2026-06-25 08:05:24.924977	\N	\N
+2855	Outra Categoria	Pix enviado por Natália Cristina Polezel Quinelato	17 914 699 Maria Cleia De Sousa Mendes Da Silva	2026-06-02 16:03:00	-6.50	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.595737	2026-06-25 08:05:24.924979	\N	\N
+2856	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	António Carlos Madeira	2026-06-02 17:24:00	-166.00	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.595739	2026-06-25 08:05:24.924981	\N	\N
+2858	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Maria Da Vitoria De Moura Guilherme	2026-06-03 09:11:00	-878.00	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.59736	2026-06-25 08:05:24.924983	\N	\N
+2859	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Rafaella Villela Dos Reis	2026-06-04 14:45:00	-54.17	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.597365	2026-06-25 08:05:24.924985	\N	\N
+2860	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Maisa Topanotti Daros De Souza	2026-06-04 17:04:00	-45.00	100	100.00	\N	\N	1	1	1	2026-06-11 08:35:05.597368	2026-06-25 08:05:24.924987	\N	\N
+2884	Educação	Pix enviado por Natália Cristina Polezel Quinelato	Elaine Alexandre Barbosa Albuquerque	2026-06-16 14:11:00	-214.95	100	100.00	\N	\N	1	1	1	2026-06-16 22:05:53.638944	2026-06-25 08:05:24.924989	\N	\N
+2886	Educação	Pix enviado por Natália Cristina Polezel Quinelato	Aline De Araujo Godoy Santana	2026-06-16 14:46:00	-105.70	100	100.00	\N	\N	1	1	1	2026-06-16 22:05:53.638954	2026-06-25 08:05:24.924991	\N	\N
 \.
 
 
@@ -4806,10 +4866,8 @@ COPY public.banks (id, code, name, full_name, ispb, tenant_id, created_at, last_
 
 COPY public.benefit_card_statements (id, credit_card_id, date, description, amount, payment_method, subtag_id, ownership_percentage, expense_sharing_id, adjustment_notes, account_id, tenant_id, created_by, created_at, last_updated_at) FROM stdin;
 1	9	2026-01-31 06:20:00	PADARIA ALEMA RIO CLARO BRA	-16.39	Cartão	14	50.00	1	\N	1	1	1	2026-02-13 10:18:56.072775	2026-02-13 10:18:56.072782
-4	9	2026-01-25 11:28:00	MERCADO QUALIDADE RIO CLARO BRA	-130.77	Cartão	7	50.00	1	\N	1	1	1	2026-02-13 10:18:56.078175	2026-02-13 10:18:56.078181
 5	9	2026-01-18 12:15:00	SAVEGNAGO LOJA 45 RIO CLARO BRA	-216.38	Cartão	18	50.00	1	\N	1	1	1	2026-02-13 10:18:56.078184	2026-02-13 10:18:56.078185
 6	9	2026-01-18 06:38:00	PADARIA ALEMA RIO CLARO BRA	-13.93	Cartão	14	50.00	1	\N	1	1	1	2026-02-13 10:18:56.078188	2026-02-13 10:18:56.07819
-7	9	2026-01-14 12:19:00	MERCADO QUALIDADE RIO CLARO BRA	-211.00	Cartão	7	50.00	1	\N	1	1	1	2026-02-13 10:18:56.078192	2026-02-13 10:18:56.078194
 8	9	2026-01-12 08:15:00	PADARIA ALEMA RIO CLARO BRA	-24.95	Cartão	14	50.00	1	\N	1	1	1	2026-02-13 10:18:56.078196	2026-02-13 10:18:56.078198
 9	9	2026-01-10 18:41:00	PADARIA ALEMA RIO CLARO BRA	-20.59	Cartão	14	50.00	1	\N	1	1	1	2026-02-13 10:18:56.078201	2026-02-13 10:18:56.078203
 10	9	2026-01-08 20:29:00	PASTELARIA ROBERTO JAP RIO CLARO BRA	-212.70	Cartão	16	50.00	1	\N	1	1	1	2026-02-13 10:18:56.078205	2026-02-13 10:18:56.078207
@@ -4838,7 +4896,6 @@ COPY public.benefit_card_statements (id, credit_card_id, date, description, amou
 39	9	2025-12-06 17:41:00	CASA DE CARNES KL RIO CLARO BRA	-615.25	Cartão	5	50.00	1	\N	1	1	1	2026-02-13 10:18:56.090754	2026-02-13 10:18:56.090756
 40	9	2025-12-06 06:09:00	PADARIA ALEMA RIO CLARO BRA	-23.61	Cartão	14	50.00	1	\N	1	1	1	2026-02-13 10:18:56.090757	2026-02-13 10:18:56.090759
 41	9	2025-11-30 06:39:00	PADARIA ALEMA RIO CLARO BRA	-19.70	Cartão	14	50.00	1	\N	1	1	1	2026-02-13 10:18:56.09076	2026-02-13 10:18:56.090761
-44	9	2025-11-23 10:17:00	MERCADO QUALIDADE RIO CLARO BRA	-155.89	Cartão	7	50.00	1	\N	1	1	1	2026-02-13 10:18:56.093052	2026-02-13 10:18:56.093057
 45	9	2025-11-23 06:25:00	PADARIA ALEMA RIO CLARO BRA	-22.93	Cartão	14	50.00	1	\N	1	1	1	2026-02-13 10:18:56.09306	2026-02-13 10:18:56.093062
 46	9	2025-11-15 09:41:00	CASA DE CARNES KL RIO CLARO BRA	-635.20	Cartão	5	50.00	1	\N	1	1	1	2026-02-13 10:18:56.093064	2026-02-13 10:18:56.093067
 47	9	2025-11-15 06:33:00	PADARIA ALEMA RIO CLARO BRA	-14.98	Cartão	14	50.00	1	\N	1	1	1	2026-02-13 10:18:56.093069	2026-02-13 10:18:56.093071
@@ -4856,14 +4913,11 @@ COPY public.benefit_card_statements (id, credit_card_id, date, description, amou
 43	9	2025-11-27 00:07:00	Depósito transferido	1187.28	Depósito	99	50.00	1	\N	1	1	1	2026-02-13 10:18:56.091978	2026-02-13 14:03:21.568777
 50	9	2025-11-07 19:50:00	CrisLanches RIO CLARO BRA	-103.00	Cartão	100	50.00	1	\N	1	1	1	2026-02-13 10:18:56.094286	2026-02-13 14:03:21.568779
 68	9	2026-02-14 11:58:00	PADARIA ALEMA RIO CLARO BRA	-16.08	Cartão	14	50.00	1	\N	1	1	1	2026-03-18 06:55:42.804766	2026-03-18 06:55:42.804768
-51	9	2026-03-15 12:28:00	MERCADO QUALIDADE RIO CLARO BRA	-382.00	Cartão	7	50.00	1	\N	1	1	1	2026-03-18 06:55:42.795689	2026-04-17 07:52:19.805555
-53	9	2026-03-10 07:56:00	MERCADO QUALIDADE RIO CLARO BRA	-104.93	Cartão	7	50.00	1	\N	1	1	1	2026-03-18 06:55:42.801671	2026-04-17 07:52:19.80556
 54	9	2026-03-10 06:11:00	PADARIA ALEMA RIO CLARO BRA	-12.44	Cartão	14	50.00	1	\N	1	1	1	2026-03-18 06:55:42.801679	2026-04-17 07:52:19.805561
 55	9	2026-03-09 06:13:00	PADARIA ALEMA RIO CLARO BRA	-21.26	Cartão	14	50.00	1	\N	1	1	1	2026-03-18 06:55:42.801684	2026-04-17 07:52:19.805563
 56	9	2026-03-07 18:53:00	RobertoDeMoraesE RIO CLARO BRA	-138.00	Cartão	16	50.00	1	\N	1	1	1	2026-03-18 06:55:42.801689	2026-04-17 07:52:19.805564
 57	9	2026-03-06 19:04:00	Mc Donalds - Arcos Dourad Sao Paulo BRA	-181.80	Cartão	16	50.00	1	\N	1	1	1	2026-03-18 06:55:42.801693	2026-04-17 07:52:19.805566
 58	9	2026-03-02 06:08:00	PADARIA ALEMA RIO CLARO BRA	-21.01	Cartão	14	50.00	1	\N	1	1	1	2026-03-18 06:55:42.801698	2026-04-17 07:52:19.805567
-59	9	2026-02-28 11:15:00	MERCADO QUALIDADE RIO CLARO BRA	-339.56	Cartão	7	50.00	1	\N	1	1	1	2026-03-18 06:55:42.801703	2026-04-17 07:52:19.805569
 62	9	2026-02-22 09:12:00	CASA DE CARNES KL RIO CLARO BRA	-682.00	Cartão	5	50.00	1	\N	1	1	1	2026-03-18 06:55:42.804748	2026-04-17 07:52:19.805573
 63	9	2026-02-22 06:56:00	PADARIA ALEMA RIO CLARO BRA	-14.69	Cartão	14	50.00	1	\N	1	1	1	2026-03-18 06:55:42.804753	2026-04-17 07:52:19.805574
 64	9	2026-02-21 10:04:00	SUPERMERCADO BRASIL FR RIO CLARO BRA	-30.98	Cartão	18	50.00	1	\N	1	1	1	2026-03-18 06:55:42.804756	2026-04-17 07:52:19.805575
@@ -4875,43 +4929,50 @@ COPY public.benefit_card_statements (id, credit_card_id, date, description, amou
 61	9	2026-02-26 00:27:00	Depósito transferido	155.25	Depósito	99	50.00	1	\N	1	1	1	2026-03-18 06:55:42.803805	2026-04-17 07:53:00.316901
 72	9	2026-04-11 20:05:00	BIG BAR RIO CLARO BRA	-141.00	Cartão	17	50.00	1	\N	1	1	1	2026-04-17 07:52:19.79557	2026-04-23 08:09:24.576483
 74	9	2026-04-05 12:12:00	REI DO CUPIM RIO CLARO BRA	-323.00	Cartão	16	50.00	1	\N	1	1	1	2026-04-17 07:52:19.801054	2026-04-23 08:09:24.576489
-75	9	2026-04-02 07:58:00	MERCADO QUALIDADE RIO CLARO BRA	-227.82	Cartão	7	50.00	1	\N	1	1	1	2026-04-17 07:52:19.802198	2026-04-23 08:09:24.576493
 76	9	2026-04-02 06:12:00	PADARIA ALEMA RIO CLARO BRA	-34.80	Cartão	14	50.00	1	\N	1	1	1	2026-04-17 07:52:19.802204	2026-04-23 08:09:24.576496
 77	9	2026-03-30 01:00:00	Depósito transferido	1187.28	Depósito	152	50.00	1	\N	1	1	1	2026-04-17 07:52:19.803162	2026-04-25 18:54:51.50559
 78	9	2026-03-30 00:41:00	Depósito transferido	155.25	Depósito	152	50.00	1	\N	1	1	1	2026-04-17 07:52:19.803171	2026-04-25 18:54:51.505613
 73	9	2026-04-10 11:37:00	IFD*BR OSASCO BRA	-161.88	Cartão	16	50.00	1	\N	1	1	1	2026-04-17 07:52:19.801048	2026-04-25 18:55:21.787914
-81	9	2026-06-11 07:42:00	MERCADO QUALIDADE RIO CLARO BRA	-166.85	Cartão	7	50.00	1	\N	1	1	1	2026-06-11 08:35:06.24738	2026-06-11 08:35:06.247385
-83	9	2026-06-06 18:25:00	IFD*BR OSASCO BRA	-163.54	Cartão	16	50.00	1	\N	1	1	1	2026-06-11 08:35:06.252922	2026-06-11 08:35:06.252927
-84	9	2026-06-06 06:57:00	PADARIA ALEMA RIO CLARO BRA	-17.15	Cartão	14	50.00	1	\N	1	1	1	2026-06-11 08:35:06.252928	2026-06-11 08:35:06.25293
-85	9	2026-06-03 19:57:00	SAVEGNAGO LJ 300 RIO CLARO BRA	-244.34	Cartão	18	50.00	1	\N	1	1	1	2026-06-11 08:35:06.252931	2026-06-11 08:35:06.252932
-86	9	2026-06-02 06:18:00	PADARIA ALEMA RIO CLARO BRA	-27.14	Cartão	14	50.00	1	\N	1	1	1	2026-06-11 08:35:06.252934	2026-06-11 08:35:06.252935
-87	9	2026-05-31 12:16:00	PADARIA ALEMA RIO CLARO BRA	-32.99	Cartão	14	50.00	1	\N	1	1	1	2026-06-11 08:35:06.252936	2026-06-11 08:35:06.252937
-88	9	2026-05-31 07:05:00	PADARIA ALEMA RIO CLARO BRA	-17.70	Cartão	14	50.00	1	\N	1	1	1	2026-06-11 08:35:06.252939	2026-06-11 08:35:06.25294
-89	9	2026-05-30 18:32:00	MERCADO QUALIDADE RIO CLARO BRA	-423.98	Cartão	7	50.00	1	\N	1	1	1	2026-06-11 08:35:06.252942	2026-06-11 08:35:06.252943
-92	9	2026-05-25 06:15:00	PADARIA ALEMA RIO CLARO BRA	-21.58	Cartão	14	50.00	1	\N	1	1	1	2026-06-11 08:35:06.256023	2026-06-11 08:35:06.256026
-93	9	2026-05-15 07:59:00	MERCADO QUALIDADE RIO CLARO BRA	-242.82	Cartão	7	50.00	1	\N	1	1	1	2026-06-11 08:35:06.256028	2026-06-11 08:35:06.256029
-94	9	2026-05-11 08:01:00	MERCADO QUALIDADE RIO CLARO BRA	-238.76	Cartão	7	50.00	1	\N	1	1	1	2026-06-11 08:35:06.256031	2026-06-11 08:35:06.256032
 95	9	2026-05-11 06:10:00	PADARIA ALEMA RIO CLARO BRA	-14.76	Cartão	14	50.00	1	\N	1	1	1	2026-06-11 08:35:06.256033	2026-06-11 08:35:06.256035
 97	9	2026-05-10 06:45:00	PADARIA ALEMA RIO CLARO BRA	-22.65	Cartão	14	50.00	1	\N	1	1	1	2026-06-11 08:35:06.257999	2026-06-11 08:35:06.258003
 98	9	2026-05-09 06:39:00	PADARIA ALEMA RIO CLARO BRA	-23.61	Cartão	14	50.00	1	\N	1	1	1	2026-06-11 08:35:06.258006	2026-06-11 08:35:06.258009
 99	9	2026-05-08 08:06:00	SAVEGNAGO LJ 300 RIO CLARO BRA	-90.40	Cartão	18	50.00	1	\N	1	1	1	2026-06-11 08:35:06.258011	2026-06-11 08:35:06.258013
-100	9	2026-05-04 07:53:00	MERCADO QUALIDADE RIO CLARO BRA	-131.86	Cartão	7	50.00	1	\N	1	1	1	2026-06-11 08:35:06.258015	2026-06-11 08:35:06.258017
 101	9	2026-05-03 06:40:00	PADARIA ALEMA RIO CLARO BRA	-21.03	Cartão	14	50.00	1	\N	1	1	1	2026-06-11 08:35:06.258019	2026-06-11 08:35:06.258022
 103	9	2026-05-02 06:39:00	PADARIA ALEMA RIO CLARO BRA	-20.27	Cartão	14	50.00	1	\N	1	1	1	2026-06-11 08:35:06.259823	2026-06-11 08:35:06.259826
-105	9	2026-04-29 07:53:00	MERCADO QUALIDADE RIO CLARO BRA	-209.78	Cartão	7	50.00	1	\N	1	1	1	2026-06-11 08:35:06.261495	2026-06-11 08:35:06.2615
 79	9	2026-04-20 18:45:00	PADARIA ALEMA RIO CLARO BRA	-35.12	Cartão	14	50.00	1	\N	1	1	1	2026-04-23 08:09:24.559711	2026-06-11 08:35:06.264053
 80	9	2026-04-18 06:38:00	PADARIA ALEMA RIO CLARO BRA	-19.44	Cartão	14	50.00	1	\N	1	1	1	2026-04-23 08:09:24.559744	2026-06-11 08:35:06.264057
 69	9	2026-04-15 08:04:00	X CAFE RIO CLARO BRA	-15.00	Cartão	7	50.00	1	\N	1	1	1	2026-04-17 07:52:19.79554	2026-06-11 08:35:06.264058
-70	9	2026-04-15 07:53:00	MERCADO QUALIDADE RIO CLARO BRA	-117.88	Cartão	7	50.00	1	\N	1	1	1	2026-04-17 07:52:19.795563	2026-06-11 08:35:06.26406
 71	9	2026-04-12 10:35:00	SAVEGNAGO LJ 300 RIO CLARO BRA	-228.70	Cartão	18	50.00	1	\N	1	1	1	2026-04-17 07:52:19.795566	2026-06-11 08:35:06.264061
-82	9	2026-06-09 22:32:00	CLASSICO COMERCIO DE RE SAO PAULO BRA	-129.95	Cartão	16	50.00	1	\N	1	1	1	2026-06-11 08:35:06.251277	2026-06-11 08:36:30.863535
 96	9	2026-05-10 10:37:00	DEPOSITO SKINA DA CERVEJA RIO CLARO BRA	-53.66	Cartão	6	50.00	1	\N	1	1	1	2026-06-11 08:35:06.257153	2026-06-11 08:37:36.595142
-90	9	2026-05-28 00:23:00	Depósito transferido	1187.28	Depósito	99	50.00	1	\N	1	1	1	2026-06-11 08:35:06.255109	2026-06-11 08:40:15.949558
-91	9	2026-05-28 00:18:00	Depósito transferido	155.25	Depósito	99	50.00	1	\N	1	1	1	2026-06-11 08:35:06.255114	2026-06-11 08:40:15.949564
 102	9	2026-05-02 19:10:00	RIO CLARO DRIVE RIO CLARO BRA	-177.80	Cartão	100	50.00	1	\N	1	1	1	2026-06-11 08:35:06.259125	2026-06-11 08:40:15.949565
 104	9	2026-04-30 19:51:00	VanessaMijolaroDo RIO CLARO BRA	-103.00	Cartão	100	50.00	1	\N	1	1	1	2026-06-11 08:35:06.260692	2026-06-11 08:40:15.949567
 106	9	2026-04-29 00:31:00	Depósito transferido	1187.28	Depósito	99	50.00	1	\N	1	1	1	2026-06-11 08:35:06.262356	2026-06-11 08:40:15.949568
 107	9	2026-04-29 00:23:00	Depósito transferido	155.25	Depósito	99	50.00	1	\N	1	1	1	2026-06-11 08:35:06.262361	2026-06-11 08:40:15.94957
+108	9	2026-06-11 19:19:00	BABY PASTELARIA RIO CLARO BRA	-85.60	Cartão	16	50.00	1	\N	1	1	1	2026-06-15 08:08:44.966384	2026-06-15 08:08:44.966393
+82	9	2026-06-09 22:32:00	CLASSICO COMERCIO DE RE SAO PAULO BRA	-129.95	Cartão	16	50.00	1	\N	1	1	1	2026-06-11 08:35:06.251277	2026-06-15 08:08:44.972099
+83	9	2026-06-06 18:25:00	IFD*BR OSASCO BRA	-163.54	Cartão	16	50.00	1	\N	1	1	1	2026-06-11 08:35:06.252922	2026-06-15 08:08:44.972102
+84	9	2026-06-06 06:57:00	PADARIA ALEMA RIO CLARO BRA	-17.15	Cartão	14	50.00	1	\N	1	1	1	2026-06-11 08:35:06.252928	2026-06-15 08:08:44.972105
+85	9	2026-06-03 19:57:00	SAVEGNAGO LJ 300 RIO CLARO BRA	-244.34	Cartão	18	50.00	1	\N	1	1	1	2026-06-11 08:35:06.252931	2026-06-15 08:08:44.972108
+59	9	2026-02-28 11:15:00	MERCADO QUALIDADE RIO CLARO BRA	-339.56	Cartão	18	100.00	\N	\N	1	1	1	2026-03-18 06:55:42.801703	2026-06-15 08:37:17.04007
+75	9	2026-04-02 07:58:00	MERCADO QUALIDADE RIO CLARO BRA	-227.82	Cartão	18	100.00	\N	\N	1	1	1	2026-04-17 07:52:19.802198	2026-06-15 08:37:17.04007
+93	9	2026-05-15 07:59:00	MERCADO QUALIDADE RIO CLARO BRA	-242.82	Cartão	18	100.00	\N	\N	1	1	1	2026-06-11 08:35:06.256028	2026-06-15 08:37:17.04007
+94	9	2026-05-11 08:01:00	MERCADO QUALIDADE RIO CLARO BRA	-238.76	Cartão	18	100.00	\N	\N	1	1	1	2026-06-11 08:35:06.256031	2026-06-15 08:37:17.04007
+100	9	2026-05-04 07:53:00	MERCADO QUALIDADE RIO CLARO BRA	-131.86	Cartão	18	100.00	\N	\N	1	1	1	2026-06-11 08:35:06.258015	2026-06-15 08:37:17.04007
+105	9	2026-04-29 07:53:00	MERCADO QUALIDADE RIO CLARO BRA	-209.78	Cartão	18	100.00	\N	\N	1	1	1	2026-06-11 08:35:06.261495	2026-06-15 08:37:17.04007
+70	9	2026-04-15 07:53:00	MERCADO QUALIDADE RIO CLARO BRA	-117.88	Cartão	18	100.00	\N	\N	1	1	1	2026-04-17 07:52:19.795563	2026-06-15 08:37:17.04007
+81	9	2026-06-11 07:42:00	MERCADO QUALIDADE RIO CLARO BRA	-166.85	Cartão	18	100.00	\N	\N	1	1	1	2026-06-11 08:35:06.24738	2026-06-15 08:37:17.04007
+86	9	2026-06-02 06:18:00	PADARIA ALEMA RIO CLARO BRA	-27.14	Cartão	14	50.00	1	\N	1	1	1	2026-06-11 08:35:06.252934	2026-06-15 08:08:44.972111
+87	9	2026-05-31 12:16:00	PADARIA ALEMA RIO CLARO BRA	-32.99	Cartão	14	50.00	1	\N	1	1	1	2026-06-11 08:35:06.252936	2026-06-15 08:08:44.972115
+88	9	2026-05-31 07:05:00	PADARIA ALEMA RIO CLARO BRA	-17.70	Cartão	14	50.00	1	\N	1	1	1	2026-06-11 08:35:06.252939	2026-06-15 08:08:44.972118
+92	9	2026-05-25 06:15:00	PADARIA ALEMA RIO CLARO BRA	-21.58	Cartão	14	50.00	1	\N	1	1	1	2026-06-11 08:35:06.256023	2026-06-15 08:08:44.972131
+90	9	2026-05-28 00:23:00	Depósito transferido	1187.28	Depósito	99	50.00	1	\N	1	1	1	2026-06-11 08:35:06.255109	2026-06-15 08:30:06.260042
+91	9	2026-05-28 00:18:00	Depósito transferido	155.25	Depósito	99	50.00	1	\N	1	1	1	2026-06-11 08:35:06.255114	2026-06-15 08:30:06.260048
+4	9	2026-01-25 11:28:00	MERCADO QUALIDADE RIO CLARO BRA	-130.77	Cartão	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:56.078175	2026-06-15 08:37:17.04007
+7	9	2026-01-14 12:19:00	MERCADO QUALIDADE RIO CLARO BRA	-211.00	Cartão	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:56.078192	2026-06-15 08:37:17.04007
+44	9	2025-11-23 10:17:00	MERCADO QUALIDADE RIO CLARO BRA	-155.89	Cartão	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:56.093052	2026-06-15 08:37:17.04007
+51	9	2026-03-15 12:28:00	MERCADO QUALIDADE RIO CLARO BRA	-382.00	Cartão	18	100.00	\N	\N	1	1	1	2026-03-18 06:55:42.795689	2026-06-15 08:37:17.04007
+53	9	2026-03-10 07:56:00	MERCADO QUALIDADE RIO CLARO BRA	-104.93	Cartão	18	100.00	\N	\N	1	1	1	2026-03-18 06:55:42.801671	2026-06-15 08:37:17.04007
+89	9	2026-05-30 18:32:00	MERCADO QUALIDADE RIO CLARO BRA	-423.98	Cartão	18	100.00	\N	\N	1	1	1	2026-06-11 08:35:06.252942	2026-06-15 08:37:17.04007
 \.
 
 
@@ -5057,8 +5118,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 148	7	2023-04	2023-03-25 00:00:00	Casa De Carnes Kl	-73.00	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:44.619769	2026-02-13 10:18:44.619774
 149	7	2023-04	2023-03-26 00:00:00	Padaria Alema	-9.25	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:44.619776	2026-02-13 10:18:44.619778
 150	7	2023-04	2023-03-26 00:00:00	Casa De Carnes Kl	-126.20	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:44.619781	2026-02-13 10:18:44.619783
-151	7	2023-04	2023-03-27 00:00:00	Mercado Qualidade	-85.84	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:44.619785	2026-02-13 10:18:44.619787
-152	7	2023-04	2023-03-28 00:00:00	Mercado Qualidade	-303.74	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:44.619789	2026-02-13 10:18:44.619792
 153	7	2023-04	2023-03-28 00:00:00	Pag*pastarica	-115.91	\N	\N	10	50.00	1	\N	1	1	1	2026-02-13 10:18:44.619794	2026-02-13 10:18:44.619795
 154	7	2023-04	2023-03-29 00:00:00	Padaria Alema	-10.02	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:44.619797	2026-02-13 10:18:44.619799
 155	7	2023-04	2023-03-31 00:00:00	Padaria Alema	-11.93	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:44.619802	2026-02-13 10:18:44.619804
@@ -5077,7 +5136,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 172	7	2023-04	2023-04-05 00:00:00	Pastelaria Roberto Jap	-78.50	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:44.624817	2026-02-13 10:18:44.624819
 173	7	2023-04	2023-04-06 00:00:00	Padaria Alema	-24.22	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:44.62482	2026-02-13 10:18:44.624821
 174	7	2023-04	2023-04-06 00:00:00	Casa De Carnes Kl	-89.00	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:44.624823	2026-02-13 10:18:44.624824
-175	7	2023-04	2023-04-06 00:00:00	Mercado Qualidade	-117.87	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:44.624826	2026-02-13 10:18:44.624827
 176	7	2023-04	2023-04-08 00:00:00	Subway	-68.00	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:44.624828	2026-02-13 10:18:44.62483
 177	7	2023-04	2023-04-09 00:00:00	Padaria Alema	-12.09	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:44.624831	2026-02-13 10:18:44.624832
 179	7	2023-04	2023-04-10 00:00:00	Padaria Vila Alema	-11.68	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:44.627917	2026-02-13 10:18:44.627921
@@ -5143,7 +5201,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 247	6	2023-08	2023-07-22 00:00:00	Truf S Café	-31.00	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.650462	2026-02-13 10:18:44.650463
 248	6	2023-08	2023-07-25 00:00:00	Tok De Beleza	-101.50	\N	\N	140	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.650465	2026-02-13 10:18:44.650466
 249	6	2023-08	2023-07-25 00:00:00	Eletro Perez	-11.29	\N	\N	132	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.650468	2026-02-13 10:18:44.650469
-251	6	2023-08	2023-07-25 00:00:00	Mercado Qualidade	-63.64	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.652695	2026-02-13 10:18:44.652699
 252	6	2023-08	2023-07-26 00:00:00	Twins Store	-82.00	\N	\N	162	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.652701	2026-02-13 10:18:44.652703
 253	6	2023-08	2023-07-26 00:00:00	Sapataria Lago Azul	-206.91	\N	\N	162	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.652704	2026-02-13 10:18:44.652705
 254	6	2023-08	2023-07-27 00:00:00	Drogasil	-45.45	\N	\N	142	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.652707	2026-02-13 10:18:44.652708
@@ -5202,7 +5259,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 310	7	2023-08	2023-07-27 00:00:00	Paulistao Atacadista	-115.43	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:44.680715	2026-02-13 10:18:44.680717
 312	7	2023-08	2023-07-31 00:00:00	Supermercado Brasil Fr	-67.24	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:44.685041	2026-02-13 10:18:44.685047
 313	7	2023-08	2023-08-01 00:00:00	Casa De Carnes Kl	-58.00	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:44.68505	2026-02-13 10:18:44.685053
-314	7	2023-08	2023-08-02 00:00:00	Mercado Qualidade	-182.24	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:44.685055	2026-02-13 10:18:44.685057
 315	7	2023-08	2023-08-04 00:00:00	Contato Materiais De	-44.00	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:44.68506	2026-02-13 10:18:44.685062
 316	7	2023-08	2023-08-05 00:00:00	Supermercado Savegnago	-109.18	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:44.685064	2026-02-13 10:18:44.685066
 317	7	2023-08	2023-08-05 00:00:00	Ifood	-130.99	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:44.685068	2026-02-13 10:18:44.68507
@@ -5313,7 +5369,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 430	7	2023-12	2023-11-28 00:00:00	Marco Antonio Contato	-33.60	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:44.753641	2026-02-13 10:18:44.753643
 431	7	2023-12	2023-11-29 00:00:00	Supermercado Brasil Fr	-116.66	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:44.753646	2026-02-13 10:18:44.753648
 432	7	2023-12	2023-12-01 00:00:00	Elisabete Beatriza	-95.00	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:44.75365	2026-02-13 10:18:44.753652
-433	7	2023-12	2023-12-01 00:00:00	Mercado Qualidade	-335.54	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:44.753655	2026-02-13 10:18:44.753657
 434	7	2023-12	2023-12-02 00:00:00	Elisabete Beatriza	-83.00	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:44.753659	2026-02-13 10:18:44.753662
 435	7	2023-12	2023-12-02 00:00:00	Paulistao Atacadista	-433.77	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:44.753664	2026-02-13 10:18:44.753666
 436	7	2023-12	2023-12-02 00:00:00	Casa De Carnes Kl	-297.85	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:44.753669	2026-02-13 10:18:44.753671
@@ -5351,7 +5406,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 481	3	2023-02	2023-01-15 00:00:00	Padaria Alema	-31.14	\N	\N	14	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.783774	2026-02-13 10:18:44.783776
 483	3	2023-02	2023-01-16 00:00:00	Amazon	-44.90	\N	\N	70	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.785563	2026-02-13 10:18:44.785567
 484	3	2023-02	2023-01-19 00:00:00	Atacadão	-52.12	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.78557	2026-02-13 10:18:44.785573
-485	3	2023-02	2023-01-21 00:00:00	Mercado Qualidade	-258.46	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.785575	2026-02-13 10:18:44.785577
 486	3	2023-02	2023-01-21 00:00:00	Supermercado Savegnago	-113.68	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.78558	2026-02-13 10:18:44.785582
 487	3	2023-02	2023-01-22 00:00:00	Spotify	-34.90	\N	\N	33	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.785585	2026-02-13 10:18:44.785587
 488	3	2023-02	2023-01-23 00:00:00	Posto Mackey	-257.18	\N	\N	50	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.78559	2026-02-13 10:18:44.785592
@@ -5407,7 +5461,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 539	6	2023-02	2023-01-24 00:00:00	Padaria Modelo	-93.29	\N	\N	14	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.824165	2026-02-13 10:18:44.824171
 568	4	2023-02	2023-01-20 00:00:00	Loja Primavera	-89.10	\N	\N	162	0.00	3	\N	1	1	1	2026-02-13 10:18:44.841033	2026-03-20 21:48:57.7599
 6162	5	2026-03	2026-02-24 00:00:00	Rosana Pedersen Loure	-14.30	\N	\N	100	100.00	\N	\N	1	1	1	2026-03-18 06:55:42.080784	2026-03-20 23:21:24.786597
-542	6	2023-02	2023-01-28 00:00:00	Mercado Qualidade	-171.06	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.826045	2026-02-13 10:18:44.82605
 543	6	2023-02	2023-02-02 00:00:00	Ton Jessica Sant	-50.00	\N	\N	140	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.826053	2026-02-13 10:18:44.826056
 546	6	2023-02	2023-02-03 00:00:00	Clinica Fernandes Da	-300.70	\N	\N	138	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.827834	2026-02-13 10:18:44.827838
 547	6	2023-02	2023-02-04 00:00:00	Rio Preto Games Empre	-50.00	\N	\N	117	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.827841	2026-02-13 10:18:44.827843
@@ -5480,7 +5533,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 616	7	2023-02	2023-02-03 00:00:00	Roberto De Moraes E	-135.00	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:44.855971	2026-02-13 10:18:44.855972
 618	7	2023-02	2023-02-05 00:00:00	Padaria Vila Alema	-19.81	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:44.858963	2026-02-13 10:18:44.858968
 619	7	2023-02	2023-02-05 00:00:00	Casa De Carnes Kl	-89.60	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:44.85897	2026-02-13 10:18:44.858971
-620	7	2023-02	2023-02-05 00:00:00	Mercado Qualidade	-215.18	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:44.858972	2026-02-13 10:18:44.858974
 621	7	2023-02	2023-02-06 00:00:00	Padaria Vila Alema	-10.01	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:44.858975	2026-02-13 10:18:44.858976
 622	7	2023-02	2023-02-06 00:00:00	Gas E Cia	-110.00	\N	\N	123	50.00	1	\N	1	1	1	2026-02-13 10:18:44.858978	2026-02-13 10:18:44.858979
 623	7	2023-02	2023-02-06 00:00:00	Padaria Alema	-58.15	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:44.858981	2026-02-13 10:18:44.858982
@@ -5489,7 +5541,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 626	7	2023-02	2023-02-08 00:00:00	Supermercado Savegnago	-644.49	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:44.858989	2026-02-13 10:18:44.858991
 627	7	2023-02	2023-02-09 00:00:00	Fridas Burguer	-95.70	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:44.858992	2026-02-13 10:18:44.858994
 628	7	2023-02	2023-02-09 00:00:00	Casa De Carnes Kl	-24.00	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:44.858995	2026-02-13 10:18:44.858997
-629	7	2023-02	2023-02-09 00:00:00	Mercado Qualidade	-204.88	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:44.858998	2026-02-13 10:18:44.858999
 630	7	2023-02	2023-02-10 00:00:00	Padaria Alema	-12.50	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:44.859001	2026-02-13 10:18:44.859002
 631	7	2023-02	2023-02-11 00:00:00	Padaria Alema	-18.04	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:44.859004	2026-02-13 10:18:44.859005
 633	7	2023-02	2023-02-11 00:00:00	Supermercado Brasil Fr	-53.46	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:44.862639	2026-02-13 10:18:44.862645
@@ -5547,7 +5598,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 696	6	2023-01	2022-12-17 00:00:00	Farmacia Do Povo	-15.00	\N	\N	142	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.894826	2026-02-13 10:18:44.894836
 697	6	2023-01	2022-12-17 00:00:00	Tok De Beleza	-49.70	\N	\N	140	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.894839	2026-02-13 10:18:44.894841
 698	6	2023-01	2022-12-17 00:00:00	Festa E Cia	-47.20	\N	\N	115	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.894844	2026-02-13 10:18:44.894846
-701	6	2023-01	2022-12-22 00:00:00	Mercado Qualidade	-155.34	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.897736	2026-02-13 10:18:44.897739
 703	6	2023-01	2022-12-28 00:00:00	Armenia Calcados	-99.90	\N	\N	162	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.900005	2026-02-13 10:18:44.900011
 705	6	2023-01	2022-12-29 00:00:00	Auto Posto Malibu	-267.23	\N	\N	50	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.901974	2026-02-13 10:18:44.90198
 706	6	2023-01	2022-12-29 00:00:00	Shopping Do Bebe Eirel	-98.95	\N	\N	163	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.901983	2026-02-13 10:18:44.901985
@@ -5564,7 +5614,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 658	3	2023-01	2022-12-27 00:00:00	Capivara Manca	-148.28	\N	\N	100	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.873236	2026-02-13 14:03:25.292783
 686	6	2023-01	2022-10-01 00:00:00	Antonio Santos Gobato	-224.87	4	4	100	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.887131	2026-02-13 14:03:29.45787
 708	6	2023-01	2022-12-30 00:00:00	Casa E Vida	-85.95	\N	\N	135	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.904816	2026-02-13 10:18:44.904822
-710	6	2023-01	2022-12-31 00:00:00	Mercado Qualidade	-105.57	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.906903	2026-02-13 10:18:44.906909
 711	6	2023-01	2023-01-02 00:00:00	Gelace	-32.50	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.906911	2026-02-13 10:18:44.906912
 712	6	2023-01	2023-01-05 00:00:00	Padaria Alema	-56.95	\N	\N	14	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.906914	2026-02-13 10:18:44.906915
 713	6	2023-01	2023-01-07 00:00:00	Ifood	-7.92	\N	\N	16	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.906917	2026-02-13 10:18:44.906918
@@ -5622,7 +5671,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 724	4	2023-01	2022-12-17 00:00:00	Boa Vista Convenienci	-90.00	\N	\N	100	0.00	3	\N	1	1	1	2026-02-13 10:18:44.917566	2026-02-13 14:03:25.292788
 717	4	2023-01	2022-12-08 00:00:00	Antonio Santos Gobato	-239.75	2	2	100	0.00	3	\N	1	1	1	2026-02-13 10:18:44.911848	2026-02-13 14:03:29.457871
 758	7	2023-01	2022-12-17 00:00:00	Anacarolinadasilv	-69.00	\N	\N	100	50.00	1	\N	1	1	1	2026-02-13 10:18:44.926863	2026-02-13 14:03:29.457872
-770	7	2023-01	2022-12-23 00:00:00	Mercado Qualidade	-282.83	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:44.930739	2026-02-13 10:18:44.930742
 771	7	2023-01	2022-12-23 00:00:00	Vila Dos Pescados	-117.22	\N	\N	15	50.00	1	\N	1	1	1	2026-02-13 10:18:44.930744	2026-02-13 10:18:44.930747
 772	7	2023-01	2022-12-30 00:00:00	Roberto De Moraes E	-96.00	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:44.930749	2026-02-13 10:18:44.930753
 773	7	2023-01	2022-12-31 00:00:00	Casa De Carnes Kl	-223.50	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:44.93076	2026-02-13 10:18:44.930771
@@ -6079,9 +6127,7 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 1252	7	2023-05	2023-05-11 00:00:00	Casa De Carnes Kl	-108.00	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:45.117913	2026-02-13 10:18:45.117914
 1253	7	2023-05	2023-05-12 00:00:00	Padaria Alema	-9.71	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.117915	2026-02-13 10:18:45.117917
 1254	7	2023-05	2023-05-12 00:00:00	Casa De Carnes Kl	-93.80	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:45.117918	2026-02-13 10:18:45.117919
-1255	7	2023-05	2023-05-12 00:00:00	Mercado Qualidade	-235.52	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.117921	2026-02-13 10:18:45.117922
 1258	3	2023-03	2023-02-15 00:00:00	Crunchyroll	-19.99	\N	\N	23	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.168461	2026-02-13 10:18:45.168465
-1259	3	2023-03	2023-02-17 00:00:00	Mercado Qualidade	-108.87	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.168467	2026-02-13 10:18:45.168469
 1260	3	2023-03	2023-02-18 00:00:00	Festa E Cia	-98.80	\N	\N	115	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.16847	2026-02-13 10:18:45.168472
 1261	3	2023-03	2023-02-18 00:00:00	Fabrica De Bolo Vo Alz	-141.70	\N	\N	14	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.168473	2026-02-13 10:18:45.168474
 1262	3	2023-03	2023-02-19 00:00:00	Drogasil	-74.90	\N	\N	142	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.168476	2026-02-13 10:18:45.168477
@@ -6184,15 +6230,12 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 1367	7	2023-03	2023-02-15 00:00:00	Padaria Vila Alema	-14.91	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.210484	2026-02-13 10:18:45.210485
 1368	7	2023-03	2023-02-15 00:00:00	Marco Antonio Contato	-33.00	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:45.210487	2026-02-13 10:18:45.210489
 1369	7	2023-03	2023-02-17 00:00:00	Casa De Carnes Kl	-75.00	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:45.210491	2026-02-13 10:18:45.210493
-1370	7	2023-03	2023-02-17 00:00:00	Mercado Qualidade	-173.14	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.210495	2026-02-13 10:18:45.210497
 1371	7	2023-03	2023-03-01 00:00:00	Padaria Alema	-12.43	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.210499	2026-02-13 10:18:45.210501
 1372	7	2023-03	2023-03-02 00:00:00	Pastelaria Roberto Jap	-87.00	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:45.210503	2026-02-13 10:18:45.210505
 1373	7	2023-03	2023-03-02 00:00:00	Casa De Carnes Kl	-166.00	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:45.210507	2026-02-13 10:18:45.210509
 1374	7	2023-03	2023-03-02 00:00:00	Supermercado Brasil Fr	-286.38	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:45.210511	2026-02-13 10:18:45.210513
-1375	7	2023-03	2023-03-03 00:00:00	Mercado Qualidade	-174.30	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.210515	2026-02-13 10:18:45.210517
 1376	7	2023-03	2023-03-03 00:00:00	Padaria Alema	-10.60	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.210519	2026-02-13 10:18:45.210521
 1377	7	2023-03	2023-03-05 00:00:00	Casa De Carnes Kl	-143.85	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:45.210523	2026-02-13 10:18:45.210525
-1378	7	2023-03	2023-03-05 00:00:00	Mercado Qualidade	-178.62	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.210527	2026-02-13 10:18:45.210529
 1379	7	2023-03	2023-02-17 00:00:00	Pastelaria Roberto Jap	-104.50	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:45.210531	2026-02-13 10:18:45.210534
 1380	7	2023-03	2023-02-19 00:00:00	Pizzaria Do Roberto	-122.00	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:45.210536	2026-02-13 10:18:45.210538
 1381	7	2023-03	2023-02-19 00:00:00	Padaria Alema	-12.69	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.21054	2026-02-13 10:18:45.210542
@@ -6216,7 +6259,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 1348	4	2023-03	2023-02-24 00:00:00	Loja Primavera	-128.61	\N	\N	162	0.00	3	\N	1	1	1	2026-02-13 10:18:45.206672	2026-03-20 21:48:57.7599
 1349	4	2023-03	2023-02-25 00:00:00	Loja Primavera	-71.90	\N	\N	162	0.00	3	\N	1	1	1	2026-02-13 10:18:45.206676	2026-03-20 21:48:57.7599
 1404	7	2023-03	2023-03-11 00:00:00	Wagon Food Truck	-28.00	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:45.217205	2026-02-13 10:18:45.217209
-1405	7	2023-03	2023-03-12 00:00:00	Mercado Qualidade	-281.20	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.217211	2026-02-13 10:18:45.217214
 1406	7	2023-03	2023-03-12 00:00:00	Covabra	-21.16	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:45.217216	2026-02-13 10:18:45.217218
 1407	3	2023-11	2023-11-15 00:00:00	IOF rotativo	-77.98	\N	\N	38	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.21853	2026-02-13 10:18:45.218535
 1388	7	2023-03	2023-02-26 00:00:00	Sabrinadeoliveira	-29.00	\N	\N	100	50.00	1	\N	1	1	1	2026-02-13 10:18:45.213462	2026-02-13 14:03:01.920928
@@ -6305,23 +6347,19 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 1497	4	2023-11	2023-11-13 00:00:00	Casa E Vida	-116.98	\N	\N	135	0.00	3	\N	1	1	1	2026-02-13 10:18:45.258951	2026-02-13 10:18:45.258954
 1498	4	2023-11	2023-11-13 00:00:00	Montreal	-79.99	\N	\N	162	0.00	3	\N	1	1	1	2026-02-13 10:18:45.258956	2026-02-13 10:18:45.258958
 1499	4	2023-11	2023-11-14 00:00:00	Drogasil	-85.89	\N	\N	142	0.00	3	\N	1	1	1	2026-02-13 10:18:45.25896	2026-02-13 10:18:45.258963
-1500	7	2023-11	2023-10-14 00:00:00	Mercado Qualidade	-195.18	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.258965	2026-02-13 10:18:45.258968
 1501	7	2023-11	2023-10-14 00:00:00	Covabra	-69.87	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:45.25897	2026-02-13 10:18:45.258972
 1502	7	2023-11	2023-10-14 00:00:00	Sodie Doces	-193.45	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.258975	2026-02-13 10:18:45.258977
 1503	7	2023-11	2023-10-14 00:00:00	Casa De Carnes Kl	-107.00	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:45.258979	2026-02-13 10:18:45.258982
-1504	7	2023-11	2023-10-15 00:00:00	Mercado Qualidade	-84.78	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.258984	2026-02-13 10:18:45.258986
 1505	7	2023-11	2023-10-17 00:00:00	Padaria Alema	-11.34	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.258989	2026-02-13 10:18:45.258991
 1506	7	2023-11	2023-10-17 00:00:00	Restaurante Seu Bento	-63.15	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:45.258993	2026-02-13 10:18:45.258995
 1507	7	2023-11	2023-10-17 00:00:00	Casa E Vida	-148.00	\N	\N	135	50.00	1	\N	1	1	1	2026-02-13 10:18:45.258998	2026-02-13 10:18:45.259
 1508	7	2023-11	2023-10-17 00:00:00	Authentika Bolsas	-79.00	\N	\N	162	50.00	1	\N	1	1	1	2026-02-13 10:18:45.259002	2026-02-13 10:18:45.259005
-1509	7	2023-11	2023-10-17 00:00:00	Mercado Qualidade	-58.16	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.259007	2026-02-13 10:18:45.259009
 1510	7	2023-11	2023-10-17 00:00:00	Padaria Alema	-13.07	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.259011	2026-02-13 10:18:45.259014
 1484	4	2023-11	2023-10-16 00:00:00	Loja Primavera	-66.50	\N	\N	162	0.00	3	\N	1	1	1	2026-02-13 10:18:45.252723	2026-03-20 21:48:57.7599
 1512	7	2023-11	2023-10-18 00:00:00	Bananas Hortifruti	-5.35	\N	\N	9	50.00	1	\N	1	1	1	2026-02-13 10:18:45.262923	2026-02-13 10:18:45.262927
 1513	7	2023-11	2023-10-18 00:00:00	Rio Claro Hamburguers	-71.80	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:45.26293	2026-02-13 10:18:45.262932
 1514	7	2023-11	2023-10-18 00:00:00	Rio Claro Hamburguers	-4.00	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:45.262935	2026-02-13 10:18:45.262937
 1515	7	2023-11	2023-10-29 00:00:00	Padaria Alema	-42.10	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.262939	2026-02-13 10:18:45.262941
-1516	7	2023-11	2023-10-29 00:00:00	Mercado Qualidade	-123.77	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.262943	2026-02-13 10:18:45.262946
 1517	7	2023-11	2023-10-30 00:00:00	Padaria Vila Alema	-14.32	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.262948	2026-02-13 10:18:45.26295
 1518	7	2023-11	2023-10-31 00:00:00	Luanaantonelli	-68.00	\N	\N	9	50.00	1	\N	1	1	1	2026-02-13 10:18:45.262952	2026-02-13 10:18:45.262954
 1519	7	2023-11	2023-10-31 00:00:00	Pasta Rica	-44.98	\N	\N	10	50.00	1	\N	1	1	1	2026-02-13 10:18:45.262957	2026-02-13 10:18:45.262959
@@ -6361,7 +6399,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 1553	7	2023-11	2023-11-06 00:00:00	Padaria Alema	-46.23	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.274769	2026-02-13 10:18:45.274771
 1554	7	2023-11	2023-11-07 00:00:00	Casa De Carnes Kl	-164.50	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:45.274773	2026-02-13 10:18:45.274775
 1555	7	2023-11	2023-11-07 00:00:00	Agua Viva	-241.00	1	7	114	50.00	1	\N	1	1	1	2026-02-13 10:18:45.27607	2026-02-13 10:18:45.276075
-1556	7	2023-11	2023-11-07 00:00:00	Mercado Qualidade	-262.91	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.276958	2026-02-13 10:18:45.276963
 1557	7	2023-11	2023-11-07 00:00:00	Drogasil	-69.23	\N	\N	142	50.00	1	\N	1	1	1	2026-02-13 10:18:45.276965	2026-02-13 10:18:45.276967
 1558	7	2023-11	2023-11-08 00:00:00	Sao Miguel Arcanjo	-152.53	\N	\N	115	50.00	1	\N	1	1	1	2026-02-13 10:18:45.27697	2026-02-13 10:18:45.276972
 1559	7	2023-11	2023-11-10 00:00:00	Padaria Alema	-67.71	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.276974	2026-02-13 10:18:45.276976
@@ -6404,7 +6441,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 1550	7	2023-11	2023-11-05 00:00:00	Erika Cristina Laras	-88.50	\N	\N	100	50.00	1	\N	1	1	1	2026-02-13 10:18:45.273762	2026-02-13 14:03:17.106362
 1596	3	2023-10	2023-10-07 00:00:00	Escriba Papelaria	-23.80	\N	\N	100	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.294419	2026-02-13 14:03:17.106365
 1584	3	2023-10	2023-09-27 00:00:00	Dom Cell	-280.00	\N	\N	100	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.288827	2026-02-13 14:03:21.58341
-1601	3	2023-10	2023-10-08 00:00:00	Mercado Qualidade	-264.01	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.297425	2026-02-13 10:18:45.29743
 1602	3	2023-10	2023-10-08 00:00:00	Casa De Carnes Kl	-100.00	\N	\N	5	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.297433	2026-02-13 10:18:45.297435
 1603	3	2023-10	2023-10-09 00:00:00	Drogasil	-46.69	\N	\N	142	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.297437	2026-02-13 10:18:45.29744
 1604	3	2023-10	2023-10-10 00:00:00	Claro	-44.88	\N	\N	130	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.297442	2026-02-13 10:18:45.297444
@@ -6456,7 +6492,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 1659	7	2023-10	2023-09-18 00:00:00	Padaria Vila Alema	-7.86	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.31737	2026-02-13 10:18:45.317372
 1660	7	2023-10	2023-09-18 00:00:00	Supermercado União	-73.10	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:45.317374	2026-02-13 10:18:45.317377
 1661	7	2023-10	2023-09-19 00:00:00	Casa De Carnes Kl	-247.30	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:45.317379	2026-02-13 10:18:45.317381
-1663	7	2023-10	2023-09-19 00:00:00	Mercado Qualidade	-156.12	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.320472	2026-02-13 10:18:45.320476
 1664	7	2023-10	2023-09-20 00:00:00	Supermercado Brasil Fr	-547.57	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:45.320479	2026-02-13 10:18:45.320481
 1635	4	2023-10	2023-09-19 00:00:00	Lucas Antonelli	-45.00	\N	\N	100	0.00	3	\N	1	1	1	2026-02-13 10:18:45.311946	2026-02-13 14:03:13.500223
 1662	7	2023-10	2023-09-19 00:00:00	Lucas Antonelli	-149.00	\N	\N	100	50.00	1	\N	1	1	1	2026-02-13 10:18:45.319586	2026-02-13 14:03:13.500224
@@ -6476,7 +6511,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 1673	7	2023-10	2023-10-02 00:00:00	Padaria Alema	-37.62	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.320518	2026-02-13 10:18:45.32052
 1674	7	2023-10	2023-10-03 00:00:00	Luanaantonelli	-210.00	\N	\N	9	50.00	1	\N	1	1	1	2026-02-13 10:18:45.320522	2026-02-13 10:18:45.320524
 1675	7	2023-10	2023-10-03 00:00:00	Gourmet Qualidade	-81.99	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.320526	2026-02-13 10:18:45.320528
-1676	7	2023-10	2023-10-03 00:00:00	Mercado Qualidade	-46.42	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.32053	2026-02-13 10:18:45.320532
 1677	7	2023-10	2023-10-04 00:00:00	Marco Antonio Contato	-8.00	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:45.320535	2026-02-13 10:18:45.320537
 1679	7	2023-10	2023-10-05 00:00:00	Casa De Carnes Kl	-355.50	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:45.324483	2026-02-13 10:18:45.324488
 1680	7	2023-10	2023-10-05 00:00:00	Ton Jessica Sant	-65.00	\N	\N	140	50.00	1	\N	1	1	1	2026-02-13 10:18:45.32449	2026-02-13 10:18:45.324491
@@ -6505,7 +6539,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 1706	6	2023-10	2023-09-20 00:00:00	Ton Jessica Sant	-50.00	\N	\N	140	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.3322	2026-02-13 10:18:45.332201
 1707	6	2023-10	2023-09-20 00:00:00	Sao Miguel Arcanjo	-121.90	\N	\N	115	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.332202	2026-02-13 10:18:45.332204
 1708	6	2023-10	2023-09-22 00:00:00	Gourmet Qualidade	-55.70	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.332205	2026-02-13 10:18:45.332206
-1709	6	2023-10	2023-09-22 00:00:00	Mercado Qualidade	-285.64	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.332208	2026-02-13 10:18:45.332209
 1710	6	2023-10	2023-10-10 00:00:00	Claro	-44.88	\N	\N	130	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.33221	2026-02-13 10:18:45.332212
 1711	3	2023-09	2023-09-15 00:00:00	Multa por atraso	-319.60	\N	\N	36	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.332213	2026-02-13 10:18:45.332214
 1714	3	2023-09	2023-09-15 00:00:00	Encargos por atraso	-183.61	\N	\N	36	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.335219	2026-02-13 10:18:45.335224
@@ -6565,7 +6598,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 1776	6	2023-09	2023-08-23 00:00:00	Sao Miguel Arcanjo	-123.07	\N	\N	115	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.360845	2026-02-13 10:18:45.360847
 1777	6	2023-09	2023-08-23 00:00:00	Tuti Guti Moda Infanti	-264.80	1	2	162	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.362135	2026-02-13 10:18:45.362139
 1778	6	2023-09	2023-08-23 00:00:00	Gourmet Qualidade	-25.80	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.362984	2026-02-13 10:18:45.362988
-1779	6	2023-09	2023-08-23 00:00:00	Mercado Qualidade	-95.84	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.36299	2026-02-13 10:18:45.362991
 1780	6	2023-09	2023-08-23 00:00:00	Drogasil	-120.09	\N	\N	142	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.362993	2026-02-13 10:18:45.362994
 1781	6	2023-09	2023-08-25 00:00:00	Sao Miguel Arcanjo	-73.14	\N	\N	115	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.362995	2026-02-13 10:18:45.362997
 1782	6	2023-09	2023-08-25 00:00:00	Montreal	-34.99	\N	\N	162	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.362998	2026-02-13 10:18:45.362999
@@ -6573,7 +6605,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 1784	6	2023-09	2023-08-30 00:00:00	Drogasil	-80.59	\N	\N	142	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.363004	2026-02-13 10:18:45.363005
 1785	6	2023-09	2023-08-30 00:00:00	Ton Jessica Sant	-65.00	\N	\N	140	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.363006	2026-02-13 10:18:45.363008
 1786	6	2023-09	2023-08-31 00:00:00	Farmácias Nissei	-28.12	\N	\N	142	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.363009	2026-02-13 10:18:45.363011
-1787	6	2023-09	2023-08-31 00:00:00	Mercado Qualidade	-300.92	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.363012	2026-02-13 10:18:45.363013
 1789	6	2023-09	2023-08-31 00:00:00	Tuti Guti Moda Infanti	-217.70	\N	\N	162	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.365594	2026-02-13 10:18:45.365599
 1790	6	2023-09	2023-08-31 00:00:00	Tuti Guti Moda Infanti	-305.40	\N	\N	162	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.365602	2026-02-13 10:18:45.365605
 1792	6	2023-09	2023-09-03 00:00:00	Reidocupim	-300.00	\N	\N	16	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.367292	2026-02-13 10:18:45.367296
@@ -6782,7 +6813,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 1995	5	2024-04	2024-03-21 00:00:00	Twinstore	-90.00	\N	\N	162	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.43508	2026-02-13 10:18:45.435081
 1996	5	2024-04	2024-03-21 00:00:00	Art Kids	-75.90	\N	\N	115	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.435083	2026-02-13 10:18:45.435084
 1997	5	2024-04	2024-03-21 00:00:00	Gourmet Qualidade	-52.60	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.435085	2026-02-13 10:18:45.435086
-1998	5	2024-04	2024-03-21 00:00:00	Mercado Qualidade	-169.64	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.435088	2026-02-13 10:18:45.435089
 2001	5	2024-04	2024-03-27 00:00:00	Festa E Cia	-55.70	\N	\N	115	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.437088	2026-02-13 10:18:45.437091
 2002	5	2024-04	2024-03-27 00:00:00	Auto Posto Malibu	-317.10	\N	\N	50	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.437092	2026-02-13 10:18:45.437093
 2003	5	2024-04	2024-03-27 00:00:00	Boneca De Pano	-242.75	1	2	162	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.437877	2026-02-13 10:18:45.43788
@@ -6915,7 +6945,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 2135	7	2024-08	2024-07-30 00:00:00	Luanaantonelli	-494.00	\N	\N	9	50.00	1	\N	1	1	1	2026-02-13 10:18:45.468186	2026-02-13 10:18:45.468187
 2136	7	2024-08	2024-07-30 00:00:00	Ton Brunasso Gou	-12.00	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.468189	2026-02-13 10:18:45.46819
 2137	7	2024-08	2024-07-30 00:00:00	Padaria Alema	-44.62	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.468191	2026-02-13 10:18:45.468193
-2138	7	2024-08	2024-07-31 00:00:00	Mercado Qualidade	-251.29	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.468194	2026-02-13 10:18:45.468195
 2139	7	2024-08	2024-08-10 00:00:00	Baby Pastelaria	-115.00	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:45.468197	2026-02-13 10:18:45.468198
 2140	7	2024-08	2024-08-13 00:00:00	Examine	-61.41	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:45.468199	2026-02-13 10:18:45.468201
 2141	7	2024-08	2024-08-13 00:00:00	Luanaantonelli	-100.00	\N	\N	9	50.00	1	\N	1	1	1	2026-02-13 10:18:45.468202	2026-02-13 10:18:45.468203
@@ -6925,7 +6954,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 2145	5	2024-08	2024-06-25 00:00:00	Agua Viva	-225.00	2	12	114	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.47127	2026-02-13 10:18:45.471272
 2146	5	2024-08	2024-07-16 00:00:00	Boneca De Pano	-267.43	\N	\N	162	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.472417	2026-02-13 10:18:45.472421
 2147	5	2024-08	2024-07-17 00:00:00	Casa De Pães	-105.58	\N	\N	14	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.472423	2026-02-13 10:18:45.472425
-2149	5	2024-08	2024-07-23 00:00:00	Mercado Qualidade	-51.97	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.474217	2026-02-13 10:18:45.47422
 2150	5	2024-08	2024-07-26 00:00:00	Farmácia Homeoderma	-47.00	\N	\N	142	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.474221	2026-02-13 10:18:45.474223
 2151	5	2024-08	2024-07-26 00:00:00	Th Jogos Eletronicos	-10.00	\N	\N	132	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.474224	2026-02-13 10:18:45.474226
 2152	5	2024-08	2024-07-26 00:00:00	Word Games	-30.00	\N	\N	117	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.474227	2026-02-13 10:18:45.474228
@@ -6935,7 +6963,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 2158	5	2024-08	2024-08-07 00:00:00	Zul Regularizacao Z9dz	-9.00	\N	\N	52	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.477444	2026-02-13 10:18:45.477448
 2159	5	2024-08	2024-08-08 00:00:00	Examine	-91.57	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.477449	2026-02-13 10:18:45.477451
 2160	5	2024-08	2024-08-12 00:00:00	Casa E Vida	-105.83	\N	\N	135	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.477453	2026-02-13 10:18:45.477454
-2161	5	2024-08	2024-08-12 00:00:00	Mercado Qualidade	-321.99	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.477455	2026-02-13 10:18:45.477457
 2162	5	2024-08	2024-08-13 00:00:00	Twinstore	-307.50	1	2	162	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.478541	2026-02-13 10:18:45.478546
 2163	5	2024-08	2024-08-14 00:00:00	Ton Jessica Sant	-115.00	\N	\N	140	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.479269	2026-02-13 10:18:45.479272
 2164	3	2024-12	2024-11-25 00:00:00	Benefício do cartão BTG Pactual	239.65	\N	\N	94	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.479274	2026-02-13 10:18:45.479275
@@ -7073,7 +7100,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 2303	7	2024-12	2024-12-06 00:00:00	Elisabete Beatriza	-61.00	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.518649	2026-02-13 10:18:45.51865
 2304	7	2024-12	2024-12-06 00:00:00	Brasil Cacau	-54.66	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.518652	2026-02-13 10:18:45.518653
 2305	7	2024-12	2024-12-09 00:00:00	Padaria Alema	-8.90	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.518654	2026-02-13 10:18:45.518656
-2306	7	2024-12	2024-12-09 00:00:00	Mercado Qualidade	-42.86	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.518657	2026-02-13 10:18:45.518658
 2307	7	2024-12	2024-12-10 00:00:00	Padaria Alema	-18.49	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.51866	2026-02-13 10:18:45.518661
 2248	4	2024-12	2024-11-25 00:00:00	Dany Ellen Dos Santos	-280.00	\N	\N	100	0.00	3	\N	1	1	1	2026-02-13 10:18:45.510339	2026-02-13 14:03:21.583424
 2246	4	2024-12	2024-11-23 00:00:00	Boa Vista	-94.50	\N	\N	100	0.00	3	\N	1	1	1	2026-02-13 10:18:45.508459	2026-02-13 14:03:25.292845
@@ -7172,12 +7198,10 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 2408	4	2024-02	2024-02-14 00:00:00	Droga Raia	-138.14	\N	\N	142	0.00	3	\N	1	1	1	2026-02-13 10:18:45.553595	2026-02-13 10:18:45.553597
 2409	7	2024-02	2023-11-07 00:00:00	Agua Viva	-241.00	4	7	114	50.00	1	\N	1	1	1	2026-02-13 10:18:45.554585	2026-02-13 10:18:45.554591
 2410	7	2024-02	2024-01-15 00:00:00	Padaria Alema	-20.65	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.556082	2026-02-13 10:18:45.556088
-2411	7	2024-02	2024-01-15 00:00:00	Mercado Qualidade	-244.55	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.556091	2026-02-13 10:18:45.556093
 2412	7	2024-02	2024-01-16 00:00:00	Kombidafruta	-268.00	\N	\N	9	50.00	1	\N	1	1	1	2026-02-13 10:18:45.556095	2026-02-13 10:18:45.556098
 2413	7	2024-02	2024-01-17 00:00:00	Roberto De Moraes E	-174.00	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:45.5561	2026-02-13 10:18:45.556102
 2414	7	2024-02	2024-01-20 00:00:00	Supermercado Brasil Fr	-162.07	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:45.556105	2026-02-13 10:18:45.556107
 2415	7	2024-02	2024-01-20 00:00:00	Casa De Carnes Kl	-213.80	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:45.556109	2026-02-13 10:18:45.556112
-2417	7	2024-02	2024-01-22 00:00:00	Mercado Qualidade	-217.05	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.558569	2026-02-13 10:18:45.558574
 2418	7	2024-02	2024-01-22 00:00:00	Certeza Higiene E Limp	-105.46	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:45.558577	2026-02-13 10:18:45.558579
 2419	7	2024-02	2024-01-23 00:00:00	Casa De Carnes Kl	-26.40	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:45.558582	2026-02-13 10:18:45.558584
 2420	7	2024-02	2024-01-24 00:00:00	Supermercado Brasil Fr	-101.59	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:45.558586	2026-02-13 10:18:45.558589
@@ -7191,7 +7215,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 2428	7	2024-02	2024-01-30 00:00:00	Luanaantonelli	-206.00	\N	\N	9	50.00	1	\N	1	1	1	2026-02-13 10:18:45.558626	2026-02-13 10:18:45.558628
 2429	7	2024-02	2024-01-30 00:00:00	Ifood	-124.50	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:45.558631	2026-02-13 10:18:45.558632
 2430	7	2024-02	2024-01-31 00:00:00	Gas E Cia	-100.00	\N	\N	123	50.00	1	\N	1	1	1	2026-02-13 10:18:45.558635	2026-02-13 10:18:45.558637
-2431	7	2024-02	2024-02-01 00:00:00	Mercado Qualidade	-112.69	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.558639	2026-02-13 10:18:45.558641
 2432	7	2024-02	2024-02-02 00:00:00	Elisabete Beatriza	-67.00	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.558643	2026-02-13 10:18:45.558648
 2433	7	2024-02	2024-02-03 00:00:00	Examine	-167.81	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:45.55865	2026-02-13 10:18:45.558653
 2434	7	2024-02	2024-02-03 00:00:00	Supermercado Brasil Fr	-150.72	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:45.558655	2026-02-13 10:18:45.558657
@@ -7370,7 +7393,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 2617	7	2024-01	2023-12-27 00:00:00	Paulistao Atacadista	-119.88	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:45.614694	2026-02-13 10:18:45.614695
 2618	7	2024-01	2023-12-27 00:00:00	Casa De Carnes Kl	-22.20	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:45.614697	2026-02-13 10:18:45.614698
 2619	7	2024-01	2023-12-28 00:00:00	Marco Antonio Contato	-48.00	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:45.614699	2026-02-13 10:18:45.614701
-2620	7	2024-01	2023-12-28 00:00:00	Mercado Qualidade	-552.21	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.614702	2026-02-13 10:18:45.614703
 2621	7	2024-01	2023-12-29 00:00:00	Peixaria 14	-161.00	\N	\N	15	50.00	1	\N	1	1	1	2026-02-13 10:18:45.614705	2026-02-13 10:18:45.614706
 2622	7	2024-01	2024-01-09 00:00:00	Contato Materiais De	-73.25	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:45.614707	2026-02-13 10:18:45.614709
 2623	7	2024-01	2024-01-09 00:00:00	Drogal	-111.35	\N	\N	142	50.00	1	\N	1	1	1	2026-02-13 10:18:45.61471	2026-02-13 10:18:45.614711
@@ -7399,7 +7421,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 2647	5	2024-01	2023-12-21 00:00:00	Sapataria Lago Azul	-264.90	1	2	162	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.672949	2026-02-13 10:18:45.672954
 2648	5	2024-01	2023-12-22 00:00:00	Drogasil	-46.90	\N	\N	142	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.673899	2026-02-13 10:18:45.673904
 2649	5	2024-01	2023-12-22 00:00:00	Gourmet Qualidade	-46.30	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.673906	2026-02-13 10:18:45.673908
-2650	5	2024-01	2023-12-22 00:00:00	Mercado Qualidade	-164.50	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.673911	2026-02-13 10:18:45.673913
 2651	5	2024-01	2023-12-23 00:00:00	Drogasil	-98.26	\N	\N	142	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.673915	2026-02-13 10:18:45.673917
 2652	5	2024-01	2023-12-23 00:00:00	Casa E Vida	-131.32	\N	\N	135	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.673919	2026-02-13 10:18:45.673921
 2653	5	2024-01	2023-12-27 00:00:00	Pasta Tua	-20.00	\N	\N	10	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.673924	2026-02-13 10:18:45.673926
@@ -7416,7 +7437,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 2667	3	2024-07	2024-06-15 00:00:00	Crunchyroll	-19.99	\N	\N	23	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.678607	2026-02-13 10:18:45.678609
 2670	3	2024-07	2024-06-16 00:00:00	Droga Raia	-192.58	\N	\N	142	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.680625	2026-02-13 10:18:45.680629
 2673	3	2024-07	2024-06-21 00:00:00	Padaria Alema	-134.50	\N	\N	14	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.681931	2026-02-13 10:18:45.681932
-2674	3	2024-07	2024-06-22 00:00:00	Mercado Qualidade	-254.96	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.681934	2026-02-13 10:18:45.681935
 2676	3	2024-07	2024-06-22 00:00:00	Spotify	-34.90	\N	\N	33	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.683363	2026-02-13 10:18:45.683365
 2678	3	2024-07	2024-06-27 00:00:00	Amazon	-112.11	\N	\N	70	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.68457	2026-02-13 10:18:45.684573
 2680	3	2024-07	2024-06-28 00:00:00	Fridas	-138.60	\N	\N	16	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.686084	2026-02-13 10:18:45.686089
@@ -7642,7 +7662,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 2909	4	2024-06	2024-06-13 00:00:00	Natura Pay Atn Bella	-208.20	\N	\N	140	0.00	3	\N	1	1	1	2026-02-13 10:18:45.749738	2026-02-13 10:18:45.74974
 2910	7	2024-06	2024-05-14 00:00:00	Padaria Alema	-21.76	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.749741	2026-02-13 10:18:45.749742
 2911	7	2024-06	2024-05-14 00:00:00	Examine	-118.58	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:45.749744	2026-02-13 10:18:45.749745
-2912	7	2024-06	2024-05-16 00:00:00	Mercado Qualidade	-288.49	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.749747	2026-02-13 10:18:45.749748
 2913	7	2024-06	2024-05-17 00:00:00	Padaria Alema	-23.24	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.749749	2026-02-13 10:18:45.749751
 2914	7	2024-06	2024-05-17 00:00:00	Jp Restaurante Ara	-173.00	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:45.749752	2026-02-13 10:18:45.749754
 2915	7	2024-06	2024-05-18 00:00:00	Elisabete Beatriza	-76.00	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.749755	2026-02-13 10:18:45.749756
@@ -7656,7 +7675,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 2924	7	2024-06	2024-05-23 00:00:00	Baby Pastelaria	-136.00	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:45.753293	2026-02-13 10:18:45.753295
 2925	7	2024-06	2024-05-24 00:00:00	Padaria Alema	-30.45	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.753297	2026-02-13 10:18:45.7533
 2926	7	2024-06	2024-05-24 00:00:00	Casa De Carnes Kl	-213.50	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:45.753302	2026-02-13 10:18:45.753304
-2927	7	2024-06	2024-05-24 00:00:00	Mercado Qualidade	-233.08	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.753307	2026-02-13 10:18:45.753309
 2928	7	2024-06	2024-05-24 00:00:00	Casa De Bolo	-67.00	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.753311	2026-02-13 10:18:45.753314
 2929	7	2024-06	2024-05-24 00:00:00	Subway	-155.50	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:45.753316	2026-02-13 10:18:45.753318
 2930	7	2024-06	2024-05-25 00:00:00	Marco Antonio Contato	-26.00	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:45.753321	2026-02-13 10:18:45.753323
@@ -7721,8 +7739,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 3001	3	2024-05	2024-05-06 00:00:00	Padaria Alema	-17.16	\N	\N	14	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.781277	2026-02-13 10:18:45.781278
 3002	3	2024-05	2024-05-08 00:00:00	Porto Seguro Cartões	-1417.65	\N	\N	51	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.781279	2026-02-13 10:18:45.781281
 3003	3	2024-05	2024-05-10 00:00:00	Claro	-50.50	\N	\N	130	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.781282	2026-02-13 10:18:45.781284
-3004	3	2024-05	2024-05-10 00:00:00	Mercado Qualidade	-245.84	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.781285	2026-02-13 10:18:45.781286
-3005	3	2024-05	2024-05-10 00:00:00	Mercado Qualidade	-71.60	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.781288	2026-02-13 10:18:45.781289
 3006	3	2024-05	2024-05-10 00:00:00	Ifood	-5.95	\N	\N	16	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.781291	2026-02-13 10:18:45.781292
 3007	3	2024-05	2024-05-14 00:00:00	Crunchyroll	-19.99	\N	\N	23	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.781293	2026-02-13 10:18:45.781295
 3008	8	2024-05	2023-12-19 00:00:00	Kll Editora Ecommerce	-113.68	5	12	89	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.78259	2026-02-13 10:18:45.782593
@@ -7773,7 +7789,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 3048	7	2024-05	2024-04-16 00:00:00	Kombidafruta	-164.00	\N	\N	9	50.00	1	\N	1	1	1	2026-02-13 10:18:45.793371	2026-02-13 10:18:45.793373
 3049	7	2024-05	2024-04-18 00:00:00	Supermercado Savegnago	-68.18	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:45.793375	2026-02-13 10:18:45.793377
 3050	7	2024-05	2024-04-18 00:00:00	Baby Pastelaria	-75.00	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:45.79338	2026-02-13 10:18:45.793382
-3051	7	2024-05	2024-04-19 00:00:00	Mercado Qualidade	-175.54	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.793384	2026-02-13 10:18:45.793386
 3052	7	2024-05	2024-04-20 00:00:00	Elisabete Beatriza	-48.00	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.793389	2026-02-13 10:18:45.793391
 3053	7	2024-05	2024-04-20 00:00:00	Marco Antonio Contato	-53.00	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:45.793393	2026-02-13 10:18:45.793395
 3054	7	2024-05	2024-04-20 00:00:00	Gas E Cia	-100.00	\N	\N	123	50.00	1	\N	1	1	1	2026-02-13 10:18:45.793398	2026-02-13 10:18:45.7934
@@ -7784,7 +7799,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 3059	7	2024-05	2024-04-23 00:00:00	Empório Lila	-39.11	\N	\N	11	50.00	1	\N	1	1	1	2026-02-13 10:18:45.79342	2026-02-13 10:18:45.793422
 3060	7	2024-05	2024-04-23 00:00:00	Ton Brunasso Gou	-27.00	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.793426	2026-02-13 10:18:45.793428
 3061	7	2024-05	2024-04-25 00:00:00	Padaria Alema	-37.76	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.793446	2026-02-13 10:18:45.793448
-3062	7	2024-05	2024-04-26 00:00:00	Mercado Qualidade	-208.09	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.79345	2026-02-13 10:18:45.793452
 3063	7	2024-05	2024-04-26 00:00:00	Fridas Burguer	-200.40	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:45.793455	2026-02-13 10:18:45.793456
 3064	7	2024-05	2024-04-27 00:00:00	Padaria Alema	-35.61	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.793459	2026-02-13 10:18:45.793461
 3065	7	2024-05	2024-04-27 00:00:00	Supermercado Brasil Fr	-108.78	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:45.793463	2026-02-13 10:18:45.793466
@@ -7799,7 +7813,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 3075	7	2024-05	2024-05-03 00:00:00	Ma Prado Sushi	-88.50	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:45.797168	2026-02-13 10:18:45.797169
 3076	7	2024-05	2024-05-04 00:00:00	Casa De Carnes Kl	-100.00	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:45.79717	2026-02-13 10:18:45.797171
 3077	7	2024-05	2024-05-04 00:00:00	Supermercado Savegnago	-150.68	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:45.797173	2026-02-13 10:18:45.797174
-3078	7	2024-05	2024-05-05 00:00:00	Mercado Qualidade	-143.47	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.797175	2026-02-13 10:18:45.797177
 3079	7	2024-05	2024-05-06 00:00:00	Padaria Alema	-32.94	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.797178	2026-02-13 10:18:45.797179
 3080	7	2024-05	2024-05-07 00:00:00	Ton Limpa Tapete	-100.00	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:45.797181	2026-02-13 10:18:45.797182
 3081	7	2024-05	2024-05-08 00:00:00	Casa De Carnes Kl	-259.00	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:45.797184	2026-02-13 10:18:45.797185
@@ -7915,8 +7928,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 3200	7	2024-03	2024-02-14 00:00:00	Padaria Alema	-43.44	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.834117	2026-02-13 10:18:45.834122
 3201	7	2024-03	2024-02-14 00:00:00	Peixaria 14	-102.00	\N	\N	15	50.00	1	\N	1	1	1	2026-02-13 10:18:45.834125	2026-02-13 10:18:45.834128
 3202	7	2024-03	2024-02-14 00:00:00	Padaria Alema	-11.20	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.83413	2026-02-13 10:18:45.834133
-3203	7	2024-03	2024-02-17 00:00:00	Mercado Qualidade	-256.83	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.834135	2026-02-13 10:18:45.834137
-3204	7	2024-03	2024-02-17 00:00:00	Mercado Qualidade	-170.04	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.83414	2026-02-13 10:18:45.834142
 3205	7	2024-03	2024-02-18 00:00:00	Padaria Alema	-14.81	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.834144	2026-02-13 10:18:45.834147
 3206	7	2024-03	2024-02-18 00:00:00	Ifood	-84.50	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:45.834149	2026-02-13 10:18:45.834151
 3207	7	2024-03	2024-02-19 00:00:00	Marco Antonio Contato	-33.00	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:45.834154	2026-02-13 10:18:45.834156
@@ -8066,7 +8077,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 3357	4	2024-11	2024-11-13 00:00:00	Droga Raia	-240.23	\N	\N	142	0.00	3	\N	1	1	1	2026-02-13 10:18:45.881793	2026-02-13 10:18:45.881795
 3358	4	2024-11	2024-11-13 00:00:00	Nedival Pasetto Eireli	-64.99	\N	\N	162	0.00	3	\N	1	1	1	2026-02-13 10:18:45.881797	2026-02-13 10:18:45.881799
 3359	7	2024-11	2024-10-14 00:00:00	Supermercado Savegnago	-595.99	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:45.881801	2026-02-13 10:18:45.881803
-3360	7	2024-11	2024-10-14 00:00:00	Mercado Qualidade	-187.71	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.881806	2026-02-13 10:18:45.881808
 3361	7	2024-11	2024-10-14 00:00:00	Padaria Alema	-27.71	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.88181	2026-02-13 10:18:45.881813
 3362	7	2024-11	2024-10-15 00:00:00	Kombi Das Frutas	-68.00	\N	\N	9	50.00	1	\N	1	1	1	2026-02-13 10:18:45.881815	2026-02-13 10:18:45.881817
 3363	7	2024-11	2024-10-18 00:00:00	Empório Lila	-38.88	\N	\N	11	50.00	1	\N	1	1	1	2026-02-13 10:18:45.881819	2026-02-13 10:18:45.881821
@@ -8095,9 +8105,7 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 3390	7	2024-11	2024-11-03 00:00:00	Casa De Pães	-113.19	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.894051	2026-02-13 10:18:45.894053
 3391	7	2024-11	2024-11-05 00:00:00	Padaria Alema	-28.01	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.894055	2026-02-13 10:18:45.894057
 3392	7	2024-11	2024-11-05 00:00:00	Marco Antonio Contato	-105.00	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:45.894059	2026-02-13 10:18:45.894061
-3393	7	2024-11	2024-11-05 00:00:00	Mercado Qualidade	-272.58	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.894063	2026-02-13 10:18:45.894065
 3395	7	2024-11	2024-11-06 00:00:00	Contato Materiais De	-40.45	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:45.896046	2026-02-13 10:18:45.896049
-3396	7	2024-11	2024-11-06 00:00:00	Mercado Qualidade	-107.10	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.896051	2026-02-13 10:18:45.896052
 3397	7	2024-11	2024-11-08 00:00:00	Zul Regularizacao 140o	-9.00	\N	\N	52	50.00	1	\N	1	1	1	2026-02-13 10:18:45.896054	2026-02-13 10:18:45.896055
 3398	7	2024-11	2024-11-08 00:00:00	Examine	-188.42	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:45.896057	2026-02-13 10:18:45.896058
 3399	7	2024-11	2024-11-09 00:00:00	Casa De Carnes Kl	-257.45	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:45.89606	2026-02-13 10:18:45.896061
@@ -8112,7 +8120,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 3405	7	2024-11	2024-11-14 00:00:00	Elisabete Beatriza	-66.00	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.900128	2026-02-13 10:18:45.900131
 3406	5	2024-11	2024-06-25 00:00:00	Agua Viva	-225.00	5	12	114	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.901058	2026-02-13 10:18:45.901062
 3409	5	2024-11	2024-09-19 00:00:00	Encanto Moda Intima	-137.55	2	2	162	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.901074	2026-02-13 10:18:45.901076
-3411	5	2024-11	2024-10-14 00:00:00	Mercado Qualidade	-149.83	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.903799	2026-02-13 10:18:45.903804
 3412	5	2024-11	2024-10-15 00:00:00	Gourmet Qualidade	-48.70	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.903806	2026-02-13 10:18:45.903808
 3413	5	2024-11	2024-10-15 00:00:00	Padaria Central	-349.65	\N	\N	14	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.903811	2026-02-13 10:18:45.903813
 3414	5	2024-11	2024-10-15 00:00:00	Casa E Video	-117.93	\N	\N	135	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.903815	2026-02-13 10:18:45.903817
@@ -8128,7 +8135,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 3431	5	2024-11	2024-11-06 00:00:00	Fios Da Terra Cosmetic	-409.34	1	3	4	0.00	2	\N	1	1	1	2026-02-13 10:18:45.913882	2026-03-20 23:04:09.676418
 3441	5	2024-11	2024-11-14 00:00:00	Fios Da Terra Cosmetic	-446.68	1	3	4	0.00	2	\N	1	1	1	2026-02-13 10:18:45.918481	2026-03-20 23:04:09.676418
 3429	5	2024-11	2024-11-02 00:00:00	Drogal	-49.95	\N	\N	142	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.913096	2026-02-13 10:18:45.913099
-3430	5	2024-11	2024-11-05 00:00:00	Mercado Qualidade	-48.64	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.9131	2026-02-13 10:18:45.913102
 3433	5	2024-11	2024-11-09 00:00:00	Happy Kids	-100.00	\N	\N	120	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.915386	2026-02-13 10:18:45.91539
 3434	5	2024-11	2024-11-09 00:00:00	Cafeteria Quiosque Go	-59.90	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.915392	2026-02-13 10:18:45.915395
 3452	3	2024-10	2024-09-20 00:00:00	Conectcar	-150.00	\N	\N	58	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.92222	2026-03-20 23:18:56.51887
@@ -8229,7 +8235,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 3484	8	2024-10	2024-09-16 00:00:00	Downloadhelper Net	-106.31	\N	\N	100	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.93815	2026-02-13 14:03:21.58348
 3509	4	2024-10	2024-09-28 00:00:00	Dany Ellen Dos Santos	-116.00	\N	\N	100	0.00	3	\N	1	1	1	2026-02-13 10:18:45.948134	2026-02-13 14:03:21.583482
 3499	4	2024-10	2024-09-19 00:00:00	Ana Claudia Rosa De Me	-244.40	\N	\N	100	0.00	3	\N	1	1	1	2026-02-13 10:18:45.94346	2026-02-13 14:03:29.457921
-3533	7	2024-10	2024-09-22 00:00:00	Mercado Qualidade	-196.76	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:45.956011	2026-02-13 10:18:45.956013
 3534	7	2024-10	2024-09-22 00:00:00	Supermercado Brasil Fr	-53.92	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:45.956015	2026-02-13 10:18:45.956017
 3535	7	2024-10	2024-09-22 00:00:00	Casa De Carnes Kl	-91.30	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:45.956019	2026-02-13 10:18:45.956021
 3538	7	2024-10	2024-09-23 00:00:00	Padaria Alema	-75.29	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:45.959381	2026-02-13 10:18:45.959386
@@ -8378,15 +8383,12 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 3691	7	2024-09	2024-08-20 00:00:00	Examine	-161.81	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.00884	2026-02-13 10:18:46.008842
 5868	5	2026-01	2025-12-22 00:00:00	Longsheng Dai Me	-23.00	\N	\N	100	100.00	\N	\N	1	1	1	2026-02-13 10:18:55.342318	2026-03-20 23:21:24.786508
 3693	7	2024-09	2024-08-24 00:00:00	Examine	-329.57	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.012893	2026-02-13 10:18:46.012898
-3694	7	2024-09	2024-08-25 00:00:00	Mercado Qualidade	-199.24	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.012901	2026-02-13 10:18:46.012903
 3695	7	2024-09	2024-08-26 00:00:00	Padaria Alema	-13.21	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.012905	2026-02-13 10:18:46.012907
 3696	7	2024-09	2024-08-27 00:00:00	Padaria Alema	-30.61	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.012909	2026-02-13 10:18:46.012911
 3697	7	2024-09	2024-08-27 00:00:00	Kombidafruta	-132.00	\N	\N	9	50.00	1	\N	1	1	1	2026-02-13 10:18:46.012914	2026-02-13 10:18:46.012916
-3698	7	2024-09	2024-08-27 00:00:00	Mercado Qualidade	-206.27	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.012918	2026-02-13 10:18:46.01292
 3699	7	2024-09	2024-08-27 00:00:00	Ton Brunasso Gou	-24.00	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.012922	2026-02-13 10:18:46.012924
 3700	7	2024-09	2024-08-29 00:00:00	Supermercado Brasil Fr	-153.71	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.012926	2026-02-13 10:18:46.012928
 3701	7	2024-09	2024-08-30 00:00:00	Empório Lila	-39.38	\N	\N	11	50.00	1	\N	1	1	1	2026-02-13 10:18:46.01293	2026-02-13 10:18:46.012932
-3704	7	2024-09	2024-09-01 00:00:00	Mercado Qualidade	-260.07	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.016293	2026-02-13 10:18:46.016298
 3705	7	2024-09	2024-09-02 00:00:00	Gas Ecia	-105.00	\N	\N	123	50.00	1	\N	1	1	1	2026-02-13 10:18:46.016301	2026-02-13 10:18:46.016303
 3706	7	2024-09	2024-09-02 00:00:00	Padaria Alema	-34.51	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.016305	2026-02-13 10:18:46.016307
 3707	7	2024-09	2024-09-03 00:00:00	Kombi Das Frutas	-107.00	\N	\N	9	50.00	1	\N	1	1	1	2026-02-13 10:18:46.016309	2026-02-13 10:18:46.016312
@@ -8446,7 +8448,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 3764	3	2025-01	2024-12-23 00:00:00	Frios De Gea	-26.95	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.041317	2026-02-13 10:18:46.041318
 3766	3	2025-01	2024-12-24 00:00:00	Crazy Shake	-52.50	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.04308	2026-02-13 10:18:46.043084
 3767	3	2025-01	2024-12-25 00:00:00	Nintendo	-99.87	\N	\N	117	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.043085	2026-02-13 10:18:46.043087
-3768	3	2025-01	2024-12-27 00:00:00	Mercado Qualidade	-258.84	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.043088	2026-02-13 10:18:46.04309
 3769	3	2025-01	2024-12-28 00:00:00	Pacheco S Restaurante	-263.72	\N	\N	16	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.043091	2026-02-13 10:18:46.043092
 3770	3	2025-01	2024-12-28 00:00:00	Drogal	-20.50	\N	\N	142	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.043094	2026-02-13 10:18:46.043095
 3771	3	2025-01	2024-12-29 00:00:00	Jack Brown Hamburgueri	-140.90	\N	\N	16	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.043096	2026-02-13 10:18:46.043098
@@ -8690,7 +8691,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 4022	4	2025-02	2025-02-11 00:00:00	Empório Santa Ana	-77.88	\N	\N	11	0.00	3	\N	1	1	1	2026-02-13 10:18:46.154922	2026-02-13 10:18:46.154924
 4024	4	2025-02	2025-02-12 00:00:00	Casa E Video	-154.56	\N	\N	135	0.00	3	\N	1	1	1	2026-02-13 10:18:46.154931	2026-02-13 10:18:46.154934
 4025	7	2025-02	2025-01-14 00:00:00	Padaria Alema	-17.29	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.154936	2026-02-13 10:18:46.154939
-4026	7	2025-02	2025-01-14 00:00:00	Mercado Qualidade	-288.93	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.154941	2026-02-13 10:18:46.154943
 4027	7	2025-02	2025-01-14 00:00:00	Ton Brunasso Gou	-12.00	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.154946	2026-02-13 10:18:46.154948
 4028	7	2025-02	2025-01-14 00:00:00	Empório Lila	-39.96	\N	\N	11	50.00	1	\N	1	1	1	2026-02-13 10:18:46.154951	2026-02-13 10:18:46.154954
 4029	7	2025-02	2025-01-18 00:00:00	Casa De Carnes Kl	-431.00	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:46.154956	2026-02-13 10:18:46.154958
@@ -8887,7 +8887,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 4234	5	2025-03	2025-02-20 00:00:00	Examine	-522.05	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.246894	2026-02-13 10:18:46.246899
 4235	5	2025-03	2025-02-21 00:00:00	Seu Bento	-114.20	\N	\N	16	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.246901	2026-02-13 10:18:46.246903
 4236	5	2025-03	2025-02-24 00:00:00	Farmazul	-142.04	\N	\N	142	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.246905	2026-02-13 10:18:46.246907
-4237	5	2025-03	2025-02-26 00:00:00	Mercado Qualidade	-460.80	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.24691	2026-02-13 10:18:46.246912
 4240	5	2025-03	2025-02-27 00:00:00	Seu Bento	-65.80	\N	\N	16	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.249375	2026-02-13 10:18:46.249379
 4241	5	2025-03	2025-02-28 00:00:00	Restaurante Plataforma	-55.00	\N	\N	16	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.249381	2026-02-13 10:18:46.249383
 4209	7	2025-03	2025-03-04 00:00:00	Roseli Schiavi Franco	-32.00	\N	\N	100	50.00	1	\N	1	1	1	2026-02-13 10:18:46.232587	2026-02-13 14:03:01.921069
@@ -8998,13 +8997,11 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 4349	7	2025-04	2025-03-25 00:00:00	Petiscao	-68.00	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:46.281141	2026-02-13 10:18:46.281143
 4350	7	2025-04	2025-03-25 00:00:00	Empório Lila	-41.57	\N	\N	11	50.00	1	\N	1	1	1	2026-02-13 10:18:46.281146	2026-02-13 10:18:46.281148
 4351	7	2025-04	2025-03-25 00:00:00	Brunasso Gourmet	-12.00	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.28115	2026-02-13 10:18:46.281153
-4352	7	2025-04	2025-03-26 00:00:00	Mercado Qualidade	-141.56	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.281155	2026-02-13 10:18:46.281157
 4314	4	2025-04	2024-12-12 00:00:00	Loja Primavera	-185.94	5	5	162	0.00	3	\N	1	1	1	2026-02-13 10:18:46.279617	2026-03-20 21:48:57.7599
 4354	7	2025-04	2025-03-28 00:00:00	Zul Digital	-20.00	\N	\N	52	50.00	1	\N	1	1	1	2026-02-13 10:18:46.286989	2026-02-13 10:18:46.286997
 4355	7	2025-04	2025-03-28 00:00:00	Examine	-421.51	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.286999	2026-02-13 10:18:46.287002
 4356	7	2025-04	2025-03-17 00:00:00	Zul Digital	-60.00	\N	\N	52	50.00	1	\N	1	1	1	2026-02-13 10:18:46.287005	2026-02-13 10:18:46.287007
 4357	7	2025-04	2025-03-17 00:00:00	Padaria Alema	-53.27	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.287009	2026-02-13 10:18:46.287012
-4358	7	2025-04	2025-03-18 00:00:00	Mercado Qualidade	-379.98	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.287015	2026-02-13 10:18:46.287017
 4359	7	2025-04	2025-03-19 00:00:00	Supermercado Brasil Fr	-110.16	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.28702	2026-02-13 10:18:46.287022
 4360	7	2025-04	2025-03-19 00:00:00	Utilar Presentes	-122.16	\N	\N	115	50.00	1	\N	1	1	1	2026-02-13 10:18:46.287025	2026-02-13 10:18:46.287027
 4361	7	2025-04	2025-03-20 00:00:00	Baby Pastelaria	-120.20	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:46.287029	2026-02-13 10:18:46.287032
@@ -9019,7 +9016,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 4370	7	2025-04	2025-03-24 00:00:00	Nova Fazenda	-18.53	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.291923	2026-02-13 10:18:46.29193
 4371	7	2025-04	2025-03-25 00:00:00	Marco Antonio Contato	-12.00	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:46.291933	2026-02-13 10:18:46.291935
 4372	7	2025-04	2025-03-25 00:00:00	Contato Materiais De	-64.00	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:46.291938	2026-02-13 10:18:46.29194
-4373	7	2025-04	2025-03-29 00:00:00	Mercado Qualidade	-163.40	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.291942	2026-02-13 10:18:46.291945
 4374	7	2025-04	2025-03-29 00:00:00	Marco Antonio Contato	-37.60	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:46.291947	2026-02-13 10:18:46.291949
 4375	7	2025-04	2025-03-30 00:00:00	Supermercado Brasil Fr	-78.50	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.291952	2026-02-13 10:18:46.291954
 4376	7	2025-04	2025-04-01 00:00:00	Padaria Alema	-17.24	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.291956	2026-02-13 10:18:46.291959
@@ -9033,7 +9029,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 4384	7	2025-04	2025-04-08 00:00:00	Padaria Alema	-14.84	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.291996	2026-02-13 10:18:46.291998
 4385	7	2025-04	2025-04-09 00:00:00	Supermercado Brasil Fr	-101.71	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.292001	2026-02-13 10:18:46.292003
 4386	7	2025-04	2025-04-09 00:00:00	Padaria Alema	-71.30	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.292005	2026-02-13 10:18:46.292007
-4387	7	2025-04	2025-04-11 00:00:00	Mercado Qualidade	-273.61	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.29201	2026-02-13 10:18:46.292012
 4388	7	2025-04	2025-04-11 00:00:00	Elisabete Beatriza	-76.00	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.292014	2026-02-13 10:18:46.292017
 4389	7	2025-04	2025-04-11 00:00:00	Supermercado Savegnago	-181.53	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.292019	2026-02-13 10:18:46.292022
 4390	5	2025-04	2024-06-25 00:00:00	Agua Viva	-225.00	10	12	114	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.294667	2026-02-13 10:18:46.294672
@@ -9165,15 +9160,12 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 4535	7	2025-05	2025-04-29 00:00:00	Zul Digital	-20.00	\N	\N	52	50.00	1	\N	1	1	1	2026-02-13 10:18:46.363183	2026-02-13 10:18:46.363185
 4536	7	2025-05	2025-05-03 00:00:00	Examine	-133.80	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.363187	2026-02-13 10:18:46.363188
 4557	5	2025-05	2025-04-24 00:00:00	Vlcs	-85.41	\N	\N	162	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.376045	2026-03-20 23:19:41.857723
-4538	7	2025-05	2025-05-05 00:00:00	Mercado Qualidade	-245.25	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.366487	2026-02-13 10:18:46.366496
 4506	4	2025-05	2025-04-30 00:00:00	Cast Ra Tim Bum	-128.00	\N	\N	115	0.00	3	\N	1	1	1	2026-02-13 10:18:46.351746	2026-03-20 23:20:06.668711
 4507	4	2025-05	2025-04-30 00:00:00	Claudiamelo	-199.80	\N	\N	162	0.00	3	\N	1	1	1	2026-02-13 10:18:46.351753	2026-03-20 23:20:14.903623
 4541	7	2025-05	2025-05-08 00:00:00	Marco Antonio Contato	-81.00	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:46.369804	2026-02-13 10:18:46.369812
 4542	7	2025-05	2025-05-09 00:00:00	Elisabete Beatriz Abi	-77.50	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.369814	2026-02-13 10:18:46.369816
 4543	7	2025-05	2025-05-09 00:00:00	Examine	-94.69	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.369818	2026-02-13 10:18:46.369821
 4544	7	2025-05	2025-05-09 00:00:00	Nova Fazenda	-35.61	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.369823	2026-02-13 10:18:46.369826
-4545	7	2025-05	2025-05-10 00:00:00	Mercado Qualidade	-350.63	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.369828	2026-02-13 10:18:46.36983
-4546	7	2025-05	2025-05-13 00:00:00	Mercado Qualidade	-115.87	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.369832	2026-02-13 10:18:46.369835
 4547	5	2025-05	2024-06-25 00:00:00	Agua Viva	-225.00	11	12	114	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.372065	2026-02-13 10:18:46.372071
 4548	5	2025-05	2025-03-31 00:00:00	Tuti Guti Moda Infanti	-298.06	2	3	162	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.372073	2026-02-13 10:18:46.372074
 4549	5	2025-05	2025-04-14 00:00:00	Vila Dos Pescados	-347.86	\N	\N	15	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.373595	2026-02-13 10:18:46.373602
@@ -9192,15 +9184,12 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 4517	7	2025-05	2025-04-27 00:00:00	Erika Cristina Laras	-220.00	\N	\N	100	50.00	1	\N	1	1	1	2026-02-13 10:18:46.355413	2026-02-13 14:03:17.106585
 4520	7	2025-05	2025-04-15 00:00:00	Deliciasdomil	-44.00	\N	\N	100	50.00	1	\N	1	1	1	2026-02-13 10:18:46.357747	2026-02-13 14:03:21.583524
 4522	7	2025-05	2025-04-15 00:00:00	Deliciasdomil	-12.00	\N	\N	100	50.00	1	\N	1	1	1	2026-02-13 10:18:46.3593	2026-02-13 14:03:21.583526
-4563	5	2025-05	2025-04-30 00:00:00	Mercado Qualidade	-541.62	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.378793	2026-02-13 10:18:46.378795
 4565	5	2025-05	2025-05-02 00:00:00	Sapataria Lago Azul	-161.91	\N	\N	162	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.378802	2026-02-13 10:18:46.378805
 4566	5	2025-05	2025-05-05 00:00:00	La Vie Kids	-212.00	\N	\N	163	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.378807	2026-02-13 10:18:46.37881
 4567	5	2025-05	2025-05-07 00:00:00	Brasil Cacau	-41.00	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.378812	2026-02-13 10:18:46.378814
 4568	5	2025-05	2025-05-07 00:00:00	Brasil Cacau	-19.00	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.378817	2026-02-13 10:18:46.378819
 4569	5	2025-05	2025-05-07 00:00:00	Empório Nosso Natural	-72.80	\N	\N	11	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.378822	2026-02-13 10:18:46.378824
 4570	5	2025-05	2025-05-09 00:00:00	Casa De Bolo	-72.00	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.378827	2026-02-13 10:18:46.378829
-4571	5	2025-05	2025-05-11 00:00:00	Mercado Qualidade	-544.43	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.378832	2026-02-13 10:18:46.378834
-4572	5	2025-05	2025-05-11 00:00:00	Mercado Qualidade	-17.80	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.378837	2026-02-13 10:18:46.378839
 4573	5	2025-05	2025-05-12 00:00:00	Sao Miguel Arcanjo	-80.10	\N	\N	115	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.378842	2026-02-13 10:18:46.378844
 4574	5	2025-05	2025-05-12 00:00:00	Padaria Alema	-39.12	\N	\N	14	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.378847	2026-02-13 10:18:46.378849
 4577	1	2025-06	2025-02-14 00:00:00	Jr Cosmeticos	-533.23	4	4	140	0.00	2	\N	1	1	1	2026-02-13 10:18:46.381443	2026-02-13 10:18:46.381446
@@ -9232,8 +9221,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 4615	3	2025-06	2025-06-06 00:00:00	Jack Brown Hamburgueri	-124.00	\N	\N	16	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.39781	2026-02-13 10:18:46.397811
 4616	3	2025-06	2025-06-06 00:00:00	Auto Posto Petro Sol	-332.16	\N	\N	50	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.397813	2026-02-13 10:18:46.397814
 4617	3	2025-06	2025-06-07 00:00:00	Loterias	-54.00	\N	\N	111	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.397815	2026-02-13 10:18:46.397817
-4618	3	2025-06	2025-06-08 00:00:00	Mercado Qualidade	-336.33	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.397818	2026-02-13 10:18:46.397819
-4619	3	2025-06	2025-06-08 00:00:00	Mercado Qualidade	-109.39	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.397821	2026-02-13 10:18:46.397822
 4620	3	2025-06	2025-06-08 00:00:00	Latte Ricco	-85.00	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.397824	2026-02-13 10:18:46.397825
 4621	3	2025-06	2025-06-08 00:00:00	Taiko Restaurante	-24.00	\N	\N	16	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.397827	2026-02-13 10:18:46.397828
 4622	3	2025-06	2025-06-09 00:00:00	Covabra	-70.68	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.397829	2026-02-13 10:18:46.397831
@@ -9291,13 +9278,11 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 4676	7	2025-06	2025-05-16 00:00:00	Empório Lila	-44.39	\N	\N	11	50.00	1	\N	1	1	1	2026-02-13 10:18:46.421505	2026-02-13 10:18:46.421509
 4677	7	2025-06	2025-05-17 00:00:00	Elisabete Beatriza	-102.00	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.421511	2026-02-13 10:18:46.421514
 4678	7	2025-06	2025-05-17 00:00:00	Pizzaria Do Roberto	-107.10	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:46.421516	2026-02-13 10:18:46.421518
-4679	7	2025-06	2025-05-18 00:00:00	Mercado Qualidade	-168.63	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.42152	2026-02-13 10:18:46.421522
 4680	7	2025-06	2025-05-19 00:00:00	Examine	-235.22	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.421524	2026-02-13 10:18:46.421526
 4681	7	2025-06	2025-05-24 00:00:00	Casa De Carnes Kl	-821.15	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:46.421528	2026-02-13 10:18:46.421531
 4682	7	2025-06	2025-05-24 00:00:00	Jp Restaurante Ara	-152.99	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:46.421533	2026-02-13 10:18:46.421535
 4683	7	2025-06	2025-05-27 00:00:00	Supermercado Brasil Fr	-48.03	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.421538	2026-02-13 10:18:46.42154
 4684	7	2025-06	2025-05-27 00:00:00	Zul 20 Cartoes 1fb7za	-20.00	\N	\N	52	50.00	1	\N	1	1	1	2026-02-13 10:18:46.421542	2026-02-13 10:18:46.421544
-4685	7	2025-06	2025-05-29 00:00:00	Mercado Qualidade	-215.91	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.421546	2026-02-13 10:18:46.421548
 4686	7	2025-06	2025-05-30 00:00:00	Elisabete Beatriza	-100.00	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.421551	2026-02-13 10:18:46.421553
 4687	7	2025-06	2025-06-02 00:00:00	Padaria Alema	-32.18	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.421555	2026-02-13 10:18:46.421557
 4688	7	2025-06	2025-06-03 00:00:00	Casa De Carnes Kl	-263.60	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:46.421559	2026-02-13 10:18:46.421561
@@ -9314,8 +9299,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 4690	7	2025-06	2025-05-22 00:00:00	Elisabete Beatriza	-54.00	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.421568	2026-02-13 10:18:46.42157
 4691	7	2025-06	2025-05-22 00:00:00	Marco Antonio Contato	-34.00	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:46.421572	2026-02-13 10:18:46.421574
 4692	7	2025-06	2025-05-22 00:00:00	Pastelaria Roberto Jap	-129.30	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:46.421576	2026-02-13 10:18:46.421578
-4693	7	2025-06	2025-05-23 00:00:00	Mercado Qualidade	-197.86	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.421581	2026-02-13 10:18:46.421583
-4694	7	2025-06	2025-05-23 00:00:00	Mercado Qualidade	-538.81	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.421585	2026-02-13 10:18:46.421587
 4695	7	2025-06	2025-05-23 00:00:00	Crislanches	-135.00	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:46.421589	2026-02-13 10:18:46.421591
 4696	7	2025-06	2025-06-06 00:00:00	Empório Lila	-41.71	\N	\N	11	50.00	1	\N	1	1	1	2026-02-13 10:18:46.421593	2026-02-13 10:18:46.421595
 4697	7	2025-06	2025-06-06 00:00:00	Brunasso Gourmet	-42.00	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.421597	2026-02-13 10:18:46.4216
@@ -9337,12 +9320,10 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 4717	5	2025-06	2025-05-23 00:00:00	Gourmet Qualidade	-41.70	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.430493	2026-02-13 10:18:46.430496
 4718	5	2025-06	2025-05-26 00:00:00	Olifant	-180.00	\N	\N	148	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.430498	2026-02-13 10:18:46.4305
 4719	5	2025-06	2025-05-26 00:00:00	Gourmet Qualidade	-41.30	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.430503	2026-02-13 10:18:46.430505
-4720	5	2025-06	2025-05-26 00:00:00	Mercado Qualidade	-17.45	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.430507	2026-02-13 10:18:46.430509
 4721	5	2025-06	2025-05-28 00:00:00	Seu Bento	-39.40	\N	\N	16	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.430512	2026-02-13 10:18:46.430514
 4704	5	2025-06	2025-04-26 00:00:00	Loja Primavera	-271.07	2	4	162	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.424948	2026-03-20 21:48:57.7599
 4723	5	2025-06	2025-06-03 00:00:00	Polo Sul	-404.99	\N	\N	162	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.432854	2026-02-13 10:18:46.432859
 4724	5	2025-06	2025-06-03 00:00:00	Gourmet Qualidade	-119.00	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.432861	2026-02-13 10:18:46.432862
-4725	5	2025-06	2025-06-03 00:00:00	Mercado Qualidade	-225.51	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.432864	2026-02-13 10:18:46.432865
 4726	5	2025-06	2025-06-03 00:00:00	Twins Store	-360.00	\N	\N	162	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.432866	2026-02-13 10:18:46.432868
 4727	5	2025-06	2025-06-04 00:00:00	Apm	-330.00	\N	\N	89	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.432869	2026-02-13 10:18:46.43287
 4728	5	2025-06	2025-06-04 00:00:00	Neide Roupas	-185.94	\N	\N	162	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.432872	2026-02-13 10:18:46.432873
@@ -9475,8 +9456,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 4869	4	2025-07	2025-07-12 00:00:00	Supermercado Savegnago	-263.63	\N	\N	18	0.00	3	\N	1	1	1	2026-02-13 10:18:46.489395	2026-02-13 10:18:46.489397
 4870	7	2025-07	2025-06-13 00:00:00	Jp Restaurante Ara	-221.99	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:46.4894	2026-02-13 10:18:46.489402
 4871	7	2025-07	2025-06-15 00:00:00	Covabra	-179.54	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.489405	2026-02-13 10:18:46.489407
-4872	7	2025-07	2025-06-15 00:00:00	Mercado Qualidade	-138.66	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.489409	2026-02-13 10:18:46.489412
-4873	7	2025-07	2025-06-17 00:00:00	Mercado Qualidade	-452.80	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.489414	2026-02-13 10:18:46.489417
 4874	7	2025-07	2025-06-18 00:00:00	Gas Ecia	-115.00	\N	\N	123	50.00	1	\N	1	1	1	2026-02-13 10:18:46.489419	2026-02-13 10:18:46.489421
 4875	7	2025-07	2025-06-18 00:00:00	Crislanches	-53.00	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:46.489423	2026-02-13 10:18:46.489425
 4876	7	2025-07	2025-06-20 00:00:00	Elisabete Beatriza	-66.00	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.489428	2026-02-13 10:18:46.48943
@@ -9492,7 +9471,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 4883	7	2025-07	2025-06-20 00:00:00	Brunasso Gourmet	-20.00	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.489466	2026-02-13 10:18:46.489468
 4884	7	2025-07	2025-06-21 00:00:00	Roberto De Moraes E	-58.00	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:46.48947	2026-02-13 10:18:46.489473
 4885	7	2025-07	2025-06-22 00:00:00	Casa De Carnes Kl	-420.00	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:46.489475	2026-02-13 10:18:46.489477
-4886	7	2025-07	2025-06-23 00:00:00	Mercado Qualidade	-251.34	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.48948	2026-02-13 10:18:46.489482
 4887	7	2025-07	2025-06-25 00:00:00	Marco Antonio Contato	-20.00	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:46.489484	2026-02-13 10:18:46.489486
 4888	7	2025-07	2025-06-26 00:00:00	Supermercado Savegnago	-369.02	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.489489	2026-02-13 10:18:46.489491
 4889	7	2025-07	2025-06-28 00:00:00	Contato Materiais De	-111.00	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:46.489494	2026-02-13 10:18:46.489496
@@ -9500,7 +9478,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 4891	7	2025-07	2025-07-01 00:00:00	Brunasso Gourmet	-12.00	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.489504	2026-02-13 10:18:46.489507
 4892	7	2025-07	2025-07-02 00:00:00	Examine	-350.45	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.489509	2026-02-13 10:18:46.489514
 4893	7	2025-07	2025-07-03 00:00:00	Elisabete Beatriza	-122.00	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.489516	2026-02-13 10:18:46.489519
-4895	7	2025-07	2025-07-05 00:00:00	Mercado Qualidade	-509.68	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.49611	2026-02-13 10:18:46.496116
 4896	7	2025-07	2025-07-07 00:00:00	Nova Fazenda	-36.00	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.496119	2026-02-13 10:18:46.496121
 4897	7	2025-07	2025-07-08 00:00:00	Brunasso Gourmet	-24.00	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.496123	2026-02-13 10:18:46.496125
 4898	7	2025-07	2025-07-09 00:00:00	Examine	-662.32	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.496127	2026-02-13 10:18:46.496129
@@ -9510,7 +9487,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 4902	7	2025-07	2025-07-12 00:00:00	Elisabete Beatriza	-106.00	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.496146	2026-02-13 10:18:46.496148
 4903	7	2025-07	2025-07-12 00:00:00	Savegnago	-217.05	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.49615	2026-02-13 10:18:46.496152
 4904	7	2025-07	2025-07-13 00:00:00	Padaria Alema	-24.09	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.496155	2026-02-13 10:18:46.496157
-4906	7	2025-07	2025-07-13 00:00:00	Mercado Qualidade	-411.90	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.499304	2026-02-13 10:18:46.499308
 4909	5	2025-07	2025-06-18 00:00:00	Textil Abril Filial 18	-34.00	\N	\N	162	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.500969	2026-02-13 10:18:46.500974
 4910	5	2025-07	2025-06-20 00:00:00	Authentika Bolsas	-240.00	1	2	162	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.501779	2026-02-13 10:18:46.501783
 4911	5	2025-07	2025-06-20 00:00:00	Authentika Bolsas	-240.00	1	2	162	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.501785	2026-02-13 10:18:46.501786
@@ -9628,7 +9604,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 5030	7	2025-08	2025-07-15 00:00:00	Casa De Carnes Kl	-609.00	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:46.557349	2026-02-13 10:18:46.557351
 5031	7	2025-08	2025-07-17 00:00:00	Supermercado Savegnago	-417.98	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.557352	2026-02-13 10:18:46.557353
 5032	7	2025-08	2025-07-17 00:00:00	Hamburgueria Escher	-195.40	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:46.557355	2026-02-13 10:18:46.557356
-5033	7	2025-08	2025-07-18 00:00:00	Mercado Qualidade	-335.26	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.557357	2026-02-13 10:18:46.557359
 5034	7	2025-08	2025-07-18 00:00:00	Restaurante Plataforma	-61.39	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:46.55736	2026-02-13 10:18:46.557361
 5035	7	2025-08	2025-07-18 00:00:00	Pizzaria Don Ceccatto	-133.00	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:46.557363	2026-02-13 10:18:46.557364
 5036	7	2025-08	2025-07-19 00:00:00	Elisabete Beatriza	-98.00	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.557365	2026-02-13 10:18:46.557367
@@ -9638,11 +9613,9 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 5040	7	2025-08	2025-07-22 00:00:00	Brunasso Gourmet	-12.00	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.557376	2026-02-13 10:18:46.557378
 5041	7	2025-08	2025-07-22 00:00:00	Hortifrittidowill	-16.00	\N	\N	9	50.00	1	\N	1	1	1	2026-02-13 10:18:46.557379	2026-02-13 10:18:46.55738
 5042	7	2025-08	2025-07-22 00:00:00	Empório Lila	-66.00	\N	\N	11	50.00	1	\N	1	1	1	2026-02-13 10:18:46.557382	2026-02-13 10:18:46.557383
-5043	7	2025-08	2025-07-22 00:00:00	Mercado Qualidade	-274.83	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.557385	2026-02-13 10:18:46.557386
 5044	7	2025-08	2025-07-23 00:00:00	Contato Materiais De	-43.20	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:46.557388	2026-02-13 10:18:46.557389
 5045	7	2025-08	2025-07-23 00:00:00	Gas Ecia	-115.00	\N	\N	123	50.00	1	\N	1	1	1	2026-02-13 10:18:46.557391	2026-02-13 10:18:46.557392
 5046	7	2025-08	2025-07-30 00:00:00	Zul Digital	-15.00	\N	\N	52	50.00	1	\N	1	1	1	2026-02-13 10:18:46.557394	2026-02-13 10:18:46.557395
-5047	7	2025-08	2025-07-30 00:00:00	Mercado Qualidade	-272.98	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.557397	2026-02-13 10:18:46.557398
 5048	7	2025-08	2025-07-30 00:00:00	Savegnago	-17.95	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.5574	2026-02-13 10:18:46.557401
 5049	7	2025-08	2025-07-31 00:00:00	Elisabete Beatriza	-117.00	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.557403	2026-02-13 10:18:46.557404
 5050	7	2025-08	2025-07-31 00:00:00	Marco Antonio Contato	-62.40	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:46.557406	2026-02-13 10:18:46.557407
@@ -9662,7 +9635,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 5068	7	2025-08	2025-07-26 00:00:00	Padaria Alema	-17.51	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.566623	2026-02-13 10:18:46.566627
 5069	7	2025-08	2025-07-26 00:00:00	Supermercado Brasil Fr	-71.89	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.566629	2026-02-13 10:18:46.566631
 5070	7	2025-08	2025-07-26 00:00:00	Mc Donald's	-190.90	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:46.566633	2026-02-13 10:18:46.566635
-5071	7	2025-08	2025-07-27 00:00:00	Mercado Qualidade	-396.82	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.566637	2026-02-13 10:18:46.56664
 5072	7	2025-08	2025-07-29 00:00:00	Casa De Carnes Kl	-105.00	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:46.566642	2026-02-13 10:18:46.566644
 5073	7	2025-08	2025-07-30 00:00:00	Contato Materiais De	-147.40	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:46.566646	2026-02-13 10:18:46.566647
 5074	7	2025-08	2025-08-09 00:00:00	Seo Pacheco Petisc	-135.88	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:46.56665	2026-02-13 10:18:46.566651
@@ -9671,7 +9643,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 5066	7	2025-08	2025-07-25 00:00:00	Deliciasdomil	-45.00	\N	\N	100	50.00	1	\N	1	1	1	2026-02-13 10:18:46.565437	2026-02-13 14:03:21.583563
 5075	7	2025-08	2025-08-09 00:00:00	Supermercado Brasil Fr	-326.72	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.566653	2026-02-13 10:18:46.566655
 5076	7	2025-08	2025-08-10 00:00:00	Casa De Carnes Kl	-194.00	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:46.566657	2026-02-13 10:18:46.566659
-5077	7	2025-08	2025-08-10 00:00:00	Mercado Qualidade	-576.26	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.566661	2026-02-13 10:18:46.566663
 5078	7	2025-08	2025-08-12 00:00:00	Zul Regularizacao 1k8z	-9.00	\N	\N	52	50.00	1	\N	1	1	1	2026-02-13 10:18:46.566666	2026-02-13 10:18:46.566668
 5079	7	2025-08	2025-08-13 00:00:00	Marco Antonio Contato	-67.00	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:46.56667	2026-02-13 10:18:46.566672
 5080	7	2025-08	2025-08-13 00:00:00	Nova Fazenda	-53.43	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.566674	2026-02-13 10:18:46.566676
@@ -9711,7 +9682,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 5118	5	2025-08	2025-08-06 00:00:00	Brasil Cacau	-60.98	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.58158	2026-02-13 10:18:46.581582
 5119	5	2025-08	2025-08-08 00:00:00	Drogal	-129.06	\N	\N	142	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.581583	2026-02-13 10:18:46.581584
 5120	5	2025-08	2025-08-10 00:00:00	Taiko Restaurante	-229.90	\N	\N	16	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.581586	2026-02-13 10:18:46.581587
-5121	5	2025-08	2025-08-10 00:00:00	Mercado Qualidade	-251.50	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.581589	2026-02-13 10:18:46.58159
 5122	5	2025-08	2025-08-13 00:00:00	Twinstore	-300.00	1	2	162	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.582821	2026-02-13 10:18:46.582825
 5124	1	2025-09	2025-05-16 00:00:00	Claret Mat Eletricos	-232.00	4	5	132	0.00	2	\N	1	1	1	2026-02-13 10:18:46.583589	2026-02-13 10:18:46.58359
 5125	1	2025-09	2025-05-16 00:00:00	Claret Mat Eletricos	-41.40	4	5	132	0.00	2	\N	1	1	1	2026-02-13 10:18:46.583592	2026-02-13 10:18:46.583593
@@ -9743,7 +9713,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 5156	3	2025-09	2025-09-04 00:00:00	Montana	-47.90	\N	\N	16	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.603225	2026-02-13 10:18:46.603233
 5157	3	2025-09	2025-09-06 00:00:00	Loterias	-77.50	\N	\N	111	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.603235	2026-02-13 10:18:46.603237
 5158	3	2025-09	2025-09-06 00:00:00	Padaria Alema	-36.50	\N	\N	14	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.60324	2026-02-13 10:18:46.603242
-5159	3	2025-09	2025-09-07 00:00:00	Mercado Qualidade	-49.99	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.603245	2026-02-13 10:18:46.603247
 5160	3	2025-09	2025-09-07 00:00:00	Padaria Fiorella Pf2	-97.19	\N	\N	14	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.603249	2026-02-13 10:18:46.603251
 5161	3	2025-09	2025-09-08 00:00:00	Top Heroes	-9.90	\N	\N	117	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.603253	2026-02-13 10:18:46.603255
 5162	3	2025-09	2025-09-10 00:00:00	Claro	-60.11	\N	\N	130	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.603257	2026-02-13 10:18:46.603259
@@ -9793,30 +9762,25 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 5204	7	2025-09	2025-08-15 00:00:00	Examine	-84.89	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.621696	2026-02-13 10:18:46.621697
 5205	7	2025-09	2025-08-16 00:00:00	Supermercado Brasil Fr	-110.81	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.621699	2026-02-13 10:18:46.6217
 5206	7	2025-09	2025-08-16 00:00:00	Marco Antonio Contato	-16.00	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:46.621701	2026-02-13 10:18:46.621703
-5207	7	2025-09	2025-08-17 00:00:00	Mercado Qualidade	-131.72	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.621704	2026-02-13 10:18:46.621705
 5208	7	2025-09	2025-08-17 00:00:00	Casa De Carnes Kl	-343.00	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:46.621707	2026-02-13 10:18:46.621708
 5210	7	2025-09	2025-08-19 00:00:00	Supermercado Savegnago	-470.32	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.62508	2026-02-13 10:18:46.625086
 5211	7	2025-09	2025-08-19 00:00:00	Petiscao	-90.50	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:46.625089	2026-02-13 10:18:46.625091
 5212	7	2025-09	2025-08-21 00:00:00	Elisabete Beatriza	-60.00	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.625093	2026-02-13 10:18:46.625095
 5213	7	2025-09	2025-08-22 00:00:00	Examine	-111.35	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.625097	2026-02-13 10:18:46.625099
-5214	7	2025-09	2025-08-23 00:00:00	Mercado Qualidade	-182.10	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.625101	2026-02-13 10:18:46.625104
 5215	7	2025-09	2025-08-23 00:00:00	Mc Donald's	-233.70	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:46.625106	2026-02-13 10:18:46.625108
 5216	7	2025-09	2025-08-28 00:00:00	Elisabete Beatriza	-62.50	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.62511	2026-02-13 10:18:46.625112
 5217	7	2025-09	2025-08-29 00:00:00	Supermercado Brasil Fr	-261.41	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.625115	2026-02-13 10:18:46.625117
-5218	7	2025-09	2025-08-29 00:00:00	Mercado Qualidade	-171.74	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.625119	2026-02-13 10:18:46.625121
 5219	7	2025-09	2025-08-29 00:00:00	Fridas Burguer	-218.40	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:46.625123	2026-02-13 10:18:46.625126
 5220	7	2025-09	2025-09-01 00:00:00	Examine	-528.58	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.625128	2026-02-13 10:18:46.625129
 5221	7	2025-09	2025-09-06 00:00:00	Elisabete Beatriza	-83.00	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.625132	2026-02-13 10:18:46.625134
 5222	7	2025-09	2025-09-06 00:00:00	Marco Antonio Contato	-120.00	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:46.625136	2026-02-13 10:18:46.625138
 5223	7	2025-09	2025-09-06 00:00:00	Casa De Carnes Kl	-341.00	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:46.62514	2026-02-13 10:18:46.625142
 5224	7	2025-09	2025-09-06 00:00:00	Brunasso Gourmet	-25.00	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.625145	2026-02-13 10:18:46.625147
-5226	7	2025-09	2025-09-07 00:00:00	Mercado Qualidade	-296.91	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.628535	2026-02-13 10:18:46.62854
 5227	7	2025-09	2025-09-08 00:00:00	Baby Pastelaria	-254.40	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:46.628543	2026-02-13 10:18:46.628545
 5228	7	2025-09	2025-09-09 00:00:00	Examine	-309.85	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.628548	2026-02-13 10:18:46.62855
 5229	7	2025-09	2025-09-10 00:00:00	Elisabete Beatriza	-222.00	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.628552	2026-02-13 10:18:46.628554
 5230	7	2025-09	2025-09-10 00:00:00	Marco Antonio Contato	-47.70	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:46.628557	2026-02-13 10:18:46.628559
 5231	7	2025-09	2025-09-10 00:00:00	Gelace	-187.00	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.628561	2026-02-13 10:18:46.628563
-5232	7	2025-09	2025-09-11 00:00:00	Mercado Qualidade	-211.76	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.628565	2026-02-13 10:18:46.628567
 5255	5	2025-09	2025-08-25 00:00:00	Kyly Propria Milon	-54.90	\N	\N	163	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.638137	2026-03-20 21:49:57.968426
 5234	7	2025-09	2025-09-12 00:00:00	Hortifrittidowill	-5.00	\N	\N	9	50.00	1	\N	1	1	1	2026-02-13 10:18:46.63116	2026-02-13 10:18:46.631164
 5235	7	2025-09	2025-09-12 00:00:00	Empório Lila	-43.29	\N	\N	11	50.00	1	\N	1	1	1	2026-02-13 10:18:46.631165	2026-02-13 10:18:46.631167
@@ -9947,12 +9911,9 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 5371	7	2025-10	2025-09-20 00:00:00	Elisabete Beatriza	-53.00	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.680615	2026-02-13 10:18:46.680617
 5372	7	2025-10	2025-09-20 00:00:00	Famous Chicken	-173.95	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:46.680619	2026-02-13 10:18:46.680622
 5373	7	2025-10	2025-09-21 00:00:00	Casa De Carnes Kl	-268.00	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:46.680624	2026-02-13 10:18:46.680626
-5374	7	2025-10	2025-09-21 00:00:00	Mercado Qualidade	-251.17	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.680629	2026-02-13 10:18:46.680631
-5375	7	2025-10	2025-09-21 00:00:00	Mercado Qualidade	-121.95	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.680633	2026-02-13 10:18:46.680635
 5376	7	2025-10	2025-09-22 00:00:00	Padaria Alema	-59.65	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.680638	2026-02-13 10:18:46.68064
 5377	7	2025-10	2025-09-23 00:00:00	Baby Pastelaria	-142.00	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:46.680642	2026-02-13 10:18:46.680645
 5378	7	2025-10	2025-09-25 00:00:00	Examine	-257.49	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.680647	2026-02-13 10:18:46.680649
-5379	7	2025-10	2025-09-26 00:00:00	Mercado Qualidade	-604.96	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.680651	2026-02-13 10:18:46.680653
 5380	7	2025-10	2025-09-27 00:00:00	Padaria Alema	-14.71	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.680655	2026-02-13 10:18:46.680657
 5381	7	2025-10	2025-09-27 00:00:00	Pizzaria Do Roberto	-140.00	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:46.68066	2026-02-13 10:18:46.680662
 5382	7	2025-10	2025-09-28 00:00:00	Casa De Carnes Kl	-284.00	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:46.680664	2026-02-13 10:18:46.680666
@@ -9973,7 +9934,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 5351	4	2025-10	2025-10-08 00:00:00	Made In Rio	-199.80	\N	\N	100	0.00	3	\N	1	1	1	2026-02-13 10:18:46.678446	2026-02-13 14:03:09.636576
 5340	4	2025-10	2025-09-18 00:00:00	Entre Decore	-289.90	\N	\N	100	0.00	3	\N	1	1	1	2026-02-13 10:18:46.673683	2026-02-13 14:03:17.106633
 5338	4	2025-10	2025-09-18 00:00:00	Ceramica Artistica	-170.00	\N	\N	100	0.00	3	\N	1	1	1	2026-02-13 10:18:46.673674	2026-02-13 14:03:25.292929
-5396	5	2025-10	2025-09-29 00:00:00	Mercado Qualidade	-42.17	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.686123	2026-02-13 10:18:46.686125
 5397	5	2025-10	2025-09-30 00:00:00	Examine	-325.80	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.686126	2026-02-13 10:18:46.686127
 5403	5	2025-10	2025-10-03 00:00:00	Zul Digital	-2.00	\N	\N	52	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.692733	2026-02-13 10:18:46.692738
 5404	5	2025-10	2025-10-03 00:00:00	Drogaria São Paulo	-271.86	\N	\N	142	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.69274	2026-02-13 10:18:46.692741
@@ -10082,7 +10042,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 5516	2	2025-11	2025-10-28 00:00:00	Nova Fazenda	-48.62	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.744419	2026-02-13 10:18:46.744421
 5517	2	2025-11	2025-10-29 00:00:00	Elisabete Beatriza	-35.00	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.744427	2026-02-13 10:18:46.74444
 5518	2	2025-11	2025-10-29 00:00:00	Marco Antonio Contato	-8.00	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:46.744443	2026-02-13 10:18:46.744445
-5519	2	2025-11	2025-10-30 00:00:00	Mercado Qualidade	-186.83	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.744447	2026-02-13 10:18:46.744449
 5520	2	2025-11	2025-10-31 00:00:00	Supermercado Brasil Fr	-134.57	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.744452	2026-02-13 10:18:46.744454
 5522	2	2025-11	2025-10-31 00:00:00	Elisabete Beatriza	-59.00	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.749323	2026-02-13 10:18:46.749329
 5523	2	2025-11	2025-10-31 00:00:00	Marco Antonio Contato	-33.00	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:46.749331	2026-02-13 10:18:46.749333
@@ -10096,11 +10055,9 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 5521	2	2025-11	2025-10-31 00:00:00	Agropecuaria Brasil	-5.00	\N	\N	100	50.00	1	\N	1	1	1	2026-02-13 10:18:46.748106	2026-02-13 14:03:29.457955
 5526	2	2025-11	2025-11-01 00:00:00	Crislanches	-54.00	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:46.749343	2026-02-13 10:18:46.749346
 5527	2	2025-11	2025-11-02 00:00:00	Casa De Carnes Kl	-261.00	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:46.749348	2026-02-13 10:18:46.74935
-5528	2	2025-11	2025-11-03 00:00:00	Mercado Qualidade	-380.58	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.749352	2026-02-13 10:18:46.749354
 5529	2	2025-11	2025-11-05 00:00:00	Nova Fazenda	-48.14	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.749356	2026-02-13 10:18:46.749358
 5530	2	2025-11	2025-11-06 00:00:00	Elisabete Beatriza	-53.00	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.74936	2026-02-13 10:18:46.749362
 5531	2	2025-11	2025-11-06 00:00:00	Marco Antonio Contato	-21.00	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:46.749364	2026-02-13 10:18:46.749366
-5532	2	2025-11	2025-11-09 00:00:00	Mercado Qualidade	-401.17	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.749368	2026-02-13 10:18:46.74937
 5533	2	2025-11	2025-11-11 00:00:00	Contato Materiais De	-136.90	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:46.749372	2026-02-13 10:18:46.749374
 5534	2	2025-11	2025-11-11 00:00:00	Hortifrittidow	-28.00	\N	\N	9	50.00	1	\N	1	1	1	2026-02-13 10:18:46.749376	2026-02-13 10:18:46.749378
 5535	2	2025-11	2025-11-11 00:00:00	Brunasso Gourmet	-27.00	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.749381	2026-02-13 10:18:46.749383
@@ -10215,8 +10172,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 5631	4	2025-12	2025-11-17 00:00:00	Bazarype	-158.00	\N	\N	100	0.00	3	\N	1	1	1	2026-02-13 10:18:46.793093	2026-02-13 14:03:25.29294
 5642	4	2025-12	2025-11-30 00:00:00	Casa De Frios Chão De	-105.98	\N	\N	100	0.00	3	\N	1	1	1	2026-02-13 10:18:46.79617	2026-02-13 14:03:25.292942
 5656	4	2025-12	2025-12-13 00:00:00	Casa De Carnes Kl	-185.20	\N	\N	5	0.00	3	\N	1	1	1	2026-02-13 10:18:46.805662	2026-02-13 10:18:46.805663
-5657	2	2025-12	2025-11-15 00:00:00	Mercado Qualidade	-334.67	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.805664	2026-02-13 10:18:46.805666
-5658	2	2025-12	2025-11-15 00:00:00	Mercado Qualidade	-219.05	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.805667	2026-02-13 10:18:46.805669
 5659	2	2025-12	2025-11-18 00:00:00	Gas Ecia	-120.00	\N	\N	123	50.00	1	\N	1	1	1	2026-02-13 10:18:46.80567	2026-02-13 10:18:46.805671
 5660	2	2025-12	2025-11-18 00:00:00	Supermercado Savegnago	-514.89	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.805673	2026-02-13 10:18:46.805674
 5661	2	2025-12	2025-11-19 00:00:00	Baby Pastelaria	-132.40	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:46.805676	2026-02-13 10:18:46.805677
@@ -10229,20 +10184,17 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 5668	2	2025-12	2025-11-22 00:00:00	Supermercado Savegnago	-327.02	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.805696	2026-02-13 10:18:46.805697
 5669	2	2025-12	2025-11-22 00:00:00	Crislanches	-38.00	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:46.805699	2026-02-13 10:18:46.8057
 5670	2	2025-12	2025-11-23 00:00:00	Casa De Carnes Kl	-236.60	\N	\N	5	50.00	1	\N	1	1	1	2026-02-13 10:18:46.805702	2026-02-13 10:18:46.805703
-5671	2	2025-12	2025-11-23 00:00:00	Mercado Qualidade	-54.72	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.805704	2026-02-13 10:18:46.805706
 5672	2	2025-12	2025-11-24 00:00:00	Supermercado Brasil Fr	-71.15	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.805707	2026-02-13 10:18:46.805708
 5673	2	2025-12	2025-11-25 00:00:00	Zul Digital	-30.00	\N	\N	52	50.00	1	\N	1	1	1	2026-02-13 10:18:46.80571	2026-02-13 10:18:46.805711
 5674	2	2025-12	2025-11-27 00:00:00	Examine	-172.43	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.805713	2026-02-13 10:18:46.805714
 5675	2	2025-12	2025-11-29 00:00:00	Padaria Alema	-11.95	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.805716	2026-02-13 10:18:46.805717
 5676	2	2025-12	2025-11-30 00:00:00	Supermercado Brasil Fr	-118.85	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.805718	2026-02-13 10:18:46.80572
 5677	2	2025-12	2025-11-30 00:00:00	Trevo	-102.43	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.805721	2026-02-13 10:18:46.805723
-5678	2	2025-12	2025-12-01 00:00:00	Mercado Qualidade	-174.85	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.805724	2026-02-13 10:18:46.805726
 5679	2	2025-12	2025-12-01 00:00:00	Padaria Alema	-24.93	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.805727	2026-02-13 10:18:46.805728
 5680	2	2025-12	2025-12-02 00:00:00	Examine	-169.37	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.80573	2026-02-13 10:18:46.805731
 5682	2	2025-12	2025-12-05 00:00:00	Pastelaria Roberto Jap	-38.20	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:46.812078	2026-02-13 10:18:46.812084
 5683	2	2025-12	2025-12-06 00:00:00	Examine	-817.97	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:46.812086	2026-02-13 10:18:46.812087
 5684	2	2025-12	2025-12-06 00:00:00	Elisabete Beatriza	-108.00	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.812088	2026-02-13 10:18:46.81209
-5686	2	2025-12	2025-12-11 00:00:00	Mercado Qualidade	-271.82	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.814623	2026-02-13 10:18:46.81463
 5687	2	2025-12	2025-12-11 00:00:00	Sorveteria Xodo	-96.00	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:46.814634	2026-02-13 10:18:46.814636
 5688	2	2025-12	2025-12-12 00:00:00	Elisabete Beatriza	-69.00	\N	\N	14	50.00	1	\N	1	1	1	2026-02-13 10:18:46.814639	2026-02-13 10:18:46.814641
 5689	2	2025-12	2025-12-12 00:00:00	Empório Lila	-49.69	\N	\N	11	50.00	1	\N	1	1	1	2026-02-13 10:18:46.814644	2026-02-13 10:18:46.814647
@@ -10328,7 +10280,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 5738	3	2026-01	2025-09-25 00:00:00	Mm Esquilomve	-154.41	4	6	100	100.00	\N	\N	1	1	1	2026-02-13 10:18:55.290533	2026-03-20 23:21:24.786456
 5740	3	2026-01	2025-12-15 00:00:00	Rio Claro Drive	-129.10	\N	\N	100	100.00	\N	\N	1	1	1	2026-02-13 10:18:55.292649	2026-03-20 23:21:24.786458
 5762	3	2026-01	2026-01-04 00:00:00	Th Jogos Eletronicos	-10.00	\N	\N	100	100.00	\N	\N	1	1	1	2026-02-13 10:18:55.302835	2026-03-20 23:21:24.786474
-5756	3	2026-01	2025-12-27 00:00:00	Mercado Qualidade	-315.14	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:55.299761	2026-03-20 21:45:34.819243
 5805	4	2026-01	2025-12-20 00:00:00	Pernambucanas	-109.99	\N	\N	162	0.00	3	\N	1	1	1	2026-02-13 10:18:55.319165	2026-03-20 21:45:34.819311
 8	3	2023-04	2023-03-18 00:00:00	Thais Henrique De Carv	-56.96	\N	\N	100	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.55419	2026-02-13 14:02:56.68931
 134	7	2023-04	2023-03-18 00:00:00	Vfl	-30.35	\N	\N	100	50.00	1	\N	1	1	1	2026-02-13 10:18:44.616051	2026-02-13 14:02:56.689315
@@ -10740,11 +10691,9 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 5963	4	2026-02	2026-02-12 00:00:00	Neide Roupas	-269.82	\N	\N	162	0.00	3	\N	1	1	1	2026-02-17 18:38:39.205818	2026-03-20 21:45:35.955722
 5964	4	2026-02	2026-02-14 00:00:00	Supermercado Savegnago	-267.47	\N	\N	18	0.00	3	\N	1	1	1	2026-02-17 18:38:39.205823	2026-03-20 21:45:35.955724
 5965	4	2026-02	2026-02-14 00:00:00	Examine	-116.59	\N	\N	18	0.00	3	\N	1	1	1	2026-02-17 18:38:39.205828	2026-03-20 21:45:35.955727
-5966	2	2026-02	2026-01-16 00:00:00	Mercado Qualidade	-226.76	\N	\N	7	50.00	1	\N	1	1	1	2026-02-17 18:38:39.205833	2026-03-20 21:45:35.955729
 5967	2	2026-02	2026-01-16 00:00:00	Examine	-175.40	\N	\N	18	50.00	1	\N	1	1	1	2026-02-17 18:38:39.205838	2026-03-20 21:45:35.955731
 5968	2	2026-02	2026-01-18 00:00:00	Casa De Carnes Kl	-425.80	\N	\N	5	50.00	1	\N	1	1	1	2026-02-17 18:38:39.205843	2026-03-20 21:45:35.955733
 5969	2	2026-02	2026-01-18 00:00:00	Fridas Burguer	-218.40	\N	\N	16	50.00	1	\N	1	1	1	2026-02-17 18:38:39.205847	2026-03-20 21:45:35.955735
-5970	2	2026-02	2026-01-20 00:00:00	Mercado Qualidade	-197.36	\N	\N	7	50.00	1	\N	1	1	1	2026-02-17 18:38:39.205852	2026-03-20 21:45:35.955737
 5971	2	2026-02	2026-01-21 00:00:00	Marco Antonio Contato	-21.00	\N	\N	131	50.00	1	\N	1	1	1	2026-02-17 18:38:39.205856	2026-03-20 21:45:35.955739
 5972	2	2026-02	2026-01-21 00:00:00	Nova Fazenda	-37.60	\N	\N	14	50.00	1	\N	1	1	1	2026-02-17 18:38:39.205861	2026-03-20 21:45:35.955741
 5948	4	2026-02	2025-12-15 00:00:00	Loja Primavera	-192.90	2	3	162	0.00	3	\N	1	1	1	2026-02-17 18:38:39.198359	2026-03-20 21:48:57.7599
@@ -10776,7 +10725,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 5911	3	2026-02	2026-01-22 00:00:00	Sgtecnologialtda	-20.00	\N	\N	100	100.00	\N	\N	1	1	1	2026-02-17 18:38:39.184173	2026-03-20 23:21:24.78653
 5912	3	2026-02	2026-01-22 00:00:00	Sgtecnologialtda	-10.00	\N	\N	100	100.00	\N	\N	1	1	1	2026-02-17 18:38:39.184176	2026-03-20 23:21:24.786532
 6031	1	2026-02	2026-01-22 00:00:00	Liana	-176.45	1	2	100	0.00	2	\N	1	1	1	2026-02-17 20:20:04.525636	2026-03-20 23:21:24.786557
-5984	2	2026-02	2026-01-31 00:00:00	Mercado Qualidade	-536.32	\N	\N	7	50.00	1	\N	1	1	1	2026-02-17 18:38:39.209643	2026-03-20 21:45:35.955766
 5985	2	2026-02	2026-01-31 00:00:00	Supermercado Brasil Fr	-54.29	\N	\N	18	50.00	1	\N	1	1	1	2026-02-17 18:38:39.209647	2026-03-20 21:45:35.955768
 5988	2	2026-02	2026-02-01 00:00:00	Supermercado Savegnago	-128.74	\N	\N	18	50.00	1	\N	1	1	1	2026-02-17 18:38:39.209661	2026-03-20 21:45:35.955774
 5928	3	2026-02	2026-02-07 00:00:00	Antonello E Sarti	-232.10	\N	\N	115	100.00	\N	\N	1	1	1	2026-02-17 18:38:39.190026	2026-03-20 21:45:35.955614
@@ -10844,7 +10792,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 5994	2	2026-02	2026-01-27 00:00:00	Pontodopastel	-84.00	\N	\N	16	50.00	1	\N	1	1	1	2026-02-17 18:38:39.214394	2026-03-20 21:45:35.955786
 6000	2	2026-02	2026-02-10 00:00:00	Empório Lila	-44.53	\N	\N	11	50.00	1	\N	1	1	1	2026-02-17 18:38:39.215407	2026-03-20 21:45:35.955799
 6001	2	2026-02	2026-02-11 00:00:00	Supermercado Savegnago	-407.04	\N	\N	18	50.00	1	\N	1	1	1	2026-02-17 18:38:39.21541	2026-03-20 21:45:35.955801
-6002	2	2026-02	2026-02-13 00:00:00	Mercado Qualidade	-424.07	\N	\N	7	50.00	1	\N	1	1	1	2026-02-17 18:38:39.215413	2026-03-20 21:45:35.955803
 6003	2	2026-02	2026-02-13 00:00:00	Brunasso Gourmet	-42.00	\N	\N	7	50.00	1	\N	1	1	1	2026-02-17 18:38:39.215416	2026-03-20 21:45:35.955805
 6004	5	2026-02	2025-07-08 00:00:00	Agua Viva	-246.00	8	12	114	100.00	\N	\N	1	1	1	2026-02-17 18:38:39.217246	2026-03-20 21:45:35.955807
 6033	1	2026-03	2025-12-23 00:00:00	Sapataria Lago Azul	-96.63	3	3	162	0.00	2	\N	1	1	1	2026-03-18 06:55:42.003076	2026-03-20 21:45:37.10738
@@ -10852,7 +10799,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 6035	1	2026-03	2026-01-24 00:00:00	Sapataria Lago Azul	-83.33	2	3	162	0.00	2	\N	1	1	1	2026-03-18 06:55:42.018091	2026-03-20 21:45:37.107388
 6036	1	2026-03	2026-02-18 00:00:00	Mercado Livre	-421.07	\N	\N	79	0.00	2	\N	1	1	1	2026-03-18 06:55:42.019898	2026-03-20 21:45:37.10739
 6037	1	2026-03	2026-02-19 00:00:00	Apple	-99.90	\N	\N	73	0.00	2	\N	1	1	1	2026-03-18 06:55:42.019903	2026-03-20 21:45:37.107391
-6124	2	2026-03	2026-02-23 00:00:00	Mercado Qualidade	-174.97	\N	\N	7	50.00	1	\N	1	1	1	2026-03-18 06:55:42.064469	2026-03-20 21:45:37.107502
 6129	2	2026-03	2026-02-24 00:00:00	Empório Lila	-11.00	\N	\N	11	50.00	1	\N	1	1	1	2026-03-18 06:55:42.066292	2026-03-20 21:45:37.107509
 6131	2	2026-03	2026-02-26 00:00:00	Padaria Alema	-60.38	\N	\N	14	50.00	1	\N	1	1	1	2026-03-18 06:55:42.067635	2026-03-20 21:45:37.107511
 6132	2	2026-03	2026-02-27 00:00:00	Big Bar	-97.00	\N	\N	17	50.00	1	\N	1	1	1	2026-03-18 06:55:42.067641	2026-03-20 21:45:37.107513
@@ -10928,7 +10874,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 5743	3	2026-01	2025-12-19 00:00:00	Kll Editora Ecommerce	-360.90	1	10	89	100.00	\N	\N	1	1	1	2026-02-13 10:18:55.29422	2026-03-20 21:45:34.819225
 5744	3	2026-01	2025-12-19 00:00:00	Netflix	-20.90	\N	\N	28	100.00	\N	\N	1	1	1	2026-02-13 10:18:55.294974	2026-03-20 21:45:34.819226
 5745	3	2026-01	2025-12-19 00:00:00	Skina Da Cerveja	-78.10	\N	\N	6	100.00	\N	\N	1	1	1	2026-02-13 10:18:55.294981	2026-03-20 21:45:34.819228
-5746	3	2026-01	2025-12-19 00:00:00	Mercado Qualidade	-117.69	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:55.294986	2026-03-20 21:45:34.819229
 5748	3	2026-01	2025-12-20 00:00:00	Studio Winner	-110.00	\N	\N	136	100.00	\N	\N	1	1	1	2026-02-13 10:18:55.296616	2026-03-20 21:45:34.819232
 5750	3	2026-01	2025-12-20 00:00:00	Quiosque Das Balas Fin	-39.75	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:55.297967	2026-03-20 21:45:34.819235
 5752	3	2026-01	2025-12-22 00:00:00	Spotify	-40.90	\N	\N	33	100.00	\N	\N	1	1	1	2026-02-13 10:18:55.299739	2026-03-20 21:45:34.819238
@@ -10987,7 +10932,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 5818	4	2026-01	2026-01-03 00:00:00	Supermercado Savegnago	-347.09	\N	\N	18	0.00	3	\N	1	1	1	2026-02-13 10:18:55.32229	2026-03-20 21:45:34.819329
 5819	4	2026-01	2026-01-10 00:00:00	Casa De Carnes Kl	-166.80	\N	\N	5	0.00	3	\N	1	1	1	2026-02-13 10:18:55.322295	2026-03-20 21:45:34.81933
 5821	2	2026-01	2025-12-15 00:00:00	Marco Antonio Contato	-28.50	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:55.325903	2026-03-20 21:45:34.819333
-5822	2	2026-01	2025-12-16 00:00:00	Mercado Qualidade	-753.88	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:55.325912	2026-03-20 21:45:34.819334
 5823	2	2026-01	2025-12-18 00:00:00	Pastelaria Roberto Jap	-91.70	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:55.325916	2026-03-20 21:45:34.819336
 5824	2	2026-01	2025-12-19 00:00:00	Roberto De Moraes E	-240.00	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:55.325921	2026-03-20 21:45:34.819337
 5825	2	2026-01	2025-12-20 00:00:00	Examine	-905.03	\N	\N	18	50.00	1	\N	1	1	1	2026-02-13 10:18:55.325925	2026-03-20 21:45:34.819338
@@ -11002,7 +10946,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 5834	2	2026-01	2025-12-30 00:00:00	Contato Materiais De	-203.00	\N	\N	131	50.00	1	\N	1	1	1	2026-02-13 10:18:55.325965	2026-03-20 21:45:34.819351
 5837	2	2026-01	2025-12-31 00:00:00	Dsfoods Divino Sabor	-198.00	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:55.325978	2026-03-20 21:45:34.819355
 5838	2	2026-01	2026-01-02 00:00:00	Burger King	-49.80	\N	\N	16	50.00	1	\N	1	1	1	2026-02-13 10:18:55.325983	2026-03-20 21:45:34.819356
-5839	2	2026-01	2026-01-03 00:00:00	Mercado Qualidade	-478.50	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:55.325987	2026-03-20 21:45:34.819357
 5840	2	2026-01	2026-01-06 00:00:00	Brunasso Gourmet	-14.00	\N	\N	7	50.00	1	\N	1	1	1	2026-02-13 10:18:55.325991	2026-03-20 21:45:34.819359
 5842	2	2026-01	2026-01-06 00:00:00	Hortifrittidow	-10.00	\N	\N	9	50.00	1	\N	1	1	1	2026-02-13 10:18:55.326	2026-03-20 21:45:34.819362
 5801	4	2026-01	2025-12-18 00:00:00	Claudiamelo	-111.90	\N	\N	162	0.00	3	\N	1	1	1	2026-02-13 10:18:55.319148	2026-03-20 23:20:14.903623
@@ -11027,7 +10970,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 5857	5	2026-01	2025-12-15 00:00:00	Rest Plata Forma	-35.87	\N	\N	16	100.00	\N	\N	1	1	1	2026-02-13 10:18:55.336702	2026-03-20 21:45:34.819382
 5858	5	2026-01	2025-12-16 00:00:00	Rest Plata Forma	-32.47	\N	\N	16	100.00	\N	\N	1	1	1	2026-02-13 10:18:55.33671	2026-03-20 21:45:34.819384
 5859	5	2026-01	2025-12-16 00:00:00	Emporio Qualidade Impo	-33.80	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:55.336715	2026-03-20 21:45:34.819385
-5860	5	2026-01	2025-12-16 00:00:00	Mercado Qualidade	-130.91	\N	\N	7	100.00	\N	\N	1	1	1	2026-02-13 10:18:55.33672	2026-03-20 21:45:34.819386
 5861	5	2026-01	2025-12-16 00:00:00	Drogal	-64.95	\N	\N	142	100.00	\N	\N	1	1	1	2026-02-13 10:18:55.336725	2026-03-20 21:45:34.819388
 5862	5	2026-01	2025-12-17 00:00:00	Rest Plata Forma	-54.62	\N	\N	16	100.00	\N	\N	1	1	1	2026-02-13 10:18:55.33673	2026-03-20 21:45:34.819389
 5864	5	2026-01	2025-12-19 00:00:00	Boneca De Pano	-226.80	\N	\N	162	100.00	\N	\N	1	1	1	2026-02-13 10:18:55.33884	2026-03-20 21:45:34.819392
@@ -11064,16 +11006,13 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 5869	5	2026-01	2025-12-22 00:00:00	Luan Henrique Alves Do	-20.00	\N	\N	100	100.00	\N	\N	1	1	1	2026-02-13 10:18:55.342326	2026-03-20 23:21:24.78651
 5870	5	2026-01	2025-12-23 00:00:00	Jim.com* Jessica Cris	-110.00	\N	\N	100	100.00	\N	\N	1	1	1	2026-02-13 10:18:55.342331	2026-03-20 23:21:24.786513
 5975	2	2026-02	2026-01-24 00:00:00	Roberto De Moraes E	-174.00	\N	\N	16	50.00	1	\N	1	1	1	2026-02-17 18:38:39.205875	2026-03-20 21:45:35.955748
-5977	2	2026-02	2026-01-25 00:00:00	Mercado Qualidade	-366.51	\N	\N	7	50.00	1	\N	1	1	1	2026-02-17 18:38:39.209605	2026-03-20 21:45:35.955752
 5978	2	2026-02	2026-01-26 00:00:00	Contato Materiais De	-45.85	\N	\N	131	50.00	1	\N	1	1	1	2026-02-17 18:38:39.209613	2026-03-20 21:45:35.955754
 5979	2	2026-02	2026-01-27 00:00:00	Brunasso Gourmet	-14.00	\N	\N	7	50.00	1	\N	1	1	1	2026-02-17 18:38:39.209618	2026-03-20 21:45:35.955756
 5980	2	2026-02	2026-01-30 00:00:00	Zul Digital	-15.00	\N	\N	52	50.00	1	\N	1	1	1	2026-02-17 18:38:39.209624	2026-03-20 21:45:35.955758
 5981	2	2026-02	2026-01-30 00:00:00	Empório Lila	-42.90	\N	\N	11	50.00	1	\N	1	1	1	2026-02-17 18:38:39.209629	2026-03-20 21:45:35.95576
 5982	2	2026-02	2026-01-30 00:00:00	Brunasso Gourmet	-30.00	\N	\N	7	50.00	1	\N	1	1	1	2026-02-17 18:38:39.209634	2026-03-20 21:45:35.955762
 5983	2	2026-02	2026-01-30 00:00:00	Baby Pastelaria	-151.00	\N	\N	16	50.00	1	\N	1	1	1	2026-02-17 18:38:39.209638	2026-03-20 21:45:35.955764
-5991	2	2026-02	2026-02-05 00:00:00	Mercado Qualidade	-514.67	\N	\N	7	50.00	1	\N	1	1	1	2026-02-17 18:38:39.209675	2026-03-20 21:45:35.95578
 5997	2	2026-02	2026-01-27 00:00:00	Empório Lila	-38.76	\N	\N	11	50.00	1	\N	1	1	1	2026-02-17 18:38:39.215396	2026-03-20 21:45:35.955793
-5998	2	2026-02	2026-01-27 00:00:00	Mercado Qualidade	-358.53	\N	\N	7	50.00	1	\N	1	1	1	2026-02-17 18:38:39.215402	2026-03-20 21:45:35.955795
 5999	2	2026-02	2026-02-10 00:00:00	Brunasso Gourmet	-21.00	\N	\N	7	50.00	1	\N	1	1	1	2026-02-17 18:38:39.215404	2026-03-20 21:45:35.955797
 6008	5	2026-02	2025-12-23 00:00:00	Sapataria Lago Azul	-286.83	2	2	162	100.00	\N	\N	1	1	1	2026-02-17 18:38:39.219238	2026-03-20 21:45:35.955815
 6009	5	2026-02	2025-12-24 00:00:00	Twinstore	-174.00	2	2	162	100.00	\N	\N	1	1	1	2026-02-17 18:38:39.219244	2026-03-20 21:45:35.955817
@@ -11118,7 +11057,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 6212	3	2026-04	2026-03-27 00:00:00	Burger King	-32.90	\N	\N	16	100.00	\N	\N	1	1	1	2026-04-16 07:57:15.079316	2026-04-16 07:57:15.079318
 6213	3	2026-04	2026-03-28 00:00:00	Brasil Cacau	-21.00	\N	\N	7	100.00	\N	\N	1	1	1	2026-04-16 07:57:15.079321	2026-04-16 07:57:15.079323
 6214	3	2026-04	2026-03-28 00:00:00	Studio Winner	-110.00	\N	\N	136	100.00	\N	\N	1	1	1	2026-04-16 07:57:15.079325	2026-04-16 07:57:15.079327
-6215	3	2026-04	2026-03-29 00:00:00	Mercado Qualidade	-49.99	\N	\N	7	100.00	\N	\N	1	1	1	2026-04-16 07:57:15.07933	2026-04-16 07:57:15.079332
 6216	3	2026-04	2026-03-29 00:00:00	Padaria Alema	-14.27	\N	\N	14	100.00	\N	\N	1	1	1	2026-04-16 07:57:15.079335	2026-04-16 07:57:15.079338
 6217	3	2026-04	2026-03-31 00:00:00	Droga Raia	-74.21	\N	\N	142	100.00	\N	\N	1	1	1	2026-04-16 07:57:15.079341	2026-04-16 07:57:15.079343
 6220	3	2026-04	2026-04-02 00:00:00	Rio Fiat Oficina Mecan	-130.00	\N	\N	54	100.00	\N	\N	1	1	1	2026-04-16 07:57:15.08267	2026-04-16 07:57:15.082674
@@ -11172,7 +11110,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 6273	2	2026-04	2026-03-20 00:00:00	Supermercado Savegnago	-760.84	\N	\N	18	50.00	1	\N	1	1	1	2026-04-16 07:57:15.102921	2026-04-16 07:57:15.102924
 6274	2	2026-04	2026-03-20 00:00:00	Examine	-208.18	\N	\N	18	50.00	1	\N	1	1	1	2026-04-16 07:57:15.102926	2026-04-16 07:57:15.102929
 6275	2	2026-04	2026-03-21 00:00:00	Subway	-93.00	\N	\N	16	50.00	1	\N	1	1	1	2026-04-16 07:57:15.102931	2026-04-16 07:57:15.102933
-6276	2	2026-04	2026-03-21 00:00:00	Mercado Qualidade	-447.04	\N	\N	7	50.00	1	\N	1	1	1	2026-04-16 07:57:15.102936	2026-04-16 07:57:15.102938
 6277	2	2026-04	2026-03-21 00:00:00	Padaria Central	-52.72	\N	\N	14	50.00	1	\N	1	1	1	2026-04-16 07:57:15.102941	2026-04-16 07:57:15.102943
 6278	2	2026-04	2026-03-21 00:00:00	Casa De Carnes Kl	-457.00	\N	\N	5	50.00	1	\N	1	1	1	2026-04-16 07:57:15.102946	2026-04-16 07:57:15.102948
 6280	2	2026-04	2026-03-22 00:00:00	Padaria Alema	-20.95	\N	\N	14	50.00	1	\N	1	1	1	2026-04-16 07:57:15.105543	2026-04-16 07:57:15.105548
@@ -11181,7 +11118,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 6283	2	2026-04	2026-03-27 00:00:00	Padaria Alema	-24.00	\N	\N	14	50.00	1	\N	1	1	1	2026-04-16 07:57:15.10556	2026-04-16 07:57:15.105562
 6286	2	2026-04	2026-03-28 00:00:00	Examine	-124.67	\N	\N	18	50.00	1	\N	1	1	1	2026-04-16 07:57:15.107697	2026-04-16 07:57:15.107702
 6287	2	2026-04	2026-03-28 00:00:00	Crislanches	-123.00	\N	\N	16	50.00	1	\N	1	1	1	2026-04-16 07:57:15.107705	2026-04-16 07:57:15.107707
-6288	2	2026-04	2026-03-29 00:00:00	Mercado Qualidade	-522.24	\N	\N	7	50.00	1	\N	1	1	1	2026-04-16 07:57:15.10771	2026-04-16 07:57:15.107712
 6289	2	2026-04	2026-03-31 00:00:00	Vila Dos Pescados	-306.23	\N	\N	15	50.00	1	\N	1	1	1	2026-04-16 07:57:15.107715	2026-04-16 07:57:15.107717
 6290	2	2026-04	2026-03-31 00:00:00	Pastelaria Roberto Jap	-114.50	\N	\N	16	50.00	1	\N	1	1	1	2026-04-16 07:57:15.10772	2026-04-16 07:57:15.107722
 6291	2	2026-04	2026-04-02 00:00:00	Supermercado Savegnago	-557.61	\N	\N	18	50.00	1	\N	1	1	1	2026-04-16 07:57:15.107725	2026-04-16 07:57:15.107727
@@ -11201,7 +11137,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 6304	2	2026-04	2026-03-27 00:00:00	Pontodopastel	-36.00	\N	\N	16	50.00	1	\N	1	1	1	2026-04-16 07:57:15.114775	2026-04-16 07:57:15.114777
 6305	2	2026-04	2026-04-04 00:00:00	Casa De Carnes Kl	-252.90	\N	\N	5	50.00	1	\N	1	1	1	2026-04-16 07:57:15.114778	2026-04-16 07:57:15.114779
 6306	2	2026-04	2026-04-05 00:00:00	Padaria Alema	-24.70	\N	\N	14	50.00	1	\N	1	1	1	2026-04-16 07:57:15.114781	2026-04-16 07:57:15.114782
-6307	2	2026-04	2026-04-09 00:00:00	Mercado Qualidade	-242.81	\N	\N	7	50.00	1	\N	1	1	1	2026-04-16 07:57:15.114784	2026-04-16 07:57:15.114785
 6308	2	2026-04	2026-04-11 00:00:00	Padaria Alema	-17.74	\N	\N	14	50.00	1	\N	1	1	1	2026-04-16 07:57:15.114786	2026-04-16 07:57:15.114788
 6309	2	2026-04	2026-04-11 00:00:00	Supermercado Brasil Fr	-307.96	\N	\N	18	50.00	1	\N	1	1	1	2026-04-16 07:57:15.11479	2026-04-16 07:57:15.114791
 6310	2	2026-04	2026-04-11 00:00:00	Rest Plata Forma	-64.90	\N	\N	16	50.00	1	\N	1	1	1	2026-04-16 07:57:15.114792	2026-04-16 07:57:15.114794
@@ -11246,7 +11181,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 6301	2	2026-04	2026-03-24 00:00:00	Delicias Domil	-36.00	\N	\N	100	50.00	1	\N	1	1	1	2026-04-16 07:57:15.11388	2026-04-16 08:02:25.044809
 6312	2	2026-04	2026-04-12 00:00:00	Frutaria Nova Era	-34.24	\N	\N	100	50.00	1	\N	1	1	1	2026-04-16 07:57:15.116243	2026-04-16 08:02:25.044811
 6322	5	2026-04	2026-03-19 00:00:00	Natalia	-140.00	\N	\N	100	100.00	\N	\N	1	1	1	2026-04-16 07:57:15.120987	2026-04-16 08:02:25.044814
-6337	5	2026-04	2026-03-30 00:00:00	Mercado Qualidade	-432.85	\N	\N	7	50.00	1	\N	1	1	1	2026-04-16 07:57:15.127029	2026-04-16 08:59:04.822956
 6351	5	2026-04	2026-04-14 00:00:00	Padaria Central	-47.74	\N	\N	14	0.00	1	\N	1	1	1	2026-04-16 07:57:15.13377	2026-04-16 09:00:41.289531
 6230	3	2026-04	2026-04-11 00:00:00	Centauro	-199.99	1	2	162	100.00	\N	\N	1	1	1	2026-04-16 07:57:15.085781	2026-04-16 08:02:13.459979
 6231	3	2026-04	2026-04-11 00:00:00	Kolmeia Kids	-50.00	\N	\N	163	100.00	\N	\N	1	1	1	2026-04-16 07:57:15.087004	2026-04-16 08:02:13.45998
@@ -11274,9 +11208,10 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 6352	1	2026-05	2026-03-12 00:00:00	Florapura	-414.00	3	3	4	0.00	2	\N	1	1	1	2026-06-11 08:29:05.500059	2026-06-11 08:29:05.500077
 6355	1	2026-05	2026-04-10 00:00:00	Fios Da Terra Cosmetic	-505.17	2	2	4	0.00	2	\N	1	1	1	2026-06-11 08:29:05.509588	2026-06-11 08:29:05.509595
 6356	1	2026-05	2026-04-13 00:00:00	Florapura	-274.33	2	3	4	0.00	2	\N	1	1	1	2026-06-11 08:29:05.509597	2026-06-11 08:29:05.5096
-6358	1	2026-05	2026-04-18 00:00:00	Ditacuja	-178.22	1	5	4	0.00	2	\N	1	1	1	2026-06-11 08:29:05.510926	2026-06-11 08:39:06.182758
 6353	1	2026-05	2026-03-23 00:00:00	Jim Com All Trails	-169.90	2	6	100	0.00	2	\N	1	1	1	2026-06-11 08:29:05.507605	2026-06-11 08:40:15.95309
 6357	1	2026-05	2026-04-16 00:00:00	Janaina S Silva C	-232.70	1	4	100	0.00	2	\N	1	1	1	2026-06-11 08:29:05.51092	2026-06-11 08:40:15.953094
+6337	5	2026-04	2026-03-30 00:00:00	Mercado Qualidade	-432.85	\N	\N	18	100.00	\N	\N	1	1	1	2026-04-16 07:57:15.127029	2026-06-15 08:37:17.027236
+6358	1	2026-05	2026-04-18 00:00:00	Ditacuja	-178.22	1	5	4	0.00	2	\N	1	1	1	2026-06-11 08:29:05.510926	2026-06-15 08:41:53.46137
 6361	1	2026-05	2026-05-07 00:00:00	Florapura	-270.68	1	3	4	0.00	2	\N	1	1	1	2026-06-11 08:29:05.512297	2026-06-11 08:29:05.512302
 6362	1	2026-05	2026-05-08 00:00:00	Padaria Claret	-73.10	\N	\N	14	0.00	2	\N	1	1	1	2026-06-11 08:29:05.513625	2026-06-11 08:29:05.51363
 6363	1	2026-05	2026-05-11 00:00:00	Pink Cheeks Comerc	-281.07	1	2	4	0.00	2	\N	1	1	1	2026-06-11 08:29:05.514961	2026-06-11 08:29:05.514965
@@ -11299,7 +11234,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 6386	3	2026-05	2026-05-02 00:00:00	Conectc Luiz Quinel	-150.00	\N	\N	58	100.00	\N	\N	1	1	1	2026-06-11 08:29:05.527971	2026-06-11 08:29:05.527975
 6387	3	2026-05	2026-05-03 00:00:00	Padaria Alema	-34.45	\N	\N	14	100.00	\N	\N	1	1	1	2026-06-11 08:29:05.527977	2026-06-11 08:29:05.527979
 6390	3	2026-05	2026-05-08 00:00:00	Nintendoe Shop	-11.99	\N	\N	117	100.00	\N	\N	1	1	1	2026-06-11 08:29:05.529813	2026-06-11 08:29:05.529818
-6391	3	2026-05	2026-05-09 00:00:00	Mercado Qualidade	-424.34	\N	\N	7	100.00	\N	\N	1	1	1	2026-06-11 08:29:05.529821	2026-06-11 08:29:05.529823
 6392	3	2026-05	2026-05-09 00:00:00	Loterias	-74.00	\N	\N	111	100.00	\N	\N	1	1	1	2026-06-11 08:29:05.529825	2026-06-11 08:29:05.529827
 6393	3	2026-05	2026-05-11 00:00:00	Claro	-60.11	\N	\N	130	100.00	\N	\N	1	1	1	2026-06-11 08:29:05.529829	2026-06-11 08:29:05.529839
 6395	8	2026-05	2026-03-19 00:00:00	Eventim	-821.60	2	3	115	100.00	\N	\N	1	1	1	2026-06-11 08:29:05.531124	2026-06-11 08:29:05.531126
@@ -11326,7 +11260,6 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 6420	2	2026-05	2026-04-15 00:00:00	Marco Antonio Contato	-73.00	\N	\N	131	50.00	1	\N	1	1	1	2026-06-11 08:29:05.540877	2026-06-11 08:29:05.54088
 6421	2	2026-05	2026-04-15 00:00:00	Drogal	-54.80	\N	\N	142	50.00	1	\N	1	1	1	2026-06-11 08:29:05.540882	2026-06-11 08:29:05.540885
 6422	2	2026-05	2026-04-17 00:00:00	Pastelaria Roberto Jap	-158.00	\N	\N	16	50.00	1	\N	1	1	1	2026-06-11 08:29:05.540887	2026-06-11 08:29:05.54089
-6423	2	2026-05	2026-04-18 00:00:00	Mercado Qualidade	-178.30	\N	\N	7	50.00	1	\N	1	1	1	2026-06-11 08:29:05.540892	2026-06-11 08:29:05.540894
 6424	2	2026-05	2026-04-18 00:00:00	Jp Restaurante Ara	-134.45	\N	\N	16	50.00	1	\N	1	1	1	2026-06-11 08:29:05.540897	2026-06-11 08:29:05.540899
 6388	3	2026-05	2026-05-05 00:00:00	Yelum Seg Parc2	-216.15	\N	\N	59	100.00	\N	\N	1	1	1	2026-06-11 08:29:05.528856	2026-06-11 08:37:46.706338
 6410	4	2026-05	2026-05-02 00:00:00	Malitcia	-140.00	\N	\N	162	0.00	3	\N	1	1	1	2026-06-11 08:29:05.538366	2026-06-11 08:38:10.578765
@@ -11335,11 +11268,12 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 6380	3	2026-05	2026-04-26 00:00:00	Lupsseproducoes	-56.00	\N	\N	100	100.00	\N	\N	1	1	1	2026-06-11 08:29:05.525233	2026-06-11 08:40:15.953095
 6394	8	2026-05	2026-03-19 00:00:00	Eventim	-663.60	2	3	115	0.00	6	\N	1	1	1	2026-06-11 08:29:05.531117	2026-06-11 08:54:07.315858
 6369	3	2026-05	2026-03-31 00:00:00	Casas Bahia	-399.81	2	6	75	0.00	1	\N	1	1	1	2026-06-11 08:29:05.516323	2026-06-11 09:03:55.081
+6391	3	2026-05	2026-05-09 00:00:00	Mercado Qualidade	-424.34	\N	\N	18	100.00	\N	\N	1	1	1	2026-06-11 08:29:05.529821	2026-06-15 08:37:17.027236
+6423	2	2026-05	2026-04-18 00:00:00	Mercado Qualidade	-178.30	\N	\N	18	100.00	\N	\N	1	1	1	2026-06-11 08:29:05.540892	2026-06-15 08:37:17.027236
 6425	2	2026-05	2026-04-19 00:00:00	Casa De Carnes Kl	-588.50	\N	\N	5	50.00	1	\N	1	1	1	2026-06-11 08:29:05.540902	2026-06-11 08:29:05.540904
 6427	2	2026-05	2026-04-20 00:00:00	Piatto Caixas Premiada	-25.99	\N	\N	111	50.00	1	\N	1	1	1	2026-06-11 08:29:05.543378	2026-06-11 08:29:05.543382
 6428	2	2026-05	2026-04-21 00:00:00	Casa De Carnes Kl	-75.00	\N	\N	5	50.00	1	\N	1	1	1	2026-06-11 08:29:05.543383	2026-06-11 08:29:05.543385
 6429	2	2026-05	2026-04-22 00:00:00	Supermercado Brasil Fr	-200.25	\N	\N	18	50.00	1	\N	1	1	1	2026-06-11 08:29:05.543386	2026-06-11 08:29:05.543387
-6430	2	2026-05	2026-04-24 00:00:00	Mercado Qualidade	-279.82	\N	\N	7	50.00	1	\N	1	1	1	2026-06-11 08:29:05.543389	2026-06-11 08:29:05.54339
 6431	2	2026-05	2026-04-24 00:00:00	Gas Ecia	-125.00	\N	\N	123	50.00	1	\N	1	1	1	2026-06-11 08:29:05.543391	2026-06-11 08:29:05.543393
 6433	2	2026-05	2026-04-24 00:00:00	Empório Lila	-52.24	\N	\N	11	50.00	1	\N	1	1	1	2026-06-11 08:29:05.545493	2026-06-11 08:29:05.545496
 6434	2	2026-05	2026-04-24 00:00:00	Fridas Burguer	-197.40	\N	\N	16	50.00	1	\N	1	1	1	2026-06-11 08:29:05.545498	2026-06-11 08:29:05.545499
@@ -11391,6 +11325,308 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 6432	2	2026-05	2026-04-24 00:00:00	Waldomiro Silva	-40.00	\N	\N	100	50.00	1	\N	1	1	1	2026-06-11 08:29:05.544607	2026-06-11 08:40:15.953104
 6439	2	2026-05	2026-04-26 00:00:00	Erika Cristina Laras	-137.00	\N	\N	100	50.00	1	\N	1	1	1	2026-06-11 08:29:05.54673	2026-06-11 08:40:15.953106
 6445	2	2026-05	2026-05-02 00:00:00	H E D	-38.00	\N	\N	100	50.00	1	\N	1	1	1	2026-06-11 08:29:05.548781	2026-06-11 08:40:15.953107
+6430	2	2026-05	2026-04-24 00:00:00	Mercado Qualidade	-279.82	\N	\N	18	100.00	\N	\N	1	1	1	2026-06-11 08:29:05.543389	2026-06-15 08:37:17.027236
+6473	1	2026-06	2026-04-08 00:00:00	Chlorophylla Fhytocos	-290.93	3	4	4	0.00	2	\N	1	1	1	2026-06-15 08:08:43.901233	2026-06-15 09:21:24.082594
+6472	1	2026-06	2026-03-23 00:00:00	Jim Com All Trails	-169.90	3	6	100	0.00	2	\N	1	1	1	2026-06-15 08:08:43.89138	2026-06-16 22:06:51.634375
+6478	1	2026-06	2026-04-30 00:00:00	Chlorophylla Fhytocos	-262.24	2	5	4	0.00	2	\N	1	1	1	2026-06-15 08:08:43.906468	2026-06-15 09:21:24.082601
+6479	1	2026-06	2026-05-07 00:00:00	Florapura	-270.66	2	3	4	0.00	2	\N	1	1	1	2026-06-15 08:08:43.906474	2026-06-15 09:21:24.082603
+6480	1	2026-06	2026-05-11 00:00:00	Pink Cheeks Comerc	-281.07	2	2	4	0.00	2	\N	1	1	1	2026-06-15 08:08:43.90648	2026-06-15 09:21:24.082604
+6481	1	2026-06	2026-05-16 00:00:00	Covabra	-26.34	\N	\N	18	0.00	2	\N	1	1	1	2026-06-15 08:08:43.910094	2026-06-15 09:21:24.082605
+6482	1	2026-06	2026-05-20 00:00:00	Posto Mackey	-50.00	\N	\N	50	0.00	2	\N	1	1	1	2026-06-15 08:08:43.910101	2026-06-15 09:21:24.082607
+6483	1	2026-06	2026-05-21 00:00:00	Fios Da Terra Cosmetic	-378.99	1	3	4	0.00	2	\N	1	1	1	2026-06-15 08:08:43.911647	2026-06-15 09:21:24.082608
+6484	1	2026-06	2026-05-21 00:00:00	Melmatte	-373.06	1	2	4	0.00	2	\N	1	1	1	2026-06-15 08:08:43.911656	2026-06-15 09:21:24.082609
+6486	1	2026-06	2026-05-22 00:00:00	Ferus Cosmetico	-265.65	1	2	4	0.00	2	\N	1	1	1	2026-06-15 08:08:43.913924	2026-06-15 09:21:24.082612
+6487	1	2026-06	2026-05-22 00:00:00	Mercado Qualidade	-173.05	\N	\N	18	50.00	1	\N	1	1	1	2026-06-15 08:08:43.915592	2026-06-15 09:21:24.082613
+6488	1	2026-06	2026-05-22 00:00:00	Mercado Qualidade	-446.11	\N	\N	18	50.00	1	\N	1	1	1	2026-06-15 08:08:43.915602	2026-06-15 09:21:24.082615
+6542	4	2026-06	2026-05-16 00:00:00	Supermercado Savegnago	-353.15	\N	\N	18	0.00	3	\N	1	1	1	2026-06-15 08:08:43.960279	2026-06-15 09:21:24.082685
+6543	4	2026-06	2026-05-16 00:00:00	Casa De Carnes Kl	-306.20	\N	\N	5	0.00	3	\N	1	1	1	2026-06-15 08:08:43.960285	2026-06-15 09:21:24.082686
+6544	4	2026-06	2026-05-16 00:00:00	Loterias	-36.00	\N	\N	111	0.00	3	\N	1	1	1	2026-06-15 08:08:43.960291	2026-06-15 09:21:24.082688
+6546	4	2026-06	2026-05-20 00:00:00	Claudiamelo	-239.60	\N	\N	162	0.00	3	\N	1	1	1	2026-06-15 08:08:43.963832	2026-06-15 09:21:24.08269
+6547	4	2026-06	2026-05-20 00:00:00	Eletronica Mauricio	-75.00	\N	\N	132	0.00	3	\N	1	1	1	2026-06-15 08:08:43.96384	2026-06-15 09:21:24.082691
+6548	4	2026-06	2026-05-21 00:00:00	Padaria Alema	-29.01	\N	\N	14	0.00	3	\N	1	1	1	2026-06-15 08:08:43.963844	2026-06-15 09:21:24.082693
+6549	4	2026-06	2026-05-23 00:00:00	Savegnago	-293.66	\N	\N	18	0.00	3	\N	1	1	1	2026-06-15 08:08:43.963848	2026-06-15 09:21:24.082694
+6551	4	2026-06	2026-05-30 00:00:00	Supermercado Savegnago	-343.25	\N	\N	18	0.00	3	\N	1	1	1	2026-06-15 08:08:43.966655	2026-06-15 09:21:24.082697
+6552	4	2026-06	2026-05-30 00:00:00	Claudiamelo	-79.90	\N	\N	162	0.00	3	\N	1	1	1	2026-06-15 08:08:43.966665	2026-06-15 09:21:24.082698
+6554	4	2026-06	2026-05-30 00:00:00	Examine	-57.66	\N	\N	18	0.00	3	\N	1	1	1	2026-06-15 08:08:43.970111	2026-06-15 09:21:24.0827
+6557	4	2026-06	2026-06-01 00:00:00	Posto Mackey	-150.00	\N	\N	50	0.00	3	\N	1	1	1	2026-06-15 08:08:43.973284	2026-06-15 09:21:24.082704
+6558	4	2026-06	2026-06-05 00:00:00	Droga Raia	-367.62	\N	\N	142	0.00	3	\N	1	1	1	2026-06-15 08:08:43.973292	2026-06-15 09:21:24.082705
+6476	1	2026-06	2026-04-18 00:00:00	Ditacuja	-178.22	2	5	4	0.00	2	\N	1	1	1	2026-06-15 08:08:43.904771	2026-06-15 09:21:24.082599
+6485	1	2026-06	2026-05-22 00:00:00	Asa Chlorophylla Indus	-162.33	1	5	4	0.00	2	\N	1	1	1	2026-06-15 08:08:43.913913	2026-06-15 09:21:24.082611
+6475	1	2026-06	2026-04-16 00:00:00	Janaina S Silva C	-232.70	2	4	100	0.00	2	\N	1	1	1	2026-06-15 08:08:43.904764	2026-06-16 22:06:51.634381
+6490	1	2026-06	2026-05-29 00:00:00	Valmir Costa Barbosa	-100.00	\N	\N	100	0.00	2	\N	1	1	1	2026-06-15 08:08:43.917525	2026-06-16 22:06:51.634384
+6493	1	2026-06	2026-06-10 00:00:00	Zig Anh Biobrazil 2026	-147.40	\N	\N	100	0.00	2	\N	1	1	1	2026-06-15 08:08:43.921264	2026-06-16 22:06:51.634385
+6494	1	2026-06	2026-06-10 00:00:00	Industrias Suavetex L	-169.00	\N	\N	100	0.00	2	\N	1	1	1	2026-06-15 08:08:43.921282	2026-06-16 22:06:51.634386
+6496	1	2026-06	2026-06-10 00:00:00	Jim.com* Casa Maria P	-372.18	1	3	100	0.00	2	\N	1	1	1	2026-06-15 08:08:43.92454	2026-06-16 22:06:51.634388
+151	7	2023-04	2023-03-27 00:00:00	Mercado Qualidade	-85.84	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.619785	2026-06-15 08:37:17.027236
+152	7	2023-04	2023-03-28 00:00:00	Mercado Qualidade	-303.74	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.619789	2026-06-15 08:37:17.027236
+175	7	2023-04	2023-04-06 00:00:00	Mercado Qualidade	-117.87	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.624826	2026-06-15 08:37:17.027236
+251	6	2023-08	2023-07-25 00:00:00	Mercado Qualidade	-63.64	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.652695	2026-06-15 08:37:17.027236
+314	7	2023-08	2023-08-02 00:00:00	Mercado Qualidade	-182.24	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.685055	2026-06-15 08:37:17.027236
+433	7	2023-12	2023-12-01 00:00:00	Mercado Qualidade	-335.54	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.753655	2026-06-15 08:37:17.027236
+485	3	2023-02	2023-01-21 00:00:00	Mercado Qualidade	-258.46	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.785575	2026-06-15 08:37:17.027236
+542	6	2023-02	2023-01-28 00:00:00	Mercado Qualidade	-171.06	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.826045	2026-06-15 08:37:17.027236
+620	7	2023-02	2023-02-05 00:00:00	Mercado Qualidade	-215.18	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.858972	2026-06-15 08:37:17.027236
+629	7	2023-02	2023-02-09 00:00:00	Mercado Qualidade	-204.88	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.858998	2026-06-15 08:37:17.027236
+701	6	2023-01	2022-12-22 00:00:00	Mercado Qualidade	-155.34	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.897736	2026-06-15 08:37:17.027236
+710	6	2023-01	2022-12-31 00:00:00	Mercado Qualidade	-105.57	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.906903	2026-06-15 08:37:17.027236
+770	7	2023-01	2022-12-23 00:00:00	Mercado Qualidade	-282.83	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:44.930739	2026-06-15 08:37:17.027236
+1255	7	2023-05	2023-05-12 00:00:00	Mercado Qualidade	-235.52	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.117921	2026-06-15 08:37:17.027236
+1259	3	2023-03	2023-02-17 00:00:00	Mercado Qualidade	-108.87	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.168467	2026-06-15 08:37:17.027236
+1370	7	2023-03	2023-02-17 00:00:00	Mercado Qualidade	-173.14	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.210495	2026-06-15 08:37:17.027236
+1375	7	2023-03	2023-03-03 00:00:00	Mercado Qualidade	-174.30	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.210515	2026-06-15 08:37:17.027236
+1378	7	2023-03	2023-03-05 00:00:00	Mercado Qualidade	-178.62	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.210527	2026-06-15 08:37:17.027236
+1405	7	2023-03	2023-03-12 00:00:00	Mercado Qualidade	-281.20	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.217211	2026-06-15 08:37:17.027236
+1500	7	2023-11	2023-10-14 00:00:00	Mercado Qualidade	-195.18	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.258965	2026-06-15 08:37:17.027236
+1504	7	2023-11	2023-10-15 00:00:00	Mercado Qualidade	-84.78	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.258984	2026-06-15 08:37:17.027236
+1509	7	2023-11	2023-10-17 00:00:00	Mercado Qualidade	-58.16	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.259007	2026-06-15 08:37:17.027236
+1516	7	2023-11	2023-10-29 00:00:00	Mercado Qualidade	-123.77	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.262943	2026-06-15 08:37:17.027236
+1556	7	2023-11	2023-11-07 00:00:00	Mercado Qualidade	-262.91	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.276958	2026-06-15 08:37:17.027236
+1601	3	2023-10	2023-10-08 00:00:00	Mercado Qualidade	-264.01	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.297425	2026-06-15 08:37:17.027236
+1663	7	2023-10	2023-09-19 00:00:00	Mercado Qualidade	-156.12	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.320472	2026-06-15 08:37:17.027236
+1676	7	2023-10	2023-10-03 00:00:00	Mercado Qualidade	-46.42	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.32053	2026-06-15 08:37:17.027236
+1709	6	2023-10	2023-09-22 00:00:00	Mercado Qualidade	-285.64	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.332208	2026-06-15 08:37:17.027236
+1779	6	2023-09	2023-08-23 00:00:00	Mercado Qualidade	-95.84	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.36299	2026-06-15 08:37:17.027236
+1787	6	2023-09	2023-08-31 00:00:00	Mercado Qualidade	-300.92	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.363012	2026-06-15 08:37:17.027236
+1998	5	2024-04	2024-03-21 00:00:00	Mercado Qualidade	-169.64	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.435088	2026-06-15 08:37:17.027236
+2138	7	2024-08	2024-07-31 00:00:00	Mercado Qualidade	-251.29	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.468194	2026-06-15 08:37:17.027236
+2149	5	2024-08	2024-07-23 00:00:00	Mercado Qualidade	-51.97	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.474217	2026-06-15 08:37:17.027236
+2161	5	2024-08	2024-08-12 00:00:00	Mercado Qualidade	-321.99	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.477455	2026-06-15 08:37:17.027236
+2306	7	2024-12	2024-12-09 00:00:00	Mercado Qualidade	-42.86	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.518657	2026-06-15 08:37:17.027236
+2411	7	2024-02	2024-01-15 00:00:00	Mercado Qualidade	-244.55	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.556091	2026-06-15 08:37:17.027236
+2417	7	2024-02	2024-01-22 00:00:00	Mercado Qualidade	-217.05	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.558569	2026-06-15 08:37:17.027236
+2431	7	2024-02	2024-02-01 00:00:00	Mercado Qualidade	-112.69	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.558639	2026-06-15 08:37:17.027236
+2620	7	2024-01	2023-12-28 00:00:00	Mercado Qualidade	-552.21	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.614702	2026-06-15 08:37:17.027236
+2650	5	2024-01	2023-12-22 00:00:00	Mercado Qualidade	-164.50	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.673911	2026-06-15 08:37:17.027236
+2674	3	2024-07	2024-06-22 00:00:00	Mercado Qualidade	-254.96	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.681934	2026-06-15 08:37:17.027236
+2912	7	2024-06	2024-05-16 00:00:00	Mercado Qualidade	-288.49	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.749747	2026-06-15 08:37:17.027236
+2927	7	2024-06	2024-05-24 00:00:00	Mercado Qualidade	-233.08	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.753307	2026-06-15 08:37:17.027236
+3004	3	2024-05	2024-05-10 00:00:00	Mercado Qualidade	-245.84	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.781285	2026-06-15 08:37:17.027236
+3005	3	2024-05	2024-05-10 00:00:00	Mercado Qualidade	-71.60	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.781288	2026-06-15 08:37:17.027236
+3051	7	2024-05	2024-04-19 00:00:00	Mercado Qualidade	-175.54	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.793384	2026-06-15 08:37:17.027236
+3062	7	2024-05	2024-04-26 00:00:00	Mercado Qualidade	-208.09	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.79345	2026-06-15 08:37:17.027236
+3078	7	2024-05	2024-05-05 00:00:00	Mercado Qualidade	-143.47	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.797175	2026-06-15 08:37:17.027236
+3203	7	2024-03	2024-02-17 00:00:00	Mercado Qualidade	-256.83	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.834135	2026-06-15 08:37:17.027236
+3204	7	2024-03	2024-02-17 00:00:00	Mercado Qualidade	-170.04	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.83414	2026-06-15 08:37:17.027236
+3360	7	2024-11	2024-10-14 00:00:00	Mercado Qualidade	-187.71	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.881806	2026-06-15 08:37:17.027236
+3393	7	2024-11	2024-11-05 00:00:00	Mercado Qualidade	-272.58	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.894063	2026-06-15 08:37:17.027236
+3396	7	2024-11	2024-11-06 00:00:00	Mercado Qualidade	-107.10	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.896051	2026-06-15 08:37:17.027236
+3411	5	2024-11	2024-10-14 00:00:00	Mercado Qualidade	-149.83	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.903799	2026-06-15 08:37:17.027236
+3430	5	2024-11	2024-11-05 00:00:00	Mercado Qualidade	-48.64	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.9131	2026-06-15 08:37:17.027236
+3533	7	2024-10	2024-09-22 00:00:00	Mercado Qualidade	-196.76	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:45.956011	2026-06-15 08:37:17.027236
+3694	7	2024-09	2024-08-25 00:00:00	Mercado Qualidade	-199.24	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.012901	2026-06-15 08:37:17.027236
+3698	7	2024-09	2024-08-27 00:00:00	Mercado Qualidade	-206.27	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.012918	2026-06-15 08:37:17.027236
+3704	7	2024-09	2024-09-01 00:00:00	Mercado Qualidade	-260.07	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.016293	2026-06-15 08:37:17.027236
+3768	3	2025-01	2024-12-27 00:00:00	Mercado Qualidade	-258.84	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.043088	2026-06-15 08:37:17.027236
+4026	7	2025-02	2025-01-14 00:00:00	Mercado Qualidade	-288.93	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.154941	2026-06-15 08:37:17.027236
+4237	5	2025-03	2025-02-26 00:00:00	Mercado Qualidade	-460.80	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.24691	2026-06-15 08:37:17.027236
+4352	7	2025-04	2025-03-26 00:00:00	Mercado Qualidade	-141.56	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.281155	2026-06-15 08:37:17.027236
+4358	7	2025-04	2025-03-18 00:00:00	Mercado Qualidade	-379.98	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.287015	2026-06-15 08:37:17.027236
+4373	7	2025-04	2025-03-29 00:00:00	Mercado Qualidade	-163.40	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.291942	2026-06-15 08:37:17.027236
+4387	7	2025-04	2025-04-11 00:00:00	Mercado Qualidade	-273.61	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.29201	2026-06-15 08:37:17.027236
+4538	7	2025-05	2025-05-05 00:00:00	Mercado Qualidade	-245.25	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.366487	2026-06-15 08:37:17.027236
+4545	7	2025-05	2025-05-10 00:00:00	Mercado Qualidade	-350.63	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.369828	2026-06-15 08:37:17.027236
+4546	7	2025-05	2025-05-13 00:00:00	Mercado Qualidade	-115.87	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.369832	2026-06-15 08:37:17.027236
+4563	5	2025-05	2025-04-30 00:00:00	Mercado Qualidade	-541.62	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.378793	2026-06-15 08:37:17.027236
+4571	5	2025-05	2025-05-11 00:00:00	Mercado Qualidade	-544.43	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.378832	2026-06-15 08:37:17.027236
+4572	5	2025-05	2025-05-11 00:00:00	Mercado Qualidade	-17.80	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.378837	2026-06-15 08:37:17.027236
+4618	3	2025-06	2025-06-08 00:00:00	Mercado Qualidade	-336.33	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.397818	2026-06-15 08:37:17.027236
+4619	3	2025-06	2025-06-08 00:00:00	Mercado Qualidade	-109.39	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.397821	2026-06-15 08:37:17.027236
+4679	7	2025-06	2025-05-18 00:00:00	Mercado Qualidade	-168.63	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.42152	2026-06-15 08:37:17.027236
+4685	7	2025-06	2025-05-29 00:00:00	Mercado Qualidade	-215.91	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.421546	2026-06-15 08:37:17.027236
+4693	7	2025-06	2025-05-23 00:00:00	Mercado Qualidade	-197.86	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.421581	2026-06-15 08:37:17.027236
+4694	7	2025-06	2025-05-23 00:00:00	Mercado Qualidade	-538.81	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.421585	2026-06-15 08:37:17.027236
+4720	5	2025-06	2025-05-26 00:00:00	Mercado Qualidade	-17.45	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.430507	2026-06-15 08:37:17.027236
+4725	5	2025-06	2025-06-03 00:00:00	Mercado Qualidade	-225.51	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.432864	2026-06-15 08:37:17.027236
+4872	7	2025-07	2025-06-15 00:00:00	Mercado Qualidade	-138.66	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.489409	2026-06-15 08:37:17.027236
+4873	7	2025-07	2025-06-17 00:00:00	Mercado Qualidade	-452.80	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.489414	2026-06-15 08:37:17.027236
+4886	7	2025-07	2025-06-23 00:00:00	Mercado Qualidade	-251.34	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.48948	2026-06-15 08:37:17.027236
+4895	7	2025-07	2025-07-05 00:00:00	Mercado Qualidade	-509.68	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.49611	2026-06-15 08:37:17.027236
+4906	7	2025-07	2025-07-13 00:00:00	Mercado Qualidade	-411.90	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.499304	2026-06-15 08:37:17.027236
+5033	7	2025-08	2025-07-18 00:00:00	Mercado Qualidade	-335.26	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.557357	2026-06-15 08:37:17.027236
+5043	7	2025-08	2025-07-22 00:00:00	Mercado Qualidade	-274.83	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.557385	2026-06-15 08:37:17.027236
+5047	7	2025-08	2025-07-30 00:00:00	Mercado Qualidade	-272.98	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.557397	2026-06-15 08:37:17.027236
+5071	7	2025-08	2025-07-27 00:00:00	Mercado Qualidade	-396.82	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.566637	2026-06-15 08:37:17.027236
+5077	7	2025-08	2025-08-10 00:00:00	Mercado Qualidade	-576.26	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.566661	2026-06-15 08:37:17.027236
+5121	5	2025-08	2025-08-10 00:00:00	Mercado Qualidade	-251.50	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.581589	2026-06-15 08:37:17.027236
+5159	3	2025-09	2025-09-07 00:00:00	Mercado Qualidade	-49.99	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.603245	2026-06-15 08:37:17.027236
+5207	7	2025-09	2025-08-17 00:00:00	Mercado Qualidade	-131.72	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.621704	2026-06-15 08:37:17.027236
+5214	7	2025-09	2025-08-23 00:00:00	Mercado Qualidade	-182.10	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.625101	2026-06-15 08:37:17.027236
+5218	7	2025-09	2025-08-29 00:00:00	Mercado Qualidade	-171.74	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.625119	2026-06-15 08:37:17.027236
+5226	7	2025-09	2025-09-07 00:00:00	Mercado Qualidade	-296.91	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.628535	2026-06-15 08:37:17.027236
+5232	7	2025-09	2025-09-11 00:00:00	Mercado Qualidade	-211.76	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.628565	2026-06-15 08:37:17.027236
+5374	7	2025-10	2025-09-21 00:00:00	Mercado Qualidade	-251.17	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.680629	2026-06-15 08:37:17.027236
+5375	7	2025-10	2025-09-21 00:00:00	Mercado Qualidade	-121.95	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.680633	2026-06-15 08:37:17.027236
+5379	7	2025-10	2025-09-26 00:00:00	Mercado Qualidade	-604.96	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.680651	2026-06-15 08:37:17.027236
+5396	5	2025-10	2025-09-29 00:00:00	Mercado Qualidade	-42.17	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.686123	2026-06-15 08:37:17.027236
+5519	2	2025-11	2025-10-30 00:00:00	Mercado Qualidade	-186.83	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.744447	2026-06-15 08:37:17.027236
+5528	2	2025-11	2025-11-03 00:00:00	Mercado Qualidade	-380.58	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.749352	2026-06-15 08:37:17.027236
+5532	2	2025-11	2025-11-09 00:00:00	Mercado Qualidade	-401.17	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.749368	2026-06-15 08:37:17.027236
+5657	2	2025-12	2025-11-15 00:00:00	Mercado Qualidade	-334.67	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.805664	2026-06-15 08:37:17.027236
+5658	2	2025-12	2025-11-15 00:00:00	Mercado Qualidade	-219.05	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.805667	2026-06-15 08:37:17.027236
+5671	2	2025-12	2025-11-23 00:00:00	Mercado Qualidade	-54.72	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.805704	2026-06-15 08:37:17.027236
+5678	2	2025-12	2025-12-01 00:00:00	Mercado Qualidade	-174.85	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.805724	2026-06-15 08:37:17.027236
+5686	2	2025-12	2025-12-11 00:00:00	Mercado Qualidade	-271.82	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:46.814623	2026-06-15 08:37:17.027236
+5746	3	2026-01	2025-12-19 00:00:00	Mercado Qualidade	-117.69	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:55.294986	2026-06-15 08:37:17.027236
+5756	3	2026-01	2025-12-27 00:00:00	Mercado Qualidade	-315.14	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:55.299761	2026-06-15 08:37:17.027236
+5822	2	2026-01	2025-12-16 00:00:00	Mercado Qualidade	-753.88	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:55.325912	2026-06-15 08:37:17.027236
+5839	2	2026-01	2026-01-03 00:00:00	Mercado Qualidade	-478.50	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:55.325987	2026-06-15 08:37:17.027236
+5860	5	2026-01	2025-12-16 00:00:00	Mercado Qualidade	-130.91	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-13 10:18:55.33672	2026-06-15 08:37:17.027236
+5966	2	2026-02	2026-01-16 00:00:00	Mercado Qualidade	-226.76	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-17 18:38:39.205833	2026-06-15 08:37:17.027236
+5970	2	2026-02	2026-01-20 00:00:00	Mercado Qualidade	-197.36	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-17 18:38:39.205852	2026-06-15 08:37:17.027236
+5977	2	2026-02	2026-01-25 00:00:00	Mercado Qualidade	-366.51	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-17 18:38:39.209605	2026-06-15 08:37:17.027236
+5984	2	2026-02	2026-01-31 00:00:00	Mercado Qualidade	-536.32	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-17 18:38:39.209643	2026-06-15 08:37:17.027236
+5991	2	2026-02	2026-02-05 00:00:00	Mercado Qualidade	-514.67	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-17 18:38:39.209675	2026-06-15 08:37:17.027236
+5998	2	2026-02	2026-01-27 00:00:00	Mercado Qualidade	-358.53	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-17 18:38:39.215402	2026-06-15 08:37:17.027236
+6002	2	2026-02	2026-02-13 00:00:00	Mercado Qualidade	-424.07	\N	\N	18	100.00	\N	\N	1	1	1	2026-02-17 18:38:39.215413	2026-06-15 08:37:17.027236
+6124	2	2026-03	2026-02-23 00:00:00	Mercado Qualidade	-174.97	\N	\N	18	100.00	\N	\N	1	1	1	2026-03-18 06:55:42.064469	2026-06-15 08:37:17.027236
+6215	3	2026-04	2026-03-29 00:00:00	Mercado Qualidade	-49.99	\N	\N	18	100.00	\N	\N	1	1	1	2026-04-16 07:57:15.07933	2026-06-15 08:37:17.027236
+6276	2	2026-04	2026-03-21 00:00:00	Mercado Qualidade	-447.04	\N	\N	18	100.00	\N	\N	1	1	1	2026-04-16 07:57:15.102936	2026-06-15 08:37:17.027236
+6288	2	2026-04	2026-03-29 00:00:00	Mercado Qualidade	-522.24	\N	\N	18	100.00	\N	\N	1	1	1	2026-04-16 07:57:15.10771	2026-06-15 08:37:17.027236
+6307	2	2026-04	2026-04-09 00:00:00	Mercado Qualidade	-242.81	\N	\N	18	100.00	\N	\N	1	1	1	2026-04-16 07:57:15.114784	2026-06-15 08:37:17.027236
+6646	8	2026-06	2026-03-19 00:00:00	Eventim	-821.60	3	3	115	100.00	\N	\N	1	1	1	2026-06-15 09:21:24.064275	2026-06-15 09:21:24.064289
+6474	1	2026-06	2026-04-13 00:00:00	Florapura	-274.33	3	3	4	0.00	2	\N	1	1	1	2026-06-15 08:08:43.901505	2026-06-15 09:21:24.082596
+6477	1	2026-06	2026-04-29 00:00:00	Melmatte	-326.96	2	2	4	0.00	2	\N	1	1	1	2026-06-15 08:08:43.906459	2026-06-15 09:21:24.0826
+6491	1	2026-06	2026-05-29 00:00:00	Produtos Alva	-188.34	1	6	4	0.00	2	\N	1	1	1	2026-06-15 08:08:43.919757	2026-06-15 09:21:24.082619
+6492	1	2026-06	2026-06-10 00:00:00	Alva Personal Care	-169.26	1	6	4	0.00	2	\N	1	1	1	2026-06-15 08:08:43.919764	2026-06-15 09:21:24.08262
+6495	1	2026-06	2026-06-10 00:00:00	Khor Cosmetics	-422.44	1	3	4	0.00	2	\N	1	1	1	2026-06-15 08:08:43.923333	2026-06-15 09:21:24.082624
+6497	1	2026-06	2026-06-11 00:00:00	Pink Cheeks Comerc	-844.35	1	4	4	0.00	2	\N	1	1	1	2026-06-15 08:08:43.926042	2026-06-15 09:21:24.082626
+6498	3	2026-06	2025-12-19 00:00:00	Kll Editora Ecommerce	-360.87	6	10	89	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.92774	2026-06-15 09:21:24.082628
+6499	3	2026-06	2026-03-05 00:00:00	Km Pneus	-695.00	4	4	54	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.927748	2026-06-15 09:21:24.082629
+6500	3	2026-06	2026-03-31 00:00:00	Casas Bahia	-399.81	3	6	75	0.00	1	\N	1	1	1	2026-06-15 08:08:43.927753	2026-06-15 09:21:24.08263
+6501	3	2026-06	2026-04-17 00:00:00	Ali Express	-187.96	2	2	638	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.927758	2026-06-15 09:21:24.082632
+6502	3	2026-06	2026-05-16 00:00:00	Linda Comercio De Biju	-97.00	\N	\N	162	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.931822	2026-06-15 09:21:24.082633
+6503	3	2026-06	2026-05-17 00:00:00	Padaria Alema	-112.40	\N	\N	14	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.931831	2026-06-15 09:21:24.082634
+6504	3	2026-06	2026-05-18 00:00:00	Ifood	-7.95	\N	\N	16	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.931837	2026-06-15 09:21:24.082636
+6505	3	2026-06	2026-05-18 00:00:00	Nintendoe Shop	-14.95	\N	\N	117	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.931842	2026-06-15 09:21:24.082637
+6506	3	2026-06	2026-05-19 00:00:00	Netflix	-20.90	\N	\N	28	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.931849	2026-06-15 09:21:24.082638
+6507	3	2026-06	2026-05-22 00:00:00	Summoners War	-29.90	\N	\N	117	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.931856	2026-06-15 09:21:24.082639
+6508	3	2026-06	2026-05-22 00:00:00	Amazon	-194.37	\N	\N	70	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.931862	2026-06-15 09:21:24.082641
+6509	3	2026-06	2026-05-22 00:00:00	Spotify	-40.90	\N	\N	33	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.931905	2026-06-15 09:21:24.082642
+6510	3	2026-06	2026-05-23 00:00:00	Melimais	-19.90	\N	\N	25	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.931912	2026-06-15 09:21:24.082643
+6511	3	2026-06	2026-05-23 00:00:00	Auto Posto Petro Sol	-339.10	\N	\N	50	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.931919	2026-06-15 09:21:24.082645
+6512	3	2026-06	2026-05-23 00:00:00	Loterias	-46.50	\N	\N	111	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.931925	2026-06-15 09:21:24.082646
+6513	3	2026-06	2026-05-28 00:00:00	Youtube	-26.90	\N	\N	35	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.931931	2026-06-15 09:21:24.082647
+6514	3	2026-06	2026-05-29 00:00:00	Studio Winner	-110.00	\N	\N	136	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.931937	2026-06-15 09:21:24.082649
+6515	3	2026-06	2026-06-02 00:00:00	Guilhermeottaviani	-310.00	1	3	113	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.936391	2026-06-15 09:21:24.08265
+6516	3	2026-06	2026-06-05 00:00:00	Yelum Seg Parc3	-216.15	\N	\N	59	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.938625	2026-06-15 09:21:24.082651
+6517	3	2026-06	2026-06-05 00:00:00	Apple	-5.90	\N	\N	73	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.939929	2026-06-15 09:21:24.082652
+6518	3	2026-06	2026-06-06 00:00:00	Droga Raia	-142.48	\N	\N	142	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.939937	2026-06-15 09:21:24.082654
+6519	3	2026-06	2026-06-06 00:00:00	Apple	-5.90	\N	\N	73	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.939943	2026-06-15 09:21:24.082655
+6520	3	2026-06	2026-06-06 00:00:00	Loterias	-46.50	\N	\N	111	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.939948	2026-06-15 09:21:24.082656
+6521	3	2026-06	2026-06-07 00:00:00	Apple	-17.90	\N	\N	73	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.939954	2026-06-15 09:21:24.082658
+6522	3	2026-06	2026-06-08 00:00:00	Auto Posto Petro Sol	-289.19	\N	\N	50	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.93996	2026-06-15 09:21:24.082659
+6523	3	2026-06	2026-06-09 00:00:00	Sena Estacionamento Lt	-60.00	\N	\N	52	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.939965	2026-06-15 09:21:24.08266
+6524	3	2026-06	2026-06-10 00:00:00	Drogaria São Paulo	-25.92	\N	\N	142	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.939971	2026-06-15 09:21:24.082662
+6525	3	2026-06	2026-06-10 00:00:00	Autovagas Garagem	-40.00	\N	\N	52	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.942531	2026-06-15 09:21:24.082663
+6526	3	2026-06	2026-06-10 00:00:00	Allpark Empreendimento	-37.00	\N	\N	52	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.942541	2026-06-15 09:21:24.082664
+6527	3	2026-06	2026-06-10 00:00:00	Claro	-60.11	\N	\N	130	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.944656	2026-06-15 09:21:24.082666
+6528	3	2026-06	2026-06-10 00:00:00	Porto Consorcio	-1540.74	\N	\N	51	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.944668	2026-06-15 09:21:24.082667
+6529	3	2026-06	2026-06-10 00:00:00	Sena Estacionamento Lt	-60.00	\N	\N	52	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.944675	2026-06-15 09:21:24.082668
+6530	3	2026-06	2026-06-10 00:00:00	Drogaria São Paulo	-64.40	\N	\N	142	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.944682	2026-06-15 09:21:24.08267
+6531	3	2026-06	2026-06-11 00:00:00	Rest Frangoassado Cai	-106.60	\N	\N	16	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.944689	2026-06-15 09:21:24.082671
+6532	3	2026-06	2026-06-12 00:00:00	Conectc Luiz Quinel	-150.00	\N	\N	58	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.944696	2026-06-15 09:21:24.082672
+6534	3	2026-06	2026-06-03 00:00:00	Buffet Animali	-527.48	1	10	115	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.948442	2026-06-15 09:21:24.082675
+6535	3	2026-06	2026-06-03 00:00:00	Zul Regularizacao 25iy	-9.00	\N	\N	52	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.950931	2026-06-15 09:21:24.082676
+6536	3	2026-06	2026-06-04 00:00:00	Panini Brasil	-90.05	\N	\N	117	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.952607	2026-06-15 09:21:24.082677
+6537	3	2026-06	2026-06-13 00:00:00	Milon Rio Claro	-169.90	\N	\N	163	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.953808	2026-06-15 09:21:24.082679
+6539	8	2026-06	2026-03-19 00:00:00	Eventim	-663.60	3	3	115	0.00	6	\N	1	1	1	2026-06-15 08:08:43.957063	2026-06-15 09:21:24.082681
+6540	4	2026-06	2026-04-01 00:00:00	Rio Fiat Oficina Mecan	-172.33	3	3	54	0.00	3	\N	1	1	1	2026-06-15 08:08:43.958399	2026-06-15 09:21:24.082682
+6541	4	2026-06	2026-05-14 00:00:00	Certeza Higiene E Limp	-95.36	\N	\N	131	0.00	3	\N	1	1	1	2026-06-15 08:08:43.96027	2026-06-15 09:21:24.082684
+6545	4	2026-06	2026-05-20 00:00:00	Goseguranca	-403.34	1	3	132	0.00	3	\N	1	1	1	2026-06-15 08:08:43.962713	2026-06-15 09:21:24.082689
+6553	4	2026-06	2026-05-30 00:00:00	Mini Modinha E Cia	-249.97	\N	\N	163	0.00	3	\N	1	1	1	2026-06-15 08:08:43.968523	2026-06-15 09:21:24.082699
+6556	4	2026-06	2026-06-01 00:00:00	Indu Presentes	-222.98	\N	\N	115	0.00	3	\N	1	1	1	2026-06-15 08:08:43.971789	2026-06-15 09:21:24.082703
+6559	4	2026-06	2026-06-06 00:00:00	Savegnago	-206.07	\N	\N	18	0.00	3	\N	1	1	1	2026-06-15 08:08:43.973298	2026-06-15 09:21:24.082707
+6560	4	2026-06	2026-06-10 00:00:00	Claudiamelo	-192.40	1	2	162	0.00	3	\N	1	1	1	2026-06-15 08:08:43.975867	2026-06-15 09:21:24.082708
+6561	4	2026-06	2026-06-13 00:00:00	Savegnago	-271.29	\N	\N	18	0.00	3	\N	1	1	1	2026-06-15 08:08:43.977104	2026-06-15 09:21:24.082709
+6562	4	2026-06	2026-06-13 00:00:00	Casa De Carnes Kl	-94.90	\N	\N	5	0.00	3	\N	1	1	1	2026-06-15 08:08:43.977112	2026-06-15 09:21:24.082711
+6563	4	2026-06	2026-06-13 00:00:00	Claudiamelo	-114.90	\N	\N	162	0.00	3	\N	1	1	1	2026-06-15 08:08:43.977116	2026-06-15 09:21:24.082712
+6564	4	2026-06	2026-06-13 00:00:00	Armenia Calcados	-279.90	\N	\N	162	0.00	3	\N	1	1	1	2026-06-15 08:08:43.97712	2026-06-15 09:21:24.082713
+6565	2	2026-06	2026-05-14 00:00:00	Casa De Carnes Kl	-457.00	\N	\N	5	50.00	1	\N	1	1	1	2026-06-15 08:08:43.977125	2026-06-15 09:21:24.082714
+6567	2	2026-06	2026-05-15 00:00:00	Examine	-59.98	\N	\N	18	50.00	1	\N	1	1	1	2026-06-15 08:08:43.980973	2026-06-15 09:21:24.082717
+6570	2	2026-06	2026-05-15 00:00:00	Brunasso Gourmet	-64.00	\N	\N	7	50.00	1	\N	1	1	1	2026-06-15 08:08:43.983893	2026-06-15 09:21:24.082721
+6571	2	2026-06	2026-05-16 00:00:00	Roberto De Moraes E	-151.00	\N	\N	16	50.00	1	\N	1	1	1	2026-06-15 08:08:43.983906	2026-06-15 09:21:24.082722
+6573	2	2026-06	2026-05-17 00:00:00	Supermercado Savegnago	-643.05	\N	\N	18	50.00	1	\N	1	1	1	2026-06-15 08:08:43.987662	2026-06-15 09:21:24.082725
+6574	2	2026-06	2026-05-19 00:00:00	Hortifrittidow	-15.00	\N	\N	9	50.00	1	\N	1	1	1	2026-06-15 08:08:43.987668	2026-06-15 09:21:24.082726
+6575	2	2026-06	2026-05-19 00:00:00	Brunasso Gourmet	-31.00	\N	\N	7	50.00	1	\N	1	1	1	2026-06-15 08:08:43.987672	2026-06-15 09:21:24.082727
+6576	2	2026-06	2026-05-29 00:00:00	Mercado Qualidade	-265.92	\N	\N	18	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.987675	2026-06-15 09:21:24.082728
+6579	2	2026-06	2026-05-29 00:00:00	Brunasso Gourmet	-28.00	\N	\N	7	50.00	1	\N	1	1	1	2026-06-15 08:08:43.991227	2026-06-15 09:21:24.082732
+6580	2	2026-06	2026-05-30 00:00:00	Petiscao	-97.00	\N	\N	16	50.00	1	\N	1	1	1	2026-06-15 08:08:43.991235	2026-06-15 09:21:24.082733
+6581	2	2026-06	2026-06-02 00:00:00	Brunasso Gourmet	-14.00	\N	\N	7	50.00	1	\N	1	1	1	2026-06-15 08:08:43.99124	2026-06-15 09:21:24.082735
+6582	2	2026-06	2026-06-02 00:00:00	Baby Pastelaria	-123.60	\N	\N	16	50.00	1	\N	1	1	1	2026-06-15 08:08:43.991245	2026-06-15 09:21:24.082736
+6583	2	2026-06	2026-06-03 00:00:00	Marco Antonio Contato	-66.00	\N	\N	131	50.00	1	\N	1	1	1	2026-06-15 08:08:43.991249	2026-06-15 09:21:24.082737
+6584	2	2026-06	2026-06-04 00:00:00	Casa De Carnes Kl	-401.00	\N	\N	5	50.00	1	\N	1	1	1	2026-06-15 08:08:43.991254	2026-06-15 09:21:24.082738
+6585	2	2026-06	2026-06-05 00:00:00	Brunasso Gourmet	-20.00	\N	\N	7	50.00	1	\N	1	1	1	2026-06-15 08:08:43.991258	2026-06-15 09:21:24.08274
+6586	2	2026-06	2026-06-05 00:00:00	Empório Lila	-84.02	\N	\N	11	50.00	1	\N	1	1	1	2026-06-15 08:08:43.991262	2026-06-15 09:21:24.082741
+6588	2	2026-06	2026-05-19 00:00:00	Empório Lila	-42.00	\N	\N	11	50.00	1	\N	1	1	1	2026-06-15 08:08:43.995518	2026-06-15 09:21:24.082744
+6589	2	2026-06	2026-05-20 00:00:00	Baby Pastelaria	-136.80	\N	\N	16	50.00	1	\N	1	1	1	2026-06-15 08:08:43.995528	2026-06-15 09:21:24.082745
+6590	2	2026-06	2026-05-22 00:00:00	Padaria Alema	-62.32	\N	\N	14	50.00	1	\N	1	1	1	2026-06-15 08:08:43.995534	2026-06-15 09:21:24.082746
+6591	2	2026-06	2026-05-22 00:00:00	Brunasso Gourmet	-28.00	\N	\N	7	50.00	1	\N	1	1	1	2026-06-15 08:08:43.995539	2026-06-15 09:21:24.082748
+6593	2	2026-06	2026-05-23 00:00:00	Nova Fazenda	-83.47	\N	\N	14	50.00	1	\N	1	1	1	2026-06-15 08:08:43.999409	2026-06-15 09:21:24.08275
+6594	2	2026-06	2026-05-23 00:00:00	Casa De Carnes Kl	-354.00	\N	\N	5	50.00	1	\N	1	1	1	2026-06-15 08:08:43.99942	2026-06-15 09:21:24.082751
+6595	2	2026-06	2026-05-24 00:00:00	Rei Do Cupim	-293.00	\N	\N	16	50.00	1	\N	1	1	1	2026-06-15 08:08:43.999427	2026-06-15 09:21:24.082753
+6596	2	2026-06	2026-05-25 00:00:00	Nova Fazenda	-60.30	\N	\N	14	50.00	1	\N	1	1	1	2026-06-15 08:08:43.999434	2026-06-15 09:21:24.082754
+6597	2	2026-06	2026-05-25 00:00:00	Padaria Alema	-53.39	\N	\N	14	50.00	1	\N	1	1	1	2026-06-15 08:08:43.999441	2026-06-15 09:21:24.082755
+6598	2	2026-06	2026-05-26 00:00:00	Contato Materiais De	-148.00	\N	\N	131	50.00	1	\N	1	1	1	2026-06-15 08:08:43.999447	2026-06-15 09:21:24.082756
+6599	2	2026-06	2026-05-26 00:00:00	Mercado Qualidade	-314.86	\N	\N	18	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.999454	2026-06-15 09:21:24.082758
+6600	2	2026-06	2026-05-27 00:00:00	Gas Ecia	-125.00	\N	\N	123	50.00	1	\N	1	1	1	2026-06-15 08:08:43.999461	2026-06-15 09:21:24.082759
+6601	2	2026-06	2026-05-27 00:00:00	Marco Antonio Contato	-35.00	\N	\N	131	50.00	1	\N	1	1	1	2026-06-15 08:08:43.999467	2026-06-15 09:21:24.08276
+6602	2	2026-06	2026-05-27 00:00:00	Mc Donald's	-186.60	\N	\N	16	50.00	1	\N	1	1	1	2026-06-15 08:08:43.999475	2026-06-15 09:21:24.082761
+6603	2	2026-06	2026-05-28 00:00:00	Zul Regularizacao 251q	-9.00	\N	\N	52	50.00	1	\N	1	1	1	2026-06-15 08:08:43.999482	2026-06-15 09:21:24.082763
+6604	2	2026-06	2026-06-06 00:00:00	Mercado Qualidade	-295.68	\N	\N	18	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.999489	2026-06-15 09:21:24.082764
+6605	2	2026-06	2026-06-06 00:00:00	Supermercado Brasil Fr	-356.24	\N	\N	18	50.00	1	\N	1	1	1	2026-06-15 08:08:43.999496	2026-06-15 09:21:24.082765
+6607	2	2026-06	2026-06-08 00:00:00	Marco Antonio Contato	-35.00	\N	\N	131	50.00	1	\N	1	1	1	2026-06-15 08:08:44.004907	2026-06-15 09:21:24.082768
+6608	2	2026-06	2026-06-08 00:00:00	Padaria Alema	-50.06	\N	\N	14	50.00	1	\N	1	1	1	2026-06-15 08:08:44.004913	2026-06-15 09:21:24.082769
+6609	2	2026-06	2026-06-09 00:00:00	Supermercado Brasil Fr	-116.09	\N	\N	18	50.00	1	\N	1	1	1	2026-06-15 08:08:44.004917	2026-06-15 09:21:24.08277
+6610	2	2026-06	2026-06-09 00:00:00	Marco Antonio Contato	-10.00	\N	\N	131	50.00	1	\N	1	1	1	2026-06-15 08:08:44.00492	2026-06-15 09:21:24.082772
+6611	2	2026-06	2026-06-09 00:00:00	Brunasso Gourmet	-14.00	\N	\N	7	50.00	1	\N	1	1	1	2026-06-15 08:08:44.004923	2026-06-15 09:21:24.082773
+6613	2	2026-06	2026-06-09 00:00:00	Zul Regularizacao 25wq	-9.00	\N	\N	52	50.00	1	\N	1	1	1	2026-06-15 08:08:44.009056	2026-06-15 09:21:24.082776
+6614	2	2026-06	2026-06-11 00:00:00	Zul Regularizacao 2638	-9.00	\N	\N	52	50.00	1	\N	1	1	1	2026-06-15 08:08:44.009063	2026-06-15 09:21:24.082777
+6615	2	2026-06	2026-06-11 00:00:00	Pastelaria Roberto Jap	-76.75	\N	\N	16	50.00	1	\N	1	1	1	2026-06-15 08:08:44.009067	2026-06-15 09:21:24.082778
+6616	2	2026-06	2026-06-12 00:00:00	Marco Antonio Contato	-50.00	\N	\N	131	50.00	1	\N	1	1	1	2026-06-15 08:08:44.009071	2026-06-15 09:21:24.082779
+6617	2	2026-06	2026-06-12 00:00:00	Brunasso Gourmet	-44.00	\N	\N	7	50.00	1	\N	1	1	1	2026-06-15 08:08:44.009074	2026-06-15 09:21:24.082781
+6618	2	2026-06	2026-06-12 00:00:00	Empório Lila	-18.00	\N	\N	11	50.00	1	\N	1	1	1	2026-06-15 08:08:44.009078	2026-06-15 09:21:24.082782
+6619	2	2026-06	2026-06-12 00:00:00	Mochila Food Truck	-56.00	\N	\N	16	50.00	1	\N	1	1	1	2026-06-15 08:08:44.009081	2026-06-15 09:21:24.082783
+6620	2	2026-06	2026-06-13 00:00:00	Roberto De Moraes E	-66.00	\N	\N	16	50.00	1	\N	1	1	1	2026-06-15 08:08:44.009085	2026-06-15 09:21:24.082784
+6621	5	2026-06	2025-07-08 00:00:00	Agua Viva	-246.00	12	12	114	100.00	\N	\N	1	1	1	2026-06-15 08:08:44.012015	2026-06-15 09:21:24.082786
+6622	5	2026-06	2026-02-25 00:00:00	Twinstore	-297.00	4	5	162	100.00	\N	\N	1	1	1	2026-06-15 08:08:44.012026	2026-06-15 09:21:24.082787
+6623	5	2026-06	2026-04-01 00:00:00	Loja Primavera	-295.75	3	4	162	100.00	\N	\N	1	1	1	2026-06-15 08:08:44.012033	2026-06-15 09:21:24.082788
+6624	5	2026-06	2026-04-14 00:00:00	Centauro	-152.32	3	3	162	100.00	\N	\N	1	1	1	2026-06-15 08:08:44.012039	2026-06-15 09:21:24.08279
+6625	5	2026-06	2026-04-16 00:00:00	Sapataria Lago Azul	-230.59	2	3	162	100.00	\N	\N	1	1	1	2026-06-15 08:08:44.012046	2026-06-15 09:21:24.082791
+6626	5	2026-06	2026-04-20 00:00:00	Milon Rio Claro	-288.91	2	6	163	100.00	\N	\N	1	1	1	2026-06-15 08:08:44.012052	2026-06-15 09:21:24.082792
+6627	5	2026-06	2026-05-09 00:00:00	Your Shoe	-309.90	2	3	162	100.00	\N	\N	1	1	1	2026-06-15 08:08:44.012059	2026-06-15 09:21:24.082793
+6628	5	2026-06	2026-05-19 00:00:00	Drogal	-86.08	\N	\N	142	100.00	\N	\N	1	1	1	2026-06-15 08:08:44.015156	2026-06-15 09:21:24.082795
+6629	5	2026-06	2026-05-20 00:00:00	Jim.com* Jessica Cris	-125.00	\N	\N	140	100.00	\N	\N	1	1	1	2026-06-15 08:08:44.015168	2026-06-15 09:21:24.082796
+6630	5	2026-06	2026-05-20 00:00:00	Rose Camargo Modas	-149.00	\N	\N	162	100.00	\N	\N	1	1	1	2026-06-15 08:08:44.015175	2026-06-15 09:21:24.082797
+6632	5	2026-06	2026-05-28 00:00:00	Lynx Espaco De Beleza	-266.68	1	3	140	100.00	\N	\N	1	1	1	2026-06-15 08:08:44.018698	2026-06-15 09:21:24.0828
+6633	5	2026-06	2026-05-28 00:00:00	Twinstore	-120.00	\N	\N	162	100.00	\N	\N	1	1	1	2026-06-15 08:08:44.019966	2026-06-15 09:21:24.082801
+6634	5	2026-06	2026-05-28 00:00:00	Textil Abril Filial 18	-33.00	\N	\N	162	100.00	\N	\N	1	1	1	2026-06-15 08:08:44.019973	2026-06-15 09:21:24.082802
+6638	5	2026-06	2026-06-05 00:00:00	Drogal	-64.94	\N	\N	142	100.00	\N	\N	1	1	1	2026-06-15 08:08:44.025217	2026-06-15 09:21:24.082807
+6640	5	2026-06	2026-06-05 00:00:00	Antonello E Sarti	-67.30	\N	\N	115	100.00	\N	\N	1	1	1	2026-06-15 08:08:44.027627	2026-06-15 09:21:24.08281
+6641	5	2026-06	2026-06-06 00:00:00	Rose Camargo Modas	-99.90	\N	\N	162	100.00	\N	\N	1	1	1	2026-06-15 08:08:44.027636	2026-06-15 09:21:24.082811
+6642	5	2026-06	2026-06-08 00:00:00	Authentika Bolsas	-90.00	1	2	162	100.00	\N	\N	1	1	1	2026-06-15 08:08:44.029571	2026-06-15 09:21:24.082812
+6643	5	2026-06	2026-06-09 00:00:00	Vlcs	-172.61	1	2	162	100.00	\N	\N	1	1	1	2026-06-15 08:08:44.029583	2026-06-15 09:21:24.082814
+6644	5	2026-06	2026-06-10 00:00:00	Alva Personal Care	-250.00	\N	\N	4	100.00	\N	\N	1	1	1	2026-06-15 08:08:44.031339	2026-06-15 09:21:24.082815
+6489	1	2026-06	2026-05-29 00:00:00	Valmir Costa Barbosa	-130.00	\N	\N	100	0.00	2	\N	1	1	1	2026-06-15 08:08:43.917517	2026-06-16 22:06:51.634382
+6533	3	2026-06	2026-06-12 00:00:00	Daka Gastronomia	-115.70	\N	\N	100	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.947415	2026-06-16 22:06:51.634389
+6538	3	2026-06	2026-06-13 00:00:00	Atlantica Express	-289.90	\N	\N	100	100.00	\N	\N	1	1	1	2026-06-15 08:08:43.954957	2026-06-16 22:06:51.634391
+6550	4	2026-06	2026-05-27 00:00:00	Alex Da Silva Pereira	-130.00	\N	\N	100	0.00	3	\N	1	1	1	2026-06-15 08:08:43.965591	2026-06-16 22:06:51.634392
+6555	4	2026-06	2026-05-30 00:00:00	Cnd 27 Rio Claro 0001	-132.89	\N	\N	100	0.00	3	\N	1	1	1	2026-06-15 08:08:43.971781	2026-06-16 22:06:51.634393
+6566	2	2026-06	2026-05-14 00:00:00	Vanessa Mijolaro Do	-125.00	\N	\N	100	50.00	1	\N	1	1	1	2026-06-15 08:08:43.979127	2026-06-16 22:06:51.634395
+6568	2	2026-06	2026-05-15 00:00:00	Dela­cias Pan	-50.00	\N	\N	100	50.00	1	\N	1	1	1	2026-06-15 08:08:43.982204	2026-06-16 22:06:51.634396
+6569	2	2026-06	2026-05-15 00:00:00	Donna Vertini	-60.00	\N	\N	100	50.00	1	\N	1	1	1	2026-06-15 08:08:43.98221	2026-06-16 22:06:51.634398
+6572	2	2026-06	2026-05-17 00:00:00	Erika Cristina Laras	-98.00	\N	\N	100	50.00	1	\N	1	1	1	2026-06-15 08:08:43.985731	2026-06-16 22:06:51.634399
+6577	2	2026-06	2026-05-29 00:00:00	Donna Vertini	-60.00	\N	\N	100	50.00	1	\N	1	1	1	2026-06-15 08:08:43.989355	2026-06-16 22:06:51.634401
+6578	2	2026-06	2026-05-29 00:00:00	Roseli Schiavi Franco	-17.00	\N	\N	100	50.00	1	\N	1	1	1	2026-06-15 08:08:43.989365	2026-06-16 22:06:51.634402
+6587	2	2026-06	2026-05-19 00:00:00	Roseli Schiavi Franco	-30.00	\N	\N	100	50.00	1	\N	1	1	1	2026-06-15 08:08:43.994058	2026-06-16 22:06:51.634403
+6592	2	2026-06	2026-05-23 00:00:00	Mercedes Ap Degea	-112.74	\N	\N	100	50.00	1	\N	1	1	1	2026-06-15 08:08:43.997214	2026-06-16 22:06:51.634405
+6606	2	2026-06	2026-06-08 00:00:00	Agropecuaria Brasil	-14.75	\N	\N	100	50.00	1	\N	1	1	1	2026-06-15 08:08:44.002932	2026-06-16 22:06:51.634406
+6612	2	2026-06	2026-06-09 00:00:00	Roseli Schiavi Franco	-30.00	\N	\N	100	50.00	1	\N	1	1	1	2026-06-15 08:08:44.007401	2026-06-16 22:06:51.634408
+6631	5	2026-06	2026-05-28 00:00:00	Natalia	-140.00	\N	\N	100	100.00	\N	\N	1	1	1	2026-06-15 08:08:44.017476	2026-06-16 22:06:51.634409
+6635	5	2026-06	2026-05-29 00:00:00	Merilin Cases Arar	-605.43	\N	\N	100	100.00	\N	\N	1	1	1	2026-06-15 08:08:44.021217	2026-06-16 22:06:51.63441
+6636	5	2026-06	2026-05-29 00:00:00	Contato Pet Center	-208.40	1	2	100	100.00	\N	\N	1	1	1	2026-06-15 08:08:44.023578	2026-06-16 22:06:51.634412
+6637	5	2026-06	2026-06-01 00:00:00	Salome Maison	-250.00	1	2	100	100.00	\N	\N	1	1	1	2026-06-15 08:08:44.023588	2026-06-16 22:06:51.634413
+6639	5	2026-06	2026-06-05 00:00:00	Estrelaatelie	-126.80	\N	\N	100	100.00	\N	\N	1	1	1	2026-06-15 08:08:44.026504	2026-06-16 22:06:51.634415
+6645	5	2026-06	2026-06-10 00:00:00	Giftex Comercio	-169.90	1	2	100	100.00	\N	\N	1	1	1	2026-06-15 08:08:44.032508	2026-06-16 22:06:51.634416
 \.
 
 
@@ -11458,6 +11694,7 @@ COPY public.loan_payments (id, loan_id, amount, payment_date, source_table, sour
 10	2	500.00	2026-05-15 23:59:59	\N	\N	Pagamento via fechamento de balanço - 15/05/2026 23:59:59	1	1	1	2026-06-11 08:46:32.654776	2026-06-11 08:46:32.654782	t	99
 11	2	20.66	2026-05-26 12:00:00	\N	\N	\N	1	1	1	2026-06-11 09:01:43.619197	2026-06-11 09:01:43.619205	t	\N
 12	36	399.81	2026-05-18 23:59:59	\N	\N	Pagamento via fechamento de balanço - 18/05/2026 23:59:59	1	1	1	2026-06-11 09:17:17.854375	2026-06-11 09:17:17.854379	t	102
+13	37	122.60	2026-06-17 08:44:20	\N	\N	Pagamento via fechamento de balanço - 17/06/2026 08:44:20	1	1	1	2026-06-17 08:44:35.715278	2026-06-17 08:44:35.715283	t	106
 \.
 
 
@@ -11469,6 +11706,7 @@ COPY public.loans (id, loan_type, principal_amount, description, loan_date, due_
 2	lent	9749.00	Cartão Acalento 2025	2026-01-01 00:00:00	\N	f	\N	\N	\N	4	\N	\N	open	\N	2026-03-19 18:39:13.614785	7	\N	\N	1	1	1	2026-03-19 17:27:48.346939	2026-03-19 18:39:13.615448	t
 3	lent	25000.00	Investimento Inicial Acalento	2024-12-01 12:00:00	\N	f	\N	\N	\N	4	\N	\N	open	\N	\N	0	\N	\N	1	1	1	2026-04-04 12:11:08.893017	2026-04-04 12:11:08.893297	t
 36	lent	399.81	Celular Cida Parcela 1	2026-03-19 12:00:00	\N	f	\N	\N	\N	2	\N	\N	settled	2026-05-18 23:59:59	\N	0	\N	\N	1	1	1	2026-06-11 09:03:13.163579	2026-06-11 09:17:17.852506	t
+37	lent	122.60	Acerto casa	2026-06-01 12:00:00	\N	f	\N	\N	\N	2	\N	\N	settled	2026-06-17 08:44:20	\N	0	\N	\N	1	1	1	2026-06-16 22:03:11.831131	2026-06-17 08:44:35.712139	t
 \.
 
 
@@ -11486,6 +11724,7 @@ COPY public.migration_history (id, version, name, status, applied_at, rollback_a
 7	0007	balance_closure_payments	applied	2026-04-23 14:48:50.191583-03	\N
 8	0008	balance_closure_payment_bank_statement	applied	2026-04-23 16:55:05.256357-03	\N
 9	0009	backfill_closure_installments	applied	2026-04-26 13:28:24.661014-03	\N
+10	0010	add_sidebar_collapsed_to_users	applied	2026-06-15 08:21:50.870299-03	\N
 \.
 
 
@@ -12285,7 +12524,6 @@ COPY public.transaction_mappings (id, mapping_type, original_description, patter
 26	exact	fruta gurt frozen yogurt ltda	\N	\N	\N	1	7	f	\N	\N	1	1	1	2026-02-13 10:18:04.491631	2026-02-13 10:18:04.491631
 27	exact	sabor do interior	\N	\N	\N	1	7	f	\N	\N	1	1	1	2026-02-13 10:18:04.491631	2026-02-13 10:18:04.491631
 28	pattern	\N	trevo	\N	\N	1	7	f	\N	\N	1	1	1	2026-02-13 10:18:04.491631	2026-02-13 10:18:04.491631
-29	pattern	\N	qualidade	\N	\N	1	7	f	\N	\N	1	1	1	2026-02-13 10:18:04.491631	2026-02-13 10:18:04.491631
 30	pattern	\N	gelace	\N	\N	1	7	f	\N	\N	1	1	1	2026-02-13 10:18:04.491631	2026-02-13 10:18:04.491631
 31	pattern	\N	brunasso gou	\N	\N	1	7	f	\N	\N	1	1	1	2026-02-13 10:18:04.491631	2026-02-13 10:18:04.491631
 32	pattern	\N	casa de bolo	\N	\N	1	7	f	\N	\N	1	1	1	2026-02-13 10:18:04.491631	2026-02-13 10:18:04.491631
@@ -12649,7 +12887,6 @@ COPY public.transaction_mappings (id, mapping_type, original_description, patter
 391	exact	kolmeia kids	\N	\N	\N	1	163	f	\N	\N	1	1	1	2026-04-16 08:02:14.070622	2026-04-16 08:02:14.070624
 392	exact	loja do pequeno	\N	\N	\N	1	163	f	\N	\N	1	1	1	2026-04-16 08:02:14.070625	2026-04-16 08:02:14.070627
 393	exact	temucom temu br xb	\N	\N	\N	1	86	f	\N	\N	1	1	1	2026-04-16 08:02:14.070628	2026-04-16 08:02:14.070629
-394	exact	yelum seg parc1	\N	\N	\N	1	59	f	\N	\N	1	1	1	2026-04-16 08:02:14.070631	2026-04-16 08:02:14.070632
 395	exact	ban sushi	\N	\N	\N	1	16	f	\N	\N	1	1	1	2026-04-16 08:02:14.070634	2026-04-16 08:02:14.070635
 396	exact	lsl laboratório de an	\N	\N	\N	1	141	f	\N	\N	1	1	1	2026-04-16 08:02:14.070637	2026-04-16 08:02:14.070638
 397	exact	rei do cupim rio claro bra	\N	\N	\N	1	16	f	\N	\N	1	1	1	2026-04-17 07:53:00.928872	2026-04-17 07:53:00.928881
@@ -12661,13 +12898,26 @@ COPY public.transaction_mappings (id, mapping_type, original_description, patter
 403	exact	classico comercio de re sao paulo bra	\N	\N	\N	1	16	f	\N	\N	1	1	1	2026-06-11 08:36:31.410678	2026-06-11 08:36:31.410684
 404	exact	juros - limite da conta	\N	\N	\N	1	39	f	\N	\N	1	1	1	2026-06-11 08:37:06.483492	2026-06-11 08:37:06.483499
 405	exact	deposito skina da cerveja rio claro bra	\N	\N	\N	1	6	f	\N	\N	1	1	1	2026-06-11 08:37:37.1356	2026-06-11 08:37:37.135608
-406	exact	yelum seg parc2	\N	\N	\N	1	59	f	\N	\N	1	1	1	2026-06-11 08:37:47.262122	2026-06-11 08:37:47.262128
 407	exact	cherin bom	\N	\N	\N	1	16	f	\N	\N	1	1	1	2026-06-11 08:37:59.514871	2026-06-11 08:37:59.514878
 408	exact	malitcia	\N	\N	\N	1	162	f	\N	\N	1	1	1	2026-06-11 08:38:11.130714	2026-06-11 08:38:11.130719
 409	exact	melmatte	\N	\N	\N	1	4	f	\N	\N	1	1	1	2026-06-11 08:39:06.755236	2026-06-11 08:39:06.755243
 410	exact	guichê web	\N	\N	\N	1	115	f	\N	\N	1	1	1	2026-06-11 08:39:06.755245	2026-06-11 08:39:06.755246
 411	exact	impulse brain	\N	\N	\N	1	117	f	\N	\N	1	1	1	2026-06-11 08:39:06.755248	2026-06-11 08:39:06.755249
 412	exact	ali express	\N	\N	\N	1	638	f	\N	\N	1	1	1	2026-06-11 08:39:53.533738	2026-06-11 08:39:53.533744
+413	pattern	\N	yelum seg	\N	\N	1	59	f	\N	\N	1	1	1	2026-06-15 08:27:28.528683	2026-06-15 08:27:28.528691
+414	exact	panini brasil	\N	\N	\N	1	117	f	\N	\N	1	1	1	2026-06-15 08:28:15.217801	2026-06-15 08:28:15.217809
+415	exact	asa chlorophylla indus	\N	\N	\N	1	4	f	\N	\N	1	1	1	2026-06-15 08:29:29.228754	2026-06-15 08:29:29.228761
+417	exact	autovagas garagem	\N	\N	\N	1	52	f	\N	\N	1	1	1	2026-06-15 08:30:06.875122	2026-06-15 08:30:06.875128
+418	exact	allpark empreendimento	\N	\N	\N	1	52	f	\N	\N	1	1	1	2026-06-15 08:30:06.87513	2026-06-15 08:30:06.875132
+419	exact	buffet animali	\N	\N	\N	1	115	f	\N	\N	1	1	1	2026-06-15 08:30:06.875133	2026-06-15 08:30:06.875135
+420	exact	guilhermeottaviani	\N	\N	\N	1	113	f	\N	\N	1	1	1	2026-06-15 08:30:06.875136	2026-06-15 08:30:06.875138
+421	exact	indu presentes	\N	\N	\N	1	115	f	\N	\N	1	1	1	2026-06-15 08:30:06.875139	2026-06-15 08:30:06.87514
+422	exact	mini modinha e cia	\N	\N	\N	1	163	f	\N	\N	1	1	1	2026-06-15 08:30:06.875142	2026-06-15 08:30:06.875143
+423	exact	ferus cosmetico	\N	\N	\N	1	4	f	\N	\N	1	1	1	2026-06-15 08:30:06.875145	2026-06-15 08:30:06.875146
+424	exact	goseguranca	\N	\N	\N	1	132	f	\N	\N	1	1	1	2026-06-15 08:30:06.875148	2026-06-15 08:30:06.875149
+29	pattern	\N	mercado qualidade	\N	\N	1	18	f	\N	\N	1	1	1	2026-02-13 10:18:04.491631	2026-06-15 08:37:16.901636
+416	exact	ditacuja	\N	\N	\N	1	4	f	2	0.00	1	1	1	2026-06-15 08:30:02.459662	2026-06-15 08:41:53.448472
+425	exact	bella fabrica divertida de lacos	\N	\N	\N	1	163	f	\N	\N	1	1	1	2026-06-17 08:44:02.024836	2026-06-17 08:44:02.024846
 \.
 
 
@@ -12675,8 +12925,8 @@ COPY public.transaction_mappings (id, mapping_type, original_description, patter
 -- Data for Name: users; Type: TABLE DATA; Schema: public; Owner: plumo
 --
 
-COPY public.users (id, email, first_name, last_name, role, is_admin, auth_provider, password_hash, theme_mode, high_contrast_mode, reduce_motion, colorblind_safe_palette, accessibility_level, profile_image_filename, last_login_at, tenant_id, created_at, last_updated_at, active) FROM stdin;
-1	gustavoquinelato@gmail.com	Gustavo	Quinelato	admin	t	local	4f1c21e3d4b262d25cd6bd2c2e478d66b9621cace99cf6c57d8359e949307e00	light	f	f	f	regular	\N	2026-06-11 11:27:31.060754	1	2026-02-13 10:18:04.491631	2026-06-11 09:14:45.340932	t
+COPY public.users (id, email, first_name, last_name, role, is_admin, auth_provider, password_hash, theme_mode, high_contrast_mode, reduce_motion, colorblind_safe_palette, accessibility_level, profile_image_filename, last_login_at, tenant_id, created_at, last_updated_at, active, sidebar_collapsed) FROM stdin;
+1	gustavoquinelato@gmail.com	Gustavo	Quinelato	admin	t	local	4f1c21e3d4b262d25cd6bd2c2e478d66b9621cace99cf6c57d8359e949307e00	light	f	f	f	regular	\N	2026-06-25 11:03:09.310329	1	2026-02-13 10:18:04.491631	2026-06-25 08:05:34.089678	t	f
 \.
 
 
@@ -12798,6 +13048,20 @@ COPY public.users_sessions (id, token_hash, expires_at, ip_address, user_agent, 
 63	313ae97ce69d1529f3f9f3bbf08de8662b044467d3e76fd32588f85991a2bc17	2026-06-12 09:14:32.719889	\N	\N	1	1	\N	2026-06-11 09:14:32.707114	2026-06-11 09:14:32.707114	t
 64	5c723ae49b4ff184e934e56ab421792ad30de7c1c856b7be56def61f8d8aeae1	2026-06-12 09:16:28.642295	\N	\N	1	1	\N	2026-06-11 09:16:28.629146	2026-06-11 09:16:28.629146	t
 65	ccf46ae4eeef1028c78e2b64ab4e431dc37beb3ca0617a82b2eaa121dd20a06b	2026-06-12 09:16:55.9302	\N	\N	1	1	\N	2026-06-11 09:16:55.916561	2026-06-11 09:16:55.916561	t
+66	2c2b4a9aa2bacc6016f34f18df9658071e1bd3627655dff65ed78eb15f9312ad	2026-06-13 19:02:32.109937	\N	\N	1	1	\N	2026-06-12 19:02:32.109721	2026-06-12 19:02:32.109721	t
+67	ba8fcc3b8ce284fac6f7df24266799b226ca83588a0a44e52dbb25c9174c08a3	2026-06-13 19:03:04.881813	\N	\N	1	1	\N	2026-06-12 19:03:04.864513	2026-06-12 19:03:04.864513	t
+68	c06f834f6904a5f6b654ae6884297626189611af4634769b78260cec90a5d572	2026-06-13 19:04:29.747452	\N	\N	1	1	\N	2026-06-12 19:04:29.708418	2026-06-12 19:04:29.708418	t
+69	2b1b2f7a97275b103269f724d662c2287caee71623d786f2492e9fee868c9bee	2026-06-16 08:07:38.184108	\N	\N	1	1	\N	2026-06-15 08:07:38.185707	2026-06-15 08:07:38.185707	t
+70	edf6d6ad19a551220a34160b516e270db457d3b7828d6666ab94b4a575ff052a	2026-06-16 08:07:44.773879	\N	\N	1	1	\N	2026-06-15 08:07:44.746089	2026-06-15 08:07:44.746089	t
+71	767f27b37a81d95bca61d0b15e79b4e49bb4a2c1cfb76df940f28629b5f8cd4b	2026-06-16 08:23:51.372675	\N	\N	1	1	\N	2026-06-15 08:23:51.372141	2026-06-15 08:23:51.372141	t
+72	4a1fe6f966d3c7a477abc90796374ab1b767db61293e57b8f4b3c2452deef581	2026-06-16 08:23:54.652561	\N	\N	1	1	\N	2026-06-15 08:23:54.625804	2026-06-15 08:23:54.625804	t
+73	fcb8573fcbc8bb6965334e8c2e985fbf8b89668a040dc4987f1b856ac107b5df	2026-06-16 08:25:27.832458	\N	\N	1	1	\N	2026-06-15 08:25:27.832305	2026-06-15 08:25:27.832305	t
+74	a4f97854fc20a7f5490d905b4a70fdb05f635ba7ddf715c7b0707055de75f285	2026-06-16 08:25:30.608043	\N	\N	1	1	\N	2026-06-15 08:25:30.593899	2026-06-15 08:25:30.593899	t
+75	cd69e34c21c959d83c1f27bd4250fd669d2e53ff7a6ddcc0a2c65ac64d0afacf	2026-06-17 22:00:33.279343	\N	\N	1	1	\N	2026-06-16 22:00:33.287161	2026-06-16 22:00:33.287161	t
+76	07abfdcedd7bbb02d08e4e5fc880e8a17a8431ba25ba22db98618330ad034bd5	2026-06-17 22:00:57.231701	\N	\N	1	1	\N	2026-06-16 22:00:57.214377	2026-06-16 22:00:57.214377	t
+77	427adeac7b9d828a1fcb7e42b68e3812b39c55b8a87457b06de7ab26a4ae3238	2026-06-17 22:02:22.210626	\N	\N	1	1	\N	2026-06-16 22:02:22.2019	2026-06-16 22:02:22.2019	t
+78	9bba30ca3773a2588c7fb55ede490e7bdf68944d0f4761a8826f2edb39f61029	2026-06-26 08:03:09.367235	\N	\N	1	1	\N	2026-06-25 08:03:09.36818	2026-06-25 08:03:09.36818	t
+79	cac8c6a09c968636e234bcda5065782639e4a9738eb383ce09452e11f5379705	2026-06-26 08:03:12.735633	\N	\N	1	1	\N	2026-06-25 08:03:12.714619	2026-06-25 08:03:12.714619	t
 \.
 
 
@@ -12812,21 +13076,21 @@ SELECT pg_catalog.setval('public.accounts_id_seq', 5, true);
 -- Name: balance_closure_payments_id_seq; Type: SEQUENCE SET; Schema: public; Owner: plumo
 --
 
-SELECT pg_catalog.setval('public.balance_closure_payments_id_seq', 23, true);
+SELECT pg_catalog.setval('public.balance_closure_payments_id_seq', 27, true);
 
 
 --
 -- Name: balance_closures_id_seq; Type: SEQUENCE SET; Schema: public; Owner: plumo
 --
 
-SELECT pg_catalog.setval('public.balance_closures_id_seq', 102, true);
+SELECT pg_catalog.setval('public.balance_closures_id_seq', 106, true);
 
 
 --
 -- Name: bank_statements_id_seq; Type: SEQUENCE SET; Schema: public; Owner: plumo
 --
 
-SELECT pg_catalog.setval('public.bank_statements_id_seq', 2868, true);
+SELECT pg_catalog.setval('public.bank_statements_id_seq', 2912, true);
 
 
 --
@@ -12840,14 +13104,14 @@ SELECT pg_catalog.setval('public.banks_id_seq', 41, true);
 -- Name: benefit_card_statements_id_seq; Type: SEQUENCE SET; Schema: public; Owner: plumo
 --
 
-SELECT pg_catalog.setval('public.benefit_card_statements_id_seq', 107, true);
+SELECT pg_catalog.setval('public.benefit_card_statements_id_seq', 108, true);
 
 
 --
 -- Name: credit_card_invoices_id_seq; Type: SEQUENCE SET; Schema: public; Owner: plumo
 --
 
-SELECT pg_catalog.setval('public.credit_card_invoices_id_seq', 6471, true);
+SELECT pg_catalog.setval('public.credit_card_invoices_id_seq', 6646, true);
 
 
 --
@@ -12882,21 +13146,21 @@ SELECT pg_catalog.setval('public.expense_templates_id_seq', 2, true);
 -- Name: loan_payments_id_seq; Type: SEQUENCE SET; Schema: public; Owner: plumo
 --
 
-SELECT pg_catalog.setval('public.loan_payments_id_seq', 12, true);
+SELECT pg_catalog.setval('public.loan_payments_id_seq', 13, true);
 
 
 --
 -- Name: loans_id_seq; Type: SEQUENCE SET; Schema: public; Owner: plumo
 --
 
-SELECT pg_catalog.setval('public.loans_id_seq', 36, true);
+SELECT pg_catalog.setval('public.loans_id_seq', 37, true);
 
 
 --
 -- Name: migration_history_id_seq; Type: SEQUENCE SET; Schema: public; Owner: plumo
 --
 
-SELECT pg_catalog.setval('public.migration_history_id_seq', 9, true);
+SELECT pg_catalog.setval('public.migration_history_id_seq', 10, true);
 
 
 --
@@ -12945,7 +13209,7 @@ SELECT pg_catalog.setval('public.tenants_id_seq', 1, true);
 -- Name: transaction_mappings_id_seq; Type: SEQUENCE SET; Schema: public; Owner: plumo
 --
 
-SELECT pg_catalog.setval('public.transaction_mappings_id_seq', 412, true);
+SELECT pg_catalog.setval('public.transaction_mappings_id_seq', 425, true);
 
 
 --
@@ -12966,7 +13230,7 @@ SELECT pg_catalog.setval('public.users_permissions_id_seq', 40, true);
 -- Name: users_sessions_id_seq; Type: SEQUENCE SET; Schema: public; Owner: plumo
 --
 
-SELECT pg_catalog.setval('public.users_sessions_id_seq', 65, true);
+SELECT pg_catalog.setval('public.users_sessions_id_seq', 79, true);
 
 
 --
@@ -14706,5 +14970,5 @@ GRANT ALL ON SCHEMA public TO PUBLIC;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Nsnfih6zfMJFCiErHD5dm6gbVyREJ9Bx55G9D0VfXn4VbFDftZA16KWi3iIzdny
+\unrestrict bMg20SHvhc14QCachOQQg0lVbWZxeXxoa5AH2XOdoCZTCuzZYphKgE9aC5iinqB
 
