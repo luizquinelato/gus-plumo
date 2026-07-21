@@ -5,8 +5,33 @@ import Sidebar from '../components/Sidebar'
 import LoadingSpinner from '../components/LoadingSpinner'
 import UnifiedImportModal from '../components/UnifiedImportModal'
 import ManualTransactionModal from '../components/ManualTransactionModal'
-import { Upload, CreditCard, PlusCircle, Home, FileText, TrendingDown, TrendingUp, Calendar, Gift, Landmark } from 'lucide-react'
-import { formatCurrencyWithColor, formatCurrency } from '../utils/currency'
+import HomeInvoiceDetailsModal, { HomeInvoiceModalParams } from '../components/HomeInvoiceDetailsModal'
+import {
+  Upload,
+  CreditCard,
+  PlusCircle,
+  TrendingDown,
+  TrendingUp,
+  Gift,
+  Landmark,
+  Clock,
+  ArrowRight,
+  Scale,
+  FileText,
+  Receipt,
+  ChevronRight,
+  Home,
+  History,
+  Eye,
+  EyeOff,
+} from 'lucide-react'
+import {
+  formatCurrencyWithColorSafe,
+  formatCurrencySafe,
+  formatSignedCurrencySafe,
+} from '../utils/currency'
+import { formatDateBR } from '../utils/dateUtils'
+import { useBalanceVisibility } from '../contexts/BalanceVisibilityContext'
 
 interface MonthSummary {
   year_month: string
@@ -35,9 +60,25 @@ interface InvoiceMonthSummary {
   cards: CardMonthData[]
 }
 
+interface CardRemainingBalance {
+  card_id: number
+  card_number: string
+  card_name: string
+  card_type: string
+  remaining_total: number
+  remaining_count: number
+}
+
+interface RemainingInstallmentsSummary {
+  total: number
+  count: number
+  cards: CardRemainingBalance[]
+}
+
 interface HomeDashboardData {
   months: MonthSummary[]
   invoice_months: InvoiceMonthSummary[]
+  remaining_installments: RemainingInstallmentsSummary
 }
 
 interface CurrentBalanceData {
@@ -49,20 +90,31 @@ interface CurrentBalanceData {
   last_transaction_date: string | null
 }
 
+const MONTH_NAMES_FULL = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+]
+
+const MONTH_NAMES_SHORT = [
+  'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun',
+  'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez',
+]
+
 const HomePage = () => {
   const navigate = useNavigate()
+  const { hideBalanceValues, toggleBalanceVisibility } = useBalanceVisibility()
   const [isImportModalOpen, setIsImportModalOpen] = useState(false)
   const [isManualTransactionModalOpen, setIsManualTransactionModalOpen] = useState(false)
+  const [invoiceModalParams, setInvoiceModalParams] = useState<HomeInvoiceModalParams | null>(null)
   const [dashboardData, setDashboardData] = useState<HomeDashboardData | null>(null)
   const [currentBalance, setCurrentBalance] = useState<CurrentBalanceData | null>(null)
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(true)
 
-  // Obtém mês/ano atual
   const now = new Date()
   const currentYear = now.getFullYear()
-  const currentMonthNum = now.getMonth() // 0-indexed
+  const currentMonthNum = now.getMonth()
+  const currentMonthLabel = `${MONTH_NAMES_FULL[currentMonthNum]} ${currentYear}`
 
-  // Calcula datas do mês atual para filtros
   const getMonthDateRange = (yearMonth?: string) => {
     let year = currentYear
     let month = currentMonthNum
@@ -70,16 +122,14 @@ const HomePage = () => {
     if (yearMonth) {
       const parts = yearMonth.split('-')
       year = parseInt(parts[0])
-      month = parseInt(parts[1]) - 1 // 0-indexed
+      month = parseInt(parts[1]) - 1
     }
 
-    // Usar horário local para evitar problemas de timezone
     const startDate = new Date(year, month, 1, 0, 0, 0, 0)
-    const endDate = new Date(year, month + 1, 0, 23, 59, 59, 999) // Último dia do mês
+    const endDate = new Date(year, month + 1, 0, 23, 59, 59, 999)
     return { startDate, endDate }
   }
 
-  // Converte Date para string ISO preservando o horário local
   const toLocalISOString = (date: Date): string => {
     const year = date.getFullYear()
     const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -90,26 +140,14 @@ const HomePage = () => {
     return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`
   }
 
-  // Navega para Extrato com filtros do mês especificado
   const navigateToExtrato = (yearMonth?: string) => {
     const { startDate, endDate } = getMonthDateRange(yearMonth)
     navigate('/relatorios/extrato', {
       state: {
         startDate: toLocalISOString(startDate),
         endDate: toLocalISOString(endDate),
-        sources: ['bank', 'card', 'benefit']
-      }
-    })
-  }
-
-  // Navega para Faturas com filtros do mês especificado
-  const navigateToFaturas = (yearMonth?: string) => {
-    const ym = yearMonth || `${currentYear}-${String(currentMonthNum + 1).padStart(2, '0')}`
-    navigate('/relatorios/faturas', {
-      state: {
-        yearMonth: ym,
-        selectAllCards: true
-      }
+        sources: ['bank', 'card', 'benefit'],
+      },
     })
   }
 
@@ -139,352 +177,429 @@ const HomePage = () => {
     }
   }
 
+  const currentMonth = dashboardData?.months?.[0] ?? null
+  const currentInvoiceMonth = dashboardData?.invoice_months?.[0] ?? null
+  const remainingInstallments = dashboardData?.remaining_installments
+  const hasRemainingDebt = (remainingInstallments?.total ?? 0) > 0
+  const hasInvoiceData =
+    (currentInvoiceMonth?.count ?? 0) > 0 || hasRemainingDebt
+
+  const prevMonthDate = new Date(currentYear, currentMonthNum - 1, 1)
+  const previousMonthLabel = `${MONTH_NAMES_SHORT[prevMonthDate.getMonth()]}/${prevMonthDate.getFullYear()}`
+  const previousYearMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`
+
+  const monthNetBalance = currentMonth?.balance ?? 0
+  const accountBalance = currentBalance?.current_balance ?? 0
+  const previousMonthBalance = accountBalance - monthNetBalance
+
+  const remainingByCard = new Map<number, CardRemainingBalance>()
+  remainingInstallments?.cards?.forEach((card) => {
+    remainingByCard.set(card.card_id, card)
+  })
+
+  const quickLinks = [
+    { label: 'Extrato', icon: Receipt, path: '/relatorios/extrato' },
+    { label: 'Faturas', icon: CreditCard, path: '/relatorios/faturas' },
+    { label: 'Balanço', icon: Scale, path: '/balanco' },
+    { label: 'Curadoria', icon: FileText, path: '/curadoria' },
+  ]
+
   return (
-    <div className="flex h-screen bg-gray-100 dark:bg-gray-900">
+    <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
       <Sidebar />
-      <main className="flex-1 overflow-y-auto p-8">
-        <div className="w-full">
-          {/* Header - Compacto como outras páginas */}
-          <div className="mb-6">
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-              <Home className="w-8 h-8" />
-              Plumo
-            </h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">
-              Finanças leves, vida plena. Assuma a direção. Sinta a leveza.
-            </p>
+      <main className="flex-1 overflow-y-auto">
+        <div className="p-8 space-y-6">
+
+          {/* Header — alinhado com Extrato, Faturas, etc. */}
+          <div className="mb-4 flex items-start justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
+                <Home className="w-8 h-8" />
+                Plumo
+              </h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-2">
+                Finanças leves, vida plena. · {currentMonthLabel}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                onClick={() => setIsImportModalOpen(true)}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 text-sm font-medium hover:border-color-primary hover:text-color-primary transition-all shadow-sm"
+              >
+                <Upload size={16} />
+                Importar
+              </button>
+              <button
+                onClick={() => setIsManualTransactionModalOpen(true)}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white shadow-sm hover:opacity-90 transition-all bg-color-primary"
+              >
+                <PlusCircle size={16} />
+                Novo lançamento
+              </button>
+            </div>
           </div>
 
+          {/* Acesso rápido */}
+          <section>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {quickLinks.map(({ label, icon: Icon, path }) => (
+                <button
+                  key={path}
+                  onClick={() => navigate(path)}
+                  className="flex items-center gap-3 px-4 py-3.5 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-color-primary transition-all shadow-sm text-left group"
+                >
+                  <div className="p-2 rounded-lg bg-gray-50 dark:bg-gray-700/50 group-hover:bg-color-primary-light transition-colors">
+                    <Icon size={16} className="text-gray-500 dark:text-gray-400 group-hover:text-color-primary transition-colors" />
+                  </div>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {label}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+
           {isLoadingDashboard ? (
-            <div className="flex items-center justify-center py-12">
+            <div className="flex items-center justify-center py-24">
               <LoadingSpinner message="Carregando dados..." />
             </div>
           ) : (
             <>
-              {/* ==================== SEÇÃO 1: RESUMO DOS ÚLTIMOS 3 MESES ==================== */}
-              <div className="mb-6">
-                {/* Header da seção */}
-                <div className="flex items-center gap-2 mb-4">
-                  <Landmark size={20} className="text-color-primary" />
-                  <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-                    Conta Corrente
-                  </h2>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  {/* Card de Saldo Atual */}
-                  <div
-                    onClick={() => navigate('/relatorios/extrato')}
-                    className="bg-gradient-to-br from-[var(--color-1)] to-[var(--color-2)] rounded-lg p-4 shadow-lg cursor-pointer hover:shadow-xl transition-all"
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-medium text-white/80">
-                        Saldo Atual
+              {/* Hero — Saldo atual */}
+              <section
+                onClick={() => navigate('/relatorios/extrato')}
+                className="relative overflow-hidden rounded-2xl p-6 sm:p-8 cursor-pointer group shadow-lg hover:shadow-xl transition-all"
+                style={{ background: 'var(--gradient-1-2)' }}
+              >
+                <div className="absolute inset-0 bg-white/0 group-hover:bg-white/5 transition-colors" />
+                <div className="relative">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Landmark size={18} className="text-white/70" />
+                      <span className="text-sm font-medium text-white/80 uppercase tracking-wide">
+                        Saldo em conta
                       </span>
-                      <Landmark size={16} className="text-white/60" />
                     </div>
-                    <p className="text-2xl font-bold text-white mb-2">
-                      {currentBalance ? formatCurrency(currentBalance.current_balance) : 'R$ 0,00'}
-                    </p>
-                    <div className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-1">
-                        <TrendingDown size={12} className="text-red-300" />
-                        <span className="text-red-200 font-medium">
-                          {currentBalance ? formatCurrency(currentBalance.total_debits) : 'R$ 0,00'}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <TrendingUp size={12} className="text-green-300" />
-                        <span className="text-green-200 font-medium">
-                          {currentBalance ? formatCurrency(currentBalance.total_credits) : 'R$ 0,00'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Cards dos 3 meses */}
-                  {[...(dashboardData?.months || [])].reverse().map((month, index) => (
-                    <div
-                      key={month.year_month}
-                      onClick={() => navigateToExtrato(month.year_month)}
-                      className={`bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700 hover:border-[var(--color-1)] transition-all shadow-sm cursor-pointer ${
-                        index === 0 ? 'ring-2 ring-[var(--color-1)] ring-opacity-50' : ''
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                          {month.month_label}
-                        </span>
-                        {index === 0 && (
-                          <span className="text-[10px] font-medium text-white bg-[var(--color-1)] px-1.5 py-0.5 rounded">
-                            ATUAL
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-2xl font-bold mb-2">
-                        {formatCurrencyWithColor(month.balance, true)}
-                      </p>
-                      <div className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-1">
-                          <TrendingDown size={12} className="text-red-500" />
-                          <span className="text-red-600 dark:text-red-400 font-medium">
-                            {formatCurrency(-month.total_expenses)}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <TrendingUp size={12} className="text-green-500" />
-                          <span className="text-green-600 dark:text-green-400 font-medium">
-                            {formatCurrency(month.total_revenue)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* ==================== SEÇÃO 2: FATURAS DOS ÚLTIMOS 3 MESES ==================== */}
-              {dashboardData && dashboardData.invoice_months && dashboardData.invoice_months.length > 0 && (
-                <div className="mb-8">
-                  {/* Header da seção */}
-                  <div className="flex items-center gap-2 mb-4">
-                    <CreditCard size={20} className="text-color-primary" />
-                    <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-                      Faturas de Cartões
-                    </h2>
-                  </div>
-
-                  {/* 3 cards de meses (mês atual à esquerda) */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                    {[...dashboardData.invoice_months].reverse().map((month, index) => (
-                      <div
-                        key={month.year_month}
-                        onClick={() => navigateToFaturas(month.year_month)}
-                        className={`bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700 hover:border-[var(--color-1)] transition-all shadow-sm cursor-pointer ${
-                          index === 0 ? 'ring-2 ring-[var(--color-1)] ring-opacity-50' : ''
-                        }`}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          toggleBalanceVisibility()
+                        }}
+                        className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-all"
+                        title={hideBalanceValues ? 'Exibir valores' : 'Ocultar valores'}
+                        aria-label={hideBalanceValues ? 'Exibir valores' : 'Ocultar valores'}
                       >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                            {month.month_label}
+                        {hideBalanceValues ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                      <ArrowRight size={18} className="text-white/50 group-hover:text-white/80 group-hover:translate-x-0.5 transition-all" />
+                    </div>
+                  </div>
+                  <p className="text-4xl sm:text-5xl font-bold text-white mb-6 tracking-tight">
+                    {formatCurrencySafe(currentBalance?.current_balance ?? 0, hideBalanceValues)}
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    <div className="bg-white/10 rounded-xl px-4 py-3 backdrop-blur-sm">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <TrendingUp size={13} className="text-green-300" />
+                        <span className="text-xs text-white/70">Entradas</span>
+                      </div>
+                      <p className="text-sm font-semibold text-white">
+                        {formatCurrencySafe(currentBalance?.total_credits ?? 0, hideBalanceValues)}
+                      </p>
+                      <p className="text-[11px] text-white/50 mt-0.5">
+                        {currentBalance?.credits_count ?? 0} lançamentos
+                      </p>
+                    </div>
+                    <div className="bg-white/10 rounded-xl px-4 py-3 backdrop-blur-sm">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <TrendingDown size={13} className="text-red-300" />
+                        <span className="text-xs text-white/70">Saídas</span>
+                      </div>
+                      <p className="text-sm font-semibold text-white">
+                        {formatCurrencySafe(currentBalance?.total_debits ?? 0, hideBalanceValues)}
+                      </p>
+                      <p className="text-[11px] text-white/50 mt-0.5">
+                        {currentBalance?.debits_count ?? 0} lançamentos
+                      </p>
+                    </div>
+                    {currentBalance?.last_transaction_date && (
+                      <div className="bg-white/10 rounded-xl px-4 py-3 backdrop-blur-sm col-span-2 sm:col-span-1">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <Clock size={13} className="text-white/60" />
+                          <span className="text-xs text-white/70">Última movimentação</span>
+                        </div>
+                        <p className="text-sm font-semibold text-white">
+                          {formatDateBR(currentBalance.last_transaction_date)}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </section>
+
+              {/* Conta corrente — mês atual */}
+              <section>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <Landmark size={18} className="text-color-primary" />
+                    <h2 className="text-base font-semibold text-gray-800 dark:text-gray-200">
+                      Conta corrente
+                    </h2>
+                    <span className="text-xs text-gray-400 dark:text-gray-500">
+                      {currentMonth?.month_label ?? currentMonthLabel}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => navigateToExtrato(currentMonth?.year_month)}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-color-primary hover:opacity-80 transition-opacity"
+                  >
+                    Ver extrato
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* Saldo mês anterior */}
+                  <button
+                    onClick={() => navigateToExtrato(previousYearMonth)}
+                    className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 hover:border-color-primary transition-all shadow-sm text-left group"
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="p-1.5 rounded-lg bg-gray-100 dark:bg-gray-700/50">
+                        <History size={14} className="text-gray-500 dark:text-gray-400" />
+                      </div>
+                      <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                        Saldo mês anterior
+                      </span>
+                    </div>
+                    <p className="text-2xl font-bold">
+                      {formatCurrencyWithColorSafe(previousMonthBalance, hideBalanceValues, true)}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      carryover de {previousMonthLabel}
+                    </p>
+                  </button>
+
+                  <button
+                    onClick={() => navigateToExtrato(currentMonth?.year_month)}
+                    className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 hover:border-color-primary transition-all shadow-sm text-left group"
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="p-1.5 rounded-lg bg-green-50 dark:bg-green-900/20">
+                        <TrendingUp size={14} className="text-green-600 dark:text-green-400" />
+                      </div>
+                      <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                        Receitas
+                      </span>
+                    </div>
+                    <p className={`text-2xl font-bold ${hideBalanceValues ? 'text-gray-400 dark:text-gray-500 tracking-widest' : 'text-green-600 dark:text-green-400'}`}>
+                      {formatCurrencySafe(currentMonth?.total_revenue ?? 0, hideBalanceValues)}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      {currentMonth?.revenue_count ?? 0} lançamentos
+                    </p>
+                  </button>
+
+                  <button
+                    onClick={() => navigateToExtrato(currentMonth?.year_month)}
+                    className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 hover:border-color-primary transition-all shadow-sm text-left group"
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="p-1.5 rounded-lg bg-red-50 dark:bg-red-900/20">
+                        <TrendingDown size={14} className="text-red-600 dark:text-red-400" />
+                      </div>
+                      <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                        Despesas
+                      </span>
+                    </div>
+                    <p className={`text-2xl font-bold ${hideBalanceValues ? 'text-gray-400 dark:text-gray-500 tracking-widest' : 'text-red-600 dark:text-red-400'}`}>
+                      {formatCurrencySafe(-(currentMonth?.total_expenses ?? 0), hideBalanceValues)}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      {currentMonth?.expenses_count ?? 0} lançamentos
+                    </p>
+                  </button>
+                </div>
+              </section>
+
+              {/* Cartões */}
+              {hasInvoiceData && (
+                <section>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <CreditCard size={18} className="text-color-primary" />
+                      <h2 className="text-base font-semibold text-gray-800 dark:text-gray-200">
+                        Cartões
+                      </h2>
+                      <span className="text-xs text-gray-400 dark:text-gray-500">
+                        {currentInvoiceMonth?.month_label}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => navigate('/relatorios/faturas')}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-color-primary hover:opacity-80 transition-opacity"
+                    >
+                      Ver faturas
+                      <ChevronRight size={14} />
+                    </button>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-3 mb-4 w-full">
+                    {/* Fatura do mês */}
+                    <button
+                      onClick={() =>
+                        currentInvoiceMonth &&
+                        setInvoiceModalParams({ view: 'month', year_month: currentInvoiceMonth.year_month })
+                      }
+                      className="flex-1 bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 hover:border-color-primary transition-all shadow-sm text-left"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                          Fatura do mês
+                        </span>
+                        <CreditCard size={14} className="text-color-primary" />
+                      </div>
+                      <p className="text-2xl font-bold text-red-600 dark:text-red-400">
+                        {formatSignedCurrencySafe(
+                          currentInvoiceMonth?.total ?? 0,
+                          hideBalanceValues,
+                          { forceNegative: (currentInvoiceMonth?.total ?? 0) !== 0 }
+                        )}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {currentInvoiceMonth?.count ?? 0}{' '}
+                        {(currentInvoiceMonth?.count ?? 0) === 1 ? 'transação' : 'transações'}
+                        {' · '}
+                        {currentInvoiceMonth?.cards.length ?? 0}{' '}
+                        {(currentInvoiceMonth?.cards.length ?? 0) === 1 ? 'cartão' : 'cartões'}
+                      </p>
+                    </button>
+
+                    {/* Saldo devedor parcelado */}
+                    {hasRemainingDebt && (
+                      <button
+                        onClick={() => setInvoiceModalParams({ view: 'remaining' })}
+                        className="flex-1 bg-red-50 dark:bg-red-950/20 rounded-xl p-5 border border-red-200 dark:border-red-800/60 hover:border-red-400 dark:hover:border-red-600 transition-all shadow-sm text-left"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-medium text-red-700 dark:text-red-400 uppercase tracking-wide">
+                            Saldo devedor
                           </span>
-                          {index === 0 && (
-                            <span className="text-[10px] font-medium text-white bg-[var(--color-1)] px-1.5 py-0.5 rounded">
-                              ATUAL
-                            </span>
-                          )}
+                          <Clock size={14} className="text-red-500 dark:text-red-400" />
                         </div>
                         <p className="text-2xl font-bold text-red-600 dark:text-red-400">
-                          {month.total !== 0 ? `-${formatCurrency(Math.abs(month.total))}` : formatCurrency(0)}
+                          {formatSignedCurrencySafe(
+                            Number(remainingInstallments?.total ?? 0),
+                            hideBalanceValues,
+                            { forceNegative: (remainingInstallments?.total ?? 0) !== 0 }
+                          )}
                         </p>
-                        <div className="flex items-center justify-between text-xs mt-2">
-                          <span className="text-gray-500 dark:text-gray-400">
-                            {month.count} {month.count === 1 ? 'transação' : 'transações'}
-                          </span>
-                          <span className="text-gray-500 dark:text-gray-400">
-                            {month.cards.length} {month.cards.length === 1 ? 'cartão' : 'cartões'}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
+                        <p className="text-xs text-red-500/70 dark:text-red-400/60 mt-1">
+                          {remainingInstallments?.count ?? 0}{' '}
+                          {(remainingInstallments?.count ?? 0) === 1 ? 'compra parcelada' : 'compras parceladas'}
+                        </p>
+                      </button>
+                    )}
                   </div>
 
-                  {/* Breakdown por cartão - apenas mês atual ou anterior (sem somar) */}
-                  {(() => {
-                    // Pega os meses invertidos (atual primeiro)
-                    const reversedMonths = [...dashboardData.invoice_months].reverse()
-                    const currentMonthIdx = reversedMonths.findIndex(m => m.cards.length > 0)
-
-                    if (currentMonthIdx === -1) return null
-
-                    const currentMonth = reversedMonths[currentMonthIdx]
-                    const previousMonth = reversedMonths[currentMonthIdx + 1] // mês anterior ao atual com dados
-
-                    // Cria mapa do mês anterior para comparação
-                    const previousMonthMap = new Map<number, number>()
-                    if (previousMonth) {
-                      previousMonth.cards.forEach(card => {
-                        previousMonthMap.set(card.card_id, Number(card.total))
-                      })
-                    }
-
-                    return (
-                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2">
-                        {currentMonth.cards.map((card) => {
-                          const currentTotal = Math.abs(Number(card.total))
-                          const previousTotal = Math.abs(previousMonthMap.get(card.card_id) || 0)
-                          const trend = previousTotal === 0 ? 'neutral' : currentTotal > previousTotal ? 'up' : currentTotal < previousTotal ? 'down' : 'neutral'
+                  {/* Lista de cartões */}
+                  {(currentInvoiceMonth?.cards.length ?? 0) > 0 && (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
+                      <div className="divide-y divide-gray-100 dark:divide-gray-700">
+                        {currentInvoiceMonth!.cards.map((card) => {
+                          const cardTotal = Math.abs(Number(card.total))
+                          const remaining = remainingByCard.get(card.card_id)
 
                           return (
-                            <div
+                            <button
                               key={card.card_id}
-                              className="bg-white dark:bg-gray-800 rounded-lg px-3 py-2 border border-gray-200 dark:border-gray-700 hover:border-[var(--color-1)] transition-all shadow-sm"
+                              onClick={() =>
+                                setInvoiceModalParams({
+                                  view: 'card',
+                                  card_id: card.card_id,
+                                  year_month: currentInvoiceMonth!.year_month,
+                                })
+                              }
+                              className="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors text-left group"
                             >
-                              <div className="flex items-center gap-1 justify-between">
+                              <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-color-primary-light flex items-center justify-center">
                                 {card.card_type === 'beneficios' ? (
-                                  <Gift size={10} className="text-color-primary flex-shrink-0" />
+                                  <Gift size={16} className="text-color-primary" />
                                 ) : (
-                                  <CreditCard size={10} className="text-color-primary flex-shrink-0" />
+                                  <CreditCard size={16} className="text-color-primary" />
                                 )}
-                                <span className="text-[11px] font-semibold text-gray-800 dark:text-gray-200 truncate flex-1" title={card.card_name}>
-                                  {card.card_name}
-                                </span>
-                                <span className="text-[9px] text-gray-400">
-                                  •••• {card.card_number}
-                                </span>
                               </div>
-                              <div className="flex items-center gap-1 mt-1">
-                                <span className="text-sm font-bold text-red-600 dark:text-red-400">
-                                  -{formatCurrency(currentTotal)}
-                                </span>
-                                {trend === 'up' && <TrendingUp size={12} className="text-red-500" title="Aumentou vs mês anterior" />}
-                                {trend === 'down' && <TrendingDown size={12} className="text-green-500" title="Diminuiu vs mês anterior" />}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-semibold text-gray-800 dark:text-gray-200 truncate">
+                                    {card.card_name}
+                                  </span>
+                                  <span className="text-xs text-gray-400 flex-shrink-0">
+                                    •••• {card.card_number}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-gray-400 mt-0.5">
+                                  {card.count} {card.count === 1 ? 'transação' : 'transações'}
+                                  {remaining && remaining.remaining_total > 0 && (
+                                    <span className="text-red-500 dark:text-red-400 ml-2">
+                                      · Parcelado:{' '}
+                                      {formatSignedCurrencySafe(
+                                        Number(remaining.remaining_total),
+                                        hideBalanceValues,
+                                        { forceNegative: true }
+                                      )}
+                                    </span>
+                                  )}
+                                </p>
                               </div>
-                            </div>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                {formatSignedCurrencySafe(cardTotal, hideBalanceValues, { forceNegative: true })}
+                                <ChevronRight
+                                  size={16}
+                                  className="text-gray-300 dark:text-gray-600 group-hover:text-color-primary transition-colors"
+                                />
+                              </div>
+                            </button>
                           )
                         })}
                       </div>
-                    )
-                  })()}
-                </div>
+                    </div>
+                  )}
+                </section>
               )}
-
-              {/* ==================== SEÇÃO 3: IMPORTAÇÃO E PRIMEIROS PASSOS ==================== */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Card de Importação */}
-                <div className="bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-850 rounded-lg p-8 border border-gray-200 dark:border-gray-700 hover:border-[var(--color-1)] transition-all shadow-lg hover:shadow-xl">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 bg-gradient-to-br from-[var(--color-1)] to-[var(--color-2)] rounded-lg">
-                      <Upload className="w-6 h-6 text-white" />
-                    </div>
-                    <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200">
-                      Importar Dados
-                    </h2>
-                  </div>
-
-                  <p className="text-gray-600 dark:text-gray-400 mb-6">
-                    Importe seus extratos bancários e faturas de cartão de crédito para começar a gerenciar suas despesas.
-                  </p>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Botão Importar */}
-                    <button
-                      onClick={() => setIsImportModalOpen(true)}
-                      className="w-full group relative overflow-hidden bg-gradient-to-r from-[var(--color-1)] to-[var(--color-2)] text-white rounded-lg p-6 hover:shadow-lg transition-all duration-300 hover:scale-[1.02]"
-                    >
-                      <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 transition-opacity"></div>
-                      <div className="relative flex flex-col items-center gap-3">
-                        <Upload className="w-8 h-8" />
-                        <span className="text-lg font-bold">Importar Arquivos</span>
-                        <span className="text-xs opacity-90">
-                          PDF, XLSX • Detecção automática
-                        </span>
-                      </div>
-                    </button>
-
-                    {/* Botão Lançamento Manual */}
-                    <button
-                      onClick={() => setIsManualTransactionModalOpen(true)}
-                      className="w-full group relative overflow-hidden text-white rounded-lg p-6 hover:shadow-lg transition-all duration-300 hover:scale-[1.02]"
-                      style={{ background: 'var(--gradient-3-4)' }}
-                    >
-                      <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 transition-opacity"></div>
-                      <div className="relative flex flex-col items-center gap-3">
-                        <PlusCircle className="w-8 h-8" />
-                        <span className="text-lg font-bold">Novo Lançamento</span>
-                        <span className="text-xs opacity-90">
-                          Criar transação manualmente
-                        </span>
-                      </div>
-                    </button>
-                  </div>
-
-                  <div className="mt-4 flex items-center justify-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                    <div className="flex items-center gap-1">
-                      <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                      <span>Extratos XLSX</span>
-                    </div>
-                    <span>•</span>
-                    <div className="flex items-center gap-1">
-                      <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                      <span>Faturas PDF</span>
-                    </div>
-                    <span>•</span>
-                    <div className="flex items-center gap-1">
-                      <div className="w-2 h-2 rounded-full bg-purple-500"></div>
-                      <span>Excel Processado</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Card de Primeiros Passos */}
-                <div className="bg-white dark:bg-gray-800 rounded-lg p-8 border border-gray-200 dark:border-gray-700 hover:border-[var(--color-1)] transition-all shadow-lg">
-                  <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-6">
-                    Primeiros Passos
-                  </h2>
-                  <ul className="space-y-4">
-                    <li className="flex items-start gap-3 group">
-                      <div className="flex-shrink-0 w-6 h-6 rounded-full bg-gradient-to-br from-[var(--color-1)] to-[var(--color-2)] flex items-center justify-center text-white text-xs font-bold">
-                        1
-                      </div>
-                      <div>
-                        <p className="text-gray-800 dark:text-gray-200 font-medium">Importe seus dados</p>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">Extratos bancários e faturas de cartão</p>
-                      </div>
-                    </li>
-                    <li className="flex items-start gap-3 group">
-                      <div className="flex-shrink-0 w-6 h-6 rounded-full bg-gradient-to-br from-[var(--color-1)] to-[var(--color-2)] flex items-center justify-center text-white text-xs font-bold">
-                        2
-                      </div>
-                      <div>
-                        <p className="text-gray-800 dark:text-gray-200 font-medium">Revise as transações</p>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">Categorize e organize seus gastos</p>
-                      </div>
-                    </li>
-                    <li className="flex items-start gap-3 group">
-                      <div className="flex-shrink-0 w-6 h-6 rounded-full bg-gradient-to-br from-[var(--color-1)] to-[var(--color-2)] flex items-center justify-center text-white text-xs font-bold">
-                        3
-                      </div>
-                      <div>
-                        <p className="text-gray-800 dark:text-gray-200 font-medium">Acompanhe padrões</p>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">Visualize seus hábitos financeiros</p>
-                      </div>
-                    </li>
-                    <li className="flex items-start gap-3 group">
-                      <div className="flex-shrink-0 w-6 h-6 rounded-full bg-gradient-to-br from-[var(--color-1)] to-[var(--color-2)] flex items-center justify-center text-white text-xs font-bold">
-                        4
-                      </div>
-                      <div>
-                        <p className="text-gray-800 dark:text-gray-200 font-medium">Gere relatórios</p>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">Obtenha insights sobre suas finanças</p>
-                      </div>
-                    </li>
-                  </ul>
-                </div>
-              </div>
             </>
           )}
         </div>
       </main>
 
-      {/* Modal de Importação Unificado */}
       <UnifiedImportModal
         isOpen={isImportModalOpen}
         onClose={() => {
           setIsImportModalOpen(false)
-          loadDashboardData() // ← Recarrega os dados após fechar o modal
+          loadDashboardData()
+          loadCurrentBalance()
         }}
       />
 
-      {/* Modal de Lançamento Manual */}
+      <HomeInvoiceDetailsModal
+        isOpen={invoiceModalParams !== null}
+        onClose={() => setInvoiceModalParams(null)}
+        params={invoiceModalParams}
+      />
+
       <ManualTransactionModal
         isOpen={isManualTransactionModalOpen}
         onClose={() => setIsManualTransactionModalOpen(false)}
-        onSuccess={loadDashboardData}
+        onSuccess={() => {
+          loadDashboardData()
+          loadCurrentBalance()
+        }}
       />
     </div>
   )
 }
 
 export default HomePage
-

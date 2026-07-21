@@ -16,6 +16,7 @@ interface User {
   tenant_id: number
   theme_mode?: string
   sidebar_collapsed?: boolean
+  hide_balance_values?: boolean
   account_id?: number
   avatar_url?: string
 }
@@ -73,6 +74,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             tenant_id: userData.tenant_id,
             theme_mode: userData.theme_mode,
             sidebar_collapsed: userData.sidebar_collapsed ?? false,
+            hide_balance_values: userData.hide_balance_values ?? false,
             account_id: userData.account_id,
             avatar_url: userData.avatar_url || undefined,
           })
@@ -88,6 +90,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
             detail: userData.sidebar_collapsed ?? false,
           })
           window.dispatchEvent(sidebarEvent)
+
+          const balanceVisibilityEvent = new CustomEvent('user-balance-visibility-loaded', {
+            detail: userData.hide_balance_values ?? false,
+          })
+          window.dispatchEvent(balanceVisibilityEvent)
 
           // Atualizar cores do tenant (sincronização no refresh)
           if (response.data.color_schema_mode) {
@@ -177,6 +184,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
           tenant_id: userData.tenant_id,
           theme_mode: userData.theme_mode,
           sidebar_collapsed: userData.sidebar_collapsed ?? false,
+          hide_balance_values: userData.hide_balance_values ?? false,
           account_id: userData.account_id,
           avatar_url: userData.avatar_url || undefined,
         })
@@ -192,6 +200,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
           detail: userData.sidebar_collapsed ?? false,
         })
         window.dispatchEvent(sidebarEvent)
+
+        const balanceVisibilityEvent = new CustomEvent('user-balance-visibility-loaded', {
+          detail: userData.hide_balance_values ?? false,
+        })
+        window.dispatchEvent(balanceVisibilityEvent)
 
         return true
       }

@@ -660,6 +660,9 @@ const sanitizeText = (text: string): string => {
     .trim()
 }
 
+// Títulos e labels fixos do PDF — preservam acentuação
+const pdfDisplayText = (text: string): string => (text ?? '').trim()
+
 // Cores para valores (RGB)
 const greenColor: [number, number, number] = [22, 163, 74]   // Verde #16A34A (green-600)
 const redColor: [number, number, number] = [220, 38, 38]     // Vermelho #DC2626 (red-600)
@@ -1203,4 +1206,455 @@ const addLoanPaymentsTable = (doc: jsPDF, payments: LoanPaymentItem[], mainAccou
       }
     }
   })
+}
+
+// ==================== HOME - FATURAS DE CARTÕES ====================
+
+export interface HomeInvoicePDFItem {
+  id: number
+  description: string
+  amount: number
+  date: string
+  current_installment?: number | null
+  total_installments?: number | null
+  card_id: number
+  card_name: string
+  card_number: string
+  card_type: string
+  remaining_installments?: number | null
+  remaining_total?: number | null
+}
+
+export interface HomeInvoicePDFSection {
+  key: string
+  title: string
+  total: number
+  count: number
+  items: HomeInvoicePDFItem[]
+  next_month_total?: number | null
+}
+
+export interface HomeInvoicePDFData {
+  title: string
+  sections: HomeInvoicePDFSection[]
+}
+
+interface SimpleReportHeaderData {
+  title: string
+  generatedAt: string
+}
+
+const stripInstallmentFromDescriptionPDF = (description: string): string =>
+  (description || '').replace(/\s*\(\d+\/\d+\)\s*/g, ' ').trim()
+
+const formatDatePDF = (dateStr: string): string => {
+  if (!dateStr) return '-'
+  const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (match) return `${match[3]}/${match[2]}/${match[1]}`
+  return formatDate(dateStr)
+}
+
+const formatExpensePDF = (value: number): string => `-${formatCurrency(Math.abs(value))}`
+
+const HOME_PAGE_MARGIN = { top: HEADER_HEIGHT, left: 14, right: 14 }
+const COMPACT_MARGIN = { top: HEADER_HEIGHT, left: 14, right: 14 }
+const HOME_SECTION_GAP = 12
+const HOME_TITLE_TABLE_GAP = 6
+const PDF_SALDO_DEVEDOR_BG: [number, number, number] = [254, 242, 242]
+const PDF_PROXIMO_MES_BG: [number, number, number] = [255, 251, 235]
+const PDF_FUTURO_BG: [number, number, number] = [248, 250, 252]
+const PDF_SALDO_DEVEDOR_TEXT: [number, number, number] = [153, 27, 27]
+
+const getNextSectionStartY = (doc: jsPDF): number => {
+  const y = (doc as any).lastAutoTable?.finalY
+  return y != null ? y + HOME_SECTION_GAP : HEADER_HEIGHT + 4
+}
+
+const addHomeInvoiceTableTitle = (doc: jsPDF, title: string): number => {
+  const yPos = ensurePageSpace(doc, getNextSectionStartY(doc))
+  doc.setFontSize(11)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(0, 0, 0)
+  doc.text(pdfDisplayText(title), 14, yPos)
+  return yPos + HOME_TITLE_TABLE_GAP
+}
+
+const calcRemainingPDFItemValues = (item: HomeInvoicePDFItem) => {
+  const nextMonth = Math.abs(Number(item.amount))
+  const saldoDevedor = Math.abs(Number(item.remaining_total || 0))
+  const future = Math.max(0, saldoDevedor - nextMonth)
+  return { nextMonth, future, saldoDevedor }
+}
+
+const calcRemainingPDFTotals = (section: HomeInvoicePDFSection) => {
+  if (section.items.length > 0) {
+    const nextMonth = section.items.reduce((sum, item) => sum + Math.abs(Number(item.amount)), 0)
+    const future = section.items.reduce((sum, item) => {
+      const parcel = Math.abs(Number(item.amount))
+      const remaining = Math.abs(Number(item.remaining_total || 0))
+      return sum + Math.max(0, remaining - parcel)
+    }, 0)
+    const saldoDevedor = nextMonth + future
+    return { nextMonth, future, saldoDevedor }
+  }
+
+  const nextMonth = section.next_month_total != null ? Number(section.next_month_total) : 0
+  const saldoDevedor = Math.abs(Number(section.total || 0))
+  const future = Math.max(0, saldoDevedor - nextMonth)
+  return { nextMonth, future, saldoDevedor }
+}
+
+const ensurePageSpace = (doc: jsPDF, yPos: number, minHeight = 24): number => {
+  const pageHeight = doc.internal.pageSize.getHeight()
+  if (yPos + minHeight > pageHeight - 20) {
+    doc.addPage()
+    return HEADER_HEIGHT + 6
+  }
+  return yPos
+}
+
+const addSimpleReportHeader = (doc: jsPDF, pageNumber?: number, headerData?: SimpleReportHeaderData): void => {
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const primaryColor = getSystemColor('--color-1', SECTION_COLORS.transactions)
+  const color2Header = getSystemColor('--color-2', [118, 61, 237])
+
+  if (pageNumber) doc.setPage(pageNumber)
+
+  let yPos = 12
+  doc.setFontSize(16)
+  doc.setFont('helvetica', 'bold')
+  const platformName = 'PLUMO'
+  const platformNameWidth = doc.getTextWidth(platformName)
+  const iconSize = 10
+  const iconGap = 3
+  const nameX = pageWidth / 2
+  const iconX = nameX - (platformNameWidth / 2) - iconGap - iconSize
+
+  drawFeatherIcon(doc, iconX, yPos - 6, iconSize, primaryColor)
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2])
+  doc.text(platformName, nameX, yPos, { align: 'center' })
+
+  yPos += 5
+  doc.setFontSize(8)
+  doc.setFont('helvetica', 'italic')
+  doc.text('Finanças leves, vida plena', pageWidth / 2, yPos, { align: 'center' })
+
+  yPos += 3
+  doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2])
+  doc.setLineWidth(1)
+  doc.line(14, yPos, pageWidth - 14, yPos)
+
+  if (headerData) {
+    yPos += 8
+    doc.setFontSize(8)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(0, 0, 0)
+    const geradoText = 'Gerado em: '
+    const geradoTextWidth = doc.getTextWidth(geradoText)
+    const geradoDateWidth = doc.getTextWidth(headerData.generatedAt)
+    const geradoStartX = pageWidth - 14 - geradoTextWidth - geradoDateWidth
+    doc.text(geradoText, geradoStartX, yPos)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(color2Header[0], color2Header[1], color2Header[2])
+    doc.text(headerData.generatedAt, geradoStartX + geradoTextWidth, yPos)
+
+    yPos += 8
+    doc.setFontSize(14)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(0, 0, 0)
+    doc.text(pdfDisplayText(headerData.title), pageWidth / 2, yPos, { align: 'center' })
+  }
+
+  doc.setTextColor(0, 0, 0)
+}
+
+const addHeaderToAllHomePages = (doc: jsPDF, headerData: SimpleReportHeaderData): void => {
+  const totalPages = doc.getNumberOfPages()
+  for (let i = 1; i <= totalPages; i++) {
+    addSimpleReportHeader(doc, i, headerData)
+  }
+}
+
+const homeTableStyles = {
+  theme: 'plain' as const,
+  headStyles: {
+    fillColor: [100, 100, 100] as [number, number, number],
+    textColor: 255,
+    fontStyle: 'bold' as const,
+    fontSize: 8,
+    lineWidth: 0.1,
+    lineColor: [180, 180, 180] as [number, number, number],
+  },
+  footStyles: {
+    fillColor: [255, 250, 205] as [number, number, number],
+    textColor: [0, 0, 0] as [number, number, number],
+    fontStyle: 'bold' as const,
+    fontSize: 8,
+    lineWidth: 0.1,
+    lineColor: [180, 180, 180] as [number, number, number],
+  },
+  styles: {
+    fontSize: 7,
+    cellPadding: 2,
+    lineWidth: 0.1,
+    lineColor: [200, 200, 200] as [number, number, number],
+  },
+}
+
+const addHomeTotalSummary = (doc: jsPDF, section: HomeInvoicePDFSection, countLabel: string): void => {
+  const isRemaining = section.key.includes('remaining')
+  const startY = addHomeInvoiceTableTitle(doc, isRemaining ? 'Saldo devedor' : 'Total do Mês')
+
+  if (isRemaining) {
+    const { nextMonth, future, saldoDevedor } = calcRemainingPDFTotals(section)
+    autoTable(doc, {
+      startY,
+      margin: HOME_PAGE_MARGIN,
+      ...homeTableStyles,
+      head: [['Resumo', countLabel, 'Próximo mês', 'Futuro', 'Saldo devedor']],
+      body: [[sanitizeText(section.title), String(section.count), formatExpensePDF(nextMonth), formatExpensePDF(future), formatExpensePDF(saldoDevedor)]],
+      columnStyles: {
+        0: { halign: 'left' },
+        1: { halign: 'center' },
+        2: { halign: 'right' },
+        3: { halign: 'right' },
+        4: { halign: 'right' },
+      },
+      didParseCell: (data) => {
+        if (data.section === 'body' && data.column.index >= 2) {
+          data.cell.styles.textColor = redColor
+        }
+      },
+    })
+    return
+  }
+
+  autoTable(doc, {
+    startY,
+    margin: HOME_PAGE_MARGIN,
+    ...homeTableStyles,
+    head: [['Resumo', countLabel, 'Total']],
+    body: [[sanitizeText(section.title), String(section.count), formatExpensePDF(Number(section.total))]],
+    columnStyles: {
+      0: { halign: 'left' },
+      1: { halign: 'center' },
+      2: { halign: 'right' },
+    },
+    didParseCell: (data) => {
+      if (data.section === 'body' && data.column.index === 2) {
+        data.cell.styles.textColor = redColor
+      }
+    },
+  })
+}
+
+const remainingFootLabel = (text: string, bold = false) => ({
+  content: text,
+  colSpan: 2,
+  styles: {
+    halign: 'right' as const,
+    fontStyle: (bold ? 'bold' : 'normal') as 'bold' | 'normal',
+  },
+})
+
+const addHomeRemainingItemsTable = (doc: jsPDF, section: HomeInvoicePDFSection): void => {
+  if (!section.items.length) return
+
+  const startY = addHomeInvoiceTableTitle(doc, section.title)
+  const { nextMonth, future, saldoDevedor } = calcRemainingPDFTotals(section)
+
+  const body = section.items.map(item => {
+    const { nextMonth, future, saldoDevedor } = calcRemainingPDFItemValues(item)
+    return [
+      formatDatePDF(item.date),
+      sanitizeText(stripInstallmentFromDescriptionPDF(item.description)).substring(0, 40),
+      String(item.remaining_installments ?? '-'),
+      formatExpensePDF(nextMonth),
+      formatExpensePDF(future),
+      formatExpensePDF(saldoDevedor),
+    ]
+  })
+
+  autoTable(doc, {
+    startY,
+    margin: COMPACT_MARGIN,
+    ...homeTableStyles,
+    head: [['Data', 'Descrição', 'Parc. falt.', 'Próximo mês', 'Futuro', 'Saldo devedor']],
+    body,
+    foot: [
+      [remainingFootLabel('Próximo mês'), '', formatExpensePDF(nextMonth), '', ''],
+      [remainingFootLabel('Futuro'), '', '', formatExpensePDF(future), ''],
+      [remainingFootLabel('Saldo devedor', true), '', '', '', formatExpensePDF(saldoDevedor)],
+    ],
+    showFoot: 'lastPage',
+    columnStyles: {
+      0: { cellWidth: 20 },
+      1: { cellWidth: 'auto' },
+      2: { halign: 'center', cellWidth: 16 },
+      3: { halign: 'right', cellWidth: 24 },
+      4: { halign: 'right', cellWidth: 24 },
+      5: { halign: 'right', cellWidth: 24 },
+    },
+    didParseCell: (data) => {
+      if (data.section === 'body') {
+        if (data.row.index % 2 === 0) data.cell.styles.fillColor = [255, 255, 255]
+        else data.cell.styles.fillColor = [240, 240, 240]
+        if (data.column.index >= 3) {
+          data.cell.styles.textColor = redColor
+        }
+      }
+      if (data.section === 'foot') {
+        const footerBgs = [PDF_PROXIMO_MES_BG, PDF_FUTURO_BG, PDF_SALDO_DEVEDOR_BG]
+        data.cell.styles.fillColor = footerBgs[data.row.index] ?? PDF_FUTURO_BG
+        if (data.row.index === 0) {
+          if (data.column.index === 0) {
+            data.cell.styles.halign = 'right'
+          }
+          if (data.column.index === 3) {
+            data.cell.styles.textColor = redColor
+            data.cell.styles.halign = 'right'
+          }
+        }
+        if (data.row.index === 1) {
+          if (data.column.index === 0) {
+            data.cell.styles.halign = 'right'
+          }
+          if (data.column.index === 4) {
+            data.cell.styles.textColor = redColor
+            data.cell.styles.halign = 'right'
+          }
+        }
+        if (data.row.index === 2) {
+          if (data.column.index === 0) {
+            data.cell.styles.halign = 'right'
+            data.cell.styles.fontStyle = 'bold'
+            data.cell.styles.textColor = PDF_SALDO_DEVEDOR_TEXT
+          }
+          if (data.column.index === 5) {
+            data.cell.styles.textColor = redColor
+            data.cell.styles.halign = 'right'
+            data.cell.styles.fontStyle = 'bold'
+          }
+        }
+      }
+    },
+  })
+}
+
+const addHomeMonthItemsTable = (doc: jsPDF, section: HomeInvoicePDFSection): void => {
+  if (!section.items.length) return
+
+  const startY = addHomeInvoiceTableTitle(doc, section.title)
+
+  const totalAmount = section.items.reduce((sum, item) => sum + Math.abs(Number(item.amount)), 0)
+
+  const body = section.items.map(item => {
+    const parcela = item.current_installment && item.total_installments && item.total_installments > 1
+      ? `${item.current_installment}/${item.total_installments}`
+      : '-'
+    return [
+      formatDatePDF(item.date),
+      sanitizeText(stripInstallmentFromDescriptionPDF(item.description)).substring(0, 50),
+      parcela,
+      formatExpensePDF(Number(item.amount)),
+    ]
+  })
+
+  autoTable(doc, {
+    startY,
+    margin: COMPACT_MARGIN,
+    ...homeTableStyles,
+    head: [['Data', 'Descrição', 'Parcela', 'Valor']],
+    body,
+    foot: [['TOTAL', '', '', formatExpensePDF(totalAmount)]],
+    showFoot: 'lastPage',
+    columnStyles: {
+      0: { cellWidth: 22 },
+      1: { cellWidth: 'auto' },
+      2: { halign: 'center', cellWidth: 18 },
+      3: { halign: 'right', cellWidth: 28 },
+    },
+    didParseCell: (data) => {
+      if (data.section === 'body') {
+        if (data.row.index % 2 === 0) data.cell.styles.fillColor = [255, 255, 255]
+        else data.cell.styles.fillColor = [240, 240, 240]
+        if (data.column.index === 3) data.cell.styles.textColor = redColor
+      }
+      if (data.section === 'foot' && data.column.index === 3) {
+        data.cell.styles.textColor = redColor
+        data.cell.styles.halign = 'right'
+      }
+    },
+  })
+}
+
+export const exportHomeInvoiceDetailsToPDF = (data: HomeInvoicePDFData): void => {
+  if (!data?.sections?.length) return
+
+  const doc = new jsPDF()
+  const now = new Date()
+  const geradoDatePart = now.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const geradoTimePart = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+
+  const headerData: SimpleReportHeaderData = {
+    title: data.title,
+    generatedAt: `${geradoDatePart} ${geradoTimePart}`,
+  }
+
+  addSimpleReportHeader(doc, undefined, headerData)
+  ;(doc as any).lastAutoTable = { finalY: HEADER_HEIGHT }
+
+  data.sections.forEach(section => {
+    if (section.key === 'month-total') {
+      addHomeTotalSummary(doc, section, 'Transações')
+      return
+    }
+    if (section.key === 'remaining-total') {
+      addHomeTotalSummary(doc, section, 'Compras')
+      return
+    }
+    if (section.key.startsWith('card-')) {
+      const isRemainingSection = section.items.some(i => i.remaining_total != null)
+      if (isRemainingSection) {
+        addHomeRemainingItemsTable(doc, section)
+      } else {
+        addHomeMonthItemsTable(doc, section)
+      }
+      return
+    }
+    if (section.key === 'remaining') {
+      addHomeRemainingItemsTable(doc, section)
+      return
+    }
+    if (section.key === 'month') {
+      addHomeMonthItemsTable(doc, section)
+    }
+  })
+
+  addHeaderToAllHomePages(doc, headerData)
+
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const pageHeight = doc.internal.pageSize.getHeight()
+  const totalPages = doc.getNumberOfPages()
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i)
+    doc.setFontSize(8)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(128, 128, 128)
+    const pageText = `Página ${i} de ${totalPages}`
+    doc.text(pageText, pageWidth - 15, pageHeight - 10, { align: 'right' })
+  }
+
+  const sanitizeFileName = (name: string): string =>
+    name
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_|_$/g, '')
+      .toLowerCase()
+
+  const dateStamp = `${String(now.getDate()).padStart(2, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${now.getFullYear()}`
+  const fileName = `faturas_${sanitizeFileName(data.title)}_${dateStamp}.pdf`
+  doc.save(fileName)
 }

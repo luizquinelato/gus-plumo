@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider } from './contexts/AuthContext'
 import { SidebarProvider } from './contexts/SidebarContext'
+import { BalanceVisibilityProvider } from './contexts/BalanceVisibilityContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import LoginPage from './pages/LoginPage'
 import SelectAccountPage from './pages/SelectAccountPage'
@@ -45,6 +46,7 @@ function App() {
     <ThemeProvider>
       <AuthProvider>
         <SidebarProvider>
+        <BalanceVisibilityProvider>
         <ColorApplicationWrapper>
           <DevTitleEffect />
           <Router
@@ -223,6 +225,7 @@ function App() {
             </Routes>
           </Router>
         </ColorApplicationWrapper>
+        </BalanceVisibilityProvider>
         </SidebarProvider>
       </AuthProvider>
     </ThemeProvider>

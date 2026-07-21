@@ -39,6 +39,19 @@ class SidebarPreferenceResponse(BaseModel):
         from_attributes = True
 
 
+class BalanceVisibilityPreferenceUpdate(BaseModel):
+    """Schema para atualizar preferência de visibilidade de saldos"""
+    hide_balance_values: bool
+
+
+class BalanceVisibilityPreferenceResponse(BaseModel):
+    """Schema de resposta de preferência de visibilidade de saldos"""
+    hide_balance_values: bool
+
+    class Config:
+        from_attributes = True
+
+
 @router.patch("/theme", response_model=ThemePreferenceResponse)
 async def update_theme_preference(
     theme_data: ThemePreferenceUpdate,
@@ -138,4 +151,39 @@ async def get_sidebar_preference(
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
 
     return SidebarPreferenceResponse(sidebar_collapsed=user.sidebar_collapsed or False)
+
+
+@router.patch("/balance-visibility", response_model=BalanceVisibilityPreferenceResponse)
+async def update_balance_visibility_preference(
+    preference_data: BalanceVisibilityPreferenceUpdate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Atualiza a preferência de ocultar valores financeiros do usuário."""
+    user_id = current_user.get("id") or current_user.get("user_id")
+
+    user = db.query(Usuario).filter(Usuario.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    user.hide_balance_values = preference_data.hide_balance_values
+    db.commit()
+    db.refresh(user)
+
+    return BalanceVisibilityPreferenceResponse(hide_balance_values=user.hide_balance_values)
+
+
+@router.get("/balance-visibility", response_model=BalanceVisibilityPreferenceResponse)
+async def get_balance_visibility_preference(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Obtém a preferência de ocultar valores financeiros do usuário."""
+    user_id = current_user.get("id") or current_user.get("user_id")
+
+    user = db.query(Usuario).filter(Usuario.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    return BalanceVisibilityPreferenceResponse(hide_balance_values=user.hide_balance_values or False)
 

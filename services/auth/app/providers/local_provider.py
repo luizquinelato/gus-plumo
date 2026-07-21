@@ -61,6 +61,7 @@ class LocalProvider:
                     u.is_admin,
                     u.theme_mode,
                     u.sidebar_collapsed,
+                    u.hide_balance_values,
                     u.password_hash,
                     t.name as tenant_name
                 FROM users u
@@ -124,6 +125,7 @@ class LocalProvider:
                     u.is_admin,
                     u.theme_mode,
                     u.sidebar_collapsed,
+                    u.hide_balance_values,
                     t.name as tenant_name
                 FROM users u
                 JOIN tenants t ON u.tenant_id = t.id
