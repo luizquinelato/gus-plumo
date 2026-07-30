@@ -21,13 +21,9 @@
     "noFallthroughCasesInSwitch": true,
 
     /* Path aliases */
-    "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
-    },
-
-    /* Suppress deprecation warnings for TypeScript 6.x */
-    "ignoreDeprecations": "5.0"
+    }
   },
   "include": ["src"]
 }
