@@ -59,8 +59,13 @@ if not exist "backups" (
 )
 
 REM Gerar timestamp para o nome do arquivo
-for /f "tokens=2 delims==" %%I in ('wmic os get localdatetime /value') do set datetime=%%I
-set TIMESTAMP=%datetime:~0,4%-%datetime:~4,2%-%datetime:~6,2%_%datetime:~8,2%-%datetime:~10,2%-%datetime:~12,2%
+REM (wmic foi removido no Windows 11 recente — usar PowerShell)
+for /f "usebackq delims=" %%I in (`powershell -NoProfile -Command "Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'"`) do set "TIMESTAMP=%%I"
+if not defined TIMESTAMP (
+    echo [ERROR] Failed to generate timestamp via PowerShell.
+    pause
+    exit /b 1
+)
 
 REM Nome do arquivo inclui o ambiente
 set BACKUP_FILE=backups\%DB_NAME%_%ENVIRONMENT%_%TIMESTAMP%

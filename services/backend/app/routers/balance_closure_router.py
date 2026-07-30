@@ -5,6 +5,7 @@ Fornece endpoints para criar, listar e gerenciar fechamentos de balanço.
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy import and_, desc, or_, func
 from typing import List
 from decimal import Decimal
@@ -123,6 +124,9 @@ class BalanceClosureResponse(BaseModel):
     total_paid: Decimal = Decimal('0')
     remaining_balance: Decimal = Decimal('0')
     closure_payments: List[BalanceClosurePaymentResponse] = []
+    # Preenchidos quando um pagamento gera crédito (empréstimo a pagar na mandante)
+    credit_loan_id: int | None = None
+    credit_loan_amount: Decimal | None = None
 
     class Config:
         from_attributes = True
@@ -162,6 +166,9 @@ class BalanceClosureListResponse(BaseModel):
 
 # ==================== HELPERS DE PAGAMENTO ====================
 
+CREDIT_LOAN_SOURCE_TABLE = 'balance_closure_payments'
+
+
 def get_closure_payment_totals(closure_id: int, db: Session) -> tuple[Decimal, list]:
     """Retorna (total_paid, payments_list) para um fechamento."""
     payments = db.query(BalanceClosurePayment).filter(
@@ -173,10 +180,492 @@ def get_closure_payment_totals(closure_id: int, db: Session) -> tuple[Decimal, l
     return total_paid, payments
 
 
-def enrich_closure_response(closure: BalanceClosure, db: Session) -> dict:
+def closure_debt_remaining(net_balance: Decimal, total_paid: Decimal) -> Decimal:
+    """Saldo ainda devido do fechamento (nunca negativo)."""
+    return max(Decimal('0'), abs(net_balance) - total_paid)
+
+
+def find_credit_loan_for_payment(
+    payment_id: int,
+    db: Session,
+    *,
+    include_inactive: bool = False,
+) -> Loan | None:
+    """Empréstimo de crédito gerado a partir de um pagamento de fechamento."""
+    filters = [
+        Loan.source_table == CREDIT_LOAN_SOURCE_TABLE,
+        Loan.source_id == payment_id,
+    ]
+    if not include_inactive:
+        filters.append(Loan.active == True)
+    return db.query(Loan).filter(*filters).order_by(desc(Loan.id)).first()
+
+
+def soft_delete_credit_loan(loan: Loan, db: Session) -> None:
+    """Desativa empréstimo de crédito se ainda não tiver liquidações ativas."""
+    has_payments = db.query(LoanPayment).filter(
+        LoanPayment.loan_id == loan.id,
+        LoanPayment.active == True
+    ).first()
+    if has_payments:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Não é possível remover/alterar o pagamento: o empréstimo de crédito "
+                f"#{loan.id} já possui liquidações. Remova-as em Empréstimos primeiro."
+            )
+        )
+    loan.active = False
+    if loan.status == 'open':
+        loan.status = 'settled'
+        loan.settled_at = datetime.now()
+
+
+def upsert_credit_loan_for_overpayment(
+    *,
+    closure: BalanceClosure,
+    payment: BalanceClosurePayment,
+    credit_amount: Decimal,
+    payment_date: datetime,
+    created_by: int | None,
+    db: Session,
+) -> Loan | None:
+    """
+    Cria/atualiza/remove empréstimo a pagar na conta mandante pelo excesso pago
+    quando o fechamento é a receber (net_balance > 0).
+
+    Perspectiva da mandante (closure.account_id): loan_type='borrowed' (a pagar)
+    para a contraparte (closure.shared_account_id).
+    """
+    existing = find_credit_loan_for_payment(payment.id, db, include_inactive=True)
+
+    if credit_amount <= Decimal('0.01'):
+        if existing and existing.active:
+            soft_delete_credit_loan(existing, db)
+        return None
+
+    description = (
+        f"Crédito do fechamento #{closure.id} "
+        f"({closure.year}/{closure.month:02d}) — pagamento a maior"
+    )
+
+    if existing:
+        # Quitado com liquidações: não alterar valor
+        has_payments = db.query(LoanPayment).filter(
+            LoanPayment.loan_id == existing.id,
+            LoanPayment.active == True
+        ).first()
+        if existing.status == 'settled' and has_payments:
+            if abs(existing.principal_amount - credit_amount) > Decimal('0.01'):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Empréstimo de crédito #{existing.id} já está quitado e não pode ser alterado"
+                )
+            return existing
+
+        existing.principal_amount = credit_amount
+        existing.loan_date = payment_date
+        existing.description = description
+        existing.active = True
+        existing.status = 'open'
+        existing.settled_at = None
+        existing.loan_type = 'borrowed'
+        existing.account_id = closure.account_id
+        existing.counterpart_account_id = closure.shared_account_id
+        return existing
+
+    loan = Loan(
+        loan_type='borrowed',
+        principal_amount=credit_amount,
+        description=description,
+        loan_date=payment_date,
+        interest_enabled=False,
+        counterpart_account_id=closure.shared_account_id,
+        external_name=None,
+        external_description=None,
+        source_table=CREDIT_LOAN_SOURCE_TABLE,
+        source_id=payment.id,
+        status='open',
+        account_id=closure.account_id,  # conta mandante
+        tenant_id=closure.tenant_id,
+        created_by=created_by,
+        active=True,
+    )
+    db.add(loan)
+    db.flush()
+    return loan
+
+
+def reconcile_closure_credit_loans(
+    closure: BalanceClosure,
+    db: Session,
+    created_by: int | None = None,
+) -> tuple[Loan | None, Decimal]:
+    """
+    Recalcula empréstimos de crédito para todos os pagamentos ativos do fechamento.
+
+    Só gera crédito quando a mandante tem a receber (net_balance > 0).
+    Aloca o saldo devido na ordem dos pagamentos; o excesso de cada pagamento
+    vira empréstimo a pagar (borrowed) na conta mandante.
+
+    Retorna (último empréstimo com crédito nesta reconciliação, valor desse crédito).
+    """
+    _, payments = get_closure_payment_totals(closure.id, db)
+    payments_asc = sorted(payments, key=lambda p: (p.payment_date, p.id or 0))
+
+    last_loan: Loan | None = None
+    last_credit = Decimal('0')
+
+    if closure.net_balance <= 0:
+        for payment in payments_asc:
+            existing = find_credit_loan_for_payment(payment.id, db)
+            if existing:
+                soft_delete_credit_loan(existing, db)
+        purge_orphan_settlement_credit_loans(closure, db)
+        return None, Decimal('0')
+
+    debt = abs(closure.net_balance)
+    allocated = Decimal('0')
+
+    for payment in payments_asc:
+        remaining_debt = max(Decimal('0'), debt - allocated)
+        applied = min(payment.amount, remaining_debt)
+        credit = payment.amount - applied
+        allocated += applied
+
+        loan = upsert_credit_loan_for_overpayment(
+            closure=closure,
+            payment=payment,
+            credit_amount=credit,
+            payment_date=payment.payment_date,
+            created_by=created_by,
+            db=db,
+        )
+        if loan and credit > Decimal('0.01'):
+            last_loan = loan
+            last_credit = credit
+
+    rebuild_settlement_credit_entries_in_json(closure, db)
+    purge_orphan_settlement_credit_loans(closure, db)
+    return last_loan, last_credit
+
+
+def rebuild_settlement_credit_entries_in_json(closure: BalanceClosure, db: Session) -> None:
+    """
+    Mantém em closure_data.loan_payments as entradas de crédito geradas na quitação
+    (generated_on_settlement=true, loan_type=borrowed), preservando liquidações normais.
+    """
+    data = dict(closure.closure_data or {})
+    existing = list(data.get('loan_payments') or [])
+    kept = [lp for lp in existing if not lp.get('generated_on_settlement')]
+
+    _, payments = get_closure_payment_totals(closure.id, db)
+    for payment in sorted(payments, key=lambda p: (p.payment_date, p.id or 0)):
+        loan = find_credit_loan_for_payment(payment.id, db)
+        if not loan:
+            continue
+        principal = float(loan.principal_amount)
+        kept.append({
+            "loan_id": loan.id,
+            "loan_type": "borrowed",
+            "description": loan.description,
+            "original_amount": principal,
+            "remaining_before": principal,
+            "amount_paid": 0.0,
+            "remaining_after": principal,
+            "is_settled": False,
+            "generated_on_settlement": True,
+            "balance_closure_payment_id": payment.id,
+        })
+
+    if kept:
+        data['loan_payments'] = kept
+    else:
+        data.pop('loan_payments', None)
+
+    closure.closure_data = data
+    flag_modified(closure, 'closure_data')
+
+
+def purge_orphan_settlement_credit_loans(closure: BalanceClosure, db: Session) -> None:
+    """
+    Soft-delete empréstimos de crédito cujo pagamento de fechamento não está mais ativo
+    e reconstrói o JSON (remove entradas generated_on_settlement órfãs).
+    """
+    active_payment_ids = {
+        pid for (pid,) in db.query(BalanceClosurePayment.id).filter(
+            BalanceClosurePayment.balance_closure_id == closure.id,
+            BalanceClosurePayment.active == True,
+        ).all()
+    }
+
+    all_payment_ids = [
+        pid for (pid,) in db.query(BalanceClosurePayment.id).filter(
+            BalanceClosurePayment.balance_closure_id == closure.id,
+        ).all()
+    ]
+
+    if all_payment_ids:
+        orphan_loans = db.query(Loan).filter(
+            Loan.source_table == CREDIT_LOAN_SOURCE_TABLE,
+            Loan.source_id.in_(all_payment_ids),
+            Loan.active == True,
+            Loan.tenant_id == closure.tenant_id,
+        ).all()
+        for loan in orphan_loans:
+            if loan.source_id not in active_payment_ids:
+                soft_delete_credit_loan(loan, db)
+
+    rebuild_settlement_credit_entries_in_json(closure, db)
+
+
+def sync_closure_settlement_after_payment_removal(
+    closure: BalanceClosure,
+    user_id: int | None,
+    db: Session,
+) -> None:
+    """
+    Após remover pagamento(s), reabre fechamento quitado automaticamente se
+    não restar crédito de quitação e ainda houver saldo devedor.
+    """
+    total_paid, _ = get_closure_payment_totals(closure.id, db)
+    remaining = closure_debt_remaining(closure.net_balance, total_paid)
+    has_settlement_credit = len(get_settlement_credit_loan_entries(closure)) > 0
+    auto_settled = bool(
+        closure.settlement_notes
+        and "automática" in (closure.settlement_notes or "").lower()
+    )
+
+    if (
+        closure.is_settled
+        and not has_settlement_credit
+        and remaining > Decimal('0.01')
+        and (auto_settled or total_paid == Decimal('0'))
+    ):
+        closure.is_settled = False
+        closure.settled_at = None
+        closure.settled_by = None
+        closure.settlement_notes = None
+
+
+def get_settlement_credit_loan_entries(closure: BalanceClosure) -> list[dict]:
+    """Entradas de empréstimo geradas por pagamento a maior no JSON do fechamento."""
+    data = closure.closure_data or {}
+    return [
+        lp for lp in (data.get('loan_payments') or [])
+        if lp.get('generated_on_settlement')
+    ]
+
+
+def find_settlement_credit_loans_for_closure(
+    closure: BalanceClosure,
+    db: Session,
+) -> list[Loan]:
+    """
+    Empréstimos a pagar gerados na quitação deste fechamento.
+
+    Combina: entradas no JSON (generated_on_settlement) + loans com
+    source_table=balance_closure_payments ligados aos pagamentos do fechamento.
+    """
+    loan_ids: set[int] = set()
+    for entry in get_settlement_credit_loan_entries(closure):
+        if entry.get('loan_id'):
+            loan_ids.add(int(entry['loan_id']))
+
+    payment_ids = [
+        pid for (pid,) in db.query(BalanceClosurePayment.id).filter(
+            BalanceClosurePayment.balance_closure_id == closure.id,
+            BalanceClosurePayment.active == True,
+        ).all()
+    ]
+    if payment_ids:
+        linked = db.query(Loan).filter(
+            Loan.source_table == CREDIT_LOAN_SOURCE_TABLE,
+            Loan.source_id.in_(payment_ids),
+            Loan.active == True,
+            Loan.loan_type == 'borrowed',
+        ).all()
+        for loan in linked:
+            loan_ids.add(loan.id)
+
+    if not loan_ids:
+        return []
+
+    return db.query(Loan).filter(
+        Loan.id.in_(loan_ids),
+        Loan.active == True,
+    ).all()
+
+
+def get_settlement_credit_entry_for_payment(
+    closure: BalanceClosure,
+    payment_id: int,
+) -> dict | None:
+    """Entrada JSON de crédito gerada por um pagamento parcial específico."""
+    for entry in get_settlement_credit_loan_entries(closure):
+        entry_payment_id = entry.get('balance_closure_payment_id')
+        if entry_payment_id is not None and int(entry_payment_id) == payment_id:
+            return entry
+    return None
+
+
+def assert_credit_loans_deletable(loans: list[Loan], db: Session) -> list[Loan]:
+    """
+    Valida se empréstimos de crédito podem ser removidos (abertos, sem parcelas).
+    Retorna a lista validada ou levanta HTTP 400.
+    """
+    if not loans:
+        return []
+
+    deletable: list[Loan] = []
+    blocked: list[dict] = []
+
+    for loan in loans:
+        has_installments = db.query(LoanPayment).filter(
+            LoanPayment.loan_id == loan.id,
+            LoanPayment.active == True,
+        ).first() is not None
+
+        if loan.status != 'open' or has_installments:
+            blocked.append({
+                "id": loan.id,
+                "description": loan.description or f"Empréstimo #{loan.id}",
+            })
+        else:
+            deletable.append(loan)
+
+    if blocked:
+        names = ", ".join(f"«{b['description']}»" for b in blocked)
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "credit_loans_blocked",
+                "message": (
+                    "Não é possível apagar o pagamento porque o empréstimo a pagar "
+                    "gerado na quitação já possui movimento ou não está mais aberto. "
+                    "Remova/ajuste o empréstimo antes."
+                ),
+                "loans": blocked,
+                "loan_names": names,
+            },
+        )
+
+    return deletable
+
+
+def find_credit_loan_for_closure_payment(
+    closure: BalanceClosure,
+    payment_id: int,
+    db: Session,
+) -> Loan | None:
+    """Empréstimo de crédito vinculado a um pagamento (DB + JSON)."""
+    loan = find_credit_loan_for_payment(payment_id, db)
+    if loan:
+        return loan
+
+    entry = get_settlement_credit_entry_for_payment(closure, payment_id)
+    if entry and entry.get('loan_id'):
+        return db.query(Loan).filter(
+            Loan.id == int(entry['loan_id']),
+            Loan.active == True,
+        ).first()
+    return None
+
+
+def assert_settlement_credit_loans_can_be_cleared(
+    closure: BalanceClosure,
+    db: Session,
+) -> list[Loan]:
+    """
+    Valida empréstimos de crédito da quitação antes de apagar pagamentos parciais.
+
+    Retorna a lista de empréstimos que podem ser removidos (abertos, sem parcelas).
+    Levanta HTTP 400 se algum tiver liquidações ou não estiver aberto.
+    """
+    loans = find_settlement_credit_loans_for_closure(closure, db)
+    return assert_credit_loans_deletable(loans, db)
+
+
+def assert_payment_credit_loan_can_be_deleted(
+    closure: BalanceClosure,
+    payment_id: int,
+    db: Session,
+) -> Loan | None:
+    """
+    Se o pagamento gerou crédito, valida que o empréstimo pode ser removido.
+    Retorna o empréstimo ou None se não houver crédito vinculado.
+    """
+    loan = find_credit_loan_for_closure_payment(closure, payment_id, db)
+    if not loan:
+        return None
+    assert_credit_loans_deletable([loan], db)
+    return loan
+
+
+AUTO_SETTLEMENT_NOTES = "Quitação automática por pagamento a maior"
+OVERPAYMENT_NOTE_PREFIX = "Pagamento a maior — gerou saldo a pagar na mandante"
+
+
+def format_overpayment_note(credit_amount: Decimal) -> str:
+    return f"{OVERPAYMENT_NOTE_PREFIX} (R$ {credit_amount:.2f})."
+
+
+def apply_overpayment_note(
+    payment: BalanceClosurePayment,
+    credit_amount: Decimal,
+    user_notes: str | None,
+) -> None:
+    if credit_amount <= Decimal('0.01'):
+        payment.notes = user_notes
+        return
+    auto = format_overpayment_note(credit_amount)
+    if user_notes and user_notes.strip():
+        payment.notes = f"{user_notes.strip()} | {auto}"
+    else:
+        payment.notes = auto
+
+
+def sync_auto_settlement_after_overpayment(
+    closure: BalanceClosure,
+    *,
+    credit_amount: Decimal,
+    user_id: int | None,
+    db: Session,
+) -> None:
+    """
+    Com pagamento a maior (crédito), quita o fechamento automaticamente.
+    Se o saldo voltar a ficar em aberto e a quitação foi automática, reabre.
+    """
+    total_paid, _ = get_closure_payment_totals(closure.id, db)
+    remaining = closure_debt_remaining(closure.net_balance, total_paid)
+    auto_settled = bool(
+        closure.settlement_notes
+        and "automática" in (closure.settlement_notes or "").lower()
+    )
+
+    if credit_amount > Decimal('0.01') and remaining <= Decimal('0.01'):
+        if not closure.is_settled:
+            closure.is_settled = True
+            closure.settled_at = datetime.now()
+            closure.settled_by = user_id
+            closure.settlement_notes = AUTO_SETTLEMENT_NOTES
+    elif remaining > Decimal('0.01') and closure.is_settled and auto_settled:
+        closure.is_settled = False
+        closure.settled_at = None
+        closure.settled_by = None
+        closure.settlement_notes = None
+
+
+def enrich_closure_response(
+    closure: BalanceClosure,
+    db: Session,
+    *,
+    credit_loan_id: int | None = None,
+    credit_loan_amount: Decimal | None = None,
+) -> dict:
     """Constrói dict de resposta de fechamento com totais de pagamentos."""
     total_paid, payments = get_closure_payment_totals(closure.id, db)
-    remaining = abs(closure.net_balance) - total_paid
+    remaining = closure_debt_remaining(closure.net_balance, total_paid)
 
     base = BalanceClosureResponse.model_validate(closure).model_dump()
     base['total_paid'] = total_paid
@@ -185,6 +674,8 @@ def enrich_closure_response(closure: BalanceClosure, db: Session) -> dict:
         BalanceClosurePaymentResponse.model_validate(p).model_dump()
         for p in payments
     ]
+    base['credit_loan_id'] = credit_loan_id
+    base['credit_loan_amount'] = credit_loan_amount
     return base
 
 
@@ -219,7 +710,7 @@ def enrich_closures_bulk(closures: list, db: Session) -> list[dict]:
     result = []
     for closure in closures:
         total_paid = totals_map.get(closure.id, Decimal('0')) or Decimal('0')
-        remaining = abs(closure.net_balance) - total_paid
+        remaining = closure_debt_remaining(closure.net_balance, total_paid)
         payments = payments_map.get(closure.id, [])
 
         base = BalanceClosureResponse.model_validate(closure).model_dump()
@@ -229,6 +720,8 @@ def enrich_closures_bulk(closures: list, db: Session) -> list[dict]:
             BalanceClosurePaymentResponse.model_validate(p).model_dump()
             for p in payments
         ]
+        base['credit_loan_id'] = None
+        base['credit_loan_amount'] = None
         result.append(base)
 
     return result
@@ -1117,7 +1610,7 @@ def settle_balance_closure(
 
     # Calcular saldo restante (net_balance - total já pago)
     total_paid, _ = get_closure_payment_totals(closure_id, db)
-    remaining = abs(closure.net_balance) - total_paid
+    remaining = closure_debt_remaining(closure.net_balance, total_paid)
 
     # Criar pagamento para o saldo restante (se houver)
     if remaining > Decimal('0.01'):
@@ -1192,6 +1685,10 @@ def clear_all_closure_payments(
     """
     Remove todos os pagamentos parciais de um fechamento.
     Hard-delete dos BankStatements vinculados; soft-delete dos pagamentos.
+
+    Se houver empréstimos a pagar gerados na quitação (pagamento a maior):
+    - abertos e sem parcelas → também são removidos
+    - com movimento ou não abertos → bloqueia a operação (não apaga nenhum pagamento)
     """
     tenant_id = current_user["tenant_id"]
     account_id = current_user.get("account_id")
@@ -1208,6 +1705,9 @@ def clear_all_closure_payments(
     if not closure:
         raise HTTPException(status_code=404, detail="Fechamento não encontrado")
 
+    # Valida / obtém empréstimos de crédito da quitação antes de qualquer delete
+    credit_loans_to_delete = assert_settlement_credit_loans_can_be_cleared(closure, db)
+
     payments = db.query(BalanceClosurePayment).filter(
         BalanceClosurePayment.balance_closure_id == closure_id,
         BalanceClosurePayment.active == True
@@ -1215,6 +1715,16 @@ def clear_all_closure_payments(
 
     for payment in payments:
         payment.active = False
+
+    for loan in credit_loans_to_delete:
+        soft_delete_credit_loan(loan, db)
+
+    purge_orphan_settlement_credit_loans(closure, db)
+    sync_closure_settlement_after_payment_removal(
+        closure,
+        current_user.get("user_id") or current_user.get("id"),
+        db,
+    )
 
     db.commit()
 
@@ -1256,7 +1766,14 @@ def add_closure_payment(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
-    """Adiciona um pagamento parcial a um fechamento."""
+    """
+    Adiciona um pagamento parcial a um fechamento.
+
+    Se o fechamento é a receber (net_balance > 0) e o valor pago excede o saldo
+    devido, o excesso gera um empréstimo a pagar (borrowed) na conta mandante
+    para a contraparte — crédito a liquidar no próximo fechamento — e o
+    fechamento é quitado automaticamente.
+    """
     tenant_id = current_user["tenant_id"]
     account_id = current_user.get("account_id")
     created_by = current_user.get("user_id") or current_user.get("id")
@@ -1282,16 +1799,19 @@ def add_closure_payment(
     if request.amount <= 0:
         raise HTTPException(status_code=400, detail="Valor deve ser maior que zero")
 
-    # Verificar se não excede o saldo
     total_paid, _ = get_closure_payment_totals(closure_id, db)
-    remaining = abs(closure.net_balance) - total_paid
-    if request.amount > remaining + Decimal('0.01'):  # tolerância de 1 centavo
-        raise HTTPException(
-            status_code=400,
-            detail=f"Valor excede saldo restante de R$ {remaining:.2f}"
-        )
+    remaining = closure_debt_remaining(closure.net_balance, total_paid)
+    mandante_a_receber = closure.net_balance > 0
 
-    # Parse da data
+    credit_amount = Decimal('0')
+    if request.amount > remaining + Decimal('0.01'):
+        if not mandante_a_receber:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Valor excede saldo restante de R$ {remaining:.2f}"
+            )
+        credit_amount = request.amount - remaining
+
     try:
         payment_date = datetime.fromisoformat(request.payment_date)
     except ValueError:
@@ -1307,11 +1827,38 @@ def add_closure_payment(
         created_by=created_by
     )
     db.add(payment)
+    db.flush()  # obter payment.id para vincular o empréstimo
+
+    credit_loan, reconciled_credit = reconcile_closure_credit_loans(
+        closure, db, created_by=created_by
+    )
+    # Preferir o crédito deste pagamento na resposta (se houve overpayment)
+    this_loan = find_credit_loan_for_payment(payment.id, db)
+    response_loan = this_loan or credit_loan
+    response_credit = credit_amount if this_loan else (
+        reconciled_credit if response_loan else None
+    )
+    final_credit = credit_amount if credit_amount > Decimal('0.01') else (
+        response_credit or Decimal('0')
+    )
+    apply_overpayment_note(payment, final_credit, request.notes)
+
+    sync_auto_settlement_after_overpayment(
+        closure,
+        credit_amount=final_credit,
+        user_id=created_by,
+        db=db,
+    )
 
     db.commit()
     db.refresh(closure)
 
-    return enrich_closure_response(closure, db)
+    return enrich_closure_response(
+        closure,
+        db,
+        credit_loan_id=response_loan.id if response_loan else None,
+        credit_loan_amount=response_credit if response_loan else None,
+    )
 
 
 @router.delete("/{closure_id}/payments/{payment_id}", response_model=BalanceClosureResponse)
@@ -1346,14 +1893,22 @@ def delete_closure_payment(
     if not payment:
         raise HTTPException(status_code=404, detail="Pagamento não encontrado")
 
-    payment.active = False
+    # Se gerou empréstimo de crédito, validar antes de apagar (não altera nada se bloqueado)
+    credit_loan = assert_payment_credit_loan_can_be_deleted(closure, payment_id, db)
 
-    # Se o fechamento estava quitado automaticamente, reverter
-    if closure.is_settled and closure.settlement_notes and "automática" in (closure.settlement_notes or ""):
-        closure.is_settled = False
-        closure.settled_at = None
-        closure.settled_by = None
-        closure.settlement_notes = None
+    payment.active = False
+    db.flush()
+
+    if credit_loan:
+        soft_delete_credit_loan(credit_loan, db)
+
+    purge_orphan_settlement_credit_loans(closure, db)
+    reconcile_closure_credit_loans(closure, db, created_by=current_user.get("user_id") or current_user.get("id"))
+    sync_closure_settlement_after_payment_removal(
+        closure,
+        current_user.get("user_id") or current_user.get("id"),
+        db,
+    )
 
     db.commit()
     db.refresh(closure)
@@ -1372,6 +1927,7 @@ def update_closure_payment(
     """Edita data e valor de um pagamento parcial de fechamento."""
     tenant_id = current_user["tenant_id"]
     account_id = current_user.get("account_id")
+    created_by = current_user.get("user_id") or current_user.get("id")
 
     closure = db.query(BalanceClosure).filter(
         BalanceClosure.id == closure_id,
@@ -1397,19 +1953,24 @@ def update_closure_payment(
     if request.amount <= 0:
         raise HTTPException(status_code=400, detail="Valor deve ser maior que zero")
 
-    # Verificar se não excede o saldo (excluindo o pagamento atual)
+    # Verificar saldo excluindo o pagamento atual
     payments = db.query(BalanceClosurePayment).filter(
         BalanceClosurePayment.balance_closure_id == closure_id,
         BalanceClosurePayment.active == True,
         BalanceClosurePayment.id != payment_id
     ).all()
-    other_paid = sum(p.amount for p in payments)
-    remaining = abs(closure.net_balance) - other_paid
+    other_paid = sum(p.amount for p in payments) if payments else Decimal('0')
+    remaining = closure_debt_remaining(closure.net_balance, other_paid)
+    mandante_a_receber = closure.net_balance > 0
+
+    credit_amount = Decimal('0')
     if request.amount > remaining + Decimal('0.01'):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Valor excede saldo restante de R$ {remaining:.2f}"
-        )
+        if not mandante_a_receber:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Valor excede saldo restante de R$ {remaining:.2f}"
+            )
+        credit_amount = request.amount - remaining
 
     try:
         payment_date = datetime.fromisoformat(request.payment_date)
@@ -1418,12 +1979,28 @@ def update_closure_payment(
 
     payment.amount = request.amount
     payment.payment_date = payment_date
-    payment.notes = request.notes
+
+    reconcile_closure_credit_loans(closure, db, created_by=created_by)
+    this_loan = find_credit_loan_for_payment(payment.id, db)
+    final_credit = this_loan.principal_amount if this_loan else Decimal('0')
+    apply_overpayment_note(payment, final_credit, request.notes)
+
+    sync_auto_settlement_after_overpayment(
+        closure,
+        credit_amount=final_credit,
+        user_id=created_by,
+        db=db,
+    )
 
     db.commit()
     db.refresh(closure)
 
-    return enrich_closure_response(closure, db)
+    return enrich_closure_response(
+        closure,
+        db,
+        credit_loan_id=this_loan.id if this_loan else None,
+        credit_loan_amount=credit_amount if this_loan else None,
+    )
 
 
 @router.delete("/{closure_id}", status_code=204)
@@ -1480,6 +2057,21 @@ def delete_balance_closure(
             loan.settled_at = None
 
         db.delete(loan_payment)
+
+    # Soft-delete empréstimos de crédito gerados por pagamentos a maior deste fechamento
+    closure_payment_ids = [
+        pid for (pid,) in db.query(BalanceClosurePayment.id).filter(
+            BalanceClosurePayment.balance_closure_id == closure.id
+        ).all()
+    ]
+    if closure_payment_ids:
+        credit_loans = db.query(Loan).filter(
+            Loan.source_table == CREDIT_LOAN_SOURCE_TABLE,
+            Loan.source_id.in_(closure_payment_ids),
+            Loan.active == True
+        ).all()
+        for credit_loan in credit_loans:
+            soft_delete_credit_loan(credit_loan, db)
 
     # Deletar o fechamento (itens estão no JSON closure_data)
     db.delete(closure)

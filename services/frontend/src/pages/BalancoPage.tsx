@@ -13,6 +13,14 @@ import BalanceDetailsModal from '../components/BalanceDetailsModal'
 import MonthlyHistoryDetailsModal from '../components/MonthlyHistoryDetailsModal'
 import SharedAccountDisplay from '../components/SharedAccountDisplay'
 import JsonTreeViewer from '../components/JsonTreeViewer'
+import {
+  filterRegularLoanPayments,
+  getSettlementCreditEntries,
+  getSettlementCreditForPayment,
+  getSettlementCreditSignedForViewer,
+  getSettlementCreditTotal,
+  signedLoanFieldValue,
+} from '../utils/closureCreditUtils'
 import { useConfirm } from '../hooks/useConfirm'
 import { Scale, Calendar, Building2, TrendingUp, TrendingDown, Minus, CreditCard, Receipt, Archive, Eye, Lock, Unlock, ChevronDown, ChevronUp, Landmark, Gift, FileJson, Braces, Copy, Check, CheckCircle, Clock, Trash2, ChevronRight, AlertTriangle, X, Download, Filter, Search, Banknote, HelpCircle, ArrowUpCircle, ArrowDownCircle, ArrowUp, ArrowDown, UnfoldVertical, FoldVertical, CheckSquare, Square, MinusSquare } from 'lucide-react'
 import { exportBalanceClosureToPDF } from '../utils/pdfExport'
@@ -174,6 +182,8 @@ interface BalanceClosure {
   total_paid: number
   remaining_balance: number
   closure_payments: ClosurePayment[]
+  credit_loan_id?: number | null
+  credit_loan_amount?: number | null
 }
 
 interface BalanceClosureItem {
@@ -667,6 +677,14 @@ const BalancoPage = () => {
   const [showUnsettleModal, setShowUnsettleModal] = useState(false)
   const [unsettleClosure, setUnsettleClosure] = useState<BalanceClosure | null>(null)
   const [unsettleClearingAll, setUnsettleClearingAll] = useState(false)
+  const [unsettleClearError, setUnsettleClearError] = useState<{
+    message: string
+    loans: { id: number; description: string }[]
+  } | null>(null)
+  const [paymentDeleteError, setPaymentDeleteError] = useState<{
+    message: string
+    loans: { id: number; description: string }[]
+  } | null>(null)
 
   // Estados para pagamentos parciais de fechamentos
   const [expandedClosureIds, setExpandedClosureIds] = useState<Set<number>>(new Set())
@@ -1039,6 +1057,12 @@ const BalancoPage = () => {
       style: 'currency',
       currency: 'BRL'
     }).format(value)
+  }
+
+  const formatSignedCurrency = (signed: number) => {
+    if (Math.abs(signed) < 0.0001) return formatCurrency(0)
+    const prefix = signed < 0 ? '-' : ''
+    return `${prefix}${formatCurrency(Math.abs(signed))}`
   }
 
   // Função para validar os valores de empréstimos preenchidos
@@ -1467,12 +1491,14 @@ const BalancoPage = () => {
 
   const handleUnsettleClosure = (closure: BalanceClosure) => {
     setUnsettleClosure(closure)
+    setUnsettleClearError(null)
     setShowUnsettleModal(true)
   }
 
   const handleConfirmUnsettle = async (clearPayments: boolean) => {
     if (!unsettleClosure) return
     setUnsettleClearingAll(true)
+    setUnsettleClearError(null)
     try {
       if (clearPayments) {
         await axios.delete(`/api/balance/closures/${unsettleClosure.id}/payments`)
@@ -1481,10 +1507,28 @@ const BalancoPage = () => {
       setToast({ show: true, message: 'Quitação removida com sucesso!', type: 'success' })
       setShowUnsettleModal(false)
       setUnsettleClosure(null)
+      setUnsettleClearError(null)
       loadClosures()
     } catch (error: any) {
       console.error('Erro ao remover quitação:', error)
-      setToast({ show: true, message: error.response?.data?.detail || 'Erro ao remover quitação', type: 'error' })
+      const detail = error.response?.data?.detail
+      if (
+        clearPayments &&
+        detail &&
+        typeof detail === 'object' &&
+        detail.code === 'credit_loans_blocked'
+      ) {
+        setUnsettleClearError({
+          message: detail.message || 'Não é possível apagar os pagamentos parciais.',
+          loans: Array.isArray(detail.loans) ? detail.loans : [],
+        })
+      } else {
+        setToast({
+          show: true,
+          message: typeof detail === 'string' ? detail : (detail?.message || 'Erro ao remover quitação'),
+          type: 'error',
+        })
+      }
     } finally {
       setUnsettleClearingAll(false)
     }
@@ -1661,7 +1705,17 @@ const BalancoPage = () => {
       )
       // Atualizar o fechamento na lista com os dados enriquecidos
       setClosures(prev => prev.map(c => c.id === paymentClosure.id ? { ...c, ...response.data } : c))
-      setToast({ show: true, message: 'Pagamento registrado com sucesso!', type: 'success' })
+      const creditLoanId = response.data?.credit_loan_id
+      const creditLoanAmount = parseFloat(String(response.data?.credit_loan_amount ?? 0))
+      if (creditLoanId && creditLoanAmount > 0) {
+        setToast({
+          show: true,
+          message: `Pagamento registrado e fechamento quitado. Crédito de ${formatCurrency(creditLoanAmount)} gerou empréstimo a pagar #${creditLoanId}.`,
+          type: 'success'
+        })
+      } else {
+        setToast({ show: true, message: 'Pagamento registrado com sucesso!', type: 'success' })
+      }
       setShowPaymentModal(false)
       setPaymentClosure(null)
       // Expandir a linha para mostrar o histórico
@@ -1673,14 +1727,62 @@ const BalancoPage = () => {
     }
   }
 
-  const handleDeletePayment = async (closure: BalanceClosure, paymentId: number) => {
-    try {
-      const response = await axios.delete(`/api/balance/closures/${closure.id}/payments/${paymentId}`)
-      setClosures(prev => prev.map(c => c.id === closure.id ? { ...c, ...response.data } : c))
-      setToast({ show: true, message: 'Pagamento removido com sucesso!', type: 'success' })
-    } catch (error: any) {
-      setToast({ show: true, message: error.response?.data?.detail || 'Erro ao remover pagamento', type: 'error' })
-    }
+  const handleDeletePayment = (closure: BalanceClosure, paymentId: number) => {
+    const creditEntry = getSettlementCreditForPayment(closure, paymentId)
+    const confirmMessage = creditEntry
+      ? 'Este pagamento gerou saldo a pagar (empréstimo). O empréstimo vinculado também será removido se estiver aberto e sem liquidações. Deseja continuar?'
+      : 'Deseja remover este pagamento parcial?'
+
+    showConfirm(
+      'Remover Pagamento',
+      confirmMessage,
+      async () => {
+        setPaymentDeleteError(null)
+        try {
+          const response = await axios.delete(`/api/balance/closures/${closure.id}/payments/${paymentId}`)
+          const updated = response.data as BalanceClosure
+          const mergedClosure: BalanceClosure = {
+            ...closure,
+            ...updated,
+            closure_data: updated.closure_data
+              ? JSON.parse(JSON.stringify(updated.closure_data))
+              : closure.closure_data,
+            closure_payments: updated.closure_payments ?? [],
+          }
+          setClosures(prev => prev.map(c => c.id === closure.id ? mergedClosure : c))
+          if (selectedClosure?.id === closure.id) {
+            setSelectedClosure(mergedClosure)
+          }
+          if (!(mergedClosure.closure_payments?.length)) {
+            setExpandedClosureIds(prev => {
+              const next = new Set(prev)
+              next.delete(closure.id)
+              return next
+            })
+          }
+          if (creditEntry) {
+            await loadOpenLoans()
+          }
+          setToast({ show: true, message: 'Pagamento removido com sucesso!', type: 'success' })
+        } catch (error: any) {
+          const detail = error.response?.data?.detail
+          if (detail && typeof detail === 'object' && detail.code === 'credit_loans_blocked') {
+            setPaymentDeleteError({
+              message: detail.message || 'Não é possível remover este pagamento.',
+              loans: Array.isArray(detail.loans) ? detail.loans : [],
+            })
+          } else {
+            setToast({
+              show: true,
+              message: typeof detail === 'string' ? detail : (detail?.message || 'Erro ao remover pagamento'),
+              type: 'error',
+            })
+          }
+        }
+      },
+      'Remover',
+      'Cancelar'
+    )
   }
 
   const openEditPayment = (payment: ClosurePayment, closure: BalanceClosure) => {
@@ -1714,7 +1816,17 @@ const BalancoPage = () => {
         { amount: amountValue, payment_date: dateStr, notes: editPaymentNotes || null }
       )
       setClosures(prev => prev.map(c => c.id === editingPaymentClosure.id ? { ...c, ...response.data } : c))
-      setToast({ show: true, message: 'Pagamento atualizado com sucesso!', type: 'success' })
+      const creditLoanId = response.data?.credit_loan_id
+      const creditLoanAmount = parseFloat(String(response.data?.credit_loan_amount ?? 0))
+      if (creditLoanId && creditLoanAmount > 0) {
+        setToast({
+          show: true,
+          message: `Pagamento atualizado e fechamento quitado. Crédito de ${formatCurrency(creditLoanAmount)} no empréstimo a pagar #${creditLoanId}.`,
+          type: 'success'
+        })
+      } else {
+        setToast({ show: true, message: 'Pagamento atualizado com sucesso!', type: 'success' })
+      }
       closeEditPaymentModal()
     } catch (error: any) {
       setToast({ show: true, message: error.response?.data?.detail || 'Erro ao editar pagamento', type: 'error' })
@@ -3450,6 +3562,11 @@ const BalancoPage = () => {
                                                    (mainCard.loan_payments && mainCard.loan_payments.length > 0) ||
                                                    (partnerCard.loan_payments && partnerCard.loan_payments.length > 0) ||
                                                    rootLoanPayments.length > 0)
+                          const hasRemovableLoanLiquidations = [
+                            ...(mainCard.loan_payments || []),
+                            ...(partnerCard.loan_payments || []),
+                            ...rootLoanPayments,
+                          ].some((lp: any) => lp && !lp.generated_on_settlement)
 
                           return (
                           <React.Fragment key={closure.id}>
@@ -3596,8 +3713,28 @@ const BalancoPage = () => {
                                 )
                               })()}
                             </td>
-                            {/* Coluna Saldo — mostra saldo restante (o que falta pagar) */}
+                            {/* Coluna Saldo — saldo restante ou crédito da quitação */}
                             {(() => {
+                              const settlementCreditSigned = getSettlementCreditSignedForViewer(closure, !isCounterpart)
+                              const settlementCreditTotal = getSettlementCreditTotal(closure)
+
+                              if (closure.is_settled && settlementCreditTotal > 0.01) {
+                                return (
+                                  <td className={`px-3 py-3 text-right whitespace-nowrap ${
+                                    settlementCreditSigned > 0
+                                      ? 'text-green-600 dark:text-green-400'
+                                      : settlementCreditSigned < 0
+                                      ? 'text-red-600 dark:text-red-400'
+                                      : 'text-gray-600 dark:text-gray-400'
+                                  }`}>
+                                    <div className="flex flex-col items-end">
+                                      <span className="font-medium">{formatSignedCurrency(settlementCreditSigned)}</span>
+                                      <span className="text-[10px] text-amber-600 dark:text-amber-400">crédito quitação</span>
+                                    </div>
+                                  </td>
+                                )
+                              }
+
                               const totalPaid = parseFloat(String(closure.total_paid ?? 0))
                               const remaining = closure.is_settled ? 0 : (parseFloat(String(closure.remaining_balance ?? Math.abs(displayNetBalance))) - 0)
                               const displayBalance = totalPaid > 0 ? remaining : displayNetBalance
@@ -3611,7 +3748,7 @@ const BalancoPage = () => {
                                     : 'text-gray-600 dark:text-gray-400'
                                 }`}>
                                   <div className="flex flex-col items-end">
-                                    <span className="font-medium">{formatCurrency(displayBalance)}</span>
+                                    <span className="font-medium">{formatSignedCurrency(displayBalance)}</span>
                                     {isRemainingView && (
                                       <span className="text-[10px] text-gray-400 dark:text-gray-500">restante</span>
                                     )}
@@ -3713,17 +3850,17 @@ const BalancoPage = () => {
                                 )}
                                 {/* Botão Remover Liquidações de Empréstimos - sempre visível, desabilitado se não tiver empréstimos ou estiver quitado */}
                                 <button
-                                  onClick={() => hasLoanPayments && !closure.is_settled && handleOpenRemoveLoanPaymentsModal(closure)}
-                                  disabled={!hasLoanPayments || closure.is_settled}
+                                  onClick={() => hasRemovableLoanLiquidations && !closure.is_settled && handleOpenRemoveLoanPaymentsModal(closure)}
+                                  disabled={!hasRemovableLoanLiquidations || closure.is_settled}
                                   className={`p-1.5 rounded-lg transition-all ${
-                                    hasLoanPayments && !closure.is_settled
+                                    hasRemovableLoanLiquidations && !closure.is_settled
                                       ? 'text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 cursor-pointer'
                                       : 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
                                   }`}
                                   title={
                                     closure.is_settled
                                       ? "Remova a quitação para poder remover liquidações de empréstimos"
-                                      : hasLoanPayments
+                                      : hasRemovableLoanLiquidations
                                         ? "Remover liquidações de empréstimos deste fechamento"
                                         : "Este fechamento não possui liquidações de empréstimos"
                                   }
@@ -3807,8 +3944,8 @@ const BalancoPage = () => {
                                   </td>
                                   {/* Ações — sticky */}
                                   <td className={`sticky right-0 z-10 border-l border-gray-200 dark:border-gray-700 py-2 px-3 ${rowBg} hover:bg-indigo-50/60 dark:hover:bg-indigo-900/20`}>
-                                    {!closure.is_settled && (
-                                      <div className="flex items-center gap-1">
+                                    <div className="flex items-center gap-1">
+                                      {!closure.is_settled && (
                                         <button
                                           onClick={() => openEditPayment(payment, closure)}
                                           className="p-1 text-gray-400 hover:text-indigo-600 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 rounded transition-all"
@@ -3816,19 +3953,63 @@ const BalancoPage = () => {
                                         >
                                           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                                         </button>
-                                        <button
-                                          onClick={() => handleDeletePayment(closure, payment.id)}
-                                          className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-all"
-                                          title="Remover pagamento"
-                                        >
-                                          <Trash2 size={12} />
-                                        </button>
-                                      </div>
-                                    )}
+                                      )}
+                                      <button
+                                        onClick={() => handleDeletePayment(closure, payment.id)}
+                                        className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-all"
+                                        title="Remover pagamento"
+                                      >
+                                        <Trash2 size={12} />
+                                      </button>
+                                    </div>
                                   </td>
                                 </tr>
                                 )
                               })}
+                              {(() => {
+                                const settlementCredits = getSettlementCreditEntries(closure)
+                                if (settlementCredits.length === 0) return null
+                                const signedTotal = getSettlementCreditSignedForViewer(closure, !isCounterpart)
+                                return (
+                                  <>
+                                    <tr className="bg-amber-50 dark:bg-amber-900/15 border-t border-amber-200 dark:border-amber-800">
+                                      <td colSpan={10} className="pl-10 pr-4 py-2">
+                                        <div className="flex items-center gap-2">
+                                          <div className="w-1 h-4 rounded-full bg-amber-500 shrink-0" />
+                                          <Banknote size={13} className="text-amber-600 dark:text-amber-400" />
+                                          <span className="text-xs font-semibold text-amber-800 dark:text-amber-200 uppercase tracking-wide">
+                                            Saldo gerado no pagamento a maior
+                                          </span>
+                                          <span className="ml-auto text-xs font-bold whitespace-nowrap">
+                                            <span className={signedTotal < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}>
+                                              {formatSignedCurrency(signedTotal)}
+                                            </span>
+                                          </span>
+                                        </div>
+                                      </td>
+                                      <td className="sticky right-0 z-10 bg-amber-50 dark:bg-amber-900/15 border-l border-gray-200 dark:border-gray-700 py-2 px-3" />
+                                    </tr>
+                                    {settlementCredits.map((credit, ci) => (
+                                      <tr key={`credit-${credit.loan_id ?? ci}`} className="border-t border-amber-100 dark:border-amber-900/30 bg-amber-50/50 dark:bg-amber-900/10">
+                                        <td className="px-1 py-2 w-6" />
+                                        <td className="px-2 py-2 w-8 text-center text-xs text-amber-600 dark:text-amber-400">{ci + 1}</td>
+                                        <td className="px-3 py-2 w-10" />
+                                        <td className="px-3 py-2 text-xs text-gray-600 dark:text-gray-400" colSpan={2}>
+                                          {credit.description || 'Crédito da quitação'}
+                                        </td>
+                                        <td colSpan={5} className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
+                                          Empréstimo a pagar · #{credit.loan_id}
+                                        </td>
+                                        <td className="sticky right-0 z-10 border-l border-gray-200 dark:border-gray-700 py-2 px-3 bg-amber-50/50 dark:bg-amber-900/10 text-right text-xs font-semibold text-red-600 dark:text-red-400">
+                                          {formatSignedCurrency(
+                                            signedLoanFieldValue(credit.original_amount || 0, isCounterpart, 'remaining')
+                                          )}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </>
+                                )
+                              })()}
                               {/* Fechamento visual da seção */}
                               <tr className="border-t border-indigo-200 dark:border-indigo-800/60">
                                 <td colSpan={10} className="pb-0"></td>
@@ -4282,13 +4463,13 @@ const BalancoPage = () => {
                   </tbody>
                 </table>
 
-                {/* Seção de Empréstimos Liquidados (se houver) */}
-                {closureLoanPayments.length > 0 && (
+                {/* Seção de Empréstimos liquidados no período (sem crédito da quitação) */}
+                {filterRegularLoanPayments(closureLoanPayments).length > 0 && (
                   <div className="mt-6 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
                     <div className="bg-gray-50 dark:bg-gray-700 px-4 py-3 flex items-center gap-2 border-b border-gray-200 dark:border-gray-700">
                       <Banknote size={18} className="text-color-primary" />
                       <h4 className="text-sm font-bold text-gray-900 dark:text-white">
-                        Empréstimos Liquidados ({closureLoanPayments.length})
+                        Empréstimos ({filterRegularLoanPayments(closureLoanPayments).length})
                       </h4>
                     </div>
                     <table className="w-full text-sm">
@@ -4305,30 +4486,25 @@ const BalancoPage = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {closureLoanPayments.map((payment, index) => {
-                          // Tipo original do empréstimo (perspectiva de quem criou o fechamento)
+                        {filterRegularLoanPayments(closureLoanPayments).map((payment, index) => {
                           const originalIsLent = payment.loan_type === 'lent'
-                          // Inverter perspectiva se estamos vendo como contraparte
                           const isLent = isClosurePartnerView ? !originalIsLent : originalIsLent
 
-                          // TODOS OS VALORES SEMPRE POSITIVOS - badge indica a direção
-                          const originalDisplay = Math.abs(payment.original_amount || 0)
-                          const beforeDisplay = Math.abs(payment.remaining_before || 0)
-                          const paidDisplay = Math.abs(payment.amount_paid || 0)
-                          const afterDisplay = Math.abs(payment.remaining_after || 0)
+                          const principalSigned = signedLoanFieldValue(payment.original_amount || 0, isLent, 'principal')
+                          const beforeSigned = signedLoanFieldValue(payment.remaining_before || 0, isLent, 'corrected')
+                          const paidSigned = signedLoanFieldValue(payment.amount_paid || 0, isLent, 'paid')
+                          const afterSigned = signedLoanFieldValue(payment.remaining_after || 0, isLent, 'remaining')
 
-                          // Cores baseadas na direção (não no sinal)
                           const valueColor = isLent
-                            ? 'text-green-600 dark:text-green-400'  // A receber
-                            : 'text-red-600 dark:text-red-400'       // A pagar
+                            ? 'text-green-600 dark:text-green-400'
+                            : 'text-red-600 dark:text-red-400'
 
-                          // Saldo restante: cinza se zero, senão cor baseada na direção
-                          const remainingColor = afterDisplay < 0.01
+                          const afterAbs = Math.abs(afterSigned)
+                          const remainingColor = afterAbs < 0.01
                             ? 'text-gray-500 dark:text-gray-400'
                             : valueColor
 
-                          // Status: Quitado se saldo restante for zero, senão Aberto
-                          const isSettled = afterDisplay < 0.01
+                          const isSettled = afterAbs < 0.01
 
                           return (
                             <tr
@@ -4357,17 +4533,17 @@ const BalancoPage = () => {
                               <td className="p-3 text-gray-900 dark:text-white">
                                 {payment.description || 'Empréstimo'}
                               </td>
-                              <td className="p-3 text-right text-gray-900 dark:text-gray-100">
-                                {formatCurrency(originalDisplay)}
+                              <td className={`p-3 text-right ${Math.abs(principalSigned) < 0.01 ? 'text-gray-900 dark:text-gray-100' : valueColor}`}>
+                                {formatSignedCurrency(principalSigned)}
                               </td>
                               <td className={`p-3 text-right ${valueColor}`}>
-                                {formatCurrency(beforeDisplay)}
+                                {formatSignedCurrency(beforeSigned)}
                               </td>
                               <td className={`p-3 text-right ${valueColor}`}>
-                                {formatCurrency(paidDisplay)}
+                                {formatSignedCurrency(paidSigned)}
                               </td>
                               <td className={`p-3 text-right ${remainingColor}`}>
-                                {formatCurrency(afterDisplay)}
+                                {formatSignedCurrency(afterSigned)}
                               </td>
                               <td className="p-3 text-center">
                                 <span
@@ -4405,7 +4581,7 @@ const BalancoPage = () => {
                       <Gift size={14} className="text-green-600 dark:text-green-400" />
                       <span>Cartão Benefício</span>
                     </div>
-                    {closureLoanPayments.length > 0 && (
+                    {filterRegularLoanPayments(closureLoanPayments).length > 0 && (
                       <div className="flex items-center gap-1.5">
                         <Banknote size={14} className="text-amber-600 dark:text-amber-400" />
                         <span>Empréstimo</span>
@@ -4435,8 +4611,13 @@ const BalancoPage = () => {
                     // A Pagar = |total_to_pay| + |loan_to_pay|
                     const displayToPay = totalToPay + loanToPay
 
-                    // Saldo = A Receber - A Pagar
-                    const displayBalance = displayToReceive - displayToPay
+                    // Saldo = A Receber - A Pagar (+ crédito da quitação, se houver)
+                    const settlementCreditSigned = selectedClosure
+                      ? getSettlementCreditSignedForViewer(selectedClosure, !isClosurePartnerView)
+                      : 0
+                    const displayBalance = displayToReceive - displayToPay + settlementCreditSigned
+                    const regularLoanCount = filterRegularLoanPayments(closureLoanPayments).length
+                    const settlementCreditTotal = selectedClosure ? getSettlementCreditTotal(selectedClosure) : 0
 
                     return (
                       <div className="flex items-center gap-6">
@@ -4444,7 +4625,8 @@ const BalancoPage = () => {
                         <div className="text-right">
                           <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
                             Saldo ({closureItems.length} {closureItems.length === 1 ? 'item' : 'itens'}
-                            {closureLoanPayments.length > 0 && ` + ${closureLoanPayments.length} empréstimo${closureLoanPayments.length > 1 ? 's' : ''}`})
+                            {regularLoanCount > 0 && ` + ${regularLoanCount} empréstimo${regularLoanCount > 1 ? 's' : ''}`}
+                            {settlementCreditTotal > 0.01 && ', crédito quitação'})
                           </div>
                           <span className={`text-lg font-bold ${
                             displayBalance === 0 ? 'text-gray-900 dark:text-gray-100' : displayBalance > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
@@ -4504,6 +4686,47 @@ const BalancoPage = () => {
           </div>
         )}
 
+        {/* Modal: Erro ao remover pagamento (empréstimo de crédito bloqueado) */}
+        {paymentDeleteError && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md">
+              <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-gray-700">
+                <div className="flex items-center gap-2">
+                  <Trash2 size={20} className="text-red-500" />
+                  <h2 className="text-lg font-bold text-gray-900 dark:text-white">Não foi possível remover</h2>
+                </div>
+                <button
+                  onClick={() => setPaymentDeleteError(null)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                >✕</button>
+              </div>
+              <div className="p-5">
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">{paymentDeleteError.message}</p>
+                {paymentDeleteError.loans.length > 0 && (
+                  <ul className="text-sm text-amber-900 dark:text-amber-100 list-disc pl-5 space-y-1 mb-3">
+                    {paymentDeleteError.loans.map(loan => (
+                      <li key={loan.id}>
+                        <span className="font-medium">{loan.description}</span>
+                        <span className="text-xs text-amber-700 dark:text-amber-300"> (#{loan.id})</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Ajuste ou exclua esses empréstimos em Empréstimos e tente novamente.
+                </p>
+                <button
+                  onClick={() => setPaymentDeleteError(null)}
+                  className="mt-4 w-full px-4 py-2 rounded-lg font-semibold text-sm transition-all hover:opacity-90"
+                  style={{ backgroundColor: 'var(--crud-cancel)', color: 'var(--on-crud-cancel)' }}
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Modal: Reabrir (Remover Quitação) */}
         {showUnsettleModal && unsettleClosure && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -4515,7 +4738,7 @@ const BalancoPage = () => {
                   <h2 className="text-lg font-bold text-gray-900 dark:text-white">Remover Quitação</h2>
                 </div>
                 <button
-                  onClick={() => { setShowUnsettleModal(false); setUnsettleClosure(null) }}
+                  onClick={() => { setShowUnsettleModal(false); setUnsettleClosure(null); setUnsettleClearError(null) }}
                   className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
                 >✕</button>
               </div>
@@ -4547,6 +4770,30 @@ const BalancoPage = () => {
                   <p className="text-sm text-gray-500 dark:text-gray-400 italic mb-4">Nenhum pagamento registrado.</p>
                 )}
 
+                {unsettleClearError && (
+                  <div className="mb-4 p-3 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20">
+                    <p className="text-sm font-semibold text-amber-900 dark:text-amber-100 mb-1">
+                      Não é possível limpar os pagamentos
+                    </p>
+                    <p className="text-sm text-amber-800 dark:text-amber-200 mb-2">
+                      {unsettleClearError.message}
+                    </p>
+                    {unsettleClearError.loans.length > 0 && (
+                      <ul className="text-sm text-amber-900 dark:text-amber-100 list-disc pl-5 space-y-1">
+                        {unsettleClearError.loans.map(loan => (
+                          <li key={loan.id}>
+                            <span className="font-medium">{loan.description}</span>
+                            <span className="text-xs text-amber-700 dark:text-amber-300"> (#{loan.id})</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <p className="text-xs text-amber-700 dark:text-amber-300 mt-2">
+                      Ajuste ou exclua esses empréstimos em Empréstimos e tente novamente.
+                    </p>
+                  </div>
+                )}
+
                 {/* Botões de ação */}
                 <div className="flex flex-col gap-2">
                   {(unsettleClosure.closure_payments || []).filter(p => p.active !== false).length > 0 && (
@@ -4570,7 +4817,7 @@ const BalancoPage = () => {
                     Reabrir sem alterar pagamentos
                   </button>
                   <button
-                    onClick={() => { setShowUnsettleModal(false); setUnsettleClosure(null) }}
+                    onClick={() => { setShowUnsettleModal(false); setUnsettleClosure(null); setUnsettleClearError(null) }}
                     disabled={unsettleClearingAll}
                     className="w-full px-4 py-2 rounded-lg font-semibold text-sm transition-all hover:opacity-90 disabled:opacity-50"
                     style={{ backgroundColor: 'var(--crud-cancel)', color: 'var(--on-crud-cancel)' }}
@@ -4665,13 +4912,30 @@ const BalancoPage = () => {
                 {(() => {
                   const remaining = parseFloat(String(paymentClosure.remaining_balance ?? Math.abs(paymentClosure.net_balance ?? 0)))
                   const isFullyPaid = remaining <= 0
+                  const amountValue = parseInt(paymentAmountCents || '0', 10) / 100
+                  const mandanteAReceber = parseFloat(String(paymentClosure.net_balance ?? 0)) > 0
+                  const creditPreview = mandanteAReceber && amountValue > remaining + 0.01
+                    ? amountValue - Math.max(remaining, 0)
+                    : 0
+                  const appliedPreview = creditPreview > 0 ? Math.max(remaining, 0) : amountValue
                   return (
-                    <div className={`p-3 rounded-lg text-sm border ${isFullyPaid ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}>
-                      <p className="text-gray-600 dark:text-gray-400 text-xs mb-1">Saldo devedor restante</p>
-                      <p className={`font-bold text-lg ${isFullyPaid ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                        {isFullyPaid ? formatCurrency(0) : `- ${formatCurrency(remaining)}`}
-                      </p>
-                    </div>
+                    <>
+                      <div className={`p-3 rounded-lg text-sm border ${isFullyPaid ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}>
+                        <p className="text-gray-600 dark:text-gray-400 text-xs mb-1">Saldo devedor restante</p>
+                        <p className={`font-bold text-lg ${isFullyPaid ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                          {isFullyPaid ? formatCurrency(0) : `- ${formatCurrency(remaining)}`}
+                        </p>
+                      </div>
+                      {creditPreview > 0.01 && (
+                        <div className="p-3 rounded-lg text-sm border bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800">
+                          <p className="text-amber-800 dark:text-amber-200 text-xs font-medium mb-1">Pagamento a maior</p>
+                          <p className="text-amber-900 dark:text-amber-100 text-sm">
+                            {formatCurrency(appliedPreview)} quita o fechamento automaticamente.
+                            {' '}{formatCurrency(creditPreview)} vira empréstimo <span className="font-semibold">a pagar</span> (crédito para o próximo mês).
+                          </p>
+                        </div>
+                      )}
+                    </>
                   )
                 })()}
                 <div>
@@ -4753,6 +5017,28 @@ const BalancoPage = () => {
                 </button>
               </div>
               <div className="p-5 space-y-4">
+                {(() => {
+                  const otherPaid = (editingPaymentClosure.closure_payments || [])
+                    .filter(p => p.id !== editingPaymentId)
+                    .reduce((sum, p) => sum + parseFloat(String(p.amount ?? 0)), 0)
+                  const debt = Math.abs(parseFloat(String(editingPaymentClosure.net_balance ?? 0)))
+                  const remaining = Math.max(0, debt - otherPaid)
+                  const amountValue = parseInt(editPaymentCents || '0', 10) / 100
+                  const mandanteAReceber = parseFloat(String(editingPaymentClosure.net_balance ?? 0)) > 0
+                  const creditPreview = mandanteAReceber && amountValue > remaining + 0.01
+                    ? amountValue - remaining
+                    : 0
+                  if (creditPreview <= 0.01) return null
+                  return (
+                    <div className="p-3 rounded-lg text-sm border bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800">
+                      <p className="text-amber-800 dark:text-amber-200 text-xs font-medium mb-1">Pagamento a maior</p>
+                      <p className="text-amber-900 dark:text-amber-100 text-sm">
+                        {formatCurrency(remaining)} quita o fechamento automaticamente.
+                        {' '}{formatCurrency(creditPreview)} vira empréstimo <span className="font-semibold">a pagar</span> (crédito para o próximo mês).
+                      </p>
+                    </div>
+                  )
+                })()}
                 {/* Valor */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Valor</label>
@@ -4816,6 +5102,7 @@ const BalancoPage = () => {
         {/* Modal: Remover Liquidações de Empréstimos */}
         {showRemoveLoanPaymentsModal && removeLoanPaymentsClosure && (() => {
           const loanPayments = getClosureLoanPaymentsList(removeLoanPaymentsClosure)
+            .filter((lp: any) => !lp.generated_on_settlement)
           const allSelected = selectedLoanIdsToRemove.size === loanPayments.length && loanPayments.length > 0
           const someSelected = selectedLoanIdsToRemove.size > 0 && selectedLoanIdsToRemove.size < loanPayments.length
 

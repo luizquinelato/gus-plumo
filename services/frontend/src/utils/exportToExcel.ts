@@ -4,6 +4,7 @@
  */
 
 import * as XLSX from 'xlsx'
+import { filterRegularLoanPayments, getSettlementCreditEntries } from './closureCreditUtils'
 
 export interface ExpenseExportData {
   id: number
@@ -281,6 +282,7 @@ interface LoanPaymentItemForExcel {
   amount_paid: number
   remaining_after: number
   is_settled?: boolean
+  generated_on_settlement?: boolean
 }
 
 interface BalanceClosureForExcel {
@@ -412,9 +414,11 @@ export function exportBalanceClosureToExcel(closure: BalanceClosureForExcel, abs
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(toRows(benefitItems, true)), 'Benefício')
   }
 
-  // Aba 4: Empréstimos (apenas se houver pagamentos de empréstimo no fechamento)
-  const loanPayments = (closure.closure_data as any).loan_payments as LoanPaymentItemForExcel[] | undefined
-  if (loanPayments && loanPayments.length > 0) {
+  // Aba 4: Empréstimos (liquidações do período; sem crédito da quitação)
+  const loanPayments = filterRegularLoanPayments(
+    (closure.closure_data as any).loan_payments as LoanPaymentItemForExcel[] | undefined
+  )
+  if (loanPayments.length > 0) {
     const loanRows = loanPayments.map(lp => {
       const isLent = lp.loan_type === 'lent'
       const typeLabel = isLent ? 'Emprestei' : 'Peguei'
@@ -498,6 +502,41 @@ export function exportBalanceClosureToExcel(closure: BalanceClosureForExcel, abs
     const wsSummary = XLSX.utils.json_to_sheet(summaryRows)
     XLSX.utils.sheet_add_json(wsSummary, paymentRows, { origin: summaryRows.length + 1, skipHeader: false })
     XLSX.utils.book_append_sheet(wb, wsSummary, 'Pagamentos')
+  }
+
+  // Aba 6: Saldo gerado no pagamento a maior (após pagamentos, como no PDF)
+  const settlementCredits = getSettlementCreditEntries(closure)
+  if (settlementCredits.length > 0) {
+    const formatSignedCredit = (value: number): number => {
+      if (absoluteValues) return parseFloat(Math.abs(value).toFixed(2))
+      return parseFloat(value.toFixed(2))
+    }
+
+    const creditRows = settlementCredits.map(credit => {
+      const amount = Math.abs(parseNum(credit.original_amount ?? credit.remaining_after ?? 0))
+      const signed = -amount // borrowed na mandante (mesma perspectiva do PDF)
+      return [
+        credit.description || 'Crédito da quitação',
+        credit.loan_id ?? '',
+        formatSignedCredit(signed),
+      ] as [string, string | number, number]
+    })
+
+    const totalSigned = -settlementCredits.reduce(
+      (sum, credit) => sum + Math.abs(parseNum(credit.original_amount ?? credit.remaining_after ?? 0)),
+      0
+    )
+
+    const wsData: (string | number)[][] = [
+      [`Saldo a pagar na mandante (${mainName}) — crédito para o próximo fechamento`, '', ''],
+      ['', '', ''],
+      ['Descrição', 'Empréstimo', 'Saldo a Pagar'],
+      ...creditRows,
+      ['TOTAL', '', formatSignedCredit(totalSigned)],
+    ]
+
+    const wsCredits = XLSX.utils.aoa_to_sheet(wsData)
+    XLSX.utils.book_append_sheet(wb, wsCredits, 'Saldo Gerado')
   }
 
   // Nome do arquivo

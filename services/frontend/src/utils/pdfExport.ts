@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf'
 import autoTableLib from 'jspdf-autotable'
+import { filterRegularLoanPayments, getSettlementCreditEntries } from './closureCreditUtils'
 
 // Wrapper para suprimir warnings do autoTable sobre largura de tabela
 const autoTable = (doc: jsPDF, options: Parameters<typeof autoTableLib>[1]) => {
@@ -60,6 +61,7 @@ interface LoanPaymentItem {
   amount_paid: number
   remaining_after: number
   is_settled?: boolean
+  generated_on_settlement?: boolean
 }
 
 interface ClosurePaymentItem {
@@ -583,11 +585,12 @@ export const exportBalanceClosureToPDF = (closure: BalanceClosure, isCounterpart
     addBenefitCardTable(doc, partnerCard.account_name, partnerBenefitItems, mainCard.account_name, partnerCard.account_name, absoluteValues)
   }
 
-  // --- SEÇÃO: EMPRÉSTIMOS LIQUIDADOS ---
-  const loanPayments = closure.closure_data.loan_payments || []
+  // --- SEÇÃO: EMPRÉSTIMOS (liquidações do período; sem crédito da quitação) ---
+  const allLoanPayments = closure.closure_data.loan_payments || []
+  const loanPayments = filterRegularLoanPayments(allLoanPayments)
   if (loanPayments.length > 0) {
     const loanColor = SECTION_COLORS.loans
-    addSectionDivider(doc, 'EMPRÉSTIMOS LIQUIDADOS', loanColor)
+    addSectionDivider(doc, 'EMPRÉSTIMOS', loanColor)
     addLoanPaymentsTable(doc, loanPayments, mainCard.account_name, absoluteValues)
   }
 
@@ -603,6 +606,13 @@ export const exportBalanceClosureToPDF = (closure: BalanceClosure, isCounterpart
       remainingAbs: parseNumeric(closure.remaining_balance ?? netAbs),  // sempre positivo (magnitude)
       isSettled: closure.is_settled ?? false,
     }, absoluteValues)
+  }
+
+  // --- SEÇÃO: SALDO GERADO NO PAGAMENTO A MAIOR (após histórico de pagamentos) ---
+  const settlementCredits = getSettlementCreditEntries(closure)
+  if (settlementCredits.length > 0) {
+    addSectionDivider(doc, 'SALDO GERADO NO PAGAMENTO A MAIOR', [217, 119, 6])
+    addSettlementCreditTable(doc, settlementCredits, mainCard.account_name, absoluteValues)
   }
 
   // Adicionar cabeçalho temático em todas as páginas
@@ -1008,6 +1018,87 @@ const addClosurePaymentsTable = (
   })
 }
 
+// Saldo a pagar gerado por pagamento a maior (perspectiva da conta mandante)
+const addSettlementCreditTable = (
+  doc: jsPDF,
+  credits: LoanPaymentItem[],
+  mainAccountName?: string,
+  absoluteValues: boolean = false
+): void => {
+  if (!credits || credits.length === 0) return
+
+  let yPos = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 12 : HEADER_HEIGHT + 6
+  if (yPos > 250) {
+    doc.addPage()
+    yPos = HEADER_HEIGHT + 6
+  }
+
+  doc.setFontSize(8)
+  doc.setFont('helvetica', 'italic')
+  doc.setTextColor(100, 100, 100)
+  const note = mainAccountName
+    ? `Saldo a pagar na mandante (${sanitizeText(mainAccountName)}) — credito para o proximo fechamento`
+    : 'Saldo a pagar na mandante — credito para o proximo fechamento'
+  doc.text(note, 14, yPos)
+  yPos += 6
+  doc.setTextColor(0, 0, 0)
+
+  const formatSigned = (value: number): string => {
+    if (value === 0) return formatCurrency(0)
+    if (absoluteValues) return formatCurrency(Math.abs(value))
+    return value < 0 ? `-${formatCurrency(Math.abs(value))}` : formatCurrency(value)
+  }
+
+  const tableRows = credits.map(credit => {
+    const amount = Math.abs(credit.original_amount || credit.remaining_after || 0)
+    const signed = -amount // borrowed na mandante
+    return [
+      sanitizeText(credit.description || 'Credito da quitacao'),
+      String(credit.loan_id ?? '-'),
+      formatSigned(signed),
+    ]
+  })
+
+  const totalSigned = -credits.reduce(
+    (s, c) => s + Math.abs(c.original_amount || c.remaining_after || 0),
+    0
+  )
+
+  autoTable(doc, {
+    startY: yPos,
+    margin: { top: HEADER_HEIGHT, left: 14, right: 14 },
+    head: [['Descricao', 'Emprestimo', 'Saldo a Pagar']],
+    body: tableRows,
+    foot: [['TOTAL', '', formatSigned(totalSigned)]],
+    showFoot: 'lastPage',
+    theme: 'plain',
+    headStyles: {
+      fillColor: [217, 119, 6],
+      textColor: 255,
+      fontStyle: 'bold',
+      fontSize: 8,
+    },
+    footStyles: {
+      fillColor: [255, 250, 205],
+      fontStyle: 'bold',
+      fontSize: 8,
+    },
+    styles: { fontSize: 7, cellPadding: 2 },
+    columnStyles: {
+      2: { halign: 'right' },
+    },
+    didParseCell: (data) => {
+      if (data.section === 'body' && data.column.index === 2) {
+        data.cell.styles.textColor = redColor
+      }
+      if (data.section === 'foot' && data.column.index === 2) {
+        data.cell.styles.textColor = redColor
+        data.cell.styles.halign = 'right'
+      }
+    },
+  })
+}
+
 // Função auxiliar para adicionar tabela de pagamentos de empréstimos
 const addLoanPaymentsTable = (doc: jsPDF, payments: LoanPaymentItem[], mainAccountName?: string, absoluteValues: boolean = false): void => {
   if (!payments || payments.length === 0) return
@@ -1023,7 +1114,7 @@ const addLoanPaymentsTable = (doc: jsPDF, payments: LoanPaymentItem[], mainAccou
   doc.setFontSize(11)
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(0, 0, 0)
-  doc.text('Liquidações de Empréstimos', 14, yPos)
+  doc.text('Emprestimos', 14, yPos)
   yPos += 5
 
   // Nota explicativa: dados são da perspectiva da conta principal
