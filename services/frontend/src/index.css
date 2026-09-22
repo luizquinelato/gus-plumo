@@ -1,3 +1,5 @@
+@import './colors.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -111,6 +113,21 @@ body {
   min-width: 320px;
   min-height: 100vh;
 }
+
+/* Scrollbar — cinza neutro visível em fundos claros e escuros */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(100, 116, 139, 0.35); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(100, 116, 139, 0.60); }
+* { scrollbar-width: thin; scrollbar-color: rgba(100, 116, 139, 0.35) transparent; }
+
+.scroll-slim::-webkit-scrollbar { width: 4px; height: 4px; }
+.scroll-slim::-webkit-scrollbar-track { background: transparent; }
+.scroll-slim::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; }
+.scroll-slim:hover::-webkit-scrollbar-thumb { background: rgba(100, 116, 139, 0.30); }
+.scroll-slim:hover::-webkit-scrollbar-thumb:hover { background: rgba(100, 116, 139, 0.55); }
+.scroll-slim { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+.scroll-slim:hover { scrollbar-color: rgba(100, 116, 139, 0.30) transparent; }
 
 #root {
   width: 100%;
@@ -266,4 +283,48 @@ body {
 
 .slider-modern::-moz-range-thumb:active {
   transform: scale(1.1);
+}
+
+/* Table / list row hover — usa --row-hover-bg */
+@layer components {
+  .table-row-hover {
+    box-shadow: inset 4px 0 0 0 #e5e7eb;
+    transition: background-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .dark .table-row-hover {
+    box-shadow: inset 4px 0 0 0 rgb(75 85 99 / 0.22);
+  }
+  .table-row-hover:hover {
+    background-color: var(--row-hover-bg);
+    box-shadow: inset 4px 0 0 0 var(--color-1);
+  }
+  .table-row-hover-soft {
+    transition: background-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .table-row-hover-soft:hover {
+    background-color: var(--row-hover-bg-soft);
+    box-shadow: inset 4px 0 0 0 var(--color-1);
+  }
+  .table-row-selected {
+    box-shadow: inset 4px 0 0 0 var(--color-1);
+  }
+  .table-row-selected:hover {
+    box-shadow: inset 4px 0 0 0 var(--color-1);
+  }
+}
+
+.list-page-table {
+  width: 100%;
+}
+.list-page-table col.list-page-table-index-col,
+.list-page-table th.list-page-table-index-col,
+.list-page-table td.list-page-table-index-col {
+  width: 40px !important;
+  min-width: 40px !important;
+  max-width: 40px !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  box-sizing: border-box !important;
+  text-align: center !important;
+  overflow: hidden !important;
 }

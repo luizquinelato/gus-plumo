@@ -4,8 +4,22 @@
 
 import * as XLSX from 'xlsx'
 
-export type FileType = 'extrato_bruto' | 'extrato_processado' | 'fatura_bruta' | 'fatura_processada' | 'beneficio_csv' | 'beneficio_xlsx'
-export type ImportSource = 'extrato' | 'fatura' | 'beneficio'
+export type FileType = 'extrato_bruto' | 'extrato_processado' | 'fatura_bruta' | 'fatura_processada' | 'beneficio_csv' | 'beneficio_xlsx' | 'holerite' | 'informe' | 'pdf_unknown'
+export type ImportSource = 'extrato' | 'fatura' | 'beneficio' | 'folha'
+export type StatementIssuer = 'btg' | 'mercadopago' | 'unknown'
+
+export function fileExtension(fileName: string): string {
+  const match = fileName.toLowerCase().match(/(\.[a-z0-9]+)$/)
+  return match?.[1] || ''
+}
+
+export function isPdfFileName(fileName: string): boolean {
+  return fileExtension(fileName) === '.pdf'
+}
+
+export function isSupportedImportFileName(fileName: string): boolean {
+  return ['.pdf', '.xlsx', '.xls', '.csv'].includes(fileExtension(fileName))
+}
 
 export interface DetectedFileInfo {
   file: File
@@ -17,6 +31,11 @@ export interface DetectedFileInfo {
   columns?: string[]
   year?: string
   month?: string
+  statementIssuer?: StatementIssuer
+  issuerLabel?: string
+  cardLast4?: string
+  payrollPreview?: string
+  detectionError?: string
 }
 
 // Definições de colunas esperadas (assinaturas COMPLETAS para detecção precisa)
@@ -43,30 +62,29 @@ const COLUMN_SIGNATURES = {
  * Detecta o tipo de arquivo baseado APENAS na PRIMEIRA LINHA (header)
  *
  * ESTRATÉGIA:
- * 1. PDF → Sempre fatura bruta (não tem header)
+ * 1. PDF → Tipo indefinido até o backend classificar (folha ou fatura)
  * 2. CSV → Lê primeira linha e compara com assinatura de benefícios
  * 3. Excel → Lê primeira linha e compara com assinaturas conhecidas
  *
  * ⚠️ IMPORTANTE: NUNCA usa o nome do arquivo para detectar tipo!
  */
 export async function detectFileType(file: File): Promise<DetectedFileInfo> {
-  const fileName = file.name.toLowerCase()
+  const ext = fileExtension(file.name)
 
-  // 1. PDF = Fatura Bruta (sempre)
-  // PDFs não têm header, então assumimos fatura bruta
-  if (fileName.endsWith('.pdf')) {
+  // 1. PDF = classificado no modal (holerite, informe ou fatura)
+  if (ext === '.pdf') {
     return {
       file,
-      detectedType: 'fatura_bruta',
-      importSource: 'fatura',
+      detectedType: 'pdf_unknown',
+      importSource: 'folha',
       isRaw: true,
-      needsYearMonth: true,
-      confidence: 'high'
+      needsYearMonth: false,
+      confidence: 'low'
     }
   }
 
   // 2. CSV = Lê primeira linha e detecta tipo
-  if (fileName.endsWith('.csv')) {
+  if (ext === '.csv') {
     try {
       // ✅ LÊ A PRIMEIRA LINHA DO CSV
       const columns = await readCSVColumns(file)
@@ -95,7 +113,7 @@ export async function detectFileType(file: File): Promise<DetectedFileInfo> {
   }
 
   // 3. Excel = Lê primeira linha e detecta tipo
-  if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+  if (ext === '.xlsx' || ext === '.xls') {
     try {
       // Validação de tamanho (opcional: avisar se > 10MB)
       const maxSize = 50 * 1024 * 1024 // 50MB
@@ -130,7 +148,7 @@ export async function detectFileType(file: File): Promise<DetectedFileInfo> {
     }
   }
 
-  throw new Error(`Tipo de arquivo não suportado: ${fileName}`)
+  throw new Error(`Tipo de arquivo não suportado: ${file.name}`)
 }
 
 /**

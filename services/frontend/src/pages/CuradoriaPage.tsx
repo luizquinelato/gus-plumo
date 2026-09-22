@@ -1,6 +1,18 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
+import {
+  CadastroListPageBody,
+  CadastroListPageHero,
+  CadastroListPageShell,
+} from '../components/CadastroListPageLayout'
+import {
+  CadastroFormSection,
+  CadastroModalBody,
+  CadastroModalFooter,
+  CadastroModalHeader,
+  CadastroModalShell,
+} from '../components/CadastroFormLayout'
 import FloatingFooterBar from '../components/FloatingFooterBar'
 import Toast from '../components/Toast'
 import LoadingSpinner from '../components/LoadingSpinner'
@@ -1934,28 +1946,32 @@ const CuradoriaPage = () => {
 
   if (isLoading) {
     return (
-      <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900">
         <Sidebar />
-        <LoadingSpinner fullScreen message="Carregando registros..." />
+        <CadastroListPageShell>
+          <LoadingSpinner fullScreen message="Carregando registros..." />
+        </CadastroListPageShell>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900">
         <Sidebar />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
-            <button
-              onClick={loadData}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Tentar Novamente
-            </button>
+        <CadastroListPageShell>
+          <div className="flex flex-1 items-center justify-center">
+            <div className="text-center">
+              <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
+              <button
+                onClick={loadData}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Tentar Novamente
+              </button>
+            </div>
           </div>
-        </div>
+        </CadastroListPageShell>
       </div>
     )
   }
@@ -1966,28 +1982,25 @@ const CuradoriaPage = () => {
     (isRegrouped && virtualReceitaSubtag ? 1 : 0)
 
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900">
       <Sidebar />
 
-      <div className="flex-1 overflow-auto" ref={scrollContainerRef}>
-        <div className={`p-8 ${showBackToTop ? 'pb-20' : ''}`}>
-          {/* Header */}
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-                <Sparkles className="w-8 h-8" />
-                Curadoria de Registros
-              </h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-1">
-                Categorize registros não mapeados e crie mapeamentos automáticos
-              </p>
-            </div>
-          </div>
-
+      <CadastroListPageShell>
+        <CadastroListPageBody
+          scrollRef={scrollContainerRef}
+          contentOverflow="auto"
+          header={
+            <CadastroListPageHero
+              icon={<Sparkles className="w-8 h-8" />}
+              title="Curadoria de Registros"
+              subtitle="Categorize registros não mapeados e crie mapeamentos automáticos"
+            />
+          }
+        >
           {groupedRecords.length === 0 ? (
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-12 text-center border border-gray-200 dark:border-gray-700">
-              <Check className="w-16 h-16 text-green-600 dark:text-green-400 mx-auto mb-4" />
-              <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+            <div className="rounded-lg border border-gray-200 bg-white p-12 text-center dark:border-gray-700 dark:bg-gray-800">
+              <Check className="mx-auto mb-4 h-16 w-16 text-green-600 dark:text-green-400" />
+              <h3 className="mb-2 text-xl font-semibold text-gray-900 dark:text-white">
                 Tudo Categorizado!
               </h3>
               <p className="text-gray-600 dark:text-gray-400">
@@ -1995,8 +2008,7 @@ const CuradoriaPage = () => {
               </p>
             </div>
           ) : (
-            <>
-              {/* Cards Globais de Receita e Despesa - Lado a Lado */}
+              <div className="space-y-4">
               {(hasReceitas || hasDespesas) && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                   {/* Seção Global de Receitas */}
@@ -2201,8 +2213,8 @@ const CuradoriaPage = () => {
                 </div>
               )}
 
-              {/* Barra de Busca + Controles - Sticky */}
-              <div className="sticky top-0 z-30 bg-gray-50 dark:bg-gray-900 pb-4 -mx-8 px-8 pt-2 mb-4" style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
+              {/* Barra de Busca + Controles */}
+              <div>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
                   <input
@@ -2272,7 +2284,7 @@ const CuradoriaPage = () => {
                   </div>
                 )}
 
-                {/* Controles da Tabela - dentro do sticky */}
+                {/* Controles da Tabela */}
                 <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mt-4 border border-gray-200 dark:border-gray-700 hover:border-color-primary transition-colors">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
@@ -2325,12 +2337,10 @@ const CuradoriaPage = () => {
               </div>
               </div>
 
-              {/* Tabela de Grupos - Header sticky */}
-              {(
-                <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                <div className="rounded-lg border border-gray-200 bg-white dark:bg-gray-800">
                 <div style={{ overflowX: 'clip' }}>
                   <table className="w-full table-auto">
-                    <thead className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-[175px] z-20 before:content-[''] before:absolute before:left-0 before:right-0 before:bottom-full before:h-[175px] before:bg-white before:dark:bg-gray-800" style={{ boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+                    <thead className="border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
                       <tr>
                         {/* Coluna de Número - COMPACTA */}
                         <th className="px-1 py-3 text-center text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap w-10 bg-gray-50 dark:bg-gray-700">
@@ -2996,11 +3006,10 @@ const CuradoriaPage = () => {
                 </div>
 
               </div>
-              )}
-            </>
+              </div>
           )}
-        </div>
-      </div>
+        </CadastroListPageBody>
+      </CadastroListPageShell>
 
       {/* Modal de Detalhes */}
       {detailsModalGroup && (
@@ -3033,63 +3042,42 @@ const CuradoriaPage = () => {
 
       {/* Modal de Confirmação de Reordenação */}
       {showReorderConfirmation && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
-            {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-              <div className="flex items-center gap-3">
-                <AlertTriangle className="text-orange-600 dark:text-orange-400 flex-shrink-0" size={24} />
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                  Seleções Pendentes
-                </h2>
-              </div>
-              <button
-                onClick={handleCancelReorder}
-                className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                title="Fechar (ESC)"
-              >
-                <X size={24} />
-              </button>
-            </div>
-
-            {/* Content */}
-            <div className="p-6">
-              <p className="text-gray-700 dark:text-gray-300 mb-4">
-                Você tem seleções de tags/subtags pendentes que não foram salvas.
-              </p>
-              <p className="text-gray-700 dark:text-gray-300 mb-4">
+        <CadastroModalShell maxWidth="max-w-md" onBackdropClick={handleCancelReorder} zClass="z-[60]">
+          <CadastroModalHeader
+            isEdit={false}
+            title="Seleções Pendentes"
+            subtitle="Você tem seleções de tags/subtags pendentes que não foram salvas."
+            onClose={handleCancelReorder}
+            icon={<AlertTriangle size={18} />}
+          />
+          <CadastroModalBody>
+            <CadastroFormSection title="Confirmação" icon={<AlertTriangle size={14} />}>
+              <p className="text-sm text-gray-700 dark:text-gray-300">
                 Ao reordenar a tabela, os registros com seleções pendentes podem ficar espalhados por diferentes páginas.
               </p>
-              <p className="text-gray-700 dark:text-gray-300 font-medium">
+              <p className="mt-3 text-sm font-medium text-gray-700 dark:text-gray-300">
                 O que você deseja fazer?
               </p>
-            </div>
-
-            {/* Actions */}
-            <div className="flex flex-col gap-3 p-6 border-t border-gray-200 dark:border-gray-700">
+            </CadastroFormSection>
+          </CadastroModalBody>
+          <CadastroModalFooter
+            onClose={handleCancelReorder}
+            onSave={handleSaveAndReorder}
+            saveLabel="Salvar e Reordenar"
+            saveIcon={<Save size={15} />}
+            secondaryActions={
               <button
-                onClick={handleSaveAndReorder}
-                className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center justify-center gap-2"
-              >
-                <Save size={18} />
-                Salvar e Reordenar
-              </button>
-              <button
+                type="button"
                 onClick={handleClearAndReorder}
-                className="w-full px-4 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors font-medium flex items-center justify-center gap-2"
+                className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+                style={{ backgroundColor: 'var(--color-warning)', color: 'var(--on-color-warning)' }}
               >
-                <X size={18} />
+                <X size={15} />
                 Limpar e Reordenar
               </button>
-              <button
-                onClick={handleCancelReorder}
-                className="w-full px-4 py-3 bg-gray-300 dark:bg-gray-600 text-gray-900 dark:text-white rounded-lg hover:bg-gray-400 dark:hover:bg-gray-500 transition-colors font-medium"
-              >
-                Cancelar
-              </button>
-            </div>
-          </div>
-        </div>
+            }
+          />
+        </CadastroModalShell>
       )}
 
       {/* Barra Flutuante Back to Top */}

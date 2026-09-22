@@ -1,10 +1,21 @@
 import { useState, useEffect } from 'react'
-import { X, Plus, Trash2, GripVertical, ArrowDownCircle, ArrowUpCircle } from 'lucide-react'
+import { Plus, Trash2, GripVertical, ArrowDownCircle, ArrowUpCircle, FileText } from 'lucide-react'
 import axios from 'axios'
 import IconPicker from './IconPicker'
 import { formatSharedAccountDisplay } from '../utils/accountFormatter'
 import { useAlert } from '../hooks/useAlert'
 import type { ExpenseTemplate, ExpenseTemplateCreate, ExpenseTemplateUpdate } from '../types/expenseTemplate'
+import {
+  CadastroModalShell,
+  CadastroModalHeader,
+  CadastroModalBody,
+  CadastroModalFooter,
+  CadastroFormSection,
+  CadastroModalFieldsGrid,
+  CadastroModalFieldsRow,
+  CadastroFieldLabel,
+  cadastroFieldCls,
+} from './CadastroFormLayout'
 
 interface Tag {
   id: number
@@ -301,30 +312,16 @@ const TemplateFormModal = ({ isOpen, onClose, onSuccess, template, availableIcon
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-[95vw] max-w-[1600px] max-h-[90vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-              {template ? 'Editar Template' : 'Novo Template'}
-            </h2>
-            <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
-              Configure um template reutilizável para lançamentos recorrentes
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-            title="Fechar (ESC)"
-          >
-            <X size={20} />
-          </button>
-        </div>
-
-        {/* Body */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-4">
+    <CadastroModalShell maxWidth="max-w-[1600px]" onBackdropClick={onClose}>
+      <CadastroModalHeader
+        isEdit={!!template}
+        title={template ? 'Editar Template' : 'Novo Template'}
+        subtitle="Configure um template reutilizável para lançamentos recorrentes"
+        onClose={onClose}
+        icon={<FileText size={18} />}
+      />
+      <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col" id="template-form">
+        <CadastroModalBody>
           {isLoading ? (
             <div className="text-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
@@ -332,60 +329,57 @@ const TemplateFormModal = ({ isOpen, onClose, onSuccess, template, availableIcon
             </div>
           ) : (
             <div className="space-y-4">
-              {/* Informações do Template */}
-              <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 space-y-3">
-                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Informações do Template</h3>
-
-                <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Nome *
+              <CadastroFormSection title="Identificação" icon={<FileText size={14} />}>
+                <CadastroModalFieldsGrid>
+                  <CadastroModalFieldsRow cols={2}>
+                    <label className="block min-w-0">
+                      <CadastroFieldLabel required>Nome</CadastroFieldLabel>
+                      <input
+                        type="text"
+                        required
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        className={`${cadastroFieldCls} mt-0.5`}
+                        placeholder="Ex: Contas Fixas Mensais"
+                      />
                     </label>
-                    <input
-                      type="text"
-                      required
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                      placeholder="Ex: Contas Fixas Mensais"
+                    <IconPicker
+                      value={icon}
+                      onChange={setIcon}
+                      availableIcons={availableIcons}
+                      iconNamesPt={iconNamesPt}
                     />
-                  </div>
-
-                  <IconPicker
-                    value={icon}
-                    onChange={setIcon}
-                    availableIcons={availableIcons}
-                    iconNamesPt={iconNamesPt}
-                  />
-
-                  <div className="md:col-span-4">
-                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Descrição
+                  </CadastroModalFieldsRow>
+                  <CadastroModalFieldsRow>
+                    <label className="block min-w-0">
+                      <CadastroFieldLabel>Descrição</CadastroFieldLabel>
+                      <textarea
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        className={`${cadastroFieldCls} mt-0.5 resize-y min-h-[34px]`}
+                        placeholder="Opcional"
+                        rows={1}
+                      />
                     </label>
-                    <textarea
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value)}
-                      className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm resize-y min-h-[34px]"
-                      placeholder="Opcional"
-                      rows={1}
-                    />
-                  </div>
-                </div>
-              </div>
+                  </CadastroModalFieldsRow>
+                </CadastroModalFieldsGrid>
+              </CadastroFormSection>
 
-              {/* Itens do Template */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Itens do Template</h3>
+              <CadastroFormSection
+                title="Itens do Template"
+                icon={<Plus size={14} />}
+                trailing={
                   <button
                     type="button"
                     onClick={addItem}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+                    className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-white"
+                    style={{ background: 'var(--color-create)', color: 'var(--on-color-create)' }}
                   >
                     <Plus size={14} />
                     Adicionar Item
                   </button>
-                </div>
+                }
+              >
 
                 {items.map((item, index) => (
                     <div key={index} className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
@@ -417,7 +411,7 @@ const TemplateFormModal = ({ isOpen, onClose, onSuccess, template, availableIcon
                               required
                               value={item.description}
                               onChange={(e) => updateItem(index, 'description', e.target.value)}
-                              className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                              className={cadastroFieldCls}
                               placeholder="Ex: Aluguel"
                             />
                           </div>
@@ -469,7 +463,7 @@ const TemplateFormModal = ({ isOpen, onClose, onSuccess, template, availableIcon
                                     }
                                   }
                                 }}
-                                className={`w-full pl-8 pr-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-sm font-semibold ${
+                                className={`${cadastroFieldCls} pl-8 font-semibold ${
                                   item.amount && parseFloat(item.amount) >= 0
                                     ? 'text-green-600 dark:text-green-400'
                                     : item.amount && parseFloat(item.amount) < 0
@@ -505,7 +499,7 @@ const TemplateFormModal = ({ isOpen, onClose, onSuccess, template, availableIcon
                                   }
                                 }
                               }}
-                              className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                              className={cadastroFieldCls}
                               placeholder="1-31"
                             />
                           </div>
@@ -527,7 +521,7 @@ const TemplateFormModal = ({ isOpen, onClose, onSuccess, template, availableIcon
                                 }
                                 setItems(updated)
                               }}
-                              className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                              className={cadastroFieldCls}
                             >
                               <option value={0}>Selecione...</option>
                               {tags.map(tag => (
@@ -561,7 +555,7 @@ const TemplateFormModal = ({ isOpen, onClose, onSuccess, template, availableIcon
                                 updated[index] = { ...updated[index], subtag_id: subtagId, amount: newAmount }
                                 setItems(updated)
                               }}
-                              className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                              className={cadastroFieldCls}
                               disabled={!item.tag_id || item.tag_id === 0}
                             >
                               <option value={0}>Selecione...</option>
@@ -611,7 +605,7 @@ const TemplateFormModal = ({ isOpen, onClose, onSuccess, template, availableIcon
                                   updateItem(index, 'ownership_percentage', '100.00')
                                 }
                               }}
-                              className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                              className={cadastroFieldCls}
                               placeholder="100"
                             />
                           </div>
@@ -644,7 +638,7 @@ const TemplateFormModal = ({ isOpen, onClose, onSuccess, template, availableIcon
 
                                 setItems(updated)
                               }}
-                              className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                              className={cadastroFieldCls}
                             >
                               <option value="">Sem</option>
                               {sharings.map(sharing => (
@@ -670,39 +664,22 @@ const TemplateFormModal = ({ isOpen, onClose, onSuccess, template, availableIcon
                       </div>
                     </div>
                 ))}
-              </div>
+              </CadastroFormSection>
             </div>
           )}
-        </form>
-
-        {/* Footer */}
-        <div className="border-t border-gray-200 dark:border-gray-700 px-6 py-3 flex justify-end gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isSaving}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-          >
-            Cancelar
-          </button>
-          <button
-            type="submit"
-            onClick={handleSubmit}
-            disabled={isSaving || isLoading}
-            className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 flex items-center gap-2"
-          >
-            {isSaving ? (
-              <>
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                Salvando...
-              </>
-            ) : (
-              template ? 'Atualizar Template' : 'Criar Template'
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
+        </CadastroModalBody>
+        <CadastroModalFooter
+          onClose={onClose}
+          onSave={() => {
+            const form = document.getElementById('template-form') as HTMLFormElement | null
+            form?.requestSubmit()
+          }}
+          saving={isSaving}
+          disabled={isSaving || isLoading}
+          saveLabel={template ? 'Atualizar Template' : 'Criar Template'}
+        />
+      </form>
+    </CadastroModalShell>
   )
 }
 

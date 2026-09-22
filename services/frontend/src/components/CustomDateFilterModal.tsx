@@ -1,8 +1,15 @@
 import React, { useState, useEffect } from 'react'
 import DatePicker from 'react-datepicker'
-import { Calendar, X } from 'lucide-react'
+import { Calendar } from 'lucide-react'
 import 'react-datepicker/dist/react-datepicker.css'
 import '../styles/custom-date-modal.css'
+import {
+  CadastroFormSection,
+  CadastroModalBody,
+  CadastroModalFooter,
+  CadastroModalHeader,
+  CadastroModalShell,
+} from './CadastroFormLayout'
 
 interface CustomDateFilterModalProps {
   isOpen: boolean
@@ -22,7 +29,6 @@ const CustomDateFilterModal: React.FC<CustomDateFilterModalProps> = ({
   const [startDate, setStartDate] = useState<Date | null>(null)
   const [endDate, setEndDate] = useState<Date | null>(null)
 
-  // Limpa as datas quando o modal abre (sempre começa vazio)
   useEffect(() => {
     if (isOpen) {
       setStartDate(null)
@@ -30,7 +36,13 @@ const CustomDateFilterModal: React.FC<CustomDateFilterModalProps> = ({
     }
   }, [isOpen])
 
-  // Atalhos de teclado
+  const handleApply = () => {
+    if (startDate && endDate) {
+      onApply(startDate, endDate)
+      onClose()
+    }
+  }
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -45,13 +57,6 @@ const CustomDateFilterModal: React.FC<CustomDateFilterModalProps> = ({
       return () => window.removeEventListener('keydown', handleKeyDown)
     }
   }, [isOpen, startDate, endDate])
-
-  const handleApply = () => {
-    if (startDate && endDate) {
-      onApply(startDate, endDate)
-      onClose()
-    }
-  }
 
   const onChange = (dates: [Date | null, Date | null]) => {
     const [start, end] = dates
@@ -93,131 +98,73 @@ const CustomDateFilterModal: React.FC<CustomDateFilterModalProps> = ({
 
   if (!isOpen) return null
 
+  const shortcuts = [
+    { key: 'month', label: 'Mês atual' },
+    { key: '3months', label: '3 meses' },
+    { key: '6months', label: '6 meses' },
+    { key: 'ytd', label: 'YTD' },
+    { key: '1year', label: '1 ano' },
+    { key: '5years', label: '5 anos' },
+  ]
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-3xl p-6">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Filtro Personalizado
-            </h2>
+    <CadastroModalShell maxWidth="max-w-3xl" onBackdropClick={onClose}>
+      <CadastroModalHeader
+        isEdit={false}
+        title="Filtro personalizado"
+        subtitle="Escolha um atalho ou selecione o intervalo no calendário"
+        onClose={onClose}
+        icon={<Calendar size={18} />}
+      />
+      <CadastroModalBody>
+        <CadastroFormSection title="Atalhos rápidos" icon={<Calendar size={14} />}>
+          <div className="grid grid-cols-3 gap-2">
+            {shortcuts.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => handleQuickSelect(item.key)}
+                className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 transition-all hover:border-[var(--color-1)] hover:text-[var(--color-1)] dark:border-gray-600 dark:text-gray-300"
+              >
+                {item.label}
+              </button>
+            ))}
           </div>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="space-y-5">
-          {/* Quick Select Buttons */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-              Atalhos Rápidos
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                onClick={() => handleQuickSelect('month')}
-                className="px-3 py-2 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-700 dark:hover:text-blue-400 transition-all"
-              >
-                Mês Atual
-              </button>
-              <button
-                onClick={() => handleQuickSelect('3months')}
-                className="px-3 py-2 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-700 dark:hover:text-blue-400 transition-all"
-              >
-                3 Meses
-              </button>
-              <button
-                onClick={() => handleQuickSelect('6months')}
-                className="px-3 py-2 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-700 dark:hover:text-blue-400 transition-all"
-              >
-                6 Meses
-              </button>
-              <button
-                onClick={() => handleQuickSelect('ytd')}
-                className="px-3 py-2 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-700 dark:hover:text-blue-400 transition-all"
-              >
-                YTD
-              </button>
-              <button
-                onClick={() => handleQuickSelect('1year')}
-                className="px-3 py-2 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-700 dark:hover:text-blue-400 transition-all"
-              >
-                1 Ano
-              </button>
-              <button
-                onClick={() => handleQuickSelect('5years')}
-                className="px-3 py-2 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-700 dark:hover:text-blue-400 transition-all"
-              >
-                5 Anos
-              </button>
-            </div>
+        </CadastroFormSection>
+        <CadastroFormSection title="Período" icon={<Calendar size={14} />}>
+          <div className="flex w-full justify-center">
+            <DatePicker
+              selected={startDate}
+              onChange={onChange}
+              startDate={startDate}
+              endDate={endDate}
+              selectsRange
+              dateFormat="dd/MM/yyyy"
+              placeholderText="Clique para selecionar data inicial e final..."
+              monthsShown={2}
+              inline
+              calendarClassName="custom-calendar-full-width"
+            />
           </div>
-
-          {/* Date Range Picker */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-              Ou Selecione Manualmente
-            </label>
-            <div className="flex justify-center w-full">
-              <DatePicker
-                selected={startDate}
-                onChange={onChange}
-                startDate={startDate}
-                endDate={endDate}
-                selectsRange
-                dateFormat="dd/MM/yyyy"
-                placeholderText="Clique para selecionar data inicial e final..."
-                monthsShown={2}
-                inline
-                calendarClassName="custom-calendar-full-width"
-              />
-            </div>
-          </div>
-
-          {/* Info */}
-          {startDate && endDate && (
-            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-              <p className="text-sm text-blue-800 dark:text-blue-300">
-                Período selecionado: <span className="font-semibold">{startDate.toLocaleDateString('pt-BR')}</span> até{' '}
-                <span className="font-semibold">{endDate.toLocaleDateString('pt-BR')}</span>
-              </p>
-            </div>
-          )}
-          {startDate && !endDate && (
-            <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
-              <p className="text-sm text-amber-800 dark:text-amber-300">
-                📅 Selecione a data final para completar o período
-              </p>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={handleApply}
-            disabled={!startDate || !endDate}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-          >
-            Aplicar Filtro
-          </button>
-        </div>
-      </div>
-    </div>
+          {startDate && endDate ? (
+            <p className="mt-3 text-[11px] text-gray-500 dark:text-gray-400">
+              Período selecionado: {startDate.toLocaleDateString('pt-BR')} até {endDate.toLocaleDateString('pt-BR')}
+            </p>
+          ) : startDate ? (
+            <p className="mt-3 text-[11px] text-gray-500 dark:text-gray-400">
+              Selecione a data final para completar o período
+            </p>
+          ) : null}
+        </CadastroFormSection>
+      </CadastroModalBody>
+      <CadastroModalFooter
+        onClose={onClose}
+        onSave={handleApply}
+        disabled={!startDate || !endDate}
+        saveLabel="Aplicar filtro"
+      />
+    </CadastroModalShell>
   )
 }
 
 export default CustomDateFilterModal
-

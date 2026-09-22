@@ -18,11 +18,15 @@ import ExtratoPage from './pages/ExtratoPage'
 import BalancoPage from './pages/BalancoPage'
 import FaturasPage from './pages/FaturasPage'
 import CuradoriaPage from './pages/CuradoriaPage'
+import ReconciliacaoPage from './pages/ReconciliacaoPage'
 import TagsSubtagsPage from './pages/TagsSubtagsPage'
 import ExpenseTemplatesPage from './pages/ExpenseTemplatesPage'
 import GrupoPage from './pages/GrupoPage'
 import EmprestimosPage from './pages/EmprestimosPage'
 import ProfilePage from './pages/ProfilePage'
+import PayrollPage from './pages/PayrollPage'
+import AccountClosuresPage from './pages/AccountClosuresPage'
+import HealthCheckPage from './pages/HealthCheckPage'
 import { useColorApplication } from './hooks/useColorApplication'
 
 // Component that applies colors to DOM
@@ -147,14 +151,48 @@ function App() {
                 path="/relatorios/detalhamento"
                 element={<Navigate to="/relatorios/extrato" replace />}
               />
+              <Route path="/fechamentos" element={<Navigate to="/fechamentos/conta" replace />} />
               <Route
-                path="/balanco"
+                path="/fechamentos/conta"
+                element={
+                  <ProtectedRoute>
+                    <AccountClosuresPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/fechamentos/conta/fechados"
+                element={
+                  <ProtectedRoute>
+                    <AccountClosuresPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/fechamentos/compartilhado"
                 element={
                   <ProtectedRoute>
                     <BalancoPage />
                   </ProtectedRoute>
                 }
               />
+              <Route
+                path="/fechamentos/compartilhado/historico"
+                element={
+                  <ProtectedRoute>
+                    <BalancoPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/fechamentos/compartilhado/lista"
+                element={
+                  <ProtectedRoute>
+                    <BalancoPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="/balanco" element={<Navigate to="/fechamentos/compartilhado" replace />} />
               <Route
                 path="/relatorios/faturas"
                 element={
@@ -171,6 +209,33 @@ function App() {
                   </ProtectedRoute>
                 }
               />
+              <Route
+                path="/informes"
+                element={
+                  <ProtectedRoute>
+                    <PayrollPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="/relatorios/holerites" element={<Navigate to="/informes" replace />} />
+              <Route
+                path="/fechamentos/saude"
+                element={
+                  <ProtectedRoute>
+                    <HealthCheckPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="/saude-financeira" element={<Navigate to="/fechamentos/saude" replace />} />
+              <Route
+                path="/fechamentos/faturas"
+                element={
+                  <ProtectedRoute>
+                    <ReconciliacaoPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="/reconciliacao" element={<Navigate to="/fechamentos/faturas" replace />} />
               <Route
                 path="/curadoria"
                 element={

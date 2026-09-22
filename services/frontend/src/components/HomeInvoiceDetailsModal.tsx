@@ -1,9 +1,16 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import axios from 'axios'
-import { X, CreditCard, Clock, Calendar, Loader2, Gift, Download } from 'lucide-react'
+import { CreditCard, Clock, Calendar, Loader2, Gift, Download } from 'lucide-react'
 import { formatCurrency } from '../utils/currency'
 import { formatDateBR } from '../utils/dateUtils'
 import { exportHomeInvoiceDetailsToPDF } from '../utils/pdfExport'
+import {
+  CadastroModalBody,
+  CadastroModalFooter,
+  CadastroModalHeader,
+  CadastroModalShell,
+  CadastroModalTabs,
+} from './CadastroFormLayout'
 
 export interface InvoiceDetailItem {
   id: number
@@ -463,6 +470,7 @@ const HomeInvoiceDetailsModal = ({ isOpen, onClose, params }: HomeInvoiceDetails
   const [data, setData] = useState<InvoiceDetailsData | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [activeSectionKey, setActiveSectionKey] = useState<string>('')
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -478,6 +486,7 @@ const HomeInvoiceDetailsModal = ({ isOpen, onClose, params }: HomeInvoiceDetails
     if (!isOpen || !params) {
       setData(null)
       setError(null)
+      setActiveSectionKey('')
       return
     }
 
@@ -505,35 +514,56 @@ const HomeInvoiceDetailsModal = ({ isOpen, onClose, params }: HomeInvoiceDetails
     loadDetails()
   }, [isOpen, params])
 
+  useEffect(() => {
+    if (!data?.sections?.length) return
+    setActiveSectionKey(prev => (data.sections.some(s => s.key === prev) ? prev : data.sections[0].key))
+  }, [data])
+
+  const cardColorByKey = useMemo(() => {
+    if (!data) return {}
+    if (params?.view !== 'month' && params?.view !== 'remaining') return {}
+
+    const map: Record<string, number> = {}
+    const cardSectionsInOrder = data.sections.filter(s => s.key.startsWith('card-'))
+    cardSectionsInOrder.forEach((s, idx) => {
+      map[s.key] = getCardHeaderColorIndex(idx)
+    })
+    return map
+  }, [data, params?.view])
+
+  const handleExportPdf = (mode: 'all' | 'card') => {
+    if (!data) return
+    if (mode === 'all' || params?.view === 'card') {
+      exportHomeInvoiceDetailsToPDF(data)
+      return
+    }
+
+    const activeSection = data.sections.find(s => s.key === activeSectionKey)
+    if (!activeSection) {
+      exportHomeInvoiceDetailsToPDF(data)
+      return
+    }
+
+    const exportData = {
+      ...data,
+      title: activeSection.title,
+      sections: [activeSection],
+    }
+
+    exportHomeInvoiceDetailsToPDF(exportData as any)
+  }
+
   if (!isOpen) return null
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-[95vw] xl:max-w-6xl max-h-[90vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <CreditCard size={24} className="text-color-primary" />
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-              {data?.title || 'Detalhes'}
-            </h2>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-          >
-            <X size={24} />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+    <CadastroModalShell maxWidth="max-w-[95vw] xl:max-w-6xl" onBackdropClick={onClose}>
+      <CadastroModalHeader
+        isEdit={false}
+        title={data?.title || 'Detalhes'}
+        onClose={onClose}
+        icon={<CreditCard size={18} />}
+      />
+      <CadastroModalBody>
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 size={32} className="animate-spin text-color-primary" />
@@ -542,107 +572,205 @@ const HomeInvoiceDetailsModal = ({ isOpen, onClose, params }: HomeInvoiceDetails
           ) : error ? (
             <p className="text-center py-12 text-red-500">{error}</p>
           ) : data ? (
-            <div className="space-y-12">
+            <div className="space-y-6">
               {(() => {
-                let cardHeaderIndex = 0
+                const totalSection =
+                  params?.view === 'month'
+                    ? data.sections.find(s => s.key === 'month-total')
+                    : params?.view === 'remaining'
+                    ? data.sections.find(s => s.key === 'remaining-total')
+                    : null
 
-                return data.sections.map((section) => {
-                if (params?.view === 'month') {
-                  if (section.key === 'month-total') {
-                    return <MonthTotalBanner key={section.key} section={section} />
-                  }
-                  if (section.key.startsWith('card-')) {
-                    const colorIndex = getCardHeaderColorIndex(cardHeaderIndex)
-                    cardHeaderIndex += 1
-                    return (
-                      <CardBreakdownSection
-                        key={section.key}
-                        section={section}
-                        variant="month"
-                        colorIndex={colorIndex}
-                      />
-                    )
-                  }
-                }
+                const sectionsForTabs =
+                  (params?.view === 'month' || params?.view === 'remaining')
+                    ? data.sections.filter(s => s.key !== 'month-total' && s.key !== 'remaining-total')
+                    : data.sections
 
-                if (params?.view === 'remaining') {
-                  if (section.key === 'remaining-total') {
-                    return <RemainingTotalBanner key={section.key} section={section} />
-                  }
-                  if (section.key.startsWith('card-')) {
-                    const colorIndex = getCardHeaderColorIndex(cardHeaderIndex)
-                    cardHeaderIndex += 1
-                    return (
-                      <CardBreakdownSection
-                        key={section.key}
-                        section={section}
-                        variant="remaining"
-                        colorIndex={colorIndex}
-                      />
-                    )
-                  }
-                }
-
-                const showCard = params?.view !== 'card'
-                const isRemaining = section.key === 'remaining'
-                const remainingTotals = isRemaining ? calcRemainingTotals(section.items, section) : null
-                const sectionCountLabel = isRemaining
-                  ? (section.count === 1 ? 'compra' : 'compras')
-                  : (section.count === 1 ? 'transação' : 'transações')
-                const SectionHeaderIcon = isRemaining ? Clock : Calendar
+                const activeKey = activeSectionKey || sectionsForTabs[0]?.key
+                const activeSection = sectionsForTabs.find(s => s.key === activeKey) || sectionsForTabs[0]
 
                 return (
-                  <div key={section.key} className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm border overflow-hidden ${
-                    isRemaining
-                      ? 'border-red-200 dark:border-red-800'
-                      : 'border-gray-200 dark:border-gray-700'
-                  }`}>
-                    <CardColoredHeader
-                      colorIndex={1}
-                      variant={isRemaining ? 'debt' : 'default'}
-                      icon={SectionHeaderIcon}
-                      title={section.title}
-                      count={section.count}
-                      countLabel={sectionCountLabel}
-                      total={
-                        isRemaining && remainingTotals
-                          ? remainingTotals.saldoDevedor
-                          : Number(section.total)
-                      }
+                  <>
+                    {totalSection && (() => {
+                      const totalAbs = Math.abs(Number(totalSection.total || 0))
+                      const nextMonthAbs = Math.abs(Number(totalSection.next_month_total || 0))
+                      const remainingAbs = Math.max(0, totalAbs - nextMonthAbs)
+
+                      return (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700 transition-all hover:border-color-primary hover:shadow-md">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <Clock className="w-5 h-5 text-red-600 dark:text-red-400" />
+                                <div>
+                                  <p className="text-xs text-gray-600 dark:text-gray-400">Total</p>
+                                  <p className="text-lg font-bold text-red-600 dark:text-red-400">
+                                    -{formatCurrency(totalAbs)}
+                                  </p>
+                                </div>
+                              </div>
+                              <span className="text-xs text-gray-500 dark:text-gray-500">
+                                {totalSection.count} {totalSection.count === 1 ? 'item' : 'itens'}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700 transition-all hover:border-color-primary hover:shadow-md">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <Calendar className="w-5 h-5 text-red-600 dark:text-red-400" />
+                                <div>
+                                  <p className="text-xs text-gray-600 dark:text-gray-400">Próximo mês</p>
+                                  <p className="text-lg font-bold text-red-600 dark:text-red-400">
+                                    -{formatCurrency(nextMonthAbs)}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700 transition-all hover:border-color-primary hover:shadow-md">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <Gift className="w-5 h-5 text-red-600 dark:text-red-400" />
+                                <div>
+                                  <p className="text-xs text-gray-600 dark:text-gray-400">Demais</p>
+                                  <p className="text-lg font-bold text-red-600 dark:text-red-400">
+                                    -{formatCurrency(remainingAbs)}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })()}
+
+                    <CadastroModalTabs
+                      ariaLabel="Seções do detalhe da fatura"
+                      active={(activeKey || sectionsForTabs[0]?.key || '') as string}
+                      onChange={setActiveSectionKey}
+                      tabs={sectionsForTabs.map((section) => {
+                        let IconComp: typeof CreditCard | typeof Clock | typeof Calendar | typeof Gift | null = null
+                        if (params?.view === 'card') {
+                          IconComp = section.key === 'remaining' ? Clock : Calendar
+                        } else if (section.key === 'remaining-total' || section.key === 'remaining') {
+                          IconComp = Clock
+                        } else if (section.key === 'month-total' || section.key === 'month') {
+                          IconComp = Calendar
+                        } else if (section.key.startsWith('card-')) {
+                          const cardType = section.items?.[0]?.card_type
+                          IconComp = cardType === 'beneficios' ? Gift : CreditCard
+                        }
+                        return {
+                          key: section.key,
+                          label: section.title,
+                          title: section.title,
+                          icon: IconComp ? <IconComp size={14} /> : undefined,
+                          badge: section.count != null && section.count > 0 ? section.count : undefined,
+                        }
+                      })}
                     />
-                    {isRemaining ? (
-                      <RemainingItemsTable items={section.items} showCard={showCard} bordered={false} section={section} />
-                    ) : (
-                      <MonthItemsTable items={section.items} showCard={showCard} bordered={false} />
-                    )}
-                  </div>
+
+                    <div>
+                      {(() => {
+                        if (!activeSection) return null
+
+                        if (params?.view === 'month') {
+                          if (activeSection.key.startsWith('card-')) {
+                            const colorIndex = cardColorByKey[activeSection.key] ?? 1
+                            return <CardBreakdownSection section={activeSection} variant="month" colorIndex={colorIndex} />
+                          }
+                        }
+
+                        if (params?.view === 'remaining') {
+                          if (activeSection.key.startsWith('card-')) {
+                            const colorIndex = cardColorByKey[activeSection.key] ?? 1
+                            return <CardBreakdownSection section={activeSection} variant="remaining" colorIndex={colorIndex} />
+                          }
+                        }
+
+                        // view=card => exibe “Saldo Devedor” e “Fatura do mês”
+                        const showCard = params?.view !== 'card'
+                        const isRemaining = activeSection.key === 'remaining'
+                        const remainingTotals = isRemaining ? calcRemainingTotals(activeSection.items, activeSection) : null
+                        const sectionCountLabel = isRemaining
+                          ? (activeSection.count === 1 ? 'compra' : 'compras')
+                          : (activeSection.count === 1 ? 'transação' : 'transações')
+                        const SectionHeaderIcon = isRemaining ? Clock : Calendar
+
+                        return (
+                          <div className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm border overflow-hidden ${
+                            isRemaining
+                              ? 'border-red-200 dark:border-red-800'
+                              : 'border-gray-200 dark:border-gray-700'
+                          }`}>
+                            <CardColoredHeader
+                              colorIndex={1}
+                              variant={isRemaining ? 'debt' : 'default'}
+                              icon={SectionHeaderIcon}
+                              title={activeSection.title}
+                              count={activeSection.count}
+                              countLabel={sectionCountLabel}
+                              total={
+                                isRemaining && remainingTotals
+                                  ? remainingTotals.saldoDevedor
+                                  : Number(activeSection.total)
+                              }
+                            />
+                            {isRemaining ? (
+                              <RemainingItemsTable
+                                items={activeSection.items}
+                                showCard={showCard}
+                                bordered={false}
+                                section={activeSection}
+                              />
+                            ) : (
+                              <MonthItemsTable items={activeSection.items} showCard={showCard} bordered={false} />
+                            )}
+                          </div>
+                        )
+                      })()}
+                    </div>
+                  </>
                 )
-              })
               })()}
             </div>
           ) : null}
-        </div>
-
-        {/* Footer */}
-        <div className="border-t border-gray-200 dark:border-gray-700 p-4 flex justify-between flex-shrink-0">
-          <button
-            onClick={() => data && exportHomeInvoiceDetailsToPDF(data)}
-            disabled={loading || !data || !!error}
-            className="px-4 py-2 rounded-lg transition-all font-semibold flex items-center gap-2 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
-            title="Exportar PDF"
-          >
-            <Download size={16} className="text-color-primary" />
-            Exportar PDF
-          </button>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-lg transition-all font-semibold"
-          >
-            Fechar
-          </button>
-        </div>
-      </div>
-    </div>
+      </CadastroModalBody>
+      <CadastroModalFooter
+        onClose={onClose}
+        hideSave
+        closeLabel="Fechar"
+        leading={
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleExportPdf('all')}
+              disabled={loading || !data || !!error}
+              className="px-4 py-2 rounded-lg transition-all font-semibold flex items-center gap-2 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+              title="Exportar PDF (Todos)"
+            >
+              <Download size={16} className="text-color-primary" />
+              Todos
+            </button>
+            <button
+              onClick={() => handleExportPdf('card')}
+              disabled={
+                loading ||
+                !data ||
+                !!error ||
+                (params?.view !== 'card' && !activeSectionKey)
+              }
+              className="px-4 py-2 rounded-lg transition-all font-semibold flex items-center gap-2 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+              title="Exportar PDF (Por cartão/aba ativa)"
+            >
+              <CreditCard size={16} className="text-color-primary" />
+              Por cartão
+            </button>
+          </div>
+        }
+      />
+    </CadastroModalShell>
   )
 }
 

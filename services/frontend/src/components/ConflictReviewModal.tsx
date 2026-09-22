@@ -1,7 +1,16 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { X, AlertTriangle, Check, X as XIcon, Tag, DollarSign, FileText, ChevronDown, ChevronRight, CreditCard, Users } from 'lucide-react'
+import { AlertTriangle, Check, X as XIcon, Tag, DollarSign, FileText, ChevronDown, ChevronRight, CreditCard, Users } from 'lucide-react'
 import { useEscapeKey } from '../hooks/useEscapeKey'
 import { ImportConflict, ConflictResolution, MatchCandidate } from '../types/importConflict'
+import {
+  CadastroModalShell,
+  CadastroModalHeader,
+  CadastroModalBody,
+  CadastroModalFooter,
+  CadastroFormSection,
+  cadastroOptionLabelCls,
+  cadastroAccentControlCls,
+} from './CadastroFormLayout'
 
 // Função para gerar chave única para um conflito (já que existing_id pode ser null em múltiplos matches)
 const getConflictKey = (conflict: ImportConflict, index: number): string => {
@@ -505,7 +514,7 @@ const ConflictReviewModal = ({ isOpen, onClose, conflicts, onResolve }: Conflict
               {conflict.multiple_matches!.map((match) => (
                 <label
                   key={match.id}
-                  className={`flex items-center gap-3 p-2 rounded cursor-pointer transition-colors ${
+                  className={`${cadastroOptionLabelCls} rounded p-2 transition-colors ${
                     selectedMatchId === match.id
                       ? 'bg-color-primary-light border border-color-primary'
                       : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'
@@ -516,7 +525,7 @@ const ConflictReviewModal = ({ isOpen, onClose, conflicts, onResolve }: Conflict
                     name={`match-${conflictKey}`}
                     checked={selectedMatchId === match.id}
                     onChange={() => handleSelectMatch(conflictKey, match.id)}
-                    className="w-4 h-4 text-color-primary"
+                    className={`${cadastroAccentControlCls} h-4 w-4`}
                   />
                   <span className="text-xs text-gray-500 dark:text-gray-400">#{match.id}</span>
                   <span className={`text-sm font-mono ${
@@ -550,34 +559,19 @@ const ConflictReviewModal = ({ isOpen, onClose, conflicts, onResolve }: Conflict
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-5xl w-full max-h-[90vh] flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
-              <AlertTriangle className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                Conflitos Detectados
-              </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                {conflicts.length} registro(s) com diferenças em tag/subtag ou valor
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={handleCloseRequest}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-          >
-            <X className="w-5 h-5 text-gray-500" />
-          </button>
-        </div>
+    <>
+      <CadastroModalShell maxWidth="max-w-5xl" zClass="z-[110]" onBackdropClick={handleCloseRequest}>
+        <CadastroModalHeader
+          isEdit={false}
+          title="Conflitos Detectados"
+          subtitle={`${conflicts.length} registro(s) com diferenças em tag/subtag ou valor`}
+          onClose={handleCloseRequest}
+          icon={<AlertTriangle size={18} />}
+          iconStyle={{ backgroundColor: 'var(--color-warning)', color: 'var(--on-color-warning)' }}
+        />
 
-        {/* Content - continuação via str-replace-editor */}
-        <div className="flex-1 overflow-y-auto p-6">
-          {/* Botões de ação em massa */}
+        <CadastroModalBody>
+          <CadastroFormSection title="Conflitos" icon={<AlertTriangle size={14} />}>
           <div className="flex items-center gap-2 mb-4">
             <button
               onClick={handleAcceptAll}
@@ -693,59 +687,47 @@ const ConflictReviewModal = ({ isOpen, onClose, conflicts, onResolve }: Conflict
               )
             })}
           </div>
-        </div>
+          </CadastroFormSection>
+        </CadastroModalBody>
+        <CadastroModalFooter
+          onClose={handleCloseRequest}
+          onSave={handleSubmit}
+          saving={isSubmitting}
+          saveLabel="Aplicar Resoluções"
+        />
+      </CadastroModalShell>
 
-        {/* Footer */}
-        <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
-          <button
-            onClick={handleCloseRequest}
-            className="px-4 py-2 rounded-lg text-white hover:opacity-90 transition-opacity"
-            style={{ background: 'var(--crud-cancel)' }}
-          >
-            Cancelar
-          </button>
-          <button onClick={handleSubmit} disabled={isSubmitting}
-            className="px-6 py-2 bg-color-primary text-white rounded-lg hover:opacity-90 disabled:opacity-50"
-          >
-            {isSubmitting ? 'Salvando...' : 'Aplicar Resoluções'}
-          </button>
-        </div>
-      </div>
-
-      {/* Modal de Confirmação de Cancelamento */}
       {showCancelConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full mx-4 p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
-                <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
-              </div>
-              <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-                Descartar Alterações?
-              </h3>
-            </div>
-            <p className="text-gray-600 dark:text-gray-400 mb-6">
-              Ao cancelar, <strong>todos os {conflicts.length} registro(s) com conflitos serão ignorados</strong>.
-              Os valores atuais do banco serão mantidos e as novas mudanças serão descartadas.
-            </p>
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setShowCancelConfirm(false)}
-                className="px-4 py-2 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-              >
-                Voltar
-              </button>
-              <button
-                onClick={handleConfirmCancel}
-                className="px-4 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors"
-              >
-                Sim, Descartar
-              </button>
-            </div>
-          </div>
-        </div>
+        <CadastroModalShell
+          maxWidth="max-w-md"
+          zClass="z-[120]"
+          onBackdropClick={() => setShowCancelConfirm(false)}
+        >
+          <CadastroModalHeader
+            isEdit={false}
+            title="Descartar Alterações?"
+            subtitle={`Ao cancelar, todos os ${conflicts.length} registro(s) com conflitos serão ignorados.`}
+            onClose={() => setShowCancelConfirm(false)}
+            icon={<AlertTriangle size={18} />}
+            iconStyle={{ backgroundColor: 'var(--color-danger)', color: 'var(--on-color-danger)' }}
+          />
+          <CadastroModalBody>
+            <CadastroFormSection title="Confirmação" icon={<AlertTriangle size={14} />}>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Os valores atuais do banco serão mantidos e as novas mudanças serão descartadas.
+              </p>
+            </CadastroFormSection>
+          </CadastroModalBody>
+          <CadastroModalFooter
+            onClose={() => setShowCancelConfirm(false)}
+            closeLabel="Voltar"
+            onSave={handleConfirmCancel}
+            saveLabel="Sim, Descartar"
+            saveTone="danger"
+          />
+        </CadastroModalShell>
       )}
-    </div>
+    </>
   )
 }
 

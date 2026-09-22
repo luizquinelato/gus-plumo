@@ -383,7 +383,28 @@ def apply(connection):
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_subtags_name ON subtags(name);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_subtags_type ON subtags(type);")
 
-        # 14. Tabela credit_cards (cartões de crédito)
+        # 14. Tabela credit_card_invoice_groups (cartões que saem na mesma boleta)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS credit_card_invoice_groups (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                account_id INTEGER NOT NULL,
+                tenant_id INTEGER NOT NULL,
+                created_by INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW(),
+                last_updated_at TIMESTAMP DEFAULT NOW(),
+                active BOOLEAN NOT NULL DEFAULT TRUE,
+                FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+                FOREIGN KEY (created_by) REFERENCES users(id),
+                FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE,
+                CONSTRAINT unique_invoice_group_per_account UNIQUE (tenant_id, account_id, name)
+            );
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_invoice_groups_tenant ON credit_card_invoice_groups(tenant_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_invoice_groups_account ON credit_card_invoice_groups(account_id);")
+        cursor.execute("COMMENT ON TABLE credit_card_invoice_groups IS 'Agrupa cartões de crédito que são cobrados na mesma fatura/boleta.';")
+
+        # 15. Tabela credit_cards (cartões de crédito)
         # NOTA: ownership_type é DERIVADO automaticamente:
         # - proprio: expense_sharing_id IS NULL
         # - compartilhado: expense_sharing_id IS NOT NULL
@@ -397,6 +418,8 @@ def apply(connection):
                 closing_day INTEGER NOT NULL DEFAULT 14,
                 expense_sharing_id INTEGER,
                 account_id INTEGER,
+                is_account_card BOOLEAN,
+                invoice_group_id INTEGER,
                 tenant_id INTEGER NOT NULL,
                 created_by INTEGER NOT NULL,
                 created_at TIMESTAMP DEFAULT NOW(),
@@ -406,6 +429,7 @@ def apply(connection):
                 FOREIGN KEY (created_by) REFERENCES users(id),
                 FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE RESTRICT,
                 FOREIGN KEY (expense_sharing_id) REFERENCES expense_sharing_settings(id) ON DELETE RESTRICT,
+                FOREIGN KEY (invoice_group_id) REFERENCES credit_card_invoice_groups(id) ON DELETE SET NULL,
                 CONSTRAINT unique_card_per_tenant UNIQUE (tenant_id, name, number),
                 CHECK (type IN ('credito', 'beneficios')),
                 CHECK (closing_day >= 1 AND closing_day <= 30)
@@ -418,10 +442,13 @@ def apply(connection):
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_credit_cards_account ON credit_cards(account_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_credit_cards_type ON credit_cards(type);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_credit_cards_expense_sharing ON credit_cards(expense_sharing_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_credit_cards_invoice_group ON credit_cards(invoice_group_id);")
         cursor.execute("COMMENT ON COLUMN credit_cards.closing_day IS 'Dia de fechamento da fatura (1-30). Período da fatura: (closing_day+1) do mês anterior até closing_day do mês atual.';")
         cursor.execute("COMMENT ON COLUMN credit_cards.expense_sharing_id IS 'FK para expense_sharing_settings. Faturas herdam essa configuração mas podem sobrescrever. Se não nulo, cartão é compartilhado.';")
+        cursor.execute("COMMENT ON COLUMN credit_cards.is_account_card IS 'true = cartão real da conta (Saúde Financeira); false/NULL = cartão de terceiro gerenciado.';")
+        cursor.execute("COMMENT ON COLUMN credit_cards.invoice_group_id IS 'Grupo de fatura conjunta. NULL = cartão cobrado sozinho.';")
 
-        # 15. Tabela credit_card_invoices (faturas de cartão de crédito)
+        # 16. Tabela credit_card_invoices (faturas de cartão de crédito)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS credit_card_invoices (
                 id SERIAL PRIMARY KEY,
@@ -437,6 +464,8 @@ def apply(connection):
                 expense_sharing_id INTEGER,
                 adjustment_notes TEXT,
                 account_id INTEGER,
+                issuer VARCHAR(20) NOT NULL DEFAULT 'btg',
+                bank_statement_id INTEGER,
                 tenant_id INTEGER NOT NULL,
                 created_by INTEGER NOT NULL,
                 created_at TIMESTAMP DEFAULT NOW(),
@@ -447,7 +476,8 @@ def apply(connection):
                 FOREIGN KEY (subtag_id) REFERENCES subtags(id) ON DELETE RESTRICT,
                 FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE RESTRICT,
                 FOREIGN KEY (expense_sharing_id) REFERENCES expense_sharing_settings(id) ON DELETE RESTRICT,
-                CHECK (ownership_percentage >= 0 AND ownership_percentage <= 100)
+                CHECK (ownership_percentage >= 0 AND ownership_percentage <= 100),
+                CHECK (issuer IN ('btg', 'mercadopago'))
             );
         """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_invoices_tenant ON credit_card_invoices(tenant_id);")
@@ -459,11 +489,13 @@ def apply(connection):
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_invoices_account ON credit_card_invoices(account_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_invoices_installment ON credit_card_invoices(current_installment, total_installments);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_invoices_expense_sharing ON credit_card_invoices(expense_sharing_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_invoices_issuer ON credit_card_invoices(issuer);")
         cursor.execute("COMMENT ON COLUMN credit_card_invoices.credit_card_id IS 'FK para credit_cards. Referência ao cartão de crédito.';")
         cursor.execute("COMMENT ON COLUMN credit_card_invoices.current_installment IS 'Número da parcela atual (ex: 3 em \"3/12\"). NULL para compras à vista.';")
         cursor.execute("COMMENT ON COLUMN credit_card_invoices.total_installments IS 'Total de parcelas (ex: 12 em \"3/12\"). NULL para compras à vista.';")
         cursor.execute("COMMENT ON COLUMN credit_card_invoices.ownership_percentage IS 'Percentual do valor que é SEU (0-100). 0%=outra conta paga tudo, 50%=compartilhado, 100%=próprio';")
         cursor.execute("COMMENT ON COLUMN credit_card_invoices.expense_sharing_id IS 'FK para expense_sharing_settings. Herda do cartão se NULL, mas pode sobrescrever para ajuste fino.';")
+        cursor.execute("COMMENT ON COLUMN credit_card_invoices.issuer IS 'Emissor da fatura PDF: btg ou mercadopago.';")
 
         # 16. Tabela bank_statements (extratos bancários)
         cursor.execute("""
@@ -499,6 +531,62 @@ def apply(connection):
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_statements_expense_sharing ON bank_statements(expense_sharing_id);")
         cursor.execute("COMMENT ON COLUMN bank_statements.ownership_percentage IS 'Percentual do valor que é SEU (0-100). 0%=outra conta paga tudo, 50%=compartilhado, 100%=próprio';")
         cursor.execute("COMMENT ON COLUMN bank_statements.expense_sharing_id IS 'FK para expense_sharing_settings. Define configuração de compartilhamento para esta despesa.';")
+
+        cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint WHERE conname = 'fk_invoices_bank_statement'
+                ) THEN
+                    ALTER TABLE credit_card_invoices
+                    ADD CONSTRAINT fk_invoices_bank_statement
+                    FOREIGN KEY (bank_statement_id) REFERENCES bank_statements(id) ON DELETE SET NULL;
+                END IF;
+            END $$;
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_invoices_bank_statement ON credit_card_invoices(bank_statement_id);")
+        cursor.execute("COMMENT ON COLUMN credit_card_invoices.bank_statement_id IS 'Pagamento no extrato vinculado a esta linha de fatura (denormalizado do match do ciclo).';")
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS invoice_payment_matches (
+                id SERIAL PRIMARY KEY,
+                year_month VARCHAR(7) NOT NULL,
+                invoice_group_id INTEGER,
+                credit_card_id INTEGER,
+                bank_statement_id INTEGER NOT NULL,
+                matched_amount DECIMAL(10, 2) NOT NULL,
+                match_method VARCHAR(20) NOT NULL DEFAULT 'auto',
+                account_id INTEGER NOT NULL,
+                tenant_id INTEGER NOT NULL,
+                created_by INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW(),
+                last_updated_at TIMESTAMP DEFAULT NOW(),
+                FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+                FOREIGN KEY (created_by) REFERENCES users(id),
+                FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE,
+                FOREIGN KEY (invoice_group_id) REFERENCES credit_card_invoice_groups(id) ON DELETE CASCADE,
+                FOREIGN KEY (credit_card_id) REFERENCES credit_cards(id) ON DELETE CASCADE,
+                FOREIGN KEY (bank_statement_id) REFERENCES bank_statements(id) ON DELETE CASCADE,
+                CHECK (match_method IN ('auto', 'manual')),
+                CHECK (
+                    (invoice_group_id IS NOT NULL AND credit_card_id IS NULL)
+                    OR (invoice_group_id IS NULL AND credit_card_id IS NOT NULL)
+                )
+            );
+        """)
+        cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_invoice_payment_matches_bank ON invoice_payment_matches(bank_statement_id);")
+        cursor.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_invoice_payment_matches_group
+            ON invoice_payment_matches(tenant_id, account_id, year_month, invoice_group_id)
+            WHERE invoice_group_id IS NOT NULL;
+        """)
+        cursor.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_invoice_payment_matches_card
+            ON invoice_payment_matches(tenant_id, account_id, year_month, credit_card_id)
+            WHERE invoice_group_id IS NULL AND credit_card_id IS NOT NULL;
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_invoice_payment_matches_year_month ON invoice_payment_matches(year_month);")
+        cursor.execute("COMMENT ON TABLE invoice_payment_matches IS 'Vínculo entre o ciclo de fatura (grupo ou cartão) e o débito no extrato.';")
 
         # 17. Tabela benefit_card_statements (extratos de cartões de benefícios)
         cursor.execute("""
@@ -718,10 +806,12 @@ def rollback(connection):
         cursor.execute("DROP TABLE IF EXISTS expense_template_items CASCADE;")
         cursor.execute("DROP TABLE IF EXISTS expense_templates CASCADE;")
         cursor.execute("DROP TABLE IF EXISTS transaction_mappings CASCADE;")
+        cursor.execute("DROP TABLE IF EXISTS invoice_payment_matches CASCADE;")
         cursor.execute("DROP TABLE IF EXISTS benefit_card_statements CASCADE;")
         cursor.execute("DROP TABLE IF EXISTS bank_statements CASCADE;")
         cursor.execute("DROP TABLE IF EXISTS credit_card_invoices CASCADE;")
         cursor.execute("DROP TABLE IF EXISTS credit_cards CASCADE;")
+        cursor.execute("DROP TABLE IF EXISTS credit_card_invoice_groups CASCADE;")
         cursor.execute("DROP TABLE IF EXISTS subtags CASCADE;")
         cursor.execute("DROP TABLE IF EXISTS tags CASCADE;")
         cursor.execute("DROP TABLE IF EXISTS notifications CASCADE;")

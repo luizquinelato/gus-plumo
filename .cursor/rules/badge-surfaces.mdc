@@ -1,0 +1,69 @@
+---
+description: Badges — superfícies (light/solid/ghost), papéis de coluna, cantos e paletas de tom.
+globs: services/frontend/src/**/*.{tsx,ts}
+alwaysApply: false
+---
+# Badges — superfície, papel e cantos
+
+Três **superfícies** visuais; escolher pelo **papel da coluna**, não pelo gosto local.
+
+| Superfície | Fundo | Borda / texto | Cantos (regra geral) |
+|---|---|---|---|
+| `light` | tint suave (`soft`) | tom semântico ou marca | **arredondado** (`rounded-full` em classificação; status usa `statusCompact`) |
+| `solid` | cor sólida | texto contrastante | **reto** (`rounded-none`) |
+| `ghost` | transparente | borda + texto coloridos (`outline` / `count` / `scope`) | **reto** |
+
+**Exceção:** colunas de **status/situação** usam cantos **arredondados** em todas as superfícies (`statusCompact`, `statusSolid`, `statusOutline`).
+
+Implementação: [`badgeSurfaces.ts`](mdc:services/frontend/src/utils/badgeSurfaces.ts), [`Badge.tsx`](mdc:services/frontend/src/components/Badge.tsx), [`badgePalettes.ts`](mdc:services/frontend/src/utils/badgePalettes.ts), [`badgeTones.ts`](mdc:services/frontend/src/utils/badgeTones.ts).
+
+## Papéis de coluna → superfície → variante
+
+Usar **`badgeVariantForColumnRole(role)`** em listagens.
+
+| Papel (`BADGE_COLUMN_SURFACE`) | Superfície | Variante `<Badge />` | Cantos |
+|---|---|---|---|
+| `statusPrimary` | light | `statusCompact` | arredondado |
+| `statusSecondary` | ghost | `statusOutline` | arredondado |
+| `classificationPrimary` | light | `soft` | arredondado |
+| `classificationSecondary` | ghost | `outline` | **reto** |
+| `scope` | ghost | `scope` | reto |
+| `metricGhost` | ghost | `count` | reto |
+| `metricSolid` | solid | `countSolid` | reto |
+| `metricLight` | light | `soft` | arredondado |
+
+## Paletas de tom (`tone`)
+
+| Família | Uso | Helper |
+|---|---|---|
+| `semantic` | **Somente** status/situação (success, warning, danger, info) | `tone="success"` etc. |
+| `brand` | Classificação: tipo de conta, tipo de cartão, propriedade | `badgeToneMap(keys, 'brand')` |
+| `metric` | Colunas de contagem lado a lado | `metricCountColumnProps` |
+
+Sempre `<Badge tone={…} />` — **nunca** `background` hardcoded, salvo legado em transição.
+
+```tsx
+import Badge from '../components/Badge'
+import { badgeVariantForColumnRole } from '../utils/badgeSurfaces'
+import { badgeToneMap } from '../utils/badgePalettes'
+
+const TYPE_TONE = badgeToneMap(['corrente', 'poupanca'] as const, 'brand')
+
+<Badge
+  variant={badgeVariantForColumnRole('classificationPrimary')}
+  tone={TYPE_TONE.corrente}
+  label="Conta Corrente"
+/>
+```
+
+## Anti-padrões
+
+```tsx
+// Ruim — largura fixa + cor sólida hardcoded
+<span className="px-3 py-1 text-xs rounded w-[140px]" style={{ backgroundColor: 'var(--color-1)' }}>
+  Conta Corrente
+</span>
+
+// Bom
+<Badge variant={badgeVariantForColumnRole('classificationPrimary')} tone="brand1" label="Conta Corrente" />
+```

@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
-from .routers import import_router, cartoes_router, auth_router, tenant_colors_router, dashboard_router, expenses_router, reports_router, excel_import_router, user_preferences_router, accounts_router, expense_sharing_router, benefit_card_statements_router, settings_router, balance_router, balance_closure_router, expense_templates_router, loans_router, users_router
+from .routers import import_router, cartoes_router, auth_router, tenant_colors_router, dashboard_router, expenses_router, reports_router, excel_import_router, user_preferences_router, accounts_router, expense_sharing_router, benefit_card_statements_router, settings_router, balance_router, balance_closure_router, expense_templates_router, loans_router, users_router, payroll_router, invoice_payment_matches_router, financial_health_router, account_period_closure_router
 from .core.logging_config import setup_logging, get_logger
 import traceback
 
@@ -60,11 +60,14 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 
 # Configure CORS — lido do env var CORS_ORIGINS (definido em .env.prod / .env.dev)
-_cors_origins_raw = os.environ.get(
-    "CORS_ORIGINS",
-    "http://localhost:5173,http://localhost:5174,http://localhost:3000"
-)
-_cors_origins = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()]
+_default_local_origins = [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:3000",
+]
+_cors_origins_raw = os.environ.get("CORS_ORIGINS", "")
+_env_origins = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()]
+_cors_origins = list(dict.fromkeys(_env_origins + _default_local_origins))
 
 app.add_middleware(
     CORSMiddleware,
@@ -93,6 +96,10 @@ app.include_router(settings_router.router)
 app.include_router(expense_templates_router.router)
 app.include_router(loans_router.router)
 app.include_router(users_router.router)
+app.include_router(payroll_router.router)
+app.include_router(invoice_payment_matches_router.router)
+app.include_router(financial_health_router.router)
+app.include_router(account_period_closure_router.router)
 
 # Servir arquivos estáticos (avatares, etc.)
 _uploads_dir = os.path.join(os.path.dirname(__file__), "..", "uploads")

@@ -65,6 +65,7 @@ class ExpenseDetail(BaseModel):
     source: str  # "bank", "card" ou "benefit"
     card_number: str | None = None
     card_name: str | None = None
+    credit_card_id: int | None = None
     category: str | None = None
     subtag_id: int | None = None
     subtag_name: str | None = None
@@ -2011,20 +2012,22 @@ def _get_card_expenses_by_date(
         Bank, Account.bank_id == Bank.id
     )
 
-    # Aplica filtros de data usando a coluna 'date' diretamente
-    # (mesmo padrão usado em _get_bank_expenses_by_date)
+    # Filtra pela data da FATURA (year_month), não pela data da compra.
+    # start_date/end_date chegam com end exclusivo (ex.: março → 2026-03-01 .. 2026-04-01).
     filters = [
-        CreditCardInvoice.tenant_id == tenant_id
-        # NOTA: CreditCardInvoice NÃO tem campo 'active' (não usa soft delete)
+        CreditCardInvoice.tenant_id == tenant_id,
+        Cartao.active == True,
+        Cartao.type == "credito",
     ]
 
-    # Se start_date foi fornecido, adiciona filtro de data inicial
-    if start_date is not None:
-        filters.append(CreditCardInvoice.date >= start_date)
-
-    # Se end_date foi fornecido, adiciona filtro de limite superior
-    if end_date is not None:
-        filters.append(CreditCardInvoice.date < end_date)
+    if start_date is not None or end_date is not None:
+        year_month_filters = []
+        if start_date is not None:
+            year_month_filters.append(CreditCardInvoice.year_month >= start_date.strftime("%Y-%m"))
+        if end_date is not None:
+            last_included = end_date - timedelta(days=1)
+            year_month_filters.append(CreditCardInvoice.year_month <= last_included.strftime("%Y-%m"))
+        filters.extend(year_month_filters)
 
     query = query.filter(*filters)
 
@@ -2083,6 +2086,7 @@ def _get_card_expenses_by_date(
             source="card",
             card_number=r.card_number,
             card_name=r.card_name,
+            credit_card_id=r.credit_card_id,
             category=None,
             subtag_id=r.subtag_id,
             subtag_name=r.subtag_name,
@@ -2673,6 +2677,7 @@ class InvoiceReportItem(BaseModel):
     subtag_name: str | None = None
     current_installment: int | None = None
     total_installments: int | None = None
+    issuer: str | None = None
     # Campos de compartilhamento
     shared_partner_id: int | None = None  # expense_sharing_id
     shared_partner_name: str | None = None
@@ -2696,6 +2701,7 @@ async def get_invoice_report(
     subtag_ids: str | None = Query(None, description="IDs das subtags separados por vírgula"),
     partner_ids: str | None = Query(None, description="IDs dos parceiros separados por vírgula"),
     include_empty_sharing: bool = Query(False, description="Incluir itens sem compartilhamento (expense_sharing_id IS NULL)"),
+    issuers: str | None = Query(None, description="Emissores separados por vírgula (btg,mercadopago)"),
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
@@ -2703,9 +2709,11 @@ async def get_invoice_report(
     Relatório de faturas de cartão de crédito.
 
     Retorna todas as transações de faturas de cartão.
-    Filtros opcionais: cartões, ano/mês de fechamento, tags, subtags, parceiros.
+    Filtros opcionais: cartões, ano/mês de fechamento, tags, subtags, parceiros, emissores.
+    Sempre restringe aos cartões da conta logada (quando account_id estiver no token).
     """
     tenant_id = current_user.get("tenant_id", 1)
+    logged_account_id = current_user.get("account_id")
 
     # Parse card_ids
     card_id_list = None
@@ -2757,6 +2765,7 @@ async def get_invoice_report(
         CreditCardInvoice.expense_sharing_id,
         CreditCardInvoice.current_installment,
         CreditCardInvoice.total_installments,
+        CreditCardInvoice.issuer,
         Cartao.name.label('card_name'),
         Cartao.number.label('card_number'),
         Tag.name.label('tag_name'),
@@ -2778,8 +2787,15 @@ async def get_invoice_report(
     ).outerjoin(
         SharedBank, SharedAccount.bank_id == SharedBank.id
     ).filter(
-        CreditCardInvoice.tenant_id == tenant_id
+        CreditCardInvoice.tenant_id == tenant_id,
+        Cartao.active == True,
+        Cartao.type == "credito",
     )
+
+    if logged_account_id is not None:
+        query = query.filter(
+            func.coalesce(CreditCardInvoice.account_id, Cartao.account_id) == logged_account_id
+        )
 
     # Filtro por cartões
     if card_id_list:
@@ -2812,6 +2828,18 @@ async def get_invoice_report(
         if sharing_conditions:
             query = query.filter(or_(*sharing_conditions))
 
+    if issuers:
+        issuer_list = [item.strip().lower() for item in issuers.split(',') if item.strip()]
+        allowed = {'btg', 'mercadopago'}
+        invalid = [item for item in issuer_list if item not in allowed]
+        if invalid:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Emissor inválido: {', '.join(invalid)}. Use: btg, mercadopago",
+            )
+        if issuer_list:
+            query = query.filter(CreditCardInvoice.issuer.in_(issuer_list))
+
     # Ordenação
     query = query.order_by(CreditCardInvoice.date.desc())
 
@@ -2837,7 +2865,8 @@ async def get_invoice_report(
             shared_partner_account_number=r.shared_partner_account_number,
             ownership_percentage=r.ownership_percentage,
             current_installment=r.current_installment,
-            total_installments=r.total_installments
+            total_installments=r.total_installments,
+            issuer=r.issuer,
         )
         for r in results
     ]

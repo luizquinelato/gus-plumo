@@ -1,10 +1,19 @@
 # -*- coding: utf-8 -*-
+import logging
 import os
 import re
 from typing import List, Optional, Dict, Any
 import pandas as pd
 from PyPDF2 import PdfReader
 from ..utils.mapping_helper import MappingHelper
+from .fatura_pdf import (
+    detect_invoice_issuer,
+    extract_invoice_metadata,
+    normalize_invoice_issuer,
+    parse_mercadopago_invoice,
+)
+
+logger = logging.getLogger(__name__)
 
 MONTHS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
 
@@ -23,8 +32,49 @@ class CartaoConverter:
             # Passa ano e mês específicos se fornecidos
             year_override = years[i] if years and i < len(years) else None
             month_override = months[i] if months and i < len(months) else None
-            df = self._txt_to_excel_line_by_line([txt_file], output_folder, save_individually,
-                                                  year_override=year_override, month_override=month_override)
+
+            with open(txt_file, "r", encoding="utf-8") as f:
+                raw_text = f.read()
+            issuer = detect_invoice_issuer(raw_text)
+            if not year_override or not month_override:
+                meta = extract_invoice_metadata(
+                    raw_text,
+                    issuer if issuer != "unknown" else "btg",
+                )
+                year_override = year_override or meta.get("year")
+                month_override = month_override or meta.get("month")
+
+            if issuer == "mercadopago":
+                if not year_override or not month_override:
+                    raise ValueError("Fatura Mercado Pago requer ano e mês para importação")
+                parsed = parse_mercadopago_invoice(
+                    raw_text,
+                    year_override,
+                    month_override,
+                    self.mapping_helper,
+                    pdf_path=file_paths[i] if i < len(file_paths) else None,
+                )
+                df = pd.DataFrame(parsed.rows)
+                df.attrs["mp_empty_invoice"] = parsed.empty_invoice
+                df.attrs["mp_garbled"] = parsed.garbled
+                df.attrs["mp_card_last4"] = parsed.card_last4
+                logger.info(
+                    "PDF %s identificado como Mercado Pago (%s lançamentos, empty=%s, garbled=%s)",
+                    txt_file,
+                    len(df),
+                    parsed.empty_invoice,
+                    parsed.garbled,
+                )
+            else:
+                df = self._txt_to_excel_line_by_line(
+                    [txt_file],
+                    output_folder,
+                    save_individually,
+                    year_override=year_override,
+                    month_override=month_override,
+                )
+            if not df.empty:
+                df["Emissor"] = normalize_invoice_issuer(issuer)
             all_data.append(df)
             # Remove arquivo .txt temporário se save_temp_files=False
             if not save_temp_files and os.path.exists(txt_file):
@@ -40,6 +90,19 @@ class CartaoConverter:
 
         if all_data:
             combined_df = pd.concat(all_data, ignore_index=True)
+            if combined_df.empty:
+                combined_df.attrs["mp_empty_invoice"] = any(
+                    bool(frame.attrs.get("mp_empty_invoice")) for frame in all_data
+                )
+                combined_df.attrs["mp_garbled"] = any(
+                    bool(frame.attrs.get("mp_garbled")) for frame in all_data
+                )
+                last4s = [
+                    frame.attrs.get("mp_card_last4")
+                    for frame in all_data
+                    if frame.attrs.get("mp_card_last4")
+                ]
+                combined_df.attrs["mp_card_last4"] = last4s[0] if last4s else None
             return combined_df
         return pd.DataFrame()
     
@@ -67,6 +130,7 @@ class CartaoConverter:
                 reader = PdfReader(pdf_path)
                 for page in reader.pages:
                     txt.write(page.extract_text() or "")
+                    txt.write("\n")
             print(f"Converted {pdf_path} to {txt_path}")
 
         return txt_files

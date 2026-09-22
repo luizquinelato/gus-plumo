@@ -11,25 +11,65 @@ from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Depends, Request
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 import pandas as pd
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
-from ..converters import CartaoConverter
+from ..converters import CartaoConverter, inspect_invoice_pdf
 from ..utils import MappingHelper
 from ..services.fatura_service import FaturaService
 from ..etl import ExtratoETL
 from ..database import get_db, DATABASE_URL
 from ..routers.excel_import_router import save_extrato_records
 from ..dependencies.auth import require_account
-from ..models.unified_models import Account
+from ..models.unified_models import Account, Cartao
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/import", tags=["import"])
 
 CONVERSION_TXT_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "logs", "pdf_conversion")
+
+
+class DetectInvoiceFileResult(BaseModel):
+    filename: str
+    status: str
+    issuer: Optional[str] = None
+    issuer_label: Optional[str] = None
+    year: Optional[str] = None
+    month: Optional[str] = None
+    card_last4: Optional[str] = None
+    message: Optional[str] = None
+
+
+class DetectInvoiceResponse(BaseModel):
+    results: List[DetectInvoiceFileResult]
+
+
+def _registered_credit_card_numbers(db: Session, tenant_id: int) -> set:
+    query = db.query(Cartao.number).filter(
+        Cartao.tenant_id == tenant_id,
+        Cartao.active == True,
+        Cartao.type == "credito",
+    )
+    return {
+        MappingHelper.normalize_card_number(number)
+        for (number,) in query.all()
+        if number
+    }
+
+
+def _card_not_registered_error(last4: Optional[str] = None) -> HTTPException:
+    hint = f" final {last4}" if last4 else ""
+    return HTTPException(
+        status_code=400,
+        detail=(
+            f"Nenhum lançamento foi salvo. Cadastre o cartão{hint} "
+            "em Configurações > Cartões e tente novamente."
+        ),
+    )
 
 
 def _persist_conversion_txt_files(txt_folder: str, original_filenames: List[str]) -> List[dict]:
@@ -230,6 +270,65 @@ async def download_conversion_txt(
     )
 
 
+@router.post("/cartao/detect", response_model=DetectInvoiceResponse)
+async def detect_cartao_pdfs(
+    files: List[UploadFile] = File(...),
+    current_user: dict = Depends(require_account),
+):
+    """Identifica se o PDF é fatura BTG ou Mercado Pago e extrai ano/mês quando possível."""
+    if not files:
+        raise HTTPException(status_code=400, detail="Nenhum arquivo fornecido")
+
+    temp_dir = tempfile.mkdtemp()
+    results: List[DetectInvoiceFileResult] = []
+
+    try:
+        for file in files:
+            filename = file.filename or "arquivo.pdf"
+            if not filename.lower().endswith(".pdf"):
+                results.append(
+                    DetectInvoiceFileResult(
+                        filename=filename,
+                        status="error",
+                        message="Arquivo não é PDF",
+                    )
+                )
+                continue
+
+            safe_name = os.path.basename(filename)
+            temp_path = os.path.join(temp_dir, safe_name)
+            with open(temp_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+
+            try:
+                inspected = inspect_invoice_pdf(temp_path)
+                issuer = inspected.get("issuer") or "unknown"
+                results.append(
+                    DetectInvoiceFileResult(
+                        filename=filename,
+                        status="ok",
+                        issuer=issuer,
+                        issuer_label=inspected.get("issuer_label"),
+                        year=inspected.get("year"),
+                        month=inspected.get("month"),
+                        card_last4=inspected.get("card_last4"),
+                    )
+                )
+            except Exception as ex:
+                logger.warning("Falha ao identificar fatura %s: %s", filename, ex)
+                results.append(
+                    DetectInvoiceFileResult(
+                        filename=filename,
+                        status="error",
+                        message="Não foi possível identificar o PDF da fatura",
+                    )
+                )
+
+        return DetectInvoiceResponse(results=results)
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 @router.post("/cartao")
 async def import_cartao(
     files: List[UploadFile] = File(...),
@@ -265,7 +364,7 @@ async def import_cartao(
 
     # Valida extensões
     for file in files:
-        if not file.filename.endswith('.pdf'):
+        if not (file.filename or "").lower().endswith(".pdf"):
             raise HTTPException(
                 status_code=400,
                 detail=f"Arquivo {file.filename} não é um arquivo PDF válido"
@@ -326,11 +425,49 @@ async def import_cartao(
             )
 
         if combined_df.empty:
+            if combined_df.attrs.get("mp_empty_invoice"):
+                last4 = combined_df.attrs.get("mp_card_last4")
+                if not last4 and file_paths:
+                    last4 = inspect_invoice_pdf(file_paths[0]).get("card_last4")
+                registered = _registered_credit_card_numbers(db, tenant_id)
+                if last4 and MappingHelper.normalize_card_number(last4) not in registered:
+                    raise _card_not_registered_error(last4)
+                if not last4 and not registered:
+                    raise _card_not_registered_error()
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                return {
+                    "success": True,
+                    "message": "Fatura sem compras para importar",
+                    "empty_invoice": True,
+                    "arquivos_processados": len(files),
+                    "linhas_salvas": 0,
+                    "linhas_atualizadas": 0,
+                    "cartoes_distintos": 0,
+                    "linhas_nao_mapeadas": 0,
+                    "registros_nao_mapeados": [],
+                    "conflicts": [],
+                    "conflicts_count": 0,
+                    "conversion_txt": conversion_txt_files,
+                }
+            if combined_df.attrs.get("mp_garbled"):
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Não foi possível ler os lançamentos deste PDF do Mercado Pago. "
+                        "A extração de texto da fonte do arquivo veio corrompida."
+                    ),
+                )
             raise HTTPException(status_code=400, detail="Nenhum dado foi processado dos arquivos")
 
         # Salva faturas no banco de dados
         account_id = current_user.get("account_id")
         stats = FaturaService.salvar_faturas_do_dataframe(db, combined_df, tenant_id, user_id, account_id)
+
+        if stats.get("cartoes_distintos", 0) == 0:
+            cards = sorted({
+                str(c)[-4:] for c in combined_df.get("Cartão", pd.Series(dtype=str)).dropna().unique() if str(c).strip()
+            })
+            raise _card_not_registered_error(" / ".join(cards) if cards else None)
 
         # Limpa diretório temporário
         shutil.rmtree(temp_dir, ignore_errors=True)
@@ -351,6 +488,9 @@ async def import_cartao(
             "conversion_txt": conversion_txt_files,
         }
 
+    except HTTPException:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise
     except Exception as e:
         # Limpa diretório temporário em caso de erro
         shutil.rmtree(temp_dir, ignore_errors=True)

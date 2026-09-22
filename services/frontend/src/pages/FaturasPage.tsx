@@ -2,6 +2,11 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
+import {
+  CadastroListPageBody,
+  CadastroListPageHero,
+  CadastroListPageShell,
+} from '../components/CadastroListPageLayout'
 import FloatingFooterBar from '../components/FloatingFooterBar'
 import LoadingSpinner from '../components/LoadingSpinner'
 import SharedAccountDisplay from '../components/SharedAccountDisplay'
@@ -10,7 +15,8 @@ import BatchEditExpenseModal from '../components/BatchEditExpenseModal'
 import Toast from '../components/Toast'
 import { useConfirm } from '../hooks/useConfirm'
 import { MultiSelectDropdown } from '../components/MultiSelectDropdown'
-import { CreditCard, Calendar, FileText, Receipt, Filter, X, Search, Gift, ArrowDownCircle, ArrowUpCircle, Tag, Tags, Users, ArrowUp, Edit2, Trash2, CheckSquare, Square, MinusSquare } from 'lucide-react'
+import { CreditCard, Calendar, FileText, Receipt, Filter, X, Search, Gift, ArrowDownCircle, ArrowUpCircle, Tag, Tags, Users, ArrowUp, Edit2, Trash2, CheckSquare, Square, MinusSquare, ChevronDown, ChevronRight, Landmark, Link2 } from 'lucide-react'
+import type { InvoiceMatchPreview } from '../types/invoiceReconcile'
 
 // Interface para state de navegação
 interface NavigationState {
@@ -79,6 +85,7 @@ interface InvoiceItem {
   card_number: string
   current_installment?: number | null
   total_installments?: number | null
+  issuer?: 'btg' | 'mercadopago' | null
   // Campos de compartilhamento
   shared_partner_id?: number | null
   shared_partner_name?: string
@@ -92,6 +99,16 @@ interface InvoiceData {
   items: InvoiceItem[]
 }
 
+const ISSUER_FILTER_OPTIONS = [
+  { id: 1, name: 'BTG', code: 'btg' as const },
+  { id: 2, name: 'Mercado Pago', code: 'mercadopago' as const },
+]
+
+const issuerChip = (issuer: 'btg' | 'mercadopago') =>
+  issuer === 'mercadopago'
+    ? { text: 'Mercado Pago', className: 'bg-[#FFE600] text-[#333333]' }
+    : { text: 'BTG', className: 'bg-[#001E62] text-white' }
+
 const FaturasPage = () => {
   // Hook para ler navigation state
   const location = useLocation()
@@ -104,6 +121,7 @@ const FaturasPage = () => {
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([])
   const [selectedSubtagIds, setSelectedSubtagIds] = useState<number[]>([])
   const [selectedPartnerIds, setSelectedPartnerIds] = useState<number[]>([])
+  const [selectedIssuerIds, setSelectedIssuerIds] = useState<number[]>([])
 
   // Estados de busca
   const [searchTerm, setSearchTerm] = useState('')
@@ -142,6 +160,10 @@ const FaturasPage = () => {
   // Seleção em lote
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
   const [selectionType, setSelectionType] = useState<'despesa' | 'receita' | null>(null)
+
+  // Seções de cartão expandidas (vazio = todas recolhidas)
+  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set())
+  const [paymentPreview, setPaymentPreview] = useState<InvoiceMatchPreview | null>(null)
 
   // Toast
   const [showToast, setShowToast] = useState(false)
@@ -327,9 +349,18 @@ const FaturasPage = () => {
       if (hasEmptySharing) {
         params.include_empty_sharing = 'true'
       }
+      if (selectedIssuerIds.length > 0) {
+        const issuerCodes = selectedIssuerIds
+          .map(id => ISSUER_FILTER_OPTIONS.find(option => option.id === id)?.code)
+          .filter((code): code is 'btg' | 'mercadopago' => Boolean(code))
+        if (issuerCodes.length > 0) {
+          params.issuers = issuerCodes.join(',')
+        }
+      }
 
       const response = await axios.get('/api/reports/invoices', { params })
       setInvoiceData(response.data)
+      setExpandedCards(new Set())
 
       // Define ano e mês inicial para as abas
       if (response.data.items.length > 0) {
@@ -393,14 +424,40 @@ const FaturasPage = () => {
     setSelectedTagIds([])
     setSelectedSubtagIds([])
     setSelectedPartnerIds([])
+    setSelectedIssuerIds([])
     setSearchTerm('')
     setSearchAmount('')
     setInvoiceData(null)
+    setExpandedCards(new Set())
+  }
+
+  const getCardSectionKey = (cardName: string, cardNumber: string, cardId?: number) =>
+    cardId != null ? `card:${cardId}` : `${cardName}|${cardNumber}`
+
+  const toggleCardCollapse = (cardKey: string) => {
+    setExpandedCards(prev => {
+      const next = new Set(prev)
+      if (next.has(cardKey)) {
+        next.delete(cardKey)
+      } else {
+        next.add(cardKey)
+      }
+      return next
+    })
+  }
+
+  const expandAllCards = (cardKeys: string[]) => {
+    setExpandedCards(new Set(cardKeys))
+  }
+
+  const collapseAllCards = () => {
+    setExpandedCards(new Set())
   }
 
   // Verifica se há filtros ativos
   const hasActiveFilters = selectedCardIds.length > 0 || selectedYear !== '' || selectedMonth !== '' ||
     selectedTagIds.length > 0 || selectedSubtagIds.length > 0 || selectedPartnerIds.length > 0 ||
+    selectedIssuerIds.length > 0 ||
     searchTerm !== '' || searchAmount !== ''
 
   const handleEdit = (item: InvoiceItem) => {
@@ -543,6 +600,27 @@ const FaturasPage = () => {
     setSelectionType(null)
   }, [activeMonth])
 
+  useEffect(() => {
+    if (!activeMonth) {
+      setPaymentPreview(null)
+      return
+    }
+    let cancelled = false
+    axios
+      .get<InvoiceMatchPreview>('/api/invoice-payment-matches/preview', {
+        params: { year_month: activeMonth },
+      })
+      .then((response) => {
+        if (!cancelled) setPaymentPreview(response.data)
+      })
+      .catch(() => {
+        if (!cancelled) setPaymentPreview(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeMonth, invoiceData])
+
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
@@ -568,34 +646,31 @@ const FaturasPage = () => {
   // Mostra loading inicial enquanto os filtros estão carregando
   if (filtersLoading) {
     return (
-      <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900">
         <Sidebar />
-        <LoadingSpinner fullScreen message="Carregando filtros..." />
+        <CadastroListPageShell>
+          <LoadingSpinner fullScreen message="Carregando filtros..." />
+        </CadastroListPageShell>
       </div>
     )
   }
 
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900">
       <Sidebar />
 
-      <div ref={scrollContainerRef} className="flex-1 overflow-auto">
-        <div className="p-8">
-          {/* Sticky Header + Filtros */}
-          <div className="sticky top-0 z-30 bg-gray-50 dark:bg-gray-900 -mx-8 px-8 pt-0 pb-4">
-            {/* Header */}
-            <div className="mb-4 pt-2">
-              <div className="flex items-center gap-3 mb-2">
-                <FileText size={32} className="text-color-primary" />
-                <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-                  Relatório de Faturas
-                </h1>
-              </div>
-              <p className="text-gray-600 dark:text-gray-400">
-                Visualize e analise suas faturas de cartão de crédito consolidadas
-              </p>
-            </div>
-
+      <CadastroListPageShell>
+        <CadastroListPageBody
+          scrollRef={scrollContainerRef}
+          header={
+            <CadastroListPageHero
+              icon={<FileText className="w-8 h-8" />}
+              title="Relatório de Faturas"
+              subtitle="Visualize e analise suas faturas de cartão de crédito consolidadas"
+            />
+          }
+          tabs={
+            <div className="space-y-4">
             {/* Filtros - Layout Compacto */}
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 transition-all hover:border-color-primary hover:shadow-md">
             {/* Header: Título + Link Limpar Filtros */}
@@ -619,7 +694,27 @@ const FaturasPage = () => {
             {/* Linha 1: Filtros principais + Botão Aplicar */}
             <div className="flex flex-col lg:flex-row gap-3">
               {/* Grid de Filtros - ocupa o espaço disponível */}
-              <div className="flex-1 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+              <div className="flex-1 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
+                {/* Emissor */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                    <Landmark size={12} className="inline mr-1 text-color-primary" />
+                    Emissor
+                  </label>
+                  <MultiSelectDropdown
+                    label="Emissor"
+                    options={ISSUER_FILTER_OPTIONS.map(option => ({
+                      id: option.id,
+                      name: option.name,
+                      icon: <Landmark size={14} />,
+                      color: 'var(--color-1)'
+                    }))}
+                    selectedIds={selectedIssuerIds}
+                    onChange={setSelectedIssuerIds}
+                    placeholder="Selecione..."
+                  />
+                </div>
+
                 {/* Cartões */}
                 <div>
                   <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
@@ -781,9 +876,9 @@ const FaturasPage = () => {
               </div>
             </div>
           </div>
-          </div>
-          {/* Fim do Sticky Header */}
-
+            </div>
+          }
+        >
           {/* Loading */}
           {loading && (
             <div className="flex justify-center items-center py-12">
@@ -882,11 +977,14 @@ const FaturasPage = () => {
               .map(([cardKey, items]) => {
                 const [cardName] = cardKey.split('|')
                 const cardNumber = items[0]?.card_number || ''
-                return { cardName, cardNumber, items }
+                const cardId = items[0]?.card_id
+                const sectionKey = getCardSectionKey(cardName, cardNumber, cardId)
+                return { cardName, cardNumber, items, sectionKey }
               })
               .sort((a, b) => {
                 return (a.cardNumber || '').localeCompare(b.cardNumber || '', 'pt-BR')
               })
+            const cardSectionKeys = sortedCardGroups.map(group => group.sectionKey)
 
             // Total geral do mês
             const totalAmount = monthItems.reduce((sum, item) => sum + Number(item.amount), 0)
@@ -979,65 +1077,118 @@ const FaturasPage = () => {
                   </div>
                 </div>
 
-                {/* Seleção em lote */}
+                {/* Seleção em lote + controles de colapso */}
                 {monthItems.length > 0 && (
-                  <div className="flex items-center gap-3 mb-4 px-1">
-                    <button
-                      onClick={() => {
-                        if (selectAllState === 'none') {
-                          selectAllFiltered()
-                        } else {
-                          clearSelection()
-                        }
-                      }}
-                      className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
-                      title={selectAllState === 'none' ? 'Selecionar todos do mês' : 'Limpar seleção'}
-                    >
-                      {selectAllState === 'none' && <Square size={18} className="text-gray-400" />}
-                      {selectAllState === 'partial' && <MinusSquare size={18} className="text-blue-600" />}
-                      {selectAllState === 'all' && <CheckSquare size={18} className="text-blue-600" />}
-                    </button>
-                    <span className="text-sm text-gray-600 dark:text-gray-400">
-                      Selecionar todos do mês ({monthItems.length} transações)
-                    </span>
+                  <div className="flex items-center justify-between gap-3 mb-4 px-1">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => {
+                          if (selectAllState === 'none') {
+                            selectAllFiltered()
+                          } else {
+                            clearSelection()
+                          }
+                        }}
+                        className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+                        title={selectAllState === 'none' ? 'Selecionar todos do mês' : 'Limpar seleção'}
+                      >
+                        {selectAllState === 'none' && <Square size={18} className="text-gray-400" />}
+                        {selectAllState === 'partial' && <MinusSquare size={18} className="text-blue-600" />}
+                        {selectAllState === 'all' && <CheckSquare size={18} className="text-blue-600" />}
+                      </button>
+                      <span className="text-sm text-gray-600 dark:text-gray-400">
+                        Selecionar todos do mês ({monthItems.length} transações)
+                      </span>
+                    </div>
+                    {sortedCardGroups.length > 1 && (
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => expandAllCards(cardSectionKeys)}
+                          className="px-3 py-1.5 text-xs font-medium border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                        >
+                          Expandir Tudo
+                        </button>
+                        <button
+                          onClick={collapseAllCards}
+                          className="px-3 py-1.5 text-xs font-medium border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                        >
+                          Recolher Tudo
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 
-                {/* Cards de Cartões - Separados e com scroll pela página */}
-                <div className="space-y-8">
-                  {sortedCardGroups.map(({ cardName, cardNumber, items }, cardIndex) => {
+                {/* Cards de Cartões */}
+                <div className="space-y-3">
+                  {sortedCardGroups.map(({ cardName, cardNumber, items, sectionKey }) => {
                     const cardTotal = items.reduce((sum, item) => sum + Number(item.amount), 0)
-                    // Intercalar cores 1-5 para os headers dos cartões
-                    const colorIndex = (cardIndex % 5) + 1
+                    const isExpanded = expandedCards.has(sectionKey)
+                    const issuerCodes = [...new Set(items.map(item => item.issuer).filter(Boolean))] as Array<'btg' | 'mercadopago'>
+                    const chip = issuerCodes.length === 1 ? issuerChip(issuerCodes[0]) : null
+                    const cardId = items[0]?.card_id
+                    const paymentCycle = paymentPreview?.cycles.find((cycle) => cycle.card_ids.includes(cardId))
 
                     return (
-                      <div key={`${cardName}-${cardNumber}`} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-                        {/* Header do Cartão - Com cor intercalada */}
-                        <div
-                          className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700"
-                          style={{
-                            backgroundColor: `var(--color-${colorIndex})`,
-                            color: `var(--on-color-${colorIndex})`
-                          }}
+                      <div key={sectionKey} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={() => toggleCardCollapse(sectionKey)}
+                          className={`w-full flex items-center justify-between gap-4 px-5 py-3.5 text-left border-l-4 bg-gray-100 dark:bg-gray-700/60 hover:bg-gray-200/80 dark:hover:bg-gray-700 transition-colors ${isExpanded ? 'border-b border-gray-200 dark:border-gray-600' : ''}`}
+                          style={{ borderLeftColor: 'var(--color-1)' }}
+                          title={isExpanded ? 'Recolher transações deste cartão' : 'Expandir transações deste cartão'}
+                          aria-expanded={isExpanded}
                         >
-                          <div className="flex items-center gap-3">
-                            <CreditCard size={20} />
-                            <span className="font-bold text-lg">
-                              {cardName} {cardNumber ? `*** ${cardNumber.slice(-4)}` : ''}
+                          <div className="flex items-center gap-3 min-w-0">
+                            {isExpanded
+                              ? <ChevronDown size={18} className="flex-shrink-0 text-gray-500 dark:text-gray-300" />
+                              : <ChevronRight size={18} className="flex-shrink-0 text-gray-500 dark:text-gray-300" />}
+                            <span
+                              className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg"
+                              style={{ backgroundColor: 'color-mix(in srgb, var(--color-1) 16%, transparent)' }}
+                            >
+                              <CreditCard size={16} style={{ color: 'var(--color-1)' }} />
                             </span>
-                            <span className="text-xs opacity-80">
-                              ({items.length} transações)
-                            </span>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="font-bold text-base text-gray-900 dark:text-white truncate">
+                                  {cardName}
+                                </span>
+                                {cardNumber && (
+                                  <span className="text-xs font-semibold text-gray-500 dark:text-gray-300 flex-shrink-0 tabular-nums">
+                                    •••• {cardNumber.slice(-4)}
+                                  </span>
+                                )}
+                                {chip && (
+                                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0 ${chip.className}`}>
+                                    {chip.text}
+                                  </span>
+                                )}
+                                {paymentCycle?.status === 'matched' && paymentCycle.match?.date && (
+                                  <span
+                                    className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0 bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300"
+                                    title={`Pagamento vinculado em ${formatDate(paymentCycle.match.date.includes('T') ? paymentCycle.match.date : `${paymentCycle.match.date}T12:00:00`)}`}
+                                  >
+                                    <Link2 size={10} />
+                                    {formatDate(paymentCycle.match.date.includes('T') ? paymentCycle.match.date : `${paymentCycle.match.date}T12:00:00`)}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                {items.length} {items.length === 1 ? 'lançamento' : 'lançamentos'}
+                              </p>
+                            </div>
                           </div>
-                          <span className="text-xl font-bold">
+                          <span className="text-lg font-bold tabular-nums text-gray-900 dark:text-white flex-shrink-0">
                             {formatCurrency(cardTotal)}
                           </span>
-                        </div>
+                        </button>
 
                         {/* Tabela de Itens */}
+                        {isExpanded && (
                         <div className="overflow-x-auto">
                           <table className="w-full">
-                            <thead className="border-b border-gray-200 dark:border-gray-700">
+                            <thead className="bg-gray-50 dark:bg-gray-800/80 border-b border-gray-200 dark:border-gray-700">
                               <tr>
                                 <th className="px-2 py-3 text-center text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-10"></th>
                                 <th className="px-3 py-3 text-center text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-12">#</th>
@@ -1146,27 +1297,18 @@ const FaturasPage = () => {
                             </tbody>
                           </table>
                         </div>
+                        )}
                       </div>
                     )
                   })}
-                </div>
-
-                {/* Card de Total do Mês */}
-                <div className="mt-4 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-                  <div className="flex items-center justify-between">
-                    <span className="text-lg font-bold text-gray-900 dark:text-white">Total do Mês</span>
-                    <span className={`text-2xl font-bold ${totalAmount < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                      {formatCurrency(totalAmount)}
-                    </span>
-                  </div>
                 </div>
               </>
             )
           })()}
             </div>
           )}
-        </div>
-      </div>
+        </CadastroListPageBody>
+      </CadastroListPageShell>
 
       {/* Barra Flutuante de Ações em Lote */}
       {selectedItems.size > 0 && (
@@ -1257,7 +1399,6 @@ const FaturasPage = () => {
         }}
       />
 
-      {/* Modal de Edição */}
       <EditExpenseModal
         isOpen={isEditModalOpen}
         onClose={() => { setIsEditModalOpen(false); setItemToEdit(null) }}

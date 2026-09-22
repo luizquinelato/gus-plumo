@@ -1,10 +1,28 @@
 import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
-import { Plus, Edit2, Trash2, Tag, Tags, Search, AlertCircle, Eye, EyeOff, X, ArrowUpCircle, ArrowDownCircle, Map, ArrowUpDown, Users, Zap, CheckSquare, Square, MinusSquare, ArrowUp, Filter } from 'lucide-react'
+import { Plus, Edit2, Trash2, Tag, Tags, AlertCircle, Eye, EyeOff, X, ArrowUpCircle, ArrowDownCircle, Map, ArrowUpDown, Users, Zap, CheckSquare, Square, MinusSquare, ArrowUp, Filter } from 'lucide-react'
 import { useConfirm } from '../../hooks/useConfirm'
 import { useEscapeKey } from '../../hooks/useEscapeKey'
 import Toast from '../../components/Toast'
 import FloatingFooterBar from '../../components/FloatingFooterBar'
+import {
+  CadastroListPageBody,
+  CadastroListPageHero,
+  CadastroListPageSearchField,
+} from '../../components/CadastroListPageLayout'
+import {
+  CadastroFieldLabel,
+  CadastroFormSection,
+  CadastroModalBody,
+  CadastroModalFieldsGrid,
+  CadastroModalFieldsRow,
+  CadastroModalFooter,
+  CadastroModalHeader,
+  CadastroModalShell,
+  cadastroAccentControlCls,
+  cadastroFieldCls,
+  cadastroOptionLabelCls,
+} from '../../components/CadastroFormLayout'
 import SharedAccountDisplay from '../../components/SharedAccountDisplay'
 import { getIconComponent } from '../../utils/iconMapper'
 import { formatAccountDisplay } from '../../utils/accountFormatter'
@@ -313,63 +331,21 @@ const TransactionMappingsTab = () => {
 
   // Scroll listener para Back to Top
   useEffect(() => {
-    // O MappingsPage usa <main className="flex-1 overflow-y-auto p-8">
-    // Precisamos encontrar esse container
-    const findScrollContainer = (): HTMLElement | null => {
-      // MappingsPage usa overflow-y-auto (não overflow-auto)
-      const mainYContainer = document.querySelector('main.overflow-y-auto') as HTMLElement
-      if (mainYContainer) return mainYContainer
+    const container = scrollContainerRef.current
+    if (!container) return
 
-      // Fallback: main com overflow-auto
-      const mainContainer = document.querySelector('main.overflow-auto') as HTMLElement
-      if (mainContainer) return mainContainer
-
-      // Fallback: qualquer div com overflow-auto
-      const anyContainer = document.querySelector('.overflow-auto, .overflow-y-auto') as HTMLElement
-      if (anyContainer) return anyContainer
-
-      return null
+    const scrollHandler = () => {
+      setShowBackToTop(container.scrollTop > 300)
     }
 
-    let scrollHandler: (() => void) | null = null
-
-    // Timeout para garantir que o DOM está pronto
-    const timeoutId = setTimeout(() => {
-      const container = findScrollContainer()
-      if (!container) {
-        console.log('Container de scroll não encontrado')
-        return
-      }
-
-      scrollContainerRef.current = container as HTMLDivElement
-
-      scrollHandler = () => {
-        const scrolled = container.scrollTop > 300
-        setShowBackToTop(scrolled)
-      }
-
-      // Verifica scroll inicial
-      scrollHandler()
-
-      container.addEventListener('scroll', scrollHandler)
-    }, 100)
-
-    return () => {
-      clearTimeout(timeoutId)
-      // Cleanup do event listener
-      if (scrollContainerRef.current && scrollHandler) {
-        scrollContainerRef.current.removeEventListener('scroll', scrollHandler)
-      }
-    }
-  }, [mappings])
+    scrollHandler()
+    container.addEventListener('scroll', scrollHandler)
+    return () => container.removeEventListener('scroll', scrollHandler)
+  }, [mappings, isLoading])
 
   // Função para voltar ao topo
   const scrollToTop = () => {
-    if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' })
-    } else {
-      window.scrollTo({ top: 0, behavior: 'smooth' })
-    }
+    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const loadData = async () => {
@@ -1032,52 +1008,35 @@ const TransactionMappingsTab = () => {
   // Bulk edit só habilitado se todos forem do mesmo tipo
   const canBatchEdit = selectedMappings.size > 0 && selectedMappingsType !== null
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
-      </div>
-    )
-  }
+  const pageHeader = (
+    <CadastroListPageHero
+      icon={<Map className="w-8 h-8" />}
+      title="Mapeamento de Transações"
+      subtitle="Configure como suas transações são categorizadas automaticamente"
+      actions={
+        <button
+          onClick={() => {
+            setModalTypeFilter('despesa')
+            setShowAddModal(true)
+          }}
+          className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+          style={{ backgroundColor: 'var(--crud-create)' }}
+        >
+          <Plus size={20} />
+          Novo Mapeamento
+        </button>
+      }
+    />
+  )
 
-  return (
-    <>
-      {/* Header (não sticky - rola para fora) */}
-      <div className="flex justify-between items-center mb-4">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-3">
-            <Map className="w-8 h-8" />
-            Mapeamento de Transações
-          </h1>
-          <p className="text-lg text-gray-600 dark:text-gray-400">
-            Configure como suas transações são categorizadas automaticamente
-          </p>
-        </div>
-        <div className="flex gap-3">
-          <button
-            onClick={() => {
-              setModalTypeFilter('despesa')
-              setShowAddModal(true)
-            }}
-            className="px-4 py-2 rounded-md hover:opacity-90 flex items-center gap-2 text-white"
-            style={{ backgroundColor: 'var(--crud-create)' }}
-          >
-            <Plus size={20} />
-            Novo Mapeamento
-          </button>
-        </div>
-      </div>
-
-      {/* ===== ÁREA STICKY: Filtros + Busca ===== */}
-      <div className="sticky top-0 z-30 bg-gray-50 dark:bg-gray-900 -mx-8 px-8 pt-2 pb-4" style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
-        {/* Filtros */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 mb-4 border border-gray-200 dark:border-gray-700 hover:border-color-primary hover:shadow-md transition-all">
-        {/* Header: Título Filtros */}
-        <div className="flex items-center gap-2 mb-3">
-          <Filter size={18} className="text-color-primary" />
+  const pageTabs = (
+    <div className="space-y-3">
+      <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-all hover:border-[var(--color-1)] hover:shadow-md dark:border-gray-700 dark:bg-gray-800">
+        <div className="mb-3 flex items-center gap-2">
+          <Filter size={18} className="text-[var(--color-1)]" />
           <h3 className="text-base font-bold text-gray-800 dark:text-gray-200">Filtros</h3>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
           {/* Filtro por Match */}
           <div>
             <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">
@@ -1176,33 +1135,31 @@ const TransactionMappingsTab = () => {
               ))}
             </select>
           </div>
-          </div>
-        </div>
-
-        {/* Barra de Busca - dentro da área sticky */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-          <input
-            type="text"
-            placeholder="Buscar por descrição, padrão, tag ou subtag..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-10 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:border-color-primary focus:outline-none"
-          />
-          {searchTerm && (
-            <button
-              onClick={() => setSearchTerm('')}
-              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-            >
-              <X size={18} />
-            </button>
-          )}
         </div>
       </div>
-      {/* ===== FIM DA ÁREA STICKY ===== */}
 
-      {/* Tabela de Mapeamentos */}
-      <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-sm overflow-hidden ${selectedMappings.size > 0 || showBackToTop ? 'mb-20' : ''}`}>
+      <CadastroListPageSearchField
+        value={searchTerm}
+        onChange={setSearchTerm}
+        placeholder="Buscar por descrição, padrão, tag ou subtag..."
+      />
+    </div>
+  )
+
+  return (
+    <>
+      <CadastroListPageBody
+        scrollRef={scrollContainerRef}
+        contentOverflow="auto"
+        header={pageHeader}
+        tabs={pageTabs}
+      >
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-[var(--color-1)]" />
+          </div>
+        ) : (
+          <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-sm overflow-hidden ${selectedMappings.size > 0 || showBackToTop ? 'mb-20' : ''}`}>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1350px]">
             <thead className="border-b border-gray-200 dark:border-gray-700">
@@ -1518,82 +1475,68 @@ const TransactionMappingsTab = () => {
           </table>
         </div>
       </div>
+        )}
+      </CadastroListPageBody>
 
       {/* Modal de Adicionar/Editar */}
       {(showAddModal || showEditModal) && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-6xl w-full p-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-1">
-                  {showEditModal ? 'Editar Mapeamento' : 'Novo Mapeamento'}
-                </h2>
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Configure como uma descrição deve ser categorizada automaticamente
-                </p>
-              </div>
-              <button
-                onClick={closeModal}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
-              >
-                <X size={24} />
-              </button>
-            </div>
-
-            <form onSubmit={showEditModal ? handleUpdate : handleSubmit}>
-              {/* Switch: Aplicar a Registros Existentes - DISPONÍVEL EM CRIAÇÃO E EDIÇÃO */}
-              <div className="mb-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                <label className="flex items-center gap-3 cursor-pointer group">
-                  {/* Toggle Switch */}
-                  <div className="relative flex-shrink-0">
-                    <input
-                      type="checkbox"
-                      checked={applyToExistingRecords}
-                      onChange={(e) => setApplyToExistingRecords(e.target.checked)}
-                      className="sr-only peer"
-                    />
-                    <div className={`w-11 h-6 rounded-full transition-all duration-200 ${
-                      applyToExistingRecords
-                        ? 'bg-blue-600 dark:bg-blue-500'
-                        : 'bg-gray-300 dark:bg-gray-600'
-                    }`}>
-                      <div className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${
-                        applyToExistingRecords ? 'translate-x-5' : 'translate-x-0'
-                      }`}></div>
-                    </div>
-                  </div>
-
-                  <div className="flex-1">
-                    <span className="text-sm font-semibold text-blue-700 dark:text-blue-300 group-hover:text-blue-800 dark:group-hover:text-blue-200 transition-colors">
-                      ✨ Aplicar a todos os registros existentes
-                    </span>
-                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">
-                      Atualiza tag, subtag e compartilhamento em <strong>todos</strong> os registros que correspondem a este mapeamento
-                    </p>
-                  </div>
-                </label>
-              </div>
-
-              <div className="space-y-3">
-                {/* Grid: Tipo de Mapeamento + Prioridade */}
-                <div className="grid grid-cols-3 gap-4">
-                  {/* Tipo de Mapeamento */}
-                  <div className="col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Tipo de Mapeamento *
+        <CadastroModalShell maxWidth="max-w-6xl" onBackdropClick={closeModal} zClass="z-[60]">
+          <CadastroModalHeader
+            isEdit={showEditModal}
+            title={showEditModal ? 'Editar Mapeamento' : 'Novo Mapeamento'}
+            subtitle="Configure como uma descrição deve ser categorizada automaticamente"
+            onClose={closeModal}
+            icon={<Map size={18} />}
+          />
+          <form onSubmit={showEditModal ? handleUpdate : handleSubmit} className="flex min-h-0 flex-1 flex-col" id="mapping-form">
+            <CadastroModalBody>
+              <CadastroFormSection title="Aplicação" icon={<Zap size={14} />}>
+                <CadastroModalFieldsGrid>
+                  <CadastroModalFieldsRow>
+                    <label className={`${cadastroOptionLabelCls} items-start`}>
+                      <div className="relative mt-0.5 flex-shrink-0">
+                        <input
+                          type="checkbox"
+                          checked={applyToExistingRecords}
+                          onChange={(e) => setApplyToExistingRecords(e.target.checked)}
+                          className="peer sr-only"
+                        />
+                        <div className={`h-6 w-11 rounded-full transition-all duration-200 ${
+                          applyToExistingRecords
+                            ? 'bg-[var(--color-1)]'
+                            : 'bg-gray-300 dark:bg-gray-600'
+                        }`}>
+                          <div className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform duration-200 ${
+                            applyToExistingRecords ? 'translate-x-5' : 'translate-x-0'
+                          }`} />
+                        </div>
+                      </div>
+                      <span>
+                        <span className="block text-sm font-medium">Aplicar a todos os registros existentes</span>
+                        <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                          Atualiza tag, subtag e compartilhamento em <strong>todos</strong> os registros que correspondem a este mapeamento
+                        </span>
+                      </span>
                     </label>
+                  </CadastroModalFieldsRow>
+                </CadastroModalFieldsGrid>
+              </CadastroFormSection>
+
+              <CadastroFormSection title="Critério" icon={<Map size={14} />}>
+                <CadastroModalFieldsGrid>
+                <CadastroModalFieldsRow cols={2}>
+                  <label className="block min-w-0">
+                    <CadastroFieldLabel required>Tipo de Mapeamento</CadastroFieldLabel>
                     <select
                       required
                       value={formData.mapping_type}
                       onChange={(e) => {
                         const newType = e.target.value as 'exact' | 'pattern' | 'regex'
-                        // Auto-define prioridade: exact=0 (Alta), pattern=1 (Média), regex=2 (Baixa)
                         const priorityMap = { exact: 0, pattern: 1, regex: 2 }
-                        // Se mudar para pattern/regex, desmarcar is_sensitive (não faz sentido)
                         const newIsSensitive = newType === 'exact' ? formData.is_sensitive : false
                         setFormData({ ...formData, mapping_type: newType, priority: priorityMap[newType], is_sensitive: newIsSensitive })
                       }}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      className={`${cadastroFieldCls} mt-0.5`}
                     >
                       <option value="exact">Exato (correspondência completa)</option>
                       <option value="pattern">Padrão (contém texto)</option>
@@ -1604,18 +1547,14 @@ const TransactionMappingsTab = () => {
                       {formData.mapping_type === 'pattern' && 'Prioridade Média - Corresponde se a descrição contém o padrão'}
                       {formData.mapping_type === 'regex' && 'Prioridade Baixa - Corresponde usando expressão regular'}
                     </p>
-                  </div>
-
-                  {/* Prioridade */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Prioridade
-                    </label>
+                  </label>
+                  <label className="block min-w-0">
+                    <CadastroFieldLabel>Prioridade</CadastroFieldLabel>
                     <select
                       value={formData.priority}
                       onChange={(e) => setFormData({ ...formData, priority: Number(e.target.value) })}
                       disabled
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-100 dark:bg-gray-600 text-gray-900 dark:text-white cursor-not-allowed"
+                      className={`${cadastroFieldCls} mt-0.5 cursor-not-allowed bg-gray-100 dark:bg-gray-600`}
                     >
                       <option value={0}>Alta</option>
                       <option value={1}>Média</option>
@@ -1624,168 +1563,161 @@ const TransactionMappingsTab = () => {
                     <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                       Determinada pelo tipo de mapeamento
                     </p>
-                  </div>
-                </div>
+                  </label>
+                </CadastroModalFieldsRow>
 
-                {/* Descrição Original (apenas para exact) */}
                 {formData.mapping_type === 'exact' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Descrição Original *
-                    </label>
-
-                    {editingMapping?.is_sensitive && !canEditSensitive ? (
-                      <div className="relative">
+                  <CadastroModalFieldsRow>
+                    <label className="block min-w-0">
+                      <CadastroFieldLabel required>Descrição Original</CadastroFieldLabel>
+                      {editingMapping?.is_sensitive && !canEditSensitive ? (
+                        <div className="relative mt-0.5">
+                          <input
+                            type="text"
+                            value={revealedOriginal || formData.original_description}
+                            readOnly
+                            className={`${cadastroFieldCls} bg-gray-100 pr-10 dark:bg-gray-600`}
+                            placeholder="********"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleRevealOriginalDescription}
+                            disabled={isRevealing}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-600 transition-colors hover:text-gray-800 disabled:opacity-50 dark:text-gray-400 dark:hover:text-gray-200"
+                            title={revealedOriginal ? "Ocultar valor" : "Revelar valor (requer senha)"}
+                          >
+                            {isRevealing ? (
+                              <div className="h-4 w-4 animate-spin rounded-full border-b-2 border-gray-600" />
+                            ) : revealedOriginal ? (
+                              <EyeOff size={16} />
+                            ) : (
+                              <Eye size={16} />
+                            )}
+                          </button>
+                        </div>
+                      ) : (
                         <input
                           type="text"
+                          required
                           value={revealedOriginal || formData.original_description}
-                          readOnly
-                          className="w-full px-3 py-2 pr-10 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-100 dark:bg-gray-600 text-gray-900 dark:text-white"
-                          placeholder="********"
+                          onChange={(e) => setFormData({ ...formData, original_description: e.target.value })}
+                          className={`${cadastroFieldCls} mt-0.5`}
+                          placeholder="Ex: NETFLIX, SPOTIFY, etc."
                         />
-                        <button
-                          type="button"
-                          onClick={handleRevealOriginalDescription}
-                          disabled={isRevealing}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors disabled:opacity-50"
-                          title={revealedOriginal ? "Ocultar valor" : "Revelar valor (requer senha)"}
-                        >
-                          {isRevealing ? (
-                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
-                          ) : revealedOriginal ? (
-                            <EyeOff size={16} />
-                          ) : (
-                            <Eye size={16} />
-                          )}
-                        </button>
-                      </div>
-                    ) : (
-                      <input
-                        type="text"
-                        required
-                        value={revealedOriginal || formData.original_description}
-                        onChange={(e) => setFormData({ ...formData, original_description: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                        placeholder="Ex: NETFLIX, SPOTIFY, etc."
-                      />
-                    )}
-                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      Como aparece no extrato ou fatura (correspondência exata)
-                    </p>
-                  </div>
-                )}
-
-                {/* Padrão (apenas para pattern) */}
-                {formData.mapping_type === 'pattern' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Padrão de Texto *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.pattern}
-                      onChange={(e) => setFormData({ ...formData, pattern: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                      placeholder="Ex: UBER, IFOOD, etc."
-                    />
-                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      Texto que deve estar contido na descrição (case-insensitive)
-                    </p>
-                  </div>
-                )}
-
-                {/* Regex Pattern (apenas para regex) */}
-                {formData.mapping_type === 'regex' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Expressão Regular *
-                    </label>
-                    <div className="relative flex items-center">
-                      <span className="absolute left-3 text-purple-600 dark:text-purple-400 font-mono text-sm font-bold select-none">/</span>
-                      <input
-                        type="text"
-                        required
-                        value={formData.regex_pattern}
-                        onChange={(e) => setFormData({ ...formData, regex_pattern: e.target.value })}
-                        className={`w-full pl-6 pr-8 py-2 border rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent font-mono text-sm ${
-                          regexError
-                            ? 'border-red-500 dark:border-red-400'
-                            : formData.regex_pattern.trim()
-                              ? 'border-purple-500 dark:border-purple-400'
-                              : 'border-gray-300 dark:border-gray-600'
-                        }`}
-                        placeholder="^PAG.*PIX, UBER.*TRIP, etc."
-                      />
-                      <span className="absolute right-3 text-purple-600 dark:text-purple-400 font-mono text-sm font-bold select-none">/i</span>
-                    </div>
-                    {/* Feedback de validação */}
-                    <div className="mt-1.5 flex items-center gap-2">
-                      {formData.regex_pattern.trim() ? (
-                        regexError ? (
-                          <span className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
-                            <span>❌</span> {regexError}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
-                            <span>✅</span> Regex válido
-                          </span>
-                        )
-                      ) : (
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                          Padrão regex para correspondência avançada (case-insensitive)
-                        </span>
                       )}
-                    </div>
-                  </div>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        Como aparece no extrato ou fatura (correspondência exata)
+                      </p>
+                    </label>
+                  </CadastroModalFieldsRow>
                 )}
 
-                {/* Filtro de Tipo (Receita/Despesa) */}
-                <div className="border-t border-b border-gray-200 dark:border-gray-700 py-4">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-                    Tipo de Transação *
-                  </label>
-                  <div className="flex gap-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setModalTypeFilter('receita')
-                        setFormData({ ...formData, tag_id: 0, subtag_id: 0 })
-                      }}
-                      className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 transition-all ${
-                        modalTypeFilter === 'receita'
-                          ? 'border-green-500 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300'
-                          : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:border-green-400'
-                      }`}
-                    >
-                      <ArrowUpCircle size={20} className={modalTypeFilter === 'receita' ? 'text-green-600 dark:text-green-400' : ''} />
-                      <span className="font-medium">Receita</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setModalTypeFilter('despesa')
-                        setFormData({ ...formData, tag_id: 0, subtag_id: 0 })
-                      }}
-                      className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 transition-all ${
-                        modalTypeFilter === 'despesa'
-                          ? 'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300'
-                          : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:border-red-400'
-                      }`}
-                    >
-                      <ArrowDownCircle size={20} className={modalTypeFilter === 'despesa' ? 'text-red-600 dark:text-red-400' : ''} />
-                      <span className="font-medium">Despesa</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Tag e Subtag - Grid 2 colunas */}
-                <div className="grid grid-cols-2 gap-4">
-                  {/* Tag */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Tag (Categoria Principal) *
+                {formData.mapping_type === 'pattern' && (
+                  <CadastroModalFieldsRow>
+                    <label className="block min-w-0">
+                      <CadastroFieldLabel required>Padrão de Texto</CadastroFieldLabel>
+                      <input
+                        type="text"
+                        required
+                        value={formData.pattern}
+                        onChange={(e) => setFormData({ ...formData, pattern: e.target.value })}
+                        className={`${cadastroFieldCls} mt-0.5`}
+                        placeholder="Ex: UBER, IFOOD, etc."
+                      />
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        Texto que deve estar contido na descrição (case-insensitive)
+                      </p>
                     </label>
+                  </CadastroModalFieldsRow>
+                )}
+
+                {formData.mapping_type === 'regex' && (
+                  <CadastroModalFieldsRow>
+                    <label className="block min-w-0">
+                      <CadastroFieldLabel required>Expressão Regular</CadastroFieldLabel>
+                      <div className="relative mt-0.5 flex items-center">
+                        <span className="absolute left-3 select-none font-mono text-sm font-bold text-purple-600 dark:text-purple-400">/</span>
+                        <input
+                          type="text"
+                          required
+                          value={formData.regex_pattern}
+                          onChange={(e) => setFormData({ ...formData, regex_pattern: e.target.value })}
+                          className={`${cadastroFieldCls} pl-6 pr-8 font-mono ${
+                            regexError
+                              ? 'border-red-500 dark:border-red-400'
+                              : formData.regex_pattern.trim()
+                                ? 'border-purple-500 dark:border-purple-400'
+                                : ''
+                          }`}
+                          placeholder="^PAG.*PIX, UBER.*TRIP, etc."
+                        />
+                        <span className="absolute right-3 select-none font-mono text-sm font-bold text-purple-600 dark:text-purple-400">/i</span>
+                      </div>
+                      <div className="mt-1.5 flex items-center gap-2">
+                        {formData.regex_pattern.trim() ? (
+                          regexError ? (
+                            <span className="flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
+                              <span>❌</span> {regexError}
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+                              <span>✅</span> Regex válido
+                            </span>
+                          )
+                        ) : (
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            Padrão regex para correspondência avançada (case-insensitive)
+                          </span>
+                        )}
+                      </div>
+                    </label>
+                  </CadastroModalFieldsRow>
+                )}
+                </CadastroModalFieldsGrid>
+              </CadastroFormSection>
+
+              <CadastroFormSection title="Categorização" icon={<Tag size={14} />}>
+                <CadastroModalFieldsGrid>
+                <CadastroModalFieldsRow>
+                  <div>
+                    <CadastroFieldLabel required>Tipo de Transação</CadastroFieldLabel>
+                    <div className="mt-1.5 flex gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setModalTypeFilter('receita')
+                          setFormData({ ...formData, tag_id: 0, subtag_id: 0 })
+                        }}
+                        className={`flex flex-1 items-center justify-center gap-2 rounded-lg border-2 px-4 py-3 transition-all ${
+                          modalTypeFilter === 'receita'
+                            ? 'border-green-500 bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-300'
+                            : 'border-gray-300 bg-white text-gray-700 hover:border-green-400 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                        }`}
+                      >
+                        <ArrowUpCircle size={20} className={modalTypeFilter === 'receita' ? 'text-green-600 dark:text-green-400' : ''} />
+                        <span className="font-medium">Receita</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setModalTypeFilter('despesa')
+                          setFormData({ ...formData, tag_id: 0, subtag_id: 0 })
+                        }}
+                        className={`flex flex-1 items-center justify-center gap-2 rounded-lg border-2 px-4 py-3 transition-all ${
+                          modalTypeFilter === 'despesa'
+                            ? 'border-red-500 bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300'
+                            : 'border-gray-300 bg-white text-gray-700 hover:border-red-400 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                        }`}
+                      >
+                        <ArrowDownCircle size={20} className={modalTypeFilter === 'despesa' ? 'text-red-600 dark:text-red-400' : ''} />
+                        <span className="font-medium">Despesa</span>
+                      </button>
+                    </div>
+                  </div>
+                </CadastroModalFieldsRow>
+                <CadastroModalFieldsRow cols={2}>
+                  <label className="block min-w-0">
+                    <CadastroFieldLabel required>Tag (Categoria Principal)</CadastroFieldLabel>
                     <select
                       required
                       value={formData.tag_id}
@@ -1793,7 +1725,7 @@ const TransactionMappingsTab = () => {
                         const newTagId = Number(e.target.value)
                         setFormData({ ...formData, tag_id: newTagId, subtag_id: 0 })
                       }}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      className={`${cadastroFieldCls} mt-0.5`}
                     >
                       <option value={0}>Selecione uma tag...</option>
                       {tags.map(tag => (
@@ -1802,19 +1734,15 @@ const TransactionMappingsTab = () => {
                         </option>
                       ))}
                     </select>
-                  </div>
-
-                  {/* Subtag */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Subtag (Subcategoria) *
-                    </label>
+                  </label>
+                  <label className="block min-w-0">
+                    <CadastroFieldLabel required>Subtag (Subcategoria)</CadastroFieldLabel>
                     <select
                       required
                       value={formData.subtag_id}
                       onChange={(e) => setFormData({ ...formData, subtag_id: Number(e.target.value) })}
                       disabled={!formData.tag_id}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent disabled:bg-gray-100 dark:disabled:bg-gray-700 disabled:cursor-not-allowed"
+                      className={`${cadastroFieldCls} mt-0.5 disabled:cursor-not-allowed disabled:bg-gray-100 dark:disabled:bg-gray-700`}
                     >
                       <option value={0}>Selecione uma subtag...</option>
                       {subtags
@@ -1825,313 +1753,270 @@ const TransactionMappingsTab = () => {
                           </option>
                         ))}
                     </select>
-                  </div>
-                </div>
+                  </label>
+                </CadastroModalFieldsRow>
+                </CadastroModalFieldsGrid>
+              </CadastroFormSection>
 
-                {/* Grid: Compartilhamento */}
-                <div className="grid grid-cols-3 gap-4 border-t border-gray-200 dark:border-gray-700 pt-3">
-                  {/* Compartilhamento */}
-                  <div className="col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Compartilhamento (Opcional)
-                    </label>
-                    <select
-                      value={formData.shared_partner_id}
-                      onChange={(e) => {
-                        const selectedId = Number(e.target.value)
-                        setFormData({ ...formData, shared_partner_id: selectedId })
-
-                        // Auto-popular percentual quando selecionar compartilhamento
-                        if (selectedId > 0) {
-                          const selectedSharing = partners.find(p => p.id === selectedId)
-                          if (selectedSharing) {
+              <CadastroFormSection title="Regras" icon={<Users size={14} />}>
+                <CadastroModalFieldsGrid>
+                  <CadastroModalFieldsRow cols={2}>
+                    <label className="block min-w-0">
+                      <CadastroFieldLabel>Compartilhamento</CadastroFieldLabel>
+                      <select
+                        value={formData.shared_partner_id}
+                        onChange={(e) => {
+                          const selectedId = Number(e.target.value)
+                          setFormData({ ...formData, shared_partner_id: selectedId })
+                          if (selectedId > 0) {
+                            const selectedSharing = partners.find(p => p.id === selectedId)
+                            if (selectedSharing) {
+                              setFormData(prev => ({
+                                ...prev,
+                                shared_partner_id: selectedId,
+                                my_contribution_percentage: selectedSharing.my_contribution_percentage
+                              }))
+                            }
+                          } else {
                             setFormData(prev => ({
                               ...prev,
-                              shared_partner_id: selectedId,
-                              my_contribution_percentage: selectedSharing.my_contribution_percentage
+                              shared_partner_id: 0,
+                              my_contribution_percentage: null
                             }))
                           }
-                        } else {
-                          // Se desselecionar, limpar percentual
-                          setFormData(prev => ({
-                            ...prev,
-                            shared_partner_id: 0,
-                            my_contribution_percentage: null
-                          }))
-                        }
-                      }}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    >
-                      <option value={0}>Nenhum (Próprio)</option>
-                      {[...partners].sort((a, b) => getPartnerLabel(a).localeCompare(getPartnerLabel(b))).map(sharing => (
-                        <option key={sharing.id} value={sharing.id}>
-                          {getPartnerLabel(sharing)}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      Para despesas compartilhadas com parceiro
-                    </p>
-                  </div>
-
-                  {/* Percentual de Contribuição - sempre visível, desabilitado se não houver compartilhamento */}
-                  <div>
-                    <label className={`block text-sm font-medium mb-1 ${formData.shared_partner_id > 0 ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500'}`}>
-                      Minha Contribuição (%)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.01"
-                      value={formData.my_contribution_percentage ?? ''}
-                      onChange={(e) => {
-                        const value = e.target.value === '' ? null : Number(e.target.value)
-                        // Validar que o valor está entre 0 e 100
-                        if (value !== null && (value < 0 || value > 100)) {
-                          return // Não atualiza se estiver fora do range
-                        }
-                        setFormData({ ...formData, my_contribution_percentage: value })
-                      }}
-                      disabled={formData.shared_partner_id === 0}
-                      className={`w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-primary-500 focus:border-transparent ${
-                        formData.shared_partner_id > 0
-                          ? 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white'
-                          : 'border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-not-allowed'
-                      }`}
-                      placeholder={formData.shared_partner_id > 0 ? '50.00' : '-'}
-                    />
-                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      {formData.shared_partner_id > 0 ? 'Percentual específico para este mapeamento' : 'Selecione um compartilhamento primeiro'}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Toggle: Marcar como Sensível - Desabilitado para pattern/regex */}
-                <div className={`p-2.5 border rounded-lg ${
-                  formData.mapping_type !== 'exact'
-                    ? 'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 opacity-60'
-                    : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
-                }`}>
-                  <label className={`flex items-center gap-2.5 ${
-                    formData.mapping_type !== 'exact' ? 'cursor-not-allowed' : 'cursor-pointer group'
-                  }`}>
-                    {/* Toggle Switch - Menor */}
-                    <div className="relative flex-shrink-0">
-                      <input
-                        type="checkbox"
-                        checked={formData.is_sensitive}
-                        onChange={(e) => handleSensitiveToggle(e.target.checked)}
-                        disabled={formData.mapping_type !== 'exact'}
-                        className="sr-only peer"
-                      />
-                      <div className={`w-9 h-5 rounded-full transition-all duration-200 ${
-                        formData.mapping_type !== 'exact'
-                          ? 'bg-gray-300 dark:bg-gray-600'
-                          : formData.is_sensitive
-                            ? 'bg-red-600 dark:bg-red-500'
-                            : 'bg-gray-300 dark:bg-gray-600'
-                      }`}>
-                        <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${
-                          formData.is_sensitive && formData.mapping_type === 'exact' ? 'translate-x-4' : 'translate-x-0'
-                        }`}></div>
-                      </div>
-                    </div>
-
-                    <div className="flex-1">
-                      <span className={`text-sm font-medium transition-colors ${
-                        formData.mapping_type !== 'exact'
-                          ? 'text-gray-500 dark:text-gray-400'
-                          : 'text-red-700 dark:text-red-300 group-hover:text-red-800 dark:group-hover:text-red-200'
-                      }`}>
-                        🔒 Marcar como sensível (criptografar descrições)
-                      </span>
-                      <p className={`text-xs mt-0.5 ${
-                        formData.mapping_type !== 'exact'
-                          ? 'text-gray-400 dark:text-gray-500'
-                          : 'text-red-600 dark:text-red-400'
-                      }`}>
-                        {formData.mapping_type !== 'exact'
-                          ? 'Disponível apenas para mapeamentos do tipo Exato'
-                          : 'Descrições serão criptografadas e só poderão ser visualizadas com senha'}
-                      </p>
-                    </div>
-                  </label>
-                </div>
-
-                {/* Descrição Mapeada (Personalizada) */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Descrição Personalizada {formData.is_sensitive && <span className="text-red-600">*</span>}
-                  </label>
-
-                  {editingMapping?.is_sensitive && !canEditSensitive ? (
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={revealedMapped || formData.mapped_description}
-                        readOnly
-                        className="w-full px-3 py-2 pr-10 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-100 dark:bg-gray-600 text-gray-900 dark:text-white"
-                        placeholder="********"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleRevealMappedDescription}
-                        disabled={isRevealing}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors disabled:opacity-50"
-                        title={revealedMapped ? "Ocultar valor" : "Revelar valor (requer senha)"}
+                        }}
+                        className={`${cadastroFieldCls} mt-0.5`}
                       >
-                        {isRevealing ? (
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
-                        ) : revealedMapped ? (
-                          <EyeOff size={16} />
-                        ) : (
-                          <Eye size={16} />
-                        )}
-                      </button>
-                    </div>
-                  ) : (
-                    <input
-                      type="text"
-                      value={formData.mapped_description}
-                      onChange={(e) => setFormData({ ...formData, mapped_description: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                      placeholder="Ex: Entretenimento"
-                    />
-                  )}
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    {formData.is_sensitive
-                      ? 'Obrigatório para mapeamentos sensíveis - substitui a descrição original na visualização'
-                      : 'Substitui a descrição original na visualização (deixe em branco para usar a original)'}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex gap-3 mt-4">
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className="flex-1 px-4 py-2 rounded-md text-white hover:opacity-90 transition-opacity"
-                  style={{ backgroundColor: 'var(--crud-cancel)' }}
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={showEditModal && !hasFormChanges()}
-                  className="flex-1 px-4 py-2 text-white rounded-md hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{ backgroundColor: 'var(--crud-create)' }}
-                >
-                  {showEditModal ? 'Atualizar Mapeamento' : 'Criar Mapeamento'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+                        <option value={0}>Nenhum (Próprio)</option>
+                        {[...partners].sort((a, b) => getPartnerLabel(a).localeCompare(getPartnerLabel(b))).map(sharing => (
+                          <option key={sharing.id} value={sharing.id}>
+                            {getPartnerLabel(sharing)}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        Para despesas compartilhadas com parceiro
+                      </p>
+                    </label>
+                    <label className="block min-w-0">
+                      <CadastroFieldLabel>Minha Contribuição (%)</CadastroFieldLabel>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        value={formData.my_contribution_percentage ?? ''}
+                        onChange={(e) => {
+                          const value = e.target.value === '' ? null : Number(e.target.value)
+                          if (value !== null && (value < 0 || value > 100)) {
+                            return
+                          }
+                          setFormData({ ...formData, my_contribution_percentage: value })
+                        }}
+                        disabled={formData.shared_partner_id === 0}
+                        className={`${cadastroFieldCls} mt-0.5 ${
+                          formData.shared_partner_id === 0
+                            ? 'cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'
+                            : ''
+                        }`}
+                        placeholder={formData.shared_partner_id > 0 ? '50.00' : '-'}
+                      />
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {formData.shared_partner_id > 0 ? 'Percentual específico para este mapeamento' : 'Selecione um compartilhamento primeiro'}
+                      </p>
+                    </label>
+                  </CadastroModalFieldsRow>
+                  <CadastroModalFieldsRow>
+                    <label className={`${cadastroOptionLabelCls} items-start ${
+                      formData.mapping_type !== 'exact' ? 'cursor-not-allowed opacity-60' : ''
+                    }`}>
+                      <div className="relative mt-0.5 flex-shrink-0">
+                        <input
+                          type="checkbox"
+                          checked={formData.is_sensitive}
+                          onChange={(e) => handleSensitiveToggle(e.target.checked)}
+                          disabled={formData.mapping_type !== 'exact'}
+                          className="peer sr-only"
+                        />
+                        <div className={`h-5 w-9 rounded-full transition-all duration-200 ${
+                          formData.mapping_type !== 'exact'
+                            ? 'bg-gray-300 dark:bg-gray-600'
+                            : formData.is_sensitive
+                              ? 'bg-red-600 dark:bg-red-500'
+                              : 'bg-gray-300 dark:bg-gray-600'
+                        }`}>
+                          <div className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 ${
+                            formData.is_sensitive && formData.mapping_type === 'exact' ? 'translate-x-4' : 'translate-x-0'
+                          }`} />
+                        </div>
+                      </div>
+                      <span>
+                        <span className="block text-sm font-medium text-gray-800 dark:text-gray-100">
+                          Marcar como sensível (criptografar descrições)
+                        </span>
+                        <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                          {formData.mapping_type !== 'exact'
+                            ? 'Disponível apenas para mapeamentos do tipo Exato'
+                            : 'Descrições serão criptografadas e só poderão ser visualizadas com senha'}
+                        </span>
+                      </span>
+                    </label>
+                  </CadastroModalFieldsRow>
+                  <CadastroModalFieldsRow>
+                    <label className="block min-w-0">
+                      <CadastroFieldLabel required={formData.is_sensitive}>Descrição Personalizada</CadastroFieldLabel>
+                      {editingMapping?.is_sensitive && !canEditSensitive ? (
+                        <div className="relative mt-0.5">
+                          <input
+                            type="text"
+                            value={revealedMapped || formData.mapped_description}
+                            readOnly
+                            className={`${cadastroFieldCls} bg-gray-100 pr-10 dark:bg-gray-600`}
+                            placeholder="********"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleRevealMappedDescription}
+                            disabled={isRevealing}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-600 transition-colors hover:text-gray-800 disabled:opacity-50 dark:text-gray-400 dark:hover:text-gray-200"
+                            title={revealedMapped ? "Ocultar valor" : "Revelar valor (requer senha)"}
+                          >
+                            {isRevealing ? (
+                              <div className="h-4 w-4 animate-spin rounded-full border-b-2 border-gray-600" />
+                            ) : revealedMapped ? (
+                              <EyeOff size={16} />
+                            ) : (
+                              <Eye size={16} />
+                            )}
+                          </button>
+                        </div>
+                      ) : (
+                        <input
+                          type="text"
+                          value={formData.mapped_description}
+                          onChange={(e) => setFormData({ ...formData, mapped_description: e.target.value })}
+                          className={`${cadastroFieldCls} mt-0.5`}
+                          placeholder="Ex: Entretenimento"
+                        />
+                      )}
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {formData.is_sensitive
+                          ? 'Obrigatório para mapeamentos sensíveis - substitui a descrição original na visualização'
+                          : 'Substitui a descrição original na visualização (deixe em branco para usar a original)'}
+                      </p>
+                    </label>
+                  </CadastroModalFieldsRow>
+                </CadastroModalFieldsGrid>
+              </CadastroFormSection>
+            </CadastroModalBody>
+            <CadastroModalFooter
+              onClose={closeModal}
+              onSave={() => {
+                const form = document.getElementById('mapping-form') as HTMLFormElement | null
+                form?.requestSubmit()
+              }}
+              disabled={showEditModal && !hasFormChanges()}
+              saveLabel={showEditModal ? 'Atualizar Mapeamento' : 'Criar Mapeamento'}
+            />
+          </form>
+        </CadastroModalShell>
       )}
 
       {/* Password Modal */}
       {showPasswordModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                🔒 Confirmação de Senha
-              </h3>
-              <button
-                onClick={() => {
-                  setShowPasswordModal(false)
-                  setPassword('')
-                  setRevealingTableRowId(null)
-                  revealingTableRowIdRef.current = null
-                  // Reverter checkbox apenas se estava desmarcando sensível
-                  if (passwordModalAction === 'unsensitive') {
-                    setFormData(prev => ({ ...prev, is_sensitive: true }))
-                  }
-                }}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              {passwordModalAction === 'reveal'
-                ? 'Para visualizar os dados descriptografados, digite sua senha:'
+        <CadastroModalShell
+          maxWidth="max-w-md"
+          onBackdropClick={() => {
+            setShowPasswordModal(false)
+            setPassword('')
+            setRevealingTableRowId(null)
+            revealingTableRowIdRef.current = null
+            if (passwordModalAction === 'unsensitive') {
+              setFormData(prev => ({ ...prev, is_sensitive: true }))
+            }
+          }}
+          zClass="z-[110]"
+        >
+          <CadastroModalHeader
+            isEdit={false}
+            title="Confirmação de Senha"
+            subtitle={
+              passwordModalAction === 'reveal'
+                ? 'Para visualizar os dados descriptografados, digite sua senha.'
                 : passwordModalAction === 'save'
-                  ? 'Para salvar este mapeamento sensível, digite sua senha:'
-                  : 'Para desmarcar a flag de sensível e visualizar os dados descriptografados, digite sua senha:'}
-            </p>
-
-            <form onSubmit={(e) => {
+                  ? 'Para salvar este mapeamento sensível, digite sua senha.'
+                  : 'Para desmarcar a flag de sensível e visualizar os dados descriptografados, digite sua senha.'
+            }
+            onClose={() => {
+              setShowPasswordModal(false)
+              setPassword('')
+              setRevealingTableRowId(null)
+              revealingTableRowIdRef.current = null
+              if (passwordModalAction === 'unsensitive') {
+                setFormData(prev => ({ ...prev, is_sensitive: true }))
+              }
+            }}
+            icon={<AlertCircle size={18} />}
+          />
+          <form
+            onSubmit={(e) => {
               e.preventDefault()
               handlePasswordValidation()
-            }}>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Senha
-                </label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  placeholder="Digite sua senha"
-                  autoFocus
-                />
-              </div>
-
-              <div className="flex gap-3 justify-end">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowPasswordModal(false)
-                    setPassword('')
-                    setRevealingTableRowId(null)
-                    revealingTableRowIdRef.current = null
-                    // Reverter checkbox apenas se estava desmarcando sensível
-                    if (passwordModalAction === 'unsensitive') {
-                      setFormData(prev => ({ ...prev, is_sensitive: true }))
-                    }
-                  }}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isValidatingPassword}
-                  className="px-4 py-2 text-sm font-medium text-white bg-color-primary rounded-md hover:opacity-90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isValidatingPassword ? 'Validando...' : 'Confirmar'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            }}
+            className="flex min-h-0 flex-1 flex-col"
+            id="mapping-password-form"
+          >
+            <CadastroModalBody>
+              <CadastroFormSection title="Senha" icon={<AlertCircle size={14} />}>
+                <CadastroModalFieldsGrid>
+                  <CadastroModalFieldsRow>
+                    <label className="block min-w-0">
+                      <CadastroFieldLabel required>Senha</CadastroFieldLabel>
+                      <input
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className={`${cadastroFieldCls} mt-0.5`}
+                        placeholder="Digite sua senha"
+                        autoFocus
+                      />
+                    </label>
+                  </CadastroModalFieldsRow>
+                </CadastroModalFieldsGrid>
+              </CadastroFormSection>
+            </CadastroModalBody>
+            <CadastroModalFooter
+              onClose={() => {
+                setShowPasswordModal(false)
+                setPassword('')
+                setRevealingTableRowId(null)
+                revealingTableRowIdRef.current = null
+                if (passwordModalAction === 'unsensitive') {
+                  setFormData(prev => ({ ...prev, is_sensitive: true }))
+                }
+              }}
+              onSave={() => {
+                const form = document.getElementById('mapping-password-form') as HTMLFormElement | null
+                form?.requestSubmit()
+              }}
+              saving={isValidatingPassword}
+              saveLabel="Confirmar"
+            />
+          </form>
+        </CadastroModalShell>
       )}
 
       {/* Modal de Reaplicar Mapeamento */}
       {showRemapModal && remapMapping && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md">
-            {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                <Zap size={20} className="text-color-primary" />
-                Aplicar Mapeamento
-              </h3>
-              <button
-                onClick={() => setShowRemapModal(false)}
-                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-              >
-                <X size={20} className="text-gray-500 dark:text-gray-400" />
-              </button>
-            </div>
-
-            {/* Content */}
-            <div className="p-4 space-y-4">
-              {/* Info do mapeamento */}
+        <CadastroModalShell maxWidth="max-w-md" onBackdropClick={() => setShowRemapModal(false)} zClass="z-[60]">
+          <CadastroModalHeader
+            isEdit={false}
+            title="Aplicar Mapeamento"
+            onClose={() => setShowRemapModal(false)}
+            icon={<Zap size={18} />}
+          />
+          <CadastroModalBody>
+            <CadastroFormSection title="Opções" icon={<Zap size={14} />}>
               <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Mapeamento:</p>
                 <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
@@ -2203,62 +2088,32 @@ const TransactionMappingsTab = () => {
                   </div>
                 </div>
               </div>
-            </div>
-
-            {/* Footer */}
-            <div className="flex items-center justify-end gap-3 p-4 border-t border-gray-200 dark:border-gray-700">
-              <button
-                onClick={() => setShowRemapModal(false)}
-                className="px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors hover:opacity-90"
-                style={{ backgroundColor: 'var(--crud-cancel)' }}
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleRemap}
-                className="px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors hover:opacity-90 flex items-center gap-2 bg-color-primary"
-              >
-                <Zap size={16} />
-                Aplicar
-              </button>
-            </div>
-          </div>
-        </div>
+            </CadastroFormSection>
+          </CadastroModalBody>
+          <CadastroModalFooter
+            onClose={() => setShowRemapModal(false)}
+            onSave={handleRemap}
+            saveLabel="Aplicar"
+            saveIcon={<Zap size={15} />}
+          />
+        </CadastroModalShell>
       )}
 
       {/* Modal de Executar Todos */}
       {showBatchRemapModal && selectedMappings.size > 0 && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md">
-            {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                <Zap size={20} className="text-color-primary" />
-                Executar {selectedMappings.size} Mapeamento(s)
-              </h3>
-              <button
-                onClick={() => setShowBatchRemapModal(false)}
-                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-              >
-                <X size={20} className="text-gray-500 dark:text-gray-400" />
-              </button>
-            </div>
-
-            {/* Body */}
-            <div className="p-4 space-y-4">
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Aplicar tag, subtag e compartilhamento de <strong>{selectedMappings.size}</strong> mapeamento(s) selecionado(s) a todas as transações correspondentes.
-              </p>
-
-              {/* Opções */}
+        <CadastroModalShell maxWidth="max-w-md" onBackdropClick={() => setShowBatchRemapModal(false)} zClass="z-[60]">
+          <CadastroModalHeader
+            isEdit={false}
+            title={`Executar ${selectedMappings.size} Mapeamento(s)`}
+            subtitle={`Aplicar tag, subtag e compartilhamento de ${selectedMappings.size} mapeamento(s) selecionado(s) a todas as transações correspondentes.`}
+            onClose={() => setShowBatchRemapModal(false)}
+            icon={<Zap size={18} />}
+          />
+          <CadastroModalBody>
+            <CadastroFormSection title="Opções de aplicação" icon={<Zap size={14} />}>
               <div className="space-y-3">
-                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Opções de aplicação:
-                </p>
-
-                {/* Subtag sempre aplica */}
-                <div className="flex items-start gap-3 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
-                  <CheckSquare size={18} className="text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
+                <div className="flex items-start gap-3 rounded-lg border border-green-200 bg-green-50 p-3 dark:border-green-800 dark:bg-green-900/20">
+                  <CheckSquare size={18} className="mt-0.5 flex-shrink-0 text-green-600 dark:text-green-400" />
                   <div>
                     <p className="text-sm font-medium text-green-700 dark:text-green-300">
                       Tag e Subtag: Sempre aplicadas
@@ -2268,10 +2123,9 @@ const TransactionMappingsTab = () => {
                     </p>
                   </div>
                 </div>
-
-                {/* Compartilhamento - opção para mapeamentos sem compartilhamento definido */}
-                <div className="flex items-start gap-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-900/20">
                   <button
+                    type="button"
                     onClick={() => setBatchRemapOptions(prev => ({
                       ...prev,
                       overwrite_sharing: !prev.overwrite_sharing
@@ -2297,196 +2151,151 @@ const TransactionMappingsTab = () => {
                   </div>
                 </div>
               </div>
-            </div>
-
-            {/* Footer */}
-            <div className="flex items-center justify-end gap-3 p-4 border-t border-gray-200 dark:border-gray-700">
-              <button
-                onClick={() => setShowBatchRemapModal(false)}
-                className="px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors hover:opacity-90"
-                style={{ backgroundColor: 'var(--crud-cancel)' }}
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleBatchRemap}
-                disabled={isBatchRemapping}
-                className="px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors hover:opacity-90 flex items-center gap-2 disabled:opacity-50"
-                style={{ backgroundColor: 'var(--color-1)' }}
-              >
-                <Zap size={16} className={isBatchRemapping ? 'animate-pulse' : ''} />
-                {isBatchRemapping ? 'Executando...' : 'Executar Todos'}
-              </button>
-            </div>
-          </div>
-        </div>
+            </CadastroFormSection>
+          </CadastroModalBody>
+          <CadastroModalFooter
+            onClose={() => setShowBatchRemapModal(false)}
+            onSave={handleBatchRemap}
+            saving={isBatchRemapping}
+            saveLabel="Executar Todos"
+            saveIcon={<Zap size={15} className={isBatchRemapping ? 'animate-pulse' : undefined} />}
+          />
+        </CadastroModalShell>
       )}
 
       {/* Modal de Editar Todas */}
       {showBatchEditModal && selectedMappings.size > 0 && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-lg">
-            {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                <Edit2 size={20} style={{ color: 'var(--crud-edit)' }} />
-                Editar {selectedMappings.size} Mapeamento(s)
-              </h3>
-              <button
-                onClick={() => setShowBatchEditModal(false)}
-                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-              >
-                <X size={20} className="text-gray-500 dark:text-gray-400" />
-              </button>
-            </div>
-
-            {/* Body */}
-            <div className="p-4 space-y-4">
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Marque os campos que deseja <strong>alterar</strong>. Campos desmarcados manterão os valores atuais do banco.
-              </p>
-
-              {/* Tag + Subtag (juntos) - Filtrado pelo tipo dos selecionados */}
-              <div className="space-y-3 p-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={batchEditData.apply_tag_subtag}
-                    onChange={(e) => setBatchEditData(prev => ({ ...prev, apply_tag_subtag: e.target.checked }))}
-                    className="rounded border-gray-300 text-color-primary focus:ring-color-primary"
-                  />
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+        <CadastroModalShell maxWidth="max-w-lg" onBackdropClick={() => setShowBatchEditModal(false)} zClass="z-[60]">
+          <CadastroModalHeader
+            isEdit={true}
+            title={`Editar ${selectedMappings.size} Mapeamento(s)`}
+            subtitle="Marque os campos que deseja alterar. Campos desmarcados manterão os valores atuais do banco."
+            onClose={() => setShowBatchEditModal(false)}
+            icon={<Edit2 size={18} />}
+          />
+          <CadastroModalBody>
+            <CadastroFormSection title="Campos" icon={<Edit2 size={14} />}>
+              <CadastroModalFieldsGrid>
+                <CadastroModalFieldsRow>
+                  <label className={cadastroOptionLabelCls}>
+                    <input
+                      type="checkbox"
+                      checked={batchEditData.apply_tag_subtag}
+                      onChange={(e) => setBatchEditData(prev => ({ ...prev, apply_tag_subtag: e.target.checked }))}
+                      className={`${cadastroAccentControlCls} h-4 w-4 rounded border-gray-300`}
+                    />
                     Alterar Tag/Subtag
                     {selectedMappingsType && (
-                      <span className={`ml-2 text-xs px-1.5 py-0.5 rounded ${selectedMappingsType === 'receita' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'}`}>
-                        {selectedMappingsType === 'receita' ? 'Receita' : 'Despesa'}
+                      <span className={`ml-1 text-xs ${selectedMappingsType === 'receita' ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
+                        ({selectedMappingsType === 'receita' ? 'Receita' : 'Despesa'})
                       </span>
                     )}
-                  </span>
-                </label>
-                {batchEditData.apply_tag_subtag && (
-                  <div className="space-y-2 pl-6">
-                    <select
-                      value={batchEditData.tag_id}
-                      onChange={(e) => {
-                        setBatchEditData(prev => ({ ...prev, tag_id: Number(e.target.value), subtag_id: 0 }))
-                      }}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:border-color-primary focus:outline-none"
-                    >
-                      <option value={0}>Selecione uma tag...</option>
-                      {/* Filtra tags que têm pelo menos uma subtag do tipo selecionado */}
-                      {tags
-                        .filter(tag => subtags.some(s => s.tag_id === tag.id && s.type === selectedMappingsType))
-                        .map(tag => (
-                          <option key={tag.id} value={tag.id}>{tag.name}</option>
-                        ))}
-                    </select>
-                    <select
-                      value={batchEditData.subtag_id}
-                      onChange={(e) => setBatchEditData(prev => ({ ...prev, subtag_id: Number(e.target.value) }))}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:border-color-primary focus:outline-none"
-                      disabled={!batchEditData.tag_id}
-                    >
-                      <option value={0}>Selecione uma subtag...</option>
-                      {/* Filtra subtags pela tag selecionada E pelo tipo dos mapeamentos selecionados */}
-                      {subtags
-                        .filter(s => s.tag_id === batchEditData.tag_id && s.type === selectedMappingsType)
-                        .map(subtag => (
-                          <option key={subtag.id} value={subtag.id}>{subtag.name}</option>
-                        ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-
-              {/* Compartilhamento */}
-              <div className="space-y-3 p-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={!batchEditData.skip_sharing}
-                    onChange={(e) => setBatchEditData(prev => ({ ...prev, skip_sharing: !e.target.checked }))}
-                    className="rounded border-gray-300 text-color-primary focus:ring-color-primary"
-                  />
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Alterar Compartilhamento</span>
-                </label>
-                {!batchEditData.skip_sharing && (
-                  <div className="space-y-2 pl-6">
-                    <select
-                      value={batchEditData.shared_partner_id}
-                      onChange={(e) => {
-                        const selectedId = Number(e.target.value)
-                        // Auto-popular percentual quando selecionar compartilhamento
-                        if (selectedId > 0) {
-                          const selectedSharing = partners.find(p => p.id === selectedId)
-                          if (selectedSharing) {
+                  </label>
+                  {batchEditData.apply_tag_subtag && (
+                    <div className="mt-2 space-y-2">
+                      <select
+                        value={batchEditData.tag_id}
+                        onChange={(e) => {
+                          setBatchEditData(prev => ({ ...prev, tag_id: Number(e.target.value), subtag_id: 0 }))
+                        }}
+                        className={cadastroFieldCls}
+                      >
+                        <option value={0}>Selecione uma tag...</option>
+                        {tags
+                          .filter(tag => subtags.some(s => s.tag_id === tag.id && s.type === selectedMappingsType))
+                          .map(tag => (
+                            <option key={tag.id} value={tag.id}>{tag.name}</option>
+                          ))}
+                      </select>
+                      <select
+                        value={batchEditData.subtag_id}
+                        onChange={(e) => setBatchEditData(prev => ({ ...prev, subtag_id: Number(e.target.value) }))}
+                        className={cadastroFieldCls}
+                        disabled={!batchEditData.tag_id}
+                      >
+                        <option value={0}>Selecione uma subtag...</option>
+                        {subtags
+                          .filter(s => s.tag_id === batchEditData.tag_id && s.type === selectedMappingsType)
+                          .map(subtag => (
+                            <option key={subtag.id} value={subtag.id}>{subtag.name}</option>
+                          ))}
+                      </select>
+                    </div>
+                  )}
+                </CadastroModalFieldsRow>
+                <CadastroModalFieldsRow>
+                  <label className={cadastroOptionLabelCls}>
+                    <input
+                      type="checkbox"
+                      checked={!batchEditData.skip_sharing}
+                      onChange={(e) => setBatchEditData(prev => ({ ...prev, skip_sharing: !e.target.checked }))}
+                      className={`${cadastroAccentControlCls} h-4 w-4 rounded border-gray-300`}
+                    />
+                    Alterar Compartilhamento
+                  </label>
+                  {!batchEditData.skip_sharing && (
+                    <div className="mt-2 space-y-2">
+                      <select
+                        value={batchEditData.shared_partner_id}
+                        onChange={(e) => {
+                          const selectedId = Number(e.target.value)
+                          if (selectedId > 0) {
+                            const selectedSharing = partners.find(p => p.id === selectedId)
+                            if (selectedSharing) {
+                              setBatchEditData(prev => ({
+                                ...prev,
+                                shared_partner_id: selectedId,
+                                my_contribution_percentage: selectedSharing.my_contribution_percentage
+                              }))
+                            }
+                          } else {
                             setBatchEditData(prev => ({
                               ...prev,
-                              shared_partner_id: selectedId,
-                              my_contribution_percentage: selectedSharing.my_contribution_percentage
+                              shared_partner_id: 0,
+                              my_contribution_percentage: 50
                             }))
                           }
-                        } else {
-                          // Se desselecionar, limpar percentual
-                          setBatchEditData(prev => ({
-                            ...prev,
-                            shared_partner_id: 0,
-                            my_contribution_percentage: 50
-                          }))
-                        }
-                      }}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:border-color-primary focus:outline-none"
-                    >
-                      <option value={0}>Nenhum (remover compartilhamento)</option>
-                      {[...partners].sort((a, b) => getPartnerLabel(a).localeCompare(getPartnerLabel(b))).map(partner => (
-                        <option key={partner.id} value={partner.id}>
-                          {getPartnerLabel(partner)}
-                        </option>
-                      ))}
-                    </select>
-                    {batchEditData.shared_partner_id > 0 && (
-                      <div className="flex items-center gap-2">
-                        <label className="text-sm text-gray-600 dark:text-gray-400">Minha contribuição:</label>
-                        <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          value={batchEditData.my_contribution_percentage ?? 50}
-                          onChange={(e) => {
-                            const val = Math.min(100, Math.max(0, Number(e.target.value) || 0))
-                            setBatchEditData(prev => ({ ...prev, my_contribution_percentage: val }))
-                          }}
-                          className="w-20 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:border-color-primary focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        />
-                        <span className="text-sm text-gray-500">%</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="flex justify-end gap-2 p-4 border-t border-gray-200 dark:border-gray-700">
-              <button
-                onClick={() => setShowBatchEditModal(false)}
-                className="px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors hover:opacity-90"
-                style={{ backgroundColor: 'var(--crud-cancel)' }}
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleBatchEdit}
-                disabled={isBatchEditing}
-                className="px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors hover:opacity-90 flex items-center gap-2 disabled:opacity-50"
-                style={{ backgroundColor: 'var(--crud-edit)' }}
-              >
-                <Edit2 size={16} />
-                {isBatchEditing ? 'Editando...' : 'Aplicar Edição'}
-              </button>
-            </div>
-          </div>
-        </div>
+                        }}
+                        className={cadastroFieldCls}
+                      >
+                        <option value={0}>Nenhum (remover compartilhamento)</option>
+                        {[...partners].sort((a, b) => getPartnerLabel(a).localeCompare(getPartnerLabel(b))).map(partner => (
+                          <option key={partner.id} value={partner.id}>
+                            {getPartnerLabel(partner)}
+                          </option>
+                        ))}
+                      </select>
+                      {batchEditData.shared_partner_id > 0 && (
+                        <div className="flex items-center gap-2">
+                          <CadastroFieldLabel>Minha contribuição</CadastroFieldLabel>
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={batchEditData.my_contribution_percentage ?? 50}
+                            onChange={(e) => {
+                              const val = Math.min(100, Math.max(0, Number(e.target.value) || 0))
+                              setBatchEditData(prev => ({ ...prev, my_contribution_percentage: val }))
+                            }}
+                            className={`${cadastroFieldCls} w-20 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+                          />
+                          <span className="text-sm text-gray-500">%</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </CadastroModalFieldsRow>
+              </CadastroModalFieldsGrid>
+            </CadastroFormSection>
+          </CadastroModalBody>
+          <CadastroModalFooter
+            onClose={() => setShowBatchEditModal(false)}
+            onSave={handleBatchEdit}
+            saving={isBatchEditing}
+            saveLabel="Aplicar Edição"
+            saveIcon={<Edit2 size={15} />}
+          />
+        </CadastroModalShell>
       )}
 
       {/* Barra Flutuante de Ações - Com seleção */}

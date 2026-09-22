@@ -1,10 +1,19 @@
 import { useState, useEffect } from 'react'
-import { X, GripVertical, AlertTriangle, ArrowDownCircle, ArrowUpCircle } from 'lucide-react'
+import { GripVertical, AlertTriangle, ArrowDownCircle, ArrowUpCircle, FileText, Lock } from 'lucide-react'
 import axios from 'axios'
 import { formatSharedAccountDisplay } from '../utils/accountFormatter'
 import { useAlert } from '../hooks/useAlert'
 import type { ExpenseTemplate, ApplyTemplateRequest } from '../types/expenseTemplate'
 import { dateToLocalString } from '../utils/dateUtils'
+import { validateAccountPeriodDate } from '../services/accountPeriodClosuresApi'
+import {
+  CadastroModalShell,
+  CadastroModalHeader,
+  CadastroModalBody,
+  CadastroModalFooter,
+  CadastroFormSection,
+  cadastroFieldCls,
+} from './CadastroFormLayout'
 
 interface ClosedPeriodValidation {
   is_closed: boolean
@@ -289,6 +298,37 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
         }
       }
 
+      // Validação de período fechado da conta (extrato)
+      const closedAccountItems: ClosedPeriodItem[] = []
+      for (let i = 0; i < items.length; i++) {
+        if (isNaN(parseFloat(items[i].amount)) || parseFloat(items[i].amount) === 0) continue
+        const item = items[i]
+        const dateStr = item.date.length >= 10 ? item.date.slice(0, 10) : dateToLocalString(item.date)
+        const validation = await validateAccountPeriodDate(dateStr)
+        if (validation?.is_closed) {
+          closedAccountItems.push({
+            itemIndex: i,
+            description: item.description,
+            date: item.date,
+            validation: {
+              is_closed: true,
+              closure_id: validation.closure_id ?? null,
+              closure_year: validation.closure_year ?? null,
+              closure_month: validation.closure_month ?? null,
+              is_settled: false,
+              next_open_date: validation.next_open_date ?? null,
+              message: validation.message ?? null,
+            },
+          })
+        }
+      }
+      if (closedAccountItems.length > 0) {
+        setClosedPeriodItems(closedAccountItems)
+        setShowClosedPeriodDialog(true)
+        setIsSaving(false)
+        return
+      }
+
       // Validação de período fechado (apenas para itens com valor e compartilhamento)
       const itemsWithSharing = activeItems.filter(item => item.expense_sharing_id)
       if (itemsWithSharing.length > 0) {
@@ -382,46 +422,29 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
   if (!isOpen || !template) return null
 
   return (
-    <div
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-      onClick={(e) => {
-        // Bloqueia fechar clicando no overlay se estiver salvando
-        if (e.target === e.currentTarget && !isSaving) {
-          onClose()
-        }
-      }}
-    >
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-[95vw] max-w-[1600px] max-h-[90vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-1">
-              Aplicar Template: {template.name}
-            </h2>
-            <p className="text-xs text-gray-600 dark:text-gray-400">
-              Revise e ajuste os valores antes de criar os lançamentos
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isSaving}
-            className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            title={isSaving ? "Processando..." : "Fechar (ESC)"}
-          >
-            <X size={20} />
-          </button>
-        </div>
-
-        {/* Body */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-4">
+    <>
+      <CadastroModalShell
+        maxWidth="max-w-[1600px]"
+        onBackdropClick={() => {
+          if (!isSaving) onClose()
+        }}
+      >
+        <CadastroModalHeader
+          isEdit={false}
+          title={`Aplicar Template: ${template.name}`}
+          subtitle="Revise e ajuste os valores antes de criar os lançamentos"
+          onClose={onClose}
+          icon={<FileText size={18} />}
+        />
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col" id="apply-template-form">
+          <CadastroModalBody>
           {isLoading ? (
             <div className="text-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
               <p className="mt-4 text-gray-600 dark:text-gray-400">Carregando...</p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <CadastroFormSection title="Lançamentos" icon={<FileText size={14} />}>
               {/* Header dos campos */}
               <div className="flex items-end gap-2 pb-2 border-b border-gray-200 dark:border-gray-700">
                 <div className="w-[14px]"></div>
@@ -470,7 +493,7 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
                         type="text"
                         value={item.description}
                         onChange={(e) => updateItem(index, 'description', e.target.value)}
-                        className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                        className={cadastroFieldCls}
                         placeholder="Ex: Aluguel"
                       />
                     </div>
@@ -507,7 +530,7 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
                             }
                             setItems(updated)
                           }}
-                          className={`w-full pl-8 pr-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-sm font-semibold ${
+                          className={`${cadastroFieldCls} pl-8 font-semibold ${
                             item.amount && parseFloat(item.amount) < 0
                               ? 'text-red-600 dark:text-red-400'
                               : item.amount && parseFloat(item.amount) > 0
@@ -525,7 +548,7 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
                         type="date"
                         value={item.date}
                         onChange={(e) => updateItem(index, 'date', e.target.value)}
-                        className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                        className={cadastroFieldCls}
                       />
                     </div>
 
@@ -543,7 +566,7 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
                           }
                           setItems(updated)
                         }}
-                        className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                        className={cadastroFieldCls}
                       >
                         <option value={0}>Selecione...</option>
                         {tags.map(tag => (
@@ -574,7 +597,7 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
                           updated[index] = { ...updated[index], subtag_id: subtagId, amount: newAmount }
                           setItems(updated)
                         }}
-                        className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                        className={cadastroFieldCls}
                         disabled={!item.tag_id || item.tag_id === 0}
                       >
                         <option value={0}>Selecione...</option>
@@ -613,7 +636,7 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
 
                           setItems(updated)
                         }}
-                        className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                        className={cadastroFieldCls}
                       >
                         <option value="">Sem</option>
                         {sharings.map(sharing => (
@@ -658,7 +681,7 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
                               updateItem(index, 'ownership_percentage', '100.00')
                             }
                           }}
-                          className="w-full px-2 py-1.5 pr-6 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm text-right"
+                          className={`${cadastroFieldCls} pr-6 text-right`}
                           placeholder="100"
                         />
                         <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 text-sm">
@@ -670,118 +693,83 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
                 </div>
                 )
               })}
-            </div>
+            </CadastroFormSection>
           )}
+        </CadastroModalBody>
+        <CadastroModalFooter
+          onClose={onClose}
+          onSave={() => {
+            const form = document.getElementById('apply-template-form') as HTMLFormElement | null
+            form?.requestSubmit()
+          }}
+          saving={isSaving}
+          disabled={isSaving || isLoading || items.every(item => isNaN(parseFloat(item.amount)) || parseFloat(item.amount) === 0)}
+          saveLabel={(() => {
+            const count = items.filter(item => !isNaN(parseFloat(item.amount)) && parseFloat(item.amount) !== 0).length
+            return isSaving ? 'Criando Lançamentos...' : `Criar ${count} ${count === 1 ? 'Lançamento' : 'Lançamentos'}`
+          })()}
+        />
+      </form>
+    </CadastroModalShell>
 
-          {/* Footer */}
-          <div className="border-t border-gray-200 dark:border-gray-700 px-6 py-3 flex justify-end gap-3 mt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isSaving}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 text-sm"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={isSaving || isLoading || items.every(item => isNaN(parseFloat(item.amount)) || parseFloat(item.amount) === 0)}
-              className="px-4 py-2 text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-2 text-sm"
-              style={{ backgroundColor: 'var(--crud-create)' }}
-            >
-              {isSaving ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  Criando Lançamentos...
-                </>
-              ) : (
-                (() => {
-                  const count = items.filter(item => !isNaN(parseFloat(item.amount)) && parseFloat(item.amount) !== 0).length
-                  return `Criar ${count} ${count === 1 ? 'Lançamento' : 'Lançamentos'}`
-                })()
-              )}
-            </button>
-          </div>
-        </form>
-      </div>
-
-      {/* Dialog de Período Fechado */}
       {showClosedPeriodDialog && closedPeriodItems.length > 0 && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[60] p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-lg animate-in fade-in zoom-in duration-200">
-            {/* Header */}
-            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-              <div className="flex items-center gap-3">
-                <div className="p-3 rounded-full bg-yellow-100 dark:bg-yellow-900/30">
-                  <AlertTriangle className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-                    Itens em Período Fechado
-                  </h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    {closedPeriodItems.length} {closedPeriodItems.length === 1 ? 'item está' : 'itens estão'} em período fechado
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Content */}
-            <div className="p-6 space-y-4 max-h-[50vh] overflow-y-auto">
-              {closedPeriodItems.map((item, idx) => (
-                <div key={idx} className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
-                  <div className="flex items-start gap-3">
-                    <Lock className="w-5 h-5 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
-                    <div className="text-sm text-yellow-800 dark:text-yellow-200">
-                      <p className="font-medium mb-1">
-                        #{item.itemIndex + 1}: {item.description}
-                      </p>
-                      <p className="text-xs">
-                        Data: {new Date(item.date + 'T12:00:00').toLocaleDateString('pt-BR')} •
-                        Fechamento: {item.validation.closure_month && getMonthName(item.validation.closure_month)}/{item.validation.closure_year}
-                        {item.validation.is_settled && (
-                          <span className="text-green-600 dark:text-green-400 ml-2">(Quitado)</span>
-                        )}
-                      </p>
-                    </div>
+        <CadastroModalShell
+          maxWidth="max-w-lg"
+          zClass="z-[110]"
+          onBackdropClick={() => {
+            setShowClosedPeriodDialog(false)
+            setClosedPeriodItems([])
+          }}
+        >
+          <CadastroModalHeader
+            isEdit={false}
+            title="Itens em Período Fechado"
+            subtitle={`${closedPeriodItems.length} ${closedPeriodItems.length === 1 ? 'item está' : 'itens estão'} em período fechado`}
+            onClose={() => {
+              setShowClosedPeriodDialog(false)
+              setClosedPeriodItems([])
+            }}
+            icon={<AlertTriangle size={18} />}
+            iconStyle={{ backgroundColor: 'var(--color-warning)', color: 'var(--on-color-warning)' }}
+          />
+          <CadastroModalBody>
+            <CadastroFormSection title="Itens" icon={<Lock size={14} />}>
+              <div className="space-y-3">
+                {closedPeriodItems.map((item, idx) => (
+                  <div key={idx} className="text-sm">
+                    <p className="font-medium text-gray-900 dark:text-white">
+                      #{item.itemIndex + 1}: {item.description}
+                    </p>
+                    <p className="text-xs text-gray-600 dark:text-gray-400">
+                      Data: {new Date(item.date + 'T12:00:00').toLocaleDateString('pt-BR')} •
+                      Fechamento: {item.validation.closure_month && getMonthName(item.validation.closure_month)}/{item.validation.closure_year}
+                      {item.validation.is_settled ? (
+                        <span className="ml-2 text-green-600 dark:text-green-400">(Quitado)</span>
+                      ) : null}
+                    </p>
                   </div>
+                ))}
+                <div>
+                  <p className="mb-1 font-medium text-gray-900 dark:text-white">O que deseja fazer?</p>
+                  <ul className="list-disc space-y-1 pl-5 text-sm text-gray-600 dark:text-gray-400">
+                    <li>Alterar as datas para o próximo período aberto</li>
+                    <li>Reabrir os períodos fechados na tela de Balanço</li>
+                  </ul>
                 </div>
-              ))}
-
-              <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 text-sm text-gray-600 dark:text-gray-400">
-                <p className="font-medium text-gray-900 dark:text-white mb-2">O que deseja fazer?</p>
-                <ul className="list-disc list-inside space-y-1">
-                  <li>Alterar as datas para o próximo período aberto</li>
-                  <li>Reabrir os períodos fechados na tela de Balanço</li>
-                </ul>
               </div>
-            </div>
-
-            {/* Footer */}
-            <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex gap-3 justify-end">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowClosedPeriodDialog(false)
-                  setClosedPeriodItems([])
-                }}
-                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleUseNextOpenDates}
-                className="px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors"
-                style={{ backgroundColor: 'var(--color-1)' }}
-              >
-                Usar Próximas Datas
-              </button>
-            </div>
-          </div>
-        </div>
+            </CadastroFormSection>
+          </CadastroModalBody>
+          <CadastroModalFooter
+            onClose={() => {
+              setShowClosedPeriodDialog(false)
+              setClosedPeriodItems([])
+            }}
+            onSave={handleUseNextOpenDates}
+            saveLabel="Usar Próximas Datas"
+          />
+        </CadastroModalShell>
       )}
-    </div>
+    </>
   )
 }
 

@@ -6,7 +6,7 @@ Data: 2025-12-19
 """
 
 from decimal import Decimal
-from sqlalchemy import Column, Integer, BigInteger, String, ForeignKey, Text, Numeric, Date, DateTime, CheckConstraint, Boolean, TIMESTAMP
+from sqlalchemy import Column, Integer, BigInteger, String, ForeignKey, Text, Numeric, Date, DateTime, CheckConstraint, Boolean, TIMESTAMP, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from app.models.base import Base
@@ -70,6 +70,8 @@ class Account(Base, BaseEntity):
     bank = relationship("Bank", back_populates="accounts")
     expense_sharing_settings = relationship("ExpenseSharingSetting", foreign_keys="[ExpenseSharingSetting.account_id]", cascade="all, delete-orphan")
     credit_cards = relationship("Cartao", back_populates="account")
+    invoice_groups = relationship("CreditCardInvoiceGroup", back_populates="account")
+    invoice_payment_matches = relationship("InvoicePaymentMatch", back_populates="account")
     bank_statements = relationship("BankStatement", back_populates="account", primaryjoin="Account.id == BankStatement.account_id")
     tags = relationship("Tag", back_populates="account")
     subtags = relationship("Subtag", back_populates="account")
@@ -193,6 +195,9 @@ class Cartao(Base, BaseEntity):
     closing_day = Column(Integer, nullable=False, default=14, name="closing_day")
     account_id = Column(Integer, ForeignKey('accounts.id', ondelete='CASCADE'), nullable=True, name="account_id", index=True)
     expense_sharing_id = Column(Integer, ForeignKey('expense_sharing_settings.id'), nullable=True, name="expense_sharing_id")
+    # true = cartão real da conta (entra na Saúde); false/NULL = terceiro gerenciado
+    is_account_card = Column(Boolean, nullable=True, name="is_account_card")
+    invoice_group_id = Column(Integer, ForeignKey('credit_card_invoice_groups.id', ondelete='SET NULL'), nullable=True, name="invoice_group_id", index=True)
 
     # 2. Campos do BaseEntity (herdados: id, tenant_id, created_by, created_at, last_updated_at)
 
@@ -202,6 +207,7 @@ class Cartao(Base, BaseEntity):
     # Relacionamentos
     account = relationship("Account", back_populates="credit_cards")
     expense_sharing = relationship("ExpenseSharingSetting", back_populates="credit_cards")
+    invoice_group = relationship("CreditCardInvoiceGroup", back_populates="credit_cards")
     invoices = relationship("CreditCardInvoice", back_populates="credit_card")
     benefit_statements = relationship("BenefitCardStatement", back_populates="credit_card")
 
@@ -217,6 +223,55 @@ class Cartao(Base, BaseEntity):
         if self.expense_sharing_id is not None:
             return 'compartilhado'
         return 'proprio'
+
+
+class CreditCardInvoiceGroup(Base, BaseEntity):
+    """Agrupa cartões cobrados na mesma fatura/boleta."""
+    __tablename__ = 'credit_card_invoice_groups'
+    __table_args__ = (
+        UniqueConstraint('tenant_id', 'account_id', 'name', name='unique_invoice_group_per_account'),
+        {'quote': False}
+    )
+
+    name = Column(String(100), nullable=False, name="name")
+    account_id = Column(Integer, ForeignKey('accounts.id', ondelete='CASCADE'), nullable=False, name="account_id", index=True)
+    active = Column(Boolean, nullable=False, default=True, name="active")
+
+    account = relationship("Account", back_populates="invoice_groups")
+    credit_cards = relationship("Cartao", back_populates="invoice_group")
+    payment_matches = relationship("InvoicePaymentMatch", back_populates="invoice_group")
+
+
+class InvoicePaymentMatch(Base, BaseEntity):
+    """Vínculo entre o ciclo de fatura (grupo ou cartão isolado) e o débito no extrato."""
+    __tablename__ = 'invoice_payment_matches'
+    __table_args__ = (
+        CheckConstraint("match_method IN ('auto', 'manual', 'unlinked')", name='chk_invoice_payment_match_method'),
+        CheckConstraint(
+            "(invoice_group_id IS NOT NULL AND credit_card_id IS NULL) "
+            "OR (invoice_group_id IS NULL AND credit_card_id IS NOT NULL)",
+            name='chk_invoice_payment_match_target',
+        ),
+        CheckConstraint(
+            "(match_method = 'unlinked' AND bank_statement_id IS NULL) "
+            "OR (match_method IN ('auto', 'manual') AND bank_statement_id IS NOT NULL)",
+            name='chk_invoice_payment_match_statement',
+        ),
+        {'quote': False}
+    )
+
+    year_month = Column(String(7), nullable=False, name="year_month", index=True)
+    invoice_group_id = Column(Integer, ForeignKey('credit_card_invoice_groups.id', ondelete='CASCADE'), nullable=True, name="invoice_group_id")
+    credit_card_id = Column(Integer, ForeignKey('credit_cards.id', ondelete='CASCADE'), nullable=True, name="credit_card_id")
+    bank_statement_id = Column(Integer, ForeignKey('bank_statements.id', ondelete='CASCADE'), nullable=True, name="bank_statement_id")
+    matched_amount = Column(Numeric(10, 2), nullable=False, name="matched_amount")
+    match_method = Column(String(20), nullable=False, default='auto', name="match_method")
+    account_id = Column(Integer, ForeignKey('accounts.id', ondelete='CASCADE'), nullable=False, name="account_id", index=True)
+
+    invoice_group = relationship("CreditCardInvoiceGroup", back_populates="payment_matches")
+    credit_card = relationship("Cartao")
+    bank_statement = relationship("BankStatement")
+    account = relationship("Account", back_populates="invoice_payment_matches")
 
 
 class CreditCardInvoice(Base, BaseEntity):
@@ -237,6 +292,7 @@ class CreditCardInvoice(Base, BaseEntity):
     __tablename__ = 'credit_card_invoices'
     __table_args__ = (
         CheckConstraint("ownership_percentage >= 0 AND ownership_percentage <= 100", name='chk_invoices_ownership_percentage'),
+        CheckConstraint("issuer IN ('btg', 'mercadopago')", name='chk_invoices_issuer'),
         {'quote': False}
     )
 
@@ -252,12 +308,15 @@ class CreditCardInvoice(Base, BaseEntity):
     expense_sharing_id = Column(Integer, ForeignKey('expense_sharing_settings.id'), nullable=True, name="expense_sharing_id")
     adjustment_notes = Column(Text, nullable=True, name="adjustment_notes")
     account_id = Column(Integer, ForeignKey('accounts.id'), nullable=True, name="account_id")
+    issuer = Column(String(20), nullable=False, default='btg', server_default='btg', name="issuer")
+    bank_statement_id = Column(Integer, ForeignKey('bank_statements.id', ondelete='SET NULL'), nullable=True, name="bank_statement_id", index=True)
 
     # Relacionamentos
     credit_card = relationship("Cartao", back_populates="invoices")
     subtag = relationship("Subtag")
     expense_sharing = relationship("ExpenseSharingSetting", back_populates="credit_card_invoices")
     account = relationship("Account")
+    bank_statement = relationship("BankStatement")
 
     @property
     def adjustment_type(self) -> str:
@@ -651,6 +710,31 @@ class LoanPayment(Base, AccountBaseEntity):
     account = relationship("Account", foreign_keys="[LoanPayment.account_id]")
     loan = relationship("Loan", back_populates="payments")
     balance_closure = relationship("BalanceClosure", foreign_keys=[balance_closure_id])
+
+
+class AccountPeriodClosure(Base, AccountBaseEntity):
+    """Fechamento mensal explícito da conta (snapshot do extrato bancário)."""
+
+    __tablename__ = 'account_period_closures'
+    __table_args__ = (
+        UniqueConstraint(
+            'tenant_id', 'account_id', 'year', 'month',
+            name='uq_account_period_closures_period',
+        ),
+        CheckConstraint("month >= 1 AND month <= 12", name='chk_account_period_closures_month'),
+        {'quote': False},
+    )
+
+    year = Column(Integer, nullable=False, name="year", index=True)
+    month = Column(Integer, nullable=False, name="month")
+    opening_balance = Column(Numeric(15, 2), nullable=False, default=Decimal("0"), name="opening_balance")
+    entries = Column(Numeric(15, 2), nullable=False, default=Decimal("0"), name="entries")
+    exits = Column(Numeric(15, 2), nullable=False, default=Decimal("0"), name="exits")
+    closing_balance = Column(Numeric(15, 2), nullable=False, default=Decimal("0"), name="closing_balance")
+    closure_data = Column(JSONB, nullable=False, name="closure_data")
+    notes = Column(Text, nullable=True, name="notes")
+
+    account = relationship("Account", foreign_keys="[AccountPeriodClosure.account_id]")
 
 
 # Alias para compatibilidade com código existente

@@ -2,6 +2,11 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
+import {
+  CadastroListPageBody,
+  CadastroListPageHero,
+  CadastroListPageShell,
+} from '../components/CadastroListPageLayout'
 import LoadingSpinner from '../components/LoadingSpinner'
 import UnifiedImportModal from '../components/UnifiedImportModal'
 import ManualTransactionModal from '../components/ManualTransactionModal'
@@ -200,45 +205,42 @@ const HomePage = () => {
   const quickLinks = [
     { label: 'Extrato', icon: Receipt, path: '/relatorios/extrato' },
     { label: 'Faturas', icon: CreditCard, path: '/relatorios/faturas' },
-    { label: 'Balanço', icon: Scale, path: '/balanco' },
+    { label: 'Balanço', icon: Scale, path: '/fechamentos/compartilhado' },
     { label: 'Curadoria', icon: FileText, path: '/curadoria' },
   ]
 
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900">
       <Sidebar />
-      <main className="flex-1 overflow-y-auto">
-        <div className="p-8 space-y-6">
-
-          {/* Header — alinhado com Extrato, Faturas, etc. */}
-          <div className="mb-4 flex items-start justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-                <Home className="w-8 h-8" />
-                Plumo
-              </h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">
-                Finanças leves, vida plena. · {currentMonthLabel}
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <button
-                onClick={() => setIsImportModalOpen(true)}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 text-sm font-medium hover:border-color-primary hover:text-color-primary transition-all shadow-sm"
-              >
-                <Upload size={16} />
-                Importar
-              </button>
-              <button
-                onClick={() => setIsManualTransactionModalOpen(true)}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white shadow-sm hover:opacity-90 transition-all bg-color-primary"
-              >
-                <PlusCircle size={16} />
-                Novo lançamento
-              </button>
-            </div>
-          </div>
+      <CadastroListPageShell>
+        <CadastroListPageBody
+          header={
+            <CadastroListPageHero
+              icon={<Home className="w-8 h-8" />}
+              title="Plumo"
+              subtitle={`Finanças leves, vida plena. · ${currentMonthLabel}`}
+              actions={
+                <>
+                  <button
+                    onClick={() => setIsManualTransactionModalOpen(true)}
+                    className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-all hover:border-color-primary hover:text-color-primary dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                  >
+                    <PlusCircle size={16} />
+                    Novo lançamento
+                  </button>
+                  <button
+                    onClick={() => setIsImportModalOpen(true)}
+                    className="inline-flex items-center gap-2 rounded-lg bg-color-primary px-4 py-2 text-sm font-medium text-white shadow-sm transition-all hover:opacity-90"
+                  >
+                    <Upload size={16} />
+                    Importar
+                  </button>
+                </>
+              }
+            />
+          }
+        >
+        <div className="space-y-6">
 
           {/* Acesso rápido */}
           <section>
@@ -573,7 +575,8 @@ const HomePage = () => {
             </>
           )}
         </div>
-      </main>
+        </CadastroListPageBody>
+      </CadastroListPageShell>
 
       <UnifiedImportModal
         isOpen={isImportModalOpen}

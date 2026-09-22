@@ -20,6 +20,7 @@ from app.models.unified_models import BankStatement, CreditCardInvoice, Subtag, 
 from app.dependencies.auth import require_account
 from sqlalchemy import or_
 from app.services.fatura_service import FaturaService
+from app.services.account_period_closure_service import closed_periods
 from app.utils.card_helper import CardHelper
 from app.utils.mapping_helper import MappingHelper
 from app.core.logging_config import get_logger
@@ -663,6 +664,8 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
         }
     print(f"   ✅ {len(existing_records_data)} registros existentes carregados (account_id={account_id})")
 
+    closed_months = closed_periods(db, tenant_id, account_id)
+
     # ========================================
     # ETAPA 4: PROCESSAMENTO EM LOTE
     # ========================================
@@ -719,6 +722,28 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
             # pd.Timestamp e datetime têm hashes diferentes, causando falha no lookup do dict
             if isinstance(date_obj, pd.Timestamp):
                 date_obj = date_obj.to_pydatetime()
+
+            if (date_obj.year, date_obj.month) in closed_months:
+                error_msg = (
+                    f"Linha {idx + 2}: mês {date_obj.month:02d}/{date_obj.year} já está fechado"
+                )
+                errors.append(error_msg)
+                skipped_count += 1
+                row_dict = {
+                    "Linha": idx + 2,
+                    "Erro": error_msg,
+                }
+                for k, v in row.items():
+                    if pd.isna(v):
+                        row_dict[k] = None
+                    elif isinstance(v, (pd.Timestamp, datetime)):
+                        row_dict[k] = v.strftime('%Y-%m-%d %H:%M:%S') if hasattr(v, 'strftime') else str(v)
+                    elif isinstance(v, (int, float, str, bool)):
+                        row_dict[k] = v
+                    else:
+                        row_dict[k] = str(v)
+                skipped_rows.append(row_dict)
+                continue
 
             description = str(row['Descrição'])
             amount = float(row['Valor'])
@@ -1387,38 +1412,51 @@ async def process_fatura_excel(df: pd.DataFrame, db: Session, tenant_id: int, ac
         Cartao.account_id == account_id  # ✅ Filtro por account_id
     ).all()
 
-    # Cria dict para lookup O(1): (year_month, card_id, description, date, current_installment, total_installments) -> id
+    # Cria dict para lookup O(1): (year_month, card_id, description, date, installments, amount) -> ids
     #
-    # ÍNDICES PARA DUPLICATAS EXATAS (incluindo parcelas):
-    # - existing_keys: chave completa com parcelas
-    # - existing_keys_lower: chave lowercase com parcelas
-    #
-    # ÍNDICES PARA CONFLITOS DE VALOR (sem comparar valor - mesma transação, valor diferente):
-    # - existing_keys_no_amount: (year_month, card_id, description, date, installments) - igual aos acima
-    #   NOTA: Para faturas, a chave já não inclui amount, então usamos a mesma lógica
-    #
-    # IMPORTANTE: Armazena dados completos para detecção de conflitos
-    # ÍNDICES PARA BUSCA DE MÚLTIPLOS MATCHES:
-    # - existing_keys_base: chave SEM parcelas (year_month, card_id, description, date) -> lista de IDs
-    # - existing_keys_base_lower: mesmo que acima mas com description lowercase
-    # ÍNDICES PARA MATCH EXATO (com parcelas):
-    # - existing_keys: chave COM parcelas -> único ID
-    # - existing_keys_lower: mesmo que acima mas com description lowercase
-    existing_keys = {}  # chave completa com parcelas -> único ID
+    # Valor na chave distingue compras distintas com mesma descrição/data (ex: dois "Donna Vertini" R$ 20).
+    # existing_keys / existing_keys_lower: chave completa com parcelas -> lista de IDs
+    # existing_keys_base / existing_keys_base_lower: chave sem parcelas -> lista de IDs
+    existing_keys = {}
     existing_keys_lower = {}
-    existing_keys_base = {}  # chave base SEM parcelas -> lista de IDs
+    existing_keys_base = {}
     existing_keys_base_lower = {}
-    existing_records_data = {}  # id -> {subtag_id, amount, ...} para detecção de conflitos
+    existing_records_data = {}
     for record in existing_records:
-        # Chave completa (com parcelas) - para match exato
-        key = (record.year_month, record.credit_card_id, record.description, record.date, record.current_installment, record.total_installments)
-        key_lower = (record.year_month, record.credit_card_id, record.description.lower() if record.description else '', record.date, record.current_installment, record.total_installments)
-        existing_keys[key] = record.id
-        existing_keys_lower[key_lower] = record.id
+        amount_rounded = round(float(record.amount), 2) if record.amount else 0.0
 
-        # Chave base (SEM parcelas) - para detectar múltiplos matches
+        key = (
+            record.year_month,
+            record.credit_card_id,
+            record.description,
+            record.date,
+            record.current_installment,
+            record.total_installments,
+            amount_rounded,
+        )
+        key_lower = (
+            record.year_month,
+            record.credit_card_id,
+            record.description.lower() if record.description else '',
+            record.date,
+            record.current_installment,
+            record.total_installments,
+            amount_rounded,
+        )
+        if key not in existing_keys:
+            existing_keys[key] = []
+        existing_keys[key].append(record.id)
+        if key_lower not in existing_keys_lower:
+            existing_keys_lower[key_lower] = []
+        existing_keys_lower[key_lower].append(record.id)
+
         key_base = (record.year_month, record.credit_card_id, record.description, record.date)
-        key_base_lower = (record.year_month, record.credit_card_id, record.description.lower() if record.description else '', record.date)
+        key_base_lower = (
+            record.year_month,
+            record.credit_card_id,
+            record.description.lower() if record.description else '',
+            record.date,
+        )
         if key_base not in existing_keys_base:
             existing_keys_base[key_base] = []
         existing_keys_base[key_base].append(record.id)
@@ -1428,12 +1466,12 @@ async def process_fatura_excel(df: pd.DataFrame, db: Session, tenant_id: int, ac
 
         existing_records_data[record.id] = {
             'subtag_id': record.subtag_id,
-            'amount': float(record.amount) if record.amount else 0.0,
+            'amount': amount_rounded,
             'description': record.description,
             'date': record.date,
             'year_month': record.year_month,
             'current_installment': record.current_installment,
-            'total_installments': record.total_installments
+            'total_installments': record.total_installments,
         }
 
     print(f"   ✅ {len(existing_records)} registros existentes carregados")
@@ -1446,6 +1484,7 @@ async def process_fatura_excel(df: pd.DataFrame, db: Session, tenant_id: int, ac
     # Listas para bulk insert/update
     records_to_insert = []
     records_to_update = []
+    consumed_ids: set[int] = set()
 
     # Converte DataFrame para lista de dicts (mais rápido que iterrows)
     records = df.to_dict('records')
@@ -1608,6 +1647,7 @@ async def process_fatura_excel(df: pd.DataFrame, db: Session, tenant_id: int, ac
             # Banco: negativo = despesa, positivo = receita
             amount_invertido = -amount
             amount_invertido_decimal = Decimal(str(amount_invertido))
+            amount_rounded = round(float(amount_invertido_decimal), 2)
 
             # Busca cartão no CACHE (sem query!)
             card_config = card_cache.get(card_number)
@@ -1641,11 +1681,21 @@ async def process_fatura_excel(df: pd.DataFrame, db: Session, tenant_id: int, ac
             # 2. Se não encontrar, busca por chave BASE (sem parcelas) - pode ter múltiplos
             # 3. Se múltiplos, tenta match por valor; se não, deixa usuário escolher
 
-            # Chaves com parcelas (match exato)
-            key_mapped = (year_month, card_id, final_description, date, current_installment, total_installments)
-            key_original = (year_month, card_id, description, date, current_installment, total_installments)
-            key_mapped_lower = (year_month, card_id, final_description.lower() if final_description else '', date, current_installment, total_installments)
-            key_original_lower = (year_month, card_id, description.lower() if description else '', date, current_installment, total_installments)
+            # Chaves com parcelas e valor (match exato)
+            key_mapped = (
+                year_month, card_id, final_description, date, current_installment, total_installments, amount_rounded,
+            )
+            key_original = (
+                year_month, card_id, description, date, current_installment, total_installments, amount_rounded,
+            )
+            key_mapped_lower = (
+                year_month, card_id, final_description.lower() if final_description else '', date,
+                current_installment, total_installments, amount_rounded,
+            )
+            key_original_lower = (
+                year_month, card_id, description.lower() if description else '', date,
+                current_installment, total_installments, amount_rounded,
+            )
 
             # Chaves base (sem parcelas) - para múltiplos matches
             key_base_mapped = (year_month, card_id, final_description, date)
@@ -1653,26 +1703,38 @@ async def process_fatura_excel(df: pd.DataFrame, db: Session, tenant_id: int, ac
             key_base_mapped_lower = (year_month, card_id, final_description.lower() if final_description else '', date)
             key_base_original_lower = (year_month, card_id, description.lower() if description else '', date)
 
-            # 1. Tenta match exato (com parcelas)
-            existing_id = existing_keys.get(key_mapped)
-            if not existing_id and final_description != description:
-                existing_id = existing_keys.get(key_original)
-            if not existing_id:
-                existing_id = existing_keys_lower.get(key_mapped_lower)
-            if not existing_id and final_description.lower() != description.lower():
-                existing_id = existing_keys_lower.get(key_original_lower)
+            def first_available_id(id_lists: list[list[int]]) -> int | None:
+                for ids in id_lists:
+                    for eid in ids:
+                        if eid not in consumed_ids:
+                            return eid
+                return None
+
+            # 1. Tenta match exato (com parcelas e valor)
+            existing_id = first_available_id([
+                existing_keys.get(key_mapped, []),
+                existing_keys.get(key_original, []) if final_description != description else [],
+                existing_keys_lower.get(key_mapped_lower, []),
+                existing_keys_lower.get(key_original_lower, [])
+                if final_description.lower() != description.lower()
+                else [],
+            ])
 
             # 2. Se não encontrou match exato, busca por chave base (pode ter múltiplos)
             existing_ids = []
             multiple_matches = None
             if not existing_id:
-                existing_ids = existing_keys_base.get(key_base_mapped, [])
-                if not existing_ids and final_description != description:
-                    existing_ids = existing_keys_base.get(key_base_original, [])
-                if not existing_ids:
-                    existing_ids = existing_keys_base_lower.get(key_base_mapped_lower, [])
-                if not existing_ids and final_description.lower() != description.lower():
-                    existing_ids = existing_keys_base_lower.get(key_base_original_lower, [])
+                for ids in [
+                    existing_keys_base.get(key_base_mapped, []),
+                    existing_keys_base.get(key_base_original, []) if final_description != description else [],
+                    existing_keys_base_lower.get(key_base_mapped_lower, []),
+                    existing_keys_base_lower.get(key_base_original_lower, [])
+                    if final_description.lower() != description.lower()
+                    else [],
+                ]:
+                    for eid in ids:
+                        if eid not in consumed_ids and eid not in existing_ids:
+                            existing_ids.append(eid)
 
                 # Resolve múltiplos matches
                 if len(existing_ids) == 1:
@@ -1830,7 +1892,13 @@ async def process_fatura_excel(df: pd.DataFrame, db: Session, tenant_id: int, ac
                         }
 
                     conflicts.append(conflict_record)
-                    # Não conta como duplicado pois precisa de resolução
+                    issuer = FaturaService.issuer_from_row(row)
+                    if issuer:
+                        records_to_update.append({
+                            'id': existing_id,
+                            'issuer': issuer,
+                        })
+                    # Tag/valor esperam resolução; emissor pode ser atualizado agora
                 else:
                     # Sem conflito - atualiza normalmente
                     update_record = {
@@ -1842,10 +1910,14 @@ async def process_fatura_excel(df: pd.DataFrame, db: Session, tenant_id: int, ac
                         'expense_sharing_id': expense_sharing_id,
                         'ownership_percentage': ownership_percentage
                     }
+                    issuer = FaturaService.issuer_from_row(row)
+                    if issuer:
+                        update_record['issuer'] = issuer
                     if final_description != description:
                         update_record['description'] = final_description
                     records_to_update.append(update_record)
                     duplicate_count += 1
+                    consumed_ids.add(existing_id)
 
                     # LOG: Mostra tag/subtag para atualizações
                     subtag_info = subtag_id_to_info.get(subtag_id, {})
@@ -1868,6 +1940,7 @@ async def process_fatura_excel(df: pd.DataFrame, db: Session, tenant_id: int, ac
                     'expense_sharing_id': expense_sharing_id,
                     'account_id': card_config['account_id'],
                     'ownership_percentage': ownership_percentage,
+                    'issuer': FaturaService.issuer_from_row(row) or 'btg',
                     'created_by': user_id  # ✅ Campo obrigatório do BaseEntity
                 })
                 created_count += 1

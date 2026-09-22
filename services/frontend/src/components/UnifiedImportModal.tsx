@@ -1,11 +1,21 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
-import { X, Upload, FileSpreadsheet, AlertCircle, CheckCircle, Trash2, Landmark, CreditCard, FileText, Loader2, ClipboardCheck, Download, GripVertical, Gift, AlertTriangle } from 'lucide-react'
-import { detectFileType, DetectedFileInfo } from '../utils/fileTypeDetector'
+import { Upload, FileSpreadsheet, AlertCircle, CheckCircle, Trash2, Landmark, CreditCard, FileText, Loader2, ClipboardCheck, Download, GripVertical, Gift, AlertTriangle, Briefcase } from 'lucide-react'
+import { detectFileType, DetectedFileInfo, StatementIssuer, isPdfFileName, isSupportedImportFileName } from '../utils/fileTypeDetector'
 import { useEscapeKey } from '../hooks/useEscapeKey'
 import * as XLSX from 'xlsx'
 import ConflictReviewModal from './ConflictReviewModal'
 import { ImportConflict, ConflictResolution } from '../types/importConflict'
+import {
+  CadastroModalShell,
+  CadastroModalHeader,
+  CadastroModalBody,
+  CadastroModalFooter,
+  CadastroFormSection,
+  cadastroFieldCls,
+  cadastroOptionLabelCls,
+  cadastroAccentControlCls,
+} from './CadastroFormLayout'
 
 
 interface UnifiedImportModalProps {
@@ -20,6 +30,71 @@ interface FileConfig extends DetectedFileInfo {
   forceRetag?: boolean  // Controle individual de forçar re-tageamento
 }
 
+interface PayrollClassifyResult {
+  filename: string
+  status: string
+  doc_type?: 'payslip' | 'income_report' | null
+  message?: string | null
+  employee_name?: string | null
+  employer_name?: string | null
+  payer_name?: string | null
+  beneficiary_name?: string | null
+  reference_label?: string | null
+  payslip_kind?: string | null
+  year?: number | null
+  month?: number | null
+  calendar_year?: number | null
+}
+
+interface PayrollImportFileResult {
+  filename: string
+  status: string
+  message?: string | null
+  action?: string | null
+}
+
+const MONTH_PREVIEW = [
+  '',
+  'Janeiro',
+  'Fevereiro',
+  'Março',
+  'Abril',
+  'Maio',
+  'Junho',
+  'Julho',
+  'Agosto',
+  'Setembro',
+  'Outubro',
+  'Novembro',
+  'Dezembro',
+]
+
+const isPayrollType = (type: FileConfig['detectedType']) => type === 'holerite' || type === 'informe'
+
+const payslipKindLabel = (kind?: string | null) => {
+  if (kind === 'advance') return 'Adiantamento'
+  if (kind === 'final') return 'Folha final'
+  if (kind === 'regular') return 'Mensal'
+  if (kind === 'profit_share') return 'Participação nos lucros'
+  return null
+}
+
+const payrollPreviewFromClassify = (classified: PayrollClassifyResult) => {
+  if (classified.doc_type === 'income_report') {
+    return [
+      classified.payer_name,
+      classified.calendar_year ? `Ano-calendário ${classified.calendar_year}` : null,
+      classified.beneficiary_name,
+    ].filter(Boolean).join(' • ') || 'Informe detectado'
+  }
+  const kind = payslipKindLabel(classified.payslip_kind)
+  const period =
+    classified.year && classified.month
+      ? `${MONTH_PREVIEW[classified.month] || classified.month} ${classified.year}`
+      : classified.reference_label
+  return [classified.employer_name, kind, period].filter(Boolean).join(' • ') || 'Holerite detectado'
+}
+
 interface ImportResult {
   fileName: string
   success: boolean
@@ -28,6 +103,8 @@ interface ImportResult {
   duplicates?: number
   errors: string[]
   isPdf?: boolean
+  emptyInvoice?: boolean
+  message?: string
   skippedRows?: any[]  // Dados completos das linhas ignoradas
   conflicts_count?: number  // Número de conflitos detectados neste arquivo
   conversionTxtUrl?: string
@@ -103,7 +180,10 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
   }, [isOpen])
 
   const currentYear = new Date().getFullYear()
-  const years = Array.from({ length: 10 }, (_, i) => currentYear - i)
+  const years = Array.from(new Set([
+    ...Array.from({ length: 11 }, (_, i) => String(currentYear + 1 - i)),
+    ...fileConfigs.map(config => config.year).filter((year): year is string => Boolean(year)),
+  ])).sort((a, b) => Number(b) - Number(a))
   const months = [
     { value: '01', label: 'Janeiro' },
     { value: '02', label: 'Fevereiro' },
@@ -118,6 +198,28 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
     { value: '11', label: 'Novembro' },
     { value: '12', label: 'Dezembro' }
   ]
+
+  const issuerBadge = (issuer?: StatementIssuer, label?: string) => {
+    if (issuer === 'btg') {
+      return {
+        text: 'BTG',
+        title: 'Fatura BTG Pactual',
+        className: 'bg-[#001E62] text-white dark:bg-[#0B3A8F] dark:text-white',
+      }
+    }
+    if (issuer === 'mercadopago') {
+      return {
+        text: 'Mercado Pago',
+        title: 'Fatura Mercado Pago',
+        className: 'bg-[#FFE600] text-[#333333] dark:bg-[#FFE600] dark:text-[#1A1A1A]',
+      }
+    }
+    return {
+      text: label || 'Fatura',
+      title: 'Fatura de cartão',
+      className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+    }
+  }
 
   if (!isOpen) return null
 
@@ -135,10 +237,7 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
         const file = files[i]
         
         // Valida extensão
-        const isValidFile = file.name.endsWith('.pdf') ||
-                           file.name.endsWith('.xlsx') ||
-                           file.name.endsWith('.xls') ||
-                           file.name.endsWith('.csv')
+        const isValidFile = isSupportedImportFileName(file.name)
 
         if (!isValidFile) {
           setError(`Arquivo ${file.name} não é suportado. Use PDF, XLSX, XLS ou CSV.`)
@@ -158,6 +257,93 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
         setError('Nenhum arquivo válido foi selecionado')
         setIsDetecting(false)
         return
+      }
+
+      const pdfConfigs = detectedConfigs.filter(config => isPdfFileName(config.file.name))
+      if (pdfConfigs.length > 0) {
+        let classifiedResults: PayrollClassifyResult[] = []
+        try {
+          const payrollForm = new FormData()
+          pdfConfigs.forEach(config => payrollForm.append('files', config.file))
+          const classified = await axios.post<{ results: PayrollClassifyResult[] }>(
+            '/api/payroll/classify-pdfs',
+            payrollForm,
+            { headers: { 'Content-Type': 'multipart/form-data' } },
+          )
+          classifiedResults = classified.data.results || []
+        } catch (err) {
+          console.error('Erro ao classificar PDFs de folha:', err)
+        }
+
+        const remainingPdfs: FileConfig[] = []
+        pdfConfigs.forEach((config, index) => {
+          const classified =
+            classifiedResults.find(result => result.filename === config.file.name) ||
+            classifiedResults[index]
+          if (classified?.status === 'ok' && (classified.doc_type === 'payslip' || classified.doc_type === 'income_report')) {
+            config.detectedType = classified.doc_type === 'payslip' ? 'holerite' : 'informe'
+            config.importSource = 'folha'
+            config.needsYearMonth = false
+            config.confidence = 'high'
+            config.payrollPreview = payrollPreviewFromClassify(classified)
+            config.detectionError = undefined
+            return
+          }
+          remainingPdfs.push(config)
+        })
+
+        if (remainingPdfs.length > 0) {
+          try {
+            const formData = new FormData()
+            remainingPdfs.forEach(config => formData.append('files', config.file))
+            const response = await axios.post<{
+              results: Array<{
+                filename: string
+                status: string
+                issuer?: StatementIssuer
+                issuer_label?: string
+                year?: string
+                month?: string
+                card_last4?: string
+                message?: string
+              }>
+            }>('/api/import/cartao/detect', formData, {
+              headers: { 'Content-Type': 'multipart/form-data' }
+            })
+
+            const detectResults = response.data.results || []
+            const detectByName = new Map(
+              detectResults.map(result => [result.filename, result])
+            )
+            remainingPdfs.forEach((config, index) => {
+              const detected = detectByName.get(config.file.name) || detectResults[index]
+              if (!detected || detected.status !== 'ok') {
+                config.detectedType = 'pdf_unknown'
+                config.importSource = 'folha'
+                config.needsYearMonth = false
+                config.detectionError = detected?.message || 'PDF não reconhecido como fatura, holerite ou informe'
+                return
+              }
+              config.detectedType = 'fatura_bruta'
+              config.importSource = 'fatura'
+              config.needsYearMonth = true
+              config.confidence = 'high'
+              config.statementIssuer = detected.issuer || 'unknown'
+              config.issuerLabel = detected.issuer_label
+              config.cardLast4 = detected.card_last4 || undefined
+              if (detected.year) config.year = String(detected.year)
+              if (detected.month) config.month = String(detected.month).padStart(2, '0')
+            })
+          } catch (err) {
+            console.error('Erro ao identificar emissor da fatura PDF:', err)
+            remainingPdfs.forEach(config => {
+              config.detectedType = 'pdf_unknown'
+              config.importSource = 'folha'
+              config.needsYearMonth = false
+              config.detectionError = 'Não foi possível identificar o PDF'
+            })
+          }
+        }
       }
 
       // Ordenar alfabeticamente por nome do arquivo
@@ -185,9 +371,7 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
   const handleTypeChange = (index: number, newSource: 'extrato' | 'fatura') => {
     const updated = [...fileConfigs]
     const config = updated[index]
-    
-    // PDF não pode mudar para extrato
-    if (config.file.name.endsWith('.pdf') && newSource === 'extrato') {
+    if (isPdfFileName(config.file.name) || isPayrollType(config.detectedType) || config.detectedType === 'pdf_unknown') {
       return
     }
 
@@ -275,12 +459,18 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
 
     // NOTA: Não precisa mais validar account_id - todos os tipos usam o account_id do JWT
 
-    // Valida se PDFs têm ano/mês
+    const unrecognizedPdfs = fileConfigs.filter(config => config.detectedType === 'pdf_unknown')
+    if (unrecognizedPdfs.length > 0) {
+      setError('Remova os PDFs não reconhecidos antes de importar')
+      return
+    }
+
+    // Valida se PDFs de fatura têm ano/mês
     const pdfsWithoutYearMonth = fileConfigs.filter(
       config => config.needsYearMonth && (!config.year || !config.month)
     )
     if (pdfsWithoutYearMonth.length > 0) {
-      setError('Por favor, preencha ano e mês para todos os arquivos PDF')
+      setError('Por favor, preencha ano e mês para todos os arquivos PDF de fatura')
       return
     }
 
@@ -302,7 +492,70 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
     let totalUnmappedCount = 0
 
     try {
+      const payrollConfigs = fileConfigs.filter(config => isPayrollType(config.detectedType))
+      const payrollResultsByName = new Map<string, ImportResult>()
+
+      if (payrollConfigs.length > 0) {
+        try {
+          const formData = new FormData()
+          payrollConfigs.forEach(config => formData.append('files', config.file))
+          const response = await axios.post<{ results: PayrollImportFileResult[] }>(
+            '/api/payroll/import-pdfs',
+            formData,
+            { headers: { 'Content-Type': 'multipart/form-data' } },
+          )
+          const imported = response.data.results || []
+          payrollConfigs.forEach((config, index) => {
+            const hit = imported.find(item => item.filename === config.file.name) || imported[index]
+            if (!hit || hit.status !== 'ok') {
+              payrollResultsByName.set(config.file.name, {
+                fileName: config.file.name,
+                success: false,
+                created: 0,
+                skipped: 0,
+                errors: [hit?.message || 'Erro ao importar PDF'],
+              })
+              return
+            }
+            payrollResultsByName.set(config.file.name, {
+              fileName: config.file.name,
+              success: true,
+              created: hit.action === 'created' ? 1 : 0,
+              skipped: 0,
+              duplicates: hit.action === 'updated' ? 1 : 0,
+              errors: [],
+            })
+          })
+        } catch (err: any) {
+          payrollConfigs.forEach(config => {
+            payrollResultsByName.set(config.file.name, {
+              fileName: config.file.name,
+              success: false,
+              created: 0,
+              skipped: 0,
+              errors: [err.response?.data?.detail || 'Erro ao importar holerites e informes'],
+            })
+          })
+        }
+      }
+
       for (const config of fileConfigs) {
+        if (isPayrollType(config.detectedType)) {
+          const payrollResult = payrollResultsByName.get(config.file.name)
+          if (payrollResult) uploadResults.push(payrollResult)
+          continue
+        }
+        if (config.detectedType === 'pdf_unknown') {
+          uploadResults.push({
+            fileName: config.file.name,
+            success: false,
+            created: 0,
+            skipped: 0,
+            errors: [config.detectionError || 'PDF não reconhecido'],
+          })
+          continue
+        }
+
         try {
           let result: any
 
@@ -365,6 +618,8 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
               duplicates: response.data?.linhas_atualizadas || 0,
               errors: [],
               isPdf: true, // Flag para identificar PDFs
+              emptyInvoice: Boolean(response.data?.empty_invoice),
+              message: response.data?.message,
               // Inclui conflitos detectados (tag/subtag ou valor diferente)
               conflicts: response.data?.conflicts || [],
               conflicts_count: response.data?.conflicts_count || 0,
@@ -449,7 +704,7 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
           }
 
           // 4. Excel Processado (Extrato ou Fatura) → /api/excel-import/upload
-          else {
+          else if (config.detectedType === 'extrato_processado' || config.detectedType === 'fatura_processada') {
             const formData = new FormData()
             formData.append('file', config.file)
             formData.append('import_type', config.importSource)
@@ -471,6 +726,8 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
             if (response.data.unmapped) {
               totalUnmappedCount += response.data.unmapped
             }
+          } else {
+            throw new Error('Tipo de arquivo não suportado para importação')
           }
 
           uploadResults.push(result)
@@ -618,129 +875,72 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
   }
 
   const hasPDFs = fileConfigs.some(config => config.needsYearMonth)
-  const hasExcel = fileConfigs.some(config => !config.needsYearMonth)
+  const hasPayrollFiles = fileConfigs.some(config => isPayrollType(config.detectedType) || config.detectedType === 'pdf_unknown')
+  const hasUnrecognized = fileConfigs.some(config => config.detectedType === 'pdf_unknown')
+  const hasConfigColumn = hasPDFs || hasPayrollFiles || fileConfigs.some(f => f.detectedType === 'beneficio_csv')
 
   return (
     <>
-      <div
-        className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-        onClick={handleClose}
-      >
-        <div
-          className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-6xl w-full mx-4 max-h-[90vh] overflow-y-auto"
-          onClick={(e) => e.stopPropagation()}
-          style={{ boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.3)' }}
+      <CadastroModalShell maxWidth="max-w-6xl" onBackdropClick={handleClose}>
+        <CadastroModalHeader
+          isEdit={false}
+          title="Importar Arquivos"
+          subtitle="Extratos, faturas, benefícios, holerites e informes"
+          onClose={handleClose}
+          icon={<Upload size={18} />}
+        />
+        <CadastroModalBody
+          chrome={
+            <>
+              <CadastroFormSection title="Selecionar Arquivos" icon={<Upload size={14} />}>
+                <div className="rounded-lg border-2 border-dashed border-gray-300 p-6 text-center dark:border-gray-600">
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.pdf,.csv,application/pdf"
+                    onChange={handleFileSelect}
+                    disabled={isProcessing || isDetecting}
+                    className="hidden"
+                    id="unified-file-input"
+                    multiple
+                  />
+                  <label
+                    htmlFor="unified-file-input"
+                    className={`cursor-pointer ${isProcessing || isDetecting ? 'cursor-not-allowed opacity-50' : ''}`}
+                  >
+                    {isDetecting ? (
+                      <Loader2 className="mx-auto mb-3 h-12 w-12 animate-spin text-[var(--color-1)]" />
+                    ) : (
+                      <Upload className="mx-auto mb-3 h-12 w-12 text-gray-400" />
+                    )}
+                    <p className="mb-1 text-sm text-gray-600 dark:text-gray-400">
+                      {isDetecting ? 'Detectando tipos de arquivo...' : 'Clique para selecionar ou arraste os arquivos'}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      PDF (fatura, holerite ou informe), Excel (.xlsx, .xls), CSV — múltiplos arquivos
+                    </p>
+                  </label>
+                </div>
+              </CadastroFormSection>
+              {error ? (
+                <div className="mb-2 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
+                  <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-600 dark:text-red-400" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-red-800 dark:text-red-200">Erro</p>
+                    <p className="mt-1 text-sm text-red-700 dark:text-red-300">{error}</p>
+                  </div>
+                </div>
+              ) : null}
+            </>
+          }
         >
-          {/* Header */}
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-gradient-to-br from-[var(--color-1)] to-[var(--color-2)] rounded-lg">
-                <Upload className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                  Importar Arquivos
-                </h2>
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Extratos bancários (XLSX) ou Faturas de cartão (PDF/XLSX)
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={handleClose}
-              disabled={isProcessing || isDetecting}
-              className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 disabled:opacity-50"
-            >
-              <X className="w-6 h-6" />
-            </button>
-          </div>
-
-          {/* Upload de Arquivo */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-              Selecionar Arquivos
-            </label>
-            <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center">
-              <input
-                type="file"
-                accept=".xlsx,.xls,.pdf,.csv"
-                onChange={handleFileSelect}
-                disabled={isProcessing || isDetecting}
-                className="hidden"
-                id="unified-file-input"
-                multiple
-              />
-              <label
-                htmlFor="unified-file-input"
-                className={`cursor-pointer ${isProcessing || isDetecting ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                {isDetecting ? (
-                  <Loader2 className="w-12 h-12 mx-auto mb-3 text-blue-500 animate-spin" />
-                ) : (
-                  <Upload className="w-12 h-12 mx-auto mb-3 text-gray-400" />
-                )}
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-                  {isDetecting ? 'Detectando tipos de arquivo...' : 'Clique para selecionar ou arraste os arquivos'}
-                </p>
-                <p className="text-xs text-gray-500 dark:text-gray-500">
-                  PDF (faturas), Excel (.xlsx, .xls) - Múltiplos arquivos permitidos
-                </p>
-              </label>
-            </div>
-          </div>
-
-          {/* Erro */}
-          {error && (
-            <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <p className="text-sm font-medium text-red-800 dark:text-red-200">Erro</p>
-                <p className="text-sm text-red-700 dark:text-red-300 mt-1">{error}</p>
-              </div>
-            </div>
-          )}
-
           {/* Lista de Arquivos Selecionados */}
           {fileConfigs.length > 0 && results.length === 0 && (
-            <div className="mb-6">
-              <div className="flex items-center justify-between mb-3">
-                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Arquivos Selecionados ({fileConfigs.length})
-                </label>
-
-                {/* Botões de Ação em Massa (apenas para Excel) */}
-                {hasExcel && (
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setFileConfigs(prev => prev.map(f =>
-                        f.file.name.endsWith('.pdf') ? f : { ...f, importSource: 'extrato', detectedType: f.isRaw ? 'extrato_bruto' : 'extrato_processado' }
-                      ))}
-                      disabled={isProcessing}
-                      style={{ backgroundColor: 'var(--color-1)', color: 'var(--on-color-1)' }}
-                      className="px-3 py-1.5 text-xs font-medium hover:brightness-110 rounded-md shadow-sm transition-all disabled:opacity-50 flex items-center gap-1.5"
-                    >
-                      <Landmark className="w-3.5 h-3.5" />
-                      <span>Todos: Extrato</span>
-                    </button>
-                    <button
-                      onClick={() => setFileConfigs(prev => prev.map(f =>
-                        f.file.name.endsWith('.pdf') ? f : { ...f, importSource: 'fatura', detectedType: f.isRaw ? 'fatura_bruta' : 'fatura_processada' }
-                      ))}
-                      disabled={isProcessing}
-                      style={{ backgroundColor: 'var(--color-2)', color: 'var(--on-color-2)' }}
-                      className="px-3 py-1.5 text-xs font-medium hover:brightness-110 rounded-md shadow-sm transition-all disabled:opacity-50 flex items-center gap-1.5"
-                    >
-                      <CreditCard className="w-3.5 h-3.5" />
-                      <span>Todos: Fatura</span>
-                    </button>
-                  </div>
-                )}
-              </div>
+            <CadastroFormSection title={`Arquivos Selecionados (${fileConfigs.length})`} icon={<FileSpreadsheet size={14} />}>
 
               {/* Toggle Global: Forçar Re-tageamento (apenas para Excel processado) */}
               {fileConfigs.some(f => f.detectedType === 'extrato_processado' || f.detectedType === 'fatura_processada' || f.detectedType === 'beneficio_xlsx') && (
                 <div className="mb-3 p-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
-                  <label className="flex items-center gap-2 cursor-pointer" title="Marcar/Desmarcar todos os arquivos processados para forçar re-tageamento">
+                  <label className={cadastroOptionLabelCls} title="Marcar/Desmarcar todos os arquivos processados para forçar re-tageamento">
                     <input
                       type="checkbox"
                       checked={fileConfigs.filter(f => f.detectedType === 'extrato_processado' || f.detectedType === 'fatura_processada' || f.detectedType === 'beneficio_xlsx').every(f => f.forceRetag)}
@@ -752,7 +952,7 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
                         ))
                       }}
                       disabled={isProcessing}
-                      className="w-4 h-4 text-amber-600 rounded focus:ring-2 focus:ring-amber-500 flex-shrink-0"
+                      className={`${cadastroAccentControlCls} h-4 w-4 flex-shrink-0 rounded border-gray-300`}
                     />
                     <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
                       Todos: Forçar re-tageamento (ignorar tags do arquivo)
@@ -776,7 +976,7 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
                       <select
                         value={globalYear}
                         onChange={(e) => setGlobalYear(e.target.value)}
-                        className="px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded text-xs bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        className={`${cadastroFieldCls} w-auto min-w-[5rem]`}
                       >
                         <option value="">Ano</option>
                         {years.map(year => (
@@ -802,13 +1002,13 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
                         Aplicar Ano
                       </button>
                     </div>
-                    <label className="flex items-center gap-2 mt-2.5 ml-0 cursor-pointer select-none">
+                    <label className={`${cadastroOptionLabelCls} mt-2.5 select-none`}>
                       <input
                         type="checkbox"
                         checked={saveConversionTxt}
                         onChange={(e) => setSaveConversionTxt(e.target.checked)}
                         disabled={isProcessing || isDetecting}
-                        className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                        className={`${cadastroAccentControlCls} h-3.5 w-3.5 rounded border-gray-300 disabled:opacity-50`}
                       />
                       <span className="text-xs text-gray-700 dark:text-gray-300">
                         Salvar TXT da conversão do PDF (debug)
@@ -821,7 +1021,7 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
               {/* Tabela de Arquivos */}
               <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-x-auto">
                 <table className="w-full text-sm table-fixed">
-                  <thead className="bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+                  <thead className="sticky top-0 z-10 bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
                     <tr>
                       <th className="px-2 py-2 text-center text-xs font-semibold text-gray-700 dark:text-gray-300 w-[40px]"></th>
                       <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 dark:text-gray-300">Arquivo</th>
@@ -831,7 +1031,7 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
                       {fileConfigs.some(f => f.detectedType === 'extrato_processado' || f.detectedType === 'fatura_processada' || f.detectedType === 'beneficio_xlsx') && (
                         <th className="px-2 py-2 text-center text-xs font-semibold text-gray-700 dark:text-gray-300 w-[60px]" title="Forçar re-tageamento (ignorar tags do arquivo)">Re-tag</th>
                       )}
-                      {(hasPDFs || fileConfigs.some(f => f.detectedType === 'beneficio_csv')) && (
+                      {(hasConfigColumn) && (
                         <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700 dark:text-gray-300 w-[160px]">Config</th>
                       )}
                       <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700 dark:text-gray-300 w-[60px]">Ação</th>
@@ -839,11 +1039,12 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
                   </thead>
                   <tbody>
                     {fileConfigs.map((config, index) => {
-                      const isPDF = config.file.name.endsWith('.pdf')
+                      const isPDF = isPdfFileName(config.file.name)
                       const icon = isPDF ? FileText : FileSpreadsheet
                       const Icon = icon
                       const isDragging = draggedIndex === index
                       const isDragOver = dragOverIndex === index
+                      const badge = issuerBadge(config.statementIssuer, config.issuerLabel)
 
                       return (
                         <tr
@@ -884,19 +1085,63 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
 
                           {/* Tipo Detectado */}
                           <td className="px-3 py-2 text-center">
-                            <span className={`inline-flex items-center justify-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium min-w-[100px] ${
-                              config.isRaw
-                                ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
-                                : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
-                            }`}>
-                              {config.isRaw ? '📄 Bruto' : '✅ Processado'}
-                            </span>
+                            {config.detectedType === 'holerite' ? (
+                              <span
+                                className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-xs font-medium min-w-[100px]"
+                                style={{ background: 'var(--color-1)', color: 'var(--on-color-1)' }}
+                              >
+                                Holerite
+                              </span>
+                            ) : config.detectedType === 'informe' ? (
+                              <span
+                                className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-xs font-medium min-w-[100px]"
+                                style={{ background: 'var(--color-2)', color: 'var(--on-color-2)' }}
+                              >
+                                Informe
+                              </span>
+                            ) : config.detectedType === 'pdf_unknown' ? (
+                              <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-xs font-medium min-w-[100px] bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">
+                                Não reconhecido
+                              </span>
+                            ) : config.detectedType === 'fatura_bruta' ? (
+                              <span
+                                className={`inline-flex items-center justify-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium min-w-[100px] ${badge.className}`}
+                                title={[
+                                  badge.title,
+                                  config.cardLast4 ? `final ${config.cardLast4}` : null
+                                ].filter(Boolean).join(' • ')}
+                              >
+                                {badge.text}
+                              </span>
+                            ) : (
+                              <span className={`inline-flex items-center justify-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium min-w-[100px] ${
+                                config.isRaw
+                                  ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
+                                  : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                              }`}>
+                                {config.isRaw ? '📄 Bruto' : '✅ Processado'}
+                              </span>
+                            )}
                           </td>
 
                           {/* Importar Como (ícones) */}
                           <td className="px-3 py-2">
                             <div className="flex justify-center">
-                              {config.detectedType === 'beneficio_csv' || config.detectedType === 'beneficio_xlsx' ? (
+                              {isPayrollType(config.detectedType) ? (
+                                <Briefcase
+                                  size={22}
+                                  style={{ color: config.detectedType === 'holerite' ? 'var(--color-1)' : 'var(--color-2)' }}
+                                  className="cursor-default"
+                                  title={config.detectedType === 'holerite' ? 'Holerite' : 'Informe de rendimento'}
+                                />
+                              ) : config.detectedType === 'pdf_unknown' ? (
+                                <AlertTriangle
+                                  size={22}
+                                  style={{ color: 'var(--color-danger)' }}
+                                  className="cursor-default"
+                                  title="PDF não reconhecido"
+                                />
+                              ) : config.detectedType === 'beneficio_csv' || config.detectedType === 'beneficio_xlsx' ? (
                                 // Benefícios (CSV bruto ou XLSX processado) = ícone Gift
                                 <Gift
                                   size={22}
@@ -910,7 +1155,7 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
                                   size={22}
                                   style={{ color: 'var(--color-2)' }}
                                   className="cursor-default"
-                                  title="Fatura de Cartão"
+                                  title={badge.title}
                                 />
                               ) : config.detectedType === 'extrato_bruto' || config.detectedType === 'extrato_processado' ? (
                                 // XLSX Extrato = ícone Landmark
@@ -973,7 +1218,7 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
                                     ))
                                   }}
                                   disabled={isProcessing}
-                                  className="w-4 h-4 text-amber-600 rounded focus:ring-2 focus:ring-amber-500 cursor-pointer"
+                                  className={`${cadastroAccentControlCls} h-4 w-4 cursor-pointer rounded border-gray-300`}
                                   title={config.forceRetag ? 'Forçar re-tageamento (usar mapeamentos)' : 'Manter tags do arquivo'}
                                 />
                               ) : (
@@ -983,16 +1228,24 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
                           )}
 
                           {/* Configuração (Ano/Mês para PDFs, Cartão para Benefícios) */}
-                          {(hasPDFs || fileConfigs.some(f => f.detectedType === 'beneficio_csv')) && (
+                          {hasConfigColumn && (
                             <td className="px-3 py-2">
-                              {config.needsYearMonth ? (
+                              {isPayrollType(config.detectedType) ? (
+                                <p className="truncate text-xs text-gray-600 dark:text-gray-300" title={config.payrollPreview}>
+                                  {config.payrollPreview || '—'}
+                                </p>
+                              ) : config.detectedType === 'pdf_unknown' ? (
+                                <p className="truncate text-xs text-red-600 dark:text-red-400" title={config.detectionError}>
+                                  {config.detectionError || 'PDF não reconhecido'}
+                                </p>
+                              ) : config.needsYearMonth ? (
                                 // PDFs: Ano/Mês
                                 <div className="flex gap-1 justify-center">
                                   <select
                                     value={config.year || ''}
                                     onChange={(e) => handleYearMonthChange(index, 'year', e.target.value)}
                                     disabled={isProcessing}
-                                    className="px-1.5 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50 w-16"
+                                    className={`${cadastroFieldCls} w-16 px-1.5 py-0.5 text-xs disabled:opacity-50`}
                                   >
                                     <option value="">Ano</option>
                                     {years.map(year => (
@@ -1003,7 +1256,7 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
                                     value={config.month || ''}
                                     onChange={(e) => handleYearMonthChange(index, 'month', e.target.value)}
                                     disabled={isProcessing}
-                                    className="px-1.5 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50 w-14"
+                                    className={`${cadastroFieldCls} w-14 px-1.5 py-0.5 text-xs disabled:opacity-50`}
                                   >
                                     <option value="">Mês</option>
                                     {months.map(month => (
@@ -1018,7 +1271,7 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
                                     value={config.credit_card_id || ''}
                                     onChange={(e) => handleCardChange(index, parseInt(e.target.value))}
                                     disabled={isProcessing}
-                                    className="px-1.5 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
+                                    className={`${cadastroFieldCls} px-1.5 py-0.5 text-xs disabled:opacity-50`}
                                     style={{ width: 'calc(4rem + 0.25rem + 3.5rem)' }}
                                   >
                                     <option value="">Selecione...</option>
@@ -1054,25 +1307,22 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
                   </tbody>
                 </table>
               </div>
-            </div>
+            </CadastroFormSection>
           )}
 
           {/* Resultados - só exibe quando não há conflitos pendentes */}
           {results.length > 0 && conflicts.length === 0 && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-                  Resultados da Importação
-                </h3>
-                <div className="flex items-center gap-2">
-                  {totalUnmapped > 0 && (
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-medium rounded-full">
-                      <ClipboardCheck className="w-3.5 h-3.5" />
-                      {totalUnmapped} pendente(s)
-                    </span>
-                  )}
-                </div>
-              </div>
+            <CadastroFormSection
+              title="Resultados da Importação"
+              icon={<ClipboardCheck size={14} />}
+              trailing={
+                totalUnmapped > 0 ? (
+                  <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                    {totalUnmapped} pendente(s)
+                  </span>
+                ) : undefined
+              }
+            >
 
               <div className="space-y-3">
                 {results.map((result, index) => (
@@ -1125,7 +1375,9 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
                               {result.created === 0 && (result.duplicates ?? 0) === 0 && (result.conflicts_count ?? 0) === 0 && (
                                 <span className="flex items-center gap-1">
                                   <span className="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
-                                  Nenhum lançamento novo
+                                  {result.emptyInvoice
+                                    ? 'Fatura sem compras para importar'
+                                    : 'Nenhum lançamento novo'}
                                 </span>
                               )}
                               {result.conversionTxtUrl && (
@@ -1227,70 +1479,45 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
                   </div>
                 </div>
               )}
-            </div>
+            </CadastroFormSection>
           )}
-
-          {/* Botões de Ação */}
-          <div className={`flex flex-col gap-3 ${results.length > 0 ? 'mt-6' : ''}`}>
-            {/* Opção de Tracing (Debug) - só mostra antes do processamento */}
-            {results.length === 0 && fileConfigs.length > 0 && (
-              <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={enableTracing}
-                  onChange={(e) => setEnableTracing(e.target.checked)}
-                  disabled={isProcessing || isDetecting}
-                  className="w-3.5 h-3.5 rounded border-gray-300 text-color-primary focus:ring-color-primary disabled:opacity-50"
-                />
-                <span>Gerar log de debug (JSON com detalhes de cada linha)</span>
-              </label>
-            )}
-
-            <div className="flex gap-3">
-              {results.length > 0 ? (
-                // Após processamento - apenas botão Concluir
-                <button
-                  onClick={handleClose}
-                  className="w-full px-4 py-2 text-white rounded-lg hover:opacity-90 transition-opacity font-medium"
-                  style={{ backgroundColor: 'var(--status-info)' }}
-                >
-                  Concluir
-                </button>
-              ) : (
-                // Antes do processamento
-                <>
-                  <button
-                    onClick={handleClose}
+        </CadastroModalBody>
+        <CadastroModalFooter
+          onClose={handleClose}
+          onSave={results.length > 0 ? undefined : handleUpload}
+          hideSave={results.length > 0}
+          closeLabel={results.length > 0 ? 'Concluir' : 'Cancelar'}
+          saveLabel={isProcessing ? 'Processando...' : `Importar${fileConfigs.length > 0 ? ` (${fileConfigs.length})` : ''}`}
+          saving={isProcessing}
+          disabled={fileConfigs.length === 0 || isDetecting || hasUnrecognized}
+          saveIcon={isProcessing ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+          leading={
+            results.length === 0 && fileConfigs.length > 0 ? (
+              <div className="space-y-1">
+                <label className={`${cadastroOptionLabelCls} text-xs text-gray-600 dark:text-gray-400`}>
+                  <input
+                    type="checkbox"
+                    checked={enableTracing}
+                    onChange={(e) => setEnableTracing(e.target.checked)}
                     disabled={isProcessing || isDetecting}
-                    className="flex-1 px-4 py-2 text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
-                    style={{ backgroundColor: 'var(--crud-cancel)' }}
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    onClick={handleUpload}
-                    disabled={fileConfigs.length === 0 || isProcessing || isDetecting}
-                    className="flex-1 px-4 py-2 text-white rounded-lg hover:opacity-90 transition-opacity font-medium disabled:opacity-50 flex items-center justify-center gap-2"
-                    style={{ backgroundColor: 'var(--crud-create)' }}
-                  >
-                    {isProcessing ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Processando...
-                      </>
-                    ) : (
-                      <>
-                        <Upload className="w-4 h-4" />
-                        Importar {fileConfigs.length > 0 && `(${fileConfigs.length})`}
-                      </>
-                    )}
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+                    className={`${cadastroAccentControlCls} h-3.5 w-3.5 rounded border-gray-300 disabled:opacity-50`}
+                  />
+                  Gerar log de debug (JSON com detalhes de cada linha)
+                </label>
+                {hasUnrecognized ? (
+                  <p className="text-xs text-red-600 dark:text-red-400">
+                    Remova os PDFs não reconhecidos para habilitar a importação.
+                  </p>
+                ) : null}
+              </div>
+            ) : hasUnrecognized && results.length === 0 ? (
+              <p className="text-xs text-red-600 dark:text-red-400">
+                Remova os PDFs não reconhecidos para habilitar a importação.
+              </p>
+            ) : null
+          }
+        />
+      </CadastroModalShell>
 
       {/* Modal de Revisão de Conflitos */}
       <ConflictReviewModal

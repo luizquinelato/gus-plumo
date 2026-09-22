@@ -16,6 +16,7 @@ from sqlalchemy import func
 from app.models import CreditCardInvoice, Cartao, Subtag, Tag, TransactionMapping
 from app.utils.card_helper import CardHelper
 from app.utils.mapping_helper import MappingHelper
+from app.converters.fatura_pdf import normalize_invoice_issuer
 from app.database import DATABASE_URL
 
 logger = logging.getLogger(__name__)
@@ -131,6 +132,19 @@ class FaturaService:
             return True, parcela_paga, total_parcelas
 
         return False, None, None
+
+    @staticmethod
+    def issuer_from_row(row: Dict[str, Any]) -> Optional[str]:
+        """Lê o emissor da linha importada. None se a coluna não veio no arquivo."""
+        raw = row.get("Emissor")
+        if raw is None or (isinstance(raw, float) and pd.isna(raw)):
+            raw = row.get("issuer")
+        if raw is None or (isinstance(raw, float) and pd.isna(raw)):
+            return None
+        text = str(raw).strip()
+        if text.lower() in ("", "nan", "none"):
+            return None
+        return normalize_invoice_issuer(text)
 
     @staticmethod
     def buscar_cartao_id(db: Session, numero: str, tenant_id: int = 1) -> Optional[int]:
@@ -636,7 +650,6 @@ class FaturaService:
             }
         logger.info(f"   ✅ {len(existing_keys_query)} registros existentes carregados")
 
-        batch_keys = {}
         consumed_ids = set()
 
         # Cache reverso de subtags para exibir nomes nos conflitos
@@ -704,6 +717,7 @@ class FaturaService:
                 # Extrai informações de parcelas da descrição original
                 descricao_original = row.get('Descrição', '')
                 parcelado, parcela_atual, total_parcelas = FaturaService.extrair_parcelas(descricao_original)
+                issuer = FaturaService.issuer_from_row(row)
 
                 # Converte data (considerando parcelas e mês da fatura)
                 try:
@@ -731,18 +745,12 @@ class FaturaService:
 
                 existing_id = None
 
-                # 1) Match exato no lote atual (mesma linha repetida no PDF)
-                batch_indices = batch_keys.get(key, [])
-                if batch_indices:
-                    existing_id = f"batch:{batch_indices[0]}"
+                # 1) Match exato no banco (valor faz parte da chave — duas compras iguais no mesmo dia são distintas)
+                available_ids = [i for i in existing_keys.get(key, []) if i not in consumed_ids]
+                if available_ids:
+                    existing_id = available_ids[0]
 
-                # 2) Match exato no banco
-                if not existing_id:
-                    available_ids = [i for i in existing_keys.get(key, []) if i not in consumed_ids]
-                    if available_ids:
-                        existing_id = available_ids[0]
-
-                # 3) Fallback: mesma descrição/data, parcelas ausentes no banco — exige match de valor
+                # 2) Fallback: mesma descrição/data, parcelas ausentes no banco — exige match de valor
                 if not existing_id:
                     available_ids = [i for i in existing_keys_base.get(key_base, []) if i not in consumed_ids]
                     for candidate_id in available_ids:
@@ -750,10 +758,6 @@ class FaturaService:
                         if abs(candidate_amount - valor_invertido) < 0.005:
                             existing_id = candidate_id
                             break
-
-                if isinstance(existing_id, str) and existing_id.startswith('batch:'):
-                    # Duplicata dentro do mesmo arquivo - ignora linha repetida
-                    continue
 
                 if existing_id:
                     # Registro duplicado - verifica se há conflitos de tag/subtag
@@ -813,14 +817,21 @@ class FaturaService:
                         }
 
                         conflicts.append(conflict_record)
-                        # Não conta como atualizado pois precisa de resolução
+                        # Tag espera resolução, mas o emissor da fatura pode ser atualizado agora
+                        if issuer:
+                            records_to_update.append({
+                                'id': existing_id,
+                                'issuer': issuer,
+                            })
+                            linhas_atualizadas += 1
                     else:
                         # Sem conflito - atualiza normalmente
                         records_to_update.append({
                             'id': existing_id,
                             'subtag_id': subtag_id,
                             'current_installment': parcela_atual,
-                            'total_installments': total_parcelas
+                            'total_installments': total_parcelas,
+                            **({'issuer': issuer} if issuer else {}),
                         })
                         consumed_ids.add(existing_id)
                         linhas_atualizadas += 1
@@ -859,13 +870,10 @@ class FaturaService:
                         'expense_sharing_id': final_expense_sharing_id,
                         'account_id': adjustment_config['account_id'],
                         'ownership_percentage': final_ownership_percentage,
+                        'issuer': issuer or 'btg',
                         'created_by': user_id  # ✅ Campo obrigatório do BaseEntity
                     }
                     records_to_insert.append(insert_record)
-                    batch_idx = len(records_to_insert) - 1
-                    if key not in batch_keys:
-                        batch_keys[key] = []
-                    batch_keys[key].append(batch_idx)
                     linhas_salvas += 1
 
                     # Adiciona aos registros não mapeados se necessário

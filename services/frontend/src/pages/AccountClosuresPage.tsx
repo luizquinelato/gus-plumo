@@ -1,0 +1,2026 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import axios from 'axios'
+import Sidebar from '../components/Sidebar'
+import {
+  CadastroFilterField,
+  CadastroListPageBody,
+  CadastroListPageFilterCard,
+  CadastroListPageHero,
+  CadastroListPageShell,
+  CadastroListPageTabs,
+  cadastroFilterFieldCls,
+  cadastroRowIconBtnCls,
+  cadastroRowIconDangerCls,
+  listPageTableRowHoverCls,
+  listPageTableTdCls,
+} from '../components/CadastroListPageLayout'
+import {
+  CadastroFieldLabel,
+  CadastroFormSection,
+  CadastroModalBody,
+  CadastroModalFieldsGrid,
+  CadastroModalFieldsRow,
+  CadastroModalFooter,
+  CadastroModalHeader,
+  CadastroModalShell,
+  cadastroAccentControlCls,
+  cadastroFieldCls,
+} from '../components/CadastroFormLayout'
+import { ListPageTable } from '../components/ListPageTable'
+import {
+  LIST_TABLE_INDEX_COL_PX,
+  ListTableIndexCell,
+  ListTableIndexHeader,
+  ListTableLeadingCols,
+  ListTableSpacerCell,
+  ListTableSpacerCol,
+  ListTableSpacerHeader,
+  ListTableStaticHeader,
+} from '../components/ListTableSelectColumns'
+import Badge from '../components/Badge'
+import LoadingSpinner from '../components/LoadingSpinner'
+import SharedAccountDisplay from '../components/SharedAccountDisplay'
+import Toast from '../components/Toast'
+import FloatingFooterBar from '../components/FloatingFooterBar'
+import { useConfirm } from '../hooks/useConfirm'
+import { useEscapeKey } from '../hooks/useEscapeKey'
+import { formatCurrency } from '../utils/currency'
+import { formatDateBR } from '../utils/dateUtils'
+import { badgeVariantForColumnRole } from '../utils/badgeSurfaces'
+import {
+  bulkCloseAccountPeriods,
+  closeAccountPeriod,
+  listAccountPeriodClosureOptions,
+  listAccountPeriodClosures,
+  previewAccountPeriod,
+  reopenAccountPeriod,
+} from '../services/accountPeriodClosuresApi'
+import type {
+  AccountPeriodFilterOptions,
+  AccountPeriodItem,
+  AccountPeriodItemSource,
+  AccountPeriodMonth,
+  AccountPeriodSharedPartner,
+  AccountPeriodStatus,
+  AccountPeriodYearResponse,
+} from '../types/accountPeriodClosure'
+import {
+  AlertCircle,
+  AlertTriangle,
+  ArrowDownCircle,
+  ArrowLeftRight,
+  ArrowUp,
+  ArrowUpCircle,
+  Calendar,
+  CheckSquare,
+  CreditCard,
+  Eye,
+  Filter,
+  Gift,
+  Landmark,
+  Lock,
+  MinusSquare,
+  Scale,
+  Square,
+  Unlock,
+  Users,
+  X,
+} from 'lucide-react'
+
+type ClosureTab = 'open' | 'closed'
+
+interface ToastState {
+  show: boolean
+  message: string
+  type: 'success' | 'error' | 'warning'
+}
+
+const MONTH_LABELS = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+]
+
+const monthKey = (item: Pick<AccountPeriodMonth, 'year' | 'month'>) =>
+  `${item.year}-${String(item.month).padStart(2, '0')}`
+
+const monthTitle = (item: Pick<AccountPeriodMonth, 'year' | 'month'>) =>
+  `${MONTH_LABELS[item.month - 1]} ${item.year}`
+
+const lastDayLabel = (year: number, month: number) => {
+  const last = new Date(year, month, 0).getDate()
+  return formatDateBR(`${year}-${String(month).padStart(2, '0')}-${String(last).padStart(2, '0')}`)
+}
+
+const MAX_ADJUSTMENT = 99_999_999.99
+
+const formatAmountMask = (cents: string): string => {
+  const num = parseInt(cents || '0', 10)
+  return (num / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+const amountFromCents = (cents: string, negative: boolean) => {
+  const abs = parseInt(cents || '0', 10) / 100
+  if (!Number.isFinite(abs) || abs === 0) return 0
+  return negative ? -abs : abs
+}
+
+const apiErrorMessage = (error: unknown, fallback: string) => {
+  if (axios.isAxiosError(error)) {
+    const detail = error.response?.data?.detail
+    if (typeof detail === 'string' && detail.trim()) return detail
+  }
+  return fallback
+}
+
+const statusLabel: Record<AccountPeriodStatus, string> = {
+  closed: 'Fechado',
+  can_close: 'Pronto para fechar',
+  blocked: 'Aguardando anterior',
+  pending_shared: 'Aguardando quitação',
+  current: 'Mês corrente',
+  future: 'Futuro',
+  no_data: 'Sem extrato',
+}
+
+const statusTone = (status: AccountPeriodStatus): 'success' | 'info' | 'warning' | 'neutral' => {
+  if (status === 'closed') return 'success'
+  if (status === 'can_close') return 'info'
+  if (status === 'blocked' || status === 'pending_shared') return 'warning'
+  return 'neutral'
+}
+
+const moneyStyle = (value: number, invert = false) => ({
+  color: (invert ? -value : value) >= 0 ? 'var(--color-success)' : 'var(--color-danger)',
+})
+
+const hasOfficialOpening = (item: Pick<AccountPeriodMonth, 'status'>) =>
+  item.status === 'closed' || item.status === 'can_close' || item.status === 'blocked' || item.status === 'pending_shared' || item.status === 'current'
+
+const emptySplit = { entries: 0, exits: 0 }
+
+const splitOf = (item?: Pick<AccountPeriodMonth, 'split_account' | 'split_shared'> | null) => ({
+  account: item?.split_account ?? emptySplit,
+  shared: item?.split_shared ?? emptySplit,
+})
+
+const sumSplits = (months: AccountPeriodMonth[]) =>
+  months.reduce(
+    (acc, item) => {
+      const split = splitOf(item)
+      return {
+        accountEntries: acc.accountEntries + split.account.entries,
+        sharedEntries: acc.sharedEntries + split.shared.entries,
+        accountExits: acc.accountExits + split.account.exits,
+        sharedExits: acc.sharedExits + split.shared.exits,
+      }
+    },
+    { accountEntries: 0, sharedEntries: 0, accountExits: 0, sharedExits: 0 },
+  )
+
+function FlowSplitLines({
+  total,
+  account,
+  shared,
+  invert = false,
+  compact = false,
+}: {
+  total: number
+  account: number
+  shared: number
+  invert?: boolean
+  compact?: boolean
+}) {
+  return (
+    <div className={compact ? 'space-y-0.5' : 'space-y-1'}>
+      <span className={`block font-semibold tabular-nums ${compact ? 'text-sm' : ''}`} style={moneyStyle(total, invert)}>
+        {formatCurrency(total)}
+      </span>
+      <p className="text-[10px] leading-tight text-gray-500 dark:text-gray-400">
+        Conta <span className="tabular-nums">{formatCurrency(account)}</span>
+      </p>
+      <p className="text-[10px] leading-tight text-gray-500 dark:text-gray-400">
+        Comp. <span className="tabular-nums">{formatCurrency(shared)}</span>
+      </p>
+    </div>
+  )
+}
+
+const closureTableHeadCls =
+  'bg-gray-100 dark:bg-gray-800/80 [&_th]:border-b-2 [&_th]:border-gray-200 dark:[&_th]:border-gray-600'
+const closureTableThLeftCls =
+  'px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300'
+const closureTableThRightCls =
+  'px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300'
+const closureTableTdCls = 'border-b border-gray-200 px-3 py-2 dark:border-gray-600'
+const closureTableFootCls =
+  'border-t-2 border-gray-200 bg-gray-50 dark:border-gray-600 dark:bg-gray-800/50'
+
+function CaixaTotals({ item }: { item: AccountPeriodMonth }) {
+  return (
+    <div className="grid grid-cols-2 divide-x divide-y divide-gray-300 md:grid-cols-4 md:divide-y-0 dark:divide-gray-600">
+      <div className="px-3 py-3">
+        <p className="text-xs text-gray-500">Saldo anterior</p>
+        {hasOfficialOpening(item) ? (
+          <p className="text-base font-bold tabular-nums" style={moneyStyle(item.opening_balance)}>
+            {formatCurrency(item.opening_balance)}
+          </p>
+        ) : (
+          <p className="text-base font-bold tabular-nums text-gray-400">—</p>
+        )}
+      </div>
+      <div className="px-3 py-3">
+        <p className="text-xs text-gray-500">Entradas</p>
+        <p className="text-base font-bold tabular-nums" style={moneyStyle(item.entries)}>
+          {formatCurrency(item.entries)}
+        </p>
+      </div>
+      <div className="px-3 py-3">
+        <p className="text-xs text-gray-500">Saídas</p>
+        <p className="text-base font-bold tabular-nums" style={moneyStyle(item.exits, true)}>
+          {formatCurrency(item.exits)}
+        </p>
+      </div>
+      <div className="px-3 py-3">
+        <p className="text-xs text-gray-500">Resultado do caixa</p>
+        <p className="text-base font-bold tabular-nums" style={moneyStyle(item.closing_balance)}>
+          {formatCurrency(item.closing_balance)}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function SplitBreakdownTable({ item }: { item: AccountPeriodMonth }) {
+  const split = splitOf(item)
+  const rows = [
+    { label: 'Entradas', account: split.account.entries, shared: split.shared.entries, invert: false },
+    { label: 'Saídas', account: split.account.exits, shared: split.shared.exits, invert: true },
+  ]
+  const resultAccount = split.account.entries - split.account.exits
+  const resultShared = split.shared.entries - split.shared.exits
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className={closureTableHeadCls}>
+          <tr>
+            <th className={closureTableThLeftCls}>Fluxo</th>
+            <th className={closureTableThRightCls}>
+              <span className="inline-flex items-center justify-end gap-1">
+                <Landmark size={12} />
+                Conta
+              </span>
+            </th>
+            <th className={closureTableThRightCls}>
+              <span className="inline-flex items-center justify-end gap-1">
+                <Users size={12} />
+                Compartilhado
+              </span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.label}>
+              <td className={`${closureTableTdCls} font-medium text-gray-700 dark:text-gray-200`}>{row.label}</td>
+              <td className={`${closureTableTdCls} text-right font-semibold tabular-nums`} style={moneyStyle(row.account, row.invert)}>
+                {formatCurrency(row.account)}
+              </td>
+              <td className={`${closureTableTdCls} text-right font-semibold tabular-nums`} style={moneyStyle(row.shared, row.invert)}>
+                {formatCurrency(row.shared)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot className={closureTableFootCls}>
+          <tr>
+            <td className="px-3 py-2.5 font-semibold text-gray-800 dark:text-gray-100">Total</td>
+            <td className="px-3 py-2.5 text-right font-semibold tabular-nums" style={moneyStyle(resultAccount)}>
+              {formatCurrency(resultAccount)}
+            </td>
+            <td className="px-3 py-2.5 text-right font-semibold tabular-nums" style={moneyStyle(resultShared)}>
+              {formatCurrency(resultShared)}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  )
+}
+
+function mergeSharedByAccount(months: AccountPeriodMonth[]): AccountPeriodSharedPartner[] {
+  const byKey = new Map<string, AccountPeriodSharedPartner>()
+  for (const month of months) {
+    for (const row of month.shared_by_account ?? []) {
+      const key = row.shared_partner_id != null
+        ? `id:${row.shared_partner_id}`
+        : `name:${row.shared_partner_name}`
+      const current = byKey.get(key)
+      if (current) {
+        current.entries += Number(row.entries)
+        current.exits += Number(row.exits)
+        continue
+      }
+      byKey.set(key, {
+        ...row,
+        entries: Number(row.entries),
+        exits: Number(row.exits),
+      })
+    }
+  }
+  return [...byKey.values()].sort((left, right) =>
+    left.shared_partner_name.localeCompare(right.shared_partner_name, 'pt-BR'),
+  )
+}
+
+function SharedByAccountTable({ rows }: { rows: AccountPeriodSharedPartner[] }) {
+  if (rows.length === 0) {
+    return <p className="px-3 py-3 text-sm text-gray-500">Nenhum valor compartilhado neste período.</p>
+  }
+  const totals = rows.reduce(
+    (acc, row) => ({
+      entries: acc.entries + Number(row.entries),
+      exits: acc.exits + Number(row.exits),
+    }),
+    { entries: 0, exits: 0 },
+  )
+  const resultTotal = totals.entries - totals.exits
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className={closureTableHeadCls}>
+          <tr>
+            <th className={closureTableThLeftCls}>Conta</th>
+            <th className={closureTableThRightCls}>Entradas</th>
+            <th className={closureTableThRightCls}>Saídas</th>
+            <th className={closureTableThRightCls}>Resultado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const result = Number(row.entries) - Number(row.exits)
+            return (
+              <tr key={row.shared_partner_id ?? row.shared_partner_name}>
+                <td className={closureTableTdCls}>
+                  <SharedAccountDisplay
+                    compact
+                    account={{
+                      id: row.shared_partner_id ?? 0,
+                      name: row.shared_partner_name,
+                      bank: row.shared_partner_bank ? { name: row.shared_partner_bank } : null,
+                      agency: row.shared_partner_agency,
+                      account_number: row.shared_partner_account_number,
+                    }}
+                  />
+                </td>
+                <td className={`${closureTableTdCls} text-right font-semibold tabular-nums`} style={moneyStyle(row.entries)}>
+                  {formatCurrency(row.entries)}
+                </td>
+                <td className={`${closureTableTdCls} text-right font-semibold tabular-nums`} style={moneyStyle(row.exits, true)}>
+                  {formatCurrency(row.exits)}
+                </td>
+                <td className={`${closureTableTdCls} text-right font-semibold tabular-nums`} style={moneyStyle(result)}>
+                  {formatCurrency(result)}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+        <tfoot className={closureTableFootCls}>
+          <tr>
+            <td className="px-3 py-2.5 font-semibold text-gray-800 dark:text-gray-100">Total</td>
+            <td className="px-3 py-2.5 text-right font-semibold tabular-nums" style={moneyStyle(totals.entries)}>
+              {formatCurrency(totals.entries)}
+            </td>
+            <td className="px-3 py-2.5 text-right font-semibold tabular-nums" style={moneyStyle(totals.exits, true)}>
+              {formatCurrency(totals.exits)}
+            </td>
+            <td className="px-3 py-2.5 text-right font-semibold tabular-nums" style={moneyStyle(resultTotal)}>
+              {formatCurrency(resultTotal)}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  )
+}
+
+function comparePeriodItems(left: AccountPeriodItem, right: AccountPeriodItem) {
+  const byDate = right.date.localeCompare(left.date)
+  if (byDate !== 0) return byDate
+  return String(right.id).localeCompare(String(left.id), undefined, { numeric: true })
+}
+
+const isCashItem = (item: AccountPeriodItem) =>
+  item.source !== 'card' && item.source !== 'settlement'
+
+type ItemColumnTotals = {
+  caixa: number
+  account: number
+  shared: number
+  caixaEntries: number
+  caixaExits: number
+  accountEntries: number
+  accountExits: number
+  sharedEntries: number
+  sharedExits: number
+}
+
+const emptyColumnTotals = (): ItemColumnTotals => ({
+  caixa: 0,
+  account: 0,
+  shared: 0,
+  caixaEntries: 0,
+  caixaExits: 0,
+  accountEntries: 0,
+  accountExits: 0,
+  sharedEntries: 0,
+  sharedExits: 0,
+})
+
+function addSignedFlow(totals: ItemColumnTotals, field: 'caixa' | 'account' | 'shared', value: number) {
+  totals[field] += value
+  if (value > 0) {
+    if (field === 'caixa') totals.caixaEntries += value
+    else if (field === 'account') totals.accountEntries += value
+    else totals.sharedEntries += value
+  } else if (value < 0) {
+    const abs = Math.abs(value)
+    if (field === 'caixa') totals.caixaExits += abs
+    else if (field === 'account') totals.accountExits += abs
+    else totals.sharedExits += abs
+  }
+}
+
+function itemColumnAmounts(row: AccountPeriodItem): { caixa: number; account: number; shared: number } {
+  const amount = Number(row.amount)
+  return {
+    caixa: isCashItem(row) ? amount : 0,
+    account: Number(row.amount_account ?? (isCashItem(row) ? amount : 0)),
+    shared: Number(row.amount_shared ?? 0),
+  }
+}
+
+function sumItemColumns(rows: AccountPeriodItem[]): ItemColumnTotals {
+  return rows.reduce(
+    (acc, row) => {
+      const cols = itemColumnAmounts(row)
+      addSignedFlow(acc, 'caixa', cols.caixa)
+      addSignedFlow(acc, 'account', cols.account)
+      addSignedFlow(acc, 'shared', cols.shared)
+      return acc
+    },
+    emptyColumnTotals(),
+  )
+}
+
+function itemFlowAmount(row: AccountPeriodItem): number {
+  const cols = itemColumnAmounts(row)
+  if (cols.caixa !== 0) return cols.caixa
+  const rest = cols.account + cols.shared
+  if (rest !== 0) return rest
+  return Number(row.amount) || 0
+}
+
+function splitItemsByFlow(items: AccountPeriodItem[]) {
+  const receitas: AccountPeriodItem[] = []
+  const despesas: AccountPeriodItem[] = []
+  for (const item of items) {
+    if (itemFlowAmount(item) >= 0) receitas.push(item)
+    else despesas.push(item)
+  }
+  return { receitas, despesas }
+}
+
+function PeriodItemsFlowTable({ items }: { items: AccountPeriodItem[] }) {
+  const totals = sumItemColumns(items)
+  return (
+    <ListPageTable
+      framed={false}
+      colsRest={
+        <>
+          <ListTableSpacerCol />
+          <col style={{ width: 56, minWidth: 56 }} />
+          <col style={{ width: 48, minWidth: 48 }} />
+          <col style={{ width: 110, minWidth: 110 }} />
+          <col />
+          <col style={{ width: 128, minWidth: 128 }} />
+          <col style={{ width: 128, minWidth: 128 }} />
+          <col style={{ width: 148, minWidth: 148 }} />
+        </>
+      }
+      head={
+        <tr>
+          <ListTableIndexHeader />
+          <ListTableSpacerHeader />
+          <ListTableStaticHeader label="Fonte" />
+          <ListTableStaticHeader label="Emp." className="text-center" />
+          <ListTableStaticHeader label="Data" />
+          <ListTableStaticHeader label="Descrição" />
+          <ListTableStaticHeader label="Caixa" className="text-right" />
+          <ListTableStaticHeader label="Conta" className="text-right" />
+          <ListTableStaticHeader label="Compartilhado" className="text-right" />
+        </tr>
+      }
+    >
+      {items.length === 0 ? (
+        <tr>
+          <td colSpan={9} className={`${listPageTableTdCls} py-4 text-center text-sm text-gray-500`}>
+            Nenhum lançamento.
+          </td>
+        </tr>
+      ) : items.map((row, index) => {
+        const cols = itemColumnAmounts(row)
+        const caixaAmount = isCashItem(row) ? Number(row.amount) : null
+        return (
+          <tr key={`${row.source ?? 'bank'}-${row.id}`} className={`${listPageTableRowHoverCls} [&>td]:border-b [&>td]:border-gray-200 dark:[&>td]:border-gray-700`}>
+            <ListTableIndexCell index={index + 1} />
+            <ListTableSpacerCell />
+            <td className={listPageTableTdCls}>
+              <ItemSourceSymbols item={row} />
+            </td>
+            <td
+              className={`${listPageTableTdCls} text-center font-semibold lowercase text-gray-700 dark:text-gray-200`}
+              title={row.kind === 'loan' ? 'Pagamento de empréstimo' : undefined}
+            >
+              {row.kind === 'loan' ? 'x' : ''}
+            </td>
+            <td className={`${listPageTableTdCls} whitespace-nowrap`}>{formatDateBR(row.date)}</td>
+            <td className={listPageTableTdCls}>
+              <span className="inline-flex items-center gap-1.5">
+                {row.description || '—'}
+                {cols.shared !== 0 ? (
+                  <Users size={14} className="shrink-0 text-gray-400" aria-label="Compartilhado" />
+                ) : null}
+              </span>
+            </td>
+            <td
+              className={`${listPageTableTdCls} text-right font-semibold tabular-nums`}
+              style={caixaAmount == null ? undefined : moneyStyle(caixaAmount)}
+            >
+              {caixaAmount == null ? <span className="text-gray-400">—</span> : formatCurrency(caixaAmount)}
+            </td>
+            <td
+              className={`${listPageTableTdCls} text-right font-semibold tabular-nums`}
+              style={moneyStyle(cols.account)}
+            >
+              {cols.account === 0 ? <span className="text-gray-400">—</span> : formatCurrency(cols.account)}
+            </td>
+            <td
+              className={`${listPageTableTdCls} text-right font-semibold tabular-nums`}
+              style={moneyStyle(cols.shared)}
+            >
+              {cols.shared === 0 ? <span className="text-gray-400">—</span> : formatCurrency(cols.shared)}
+            </td>
+          </tr>
+        )
+      })}
+      <tr className={`${closureTableFootCls} [&>td]:border-t-2 [&>td]:border-gray-200 dark:[&>td]:border-gray-600`}>
+        <td className={listPageTableTdCls} />
+        <ListTableSpacerCell />
+        <td className={`${listPageTableTdCls} font-semibold text-gray-800 dark:text-gray-100`} colSpan={4}>
+          Total
+        </td>
+        <td className={`${listPageTableTdCls} text-right font-semibold tabular-nums`} style={moneyStyle(totals.caixa)}>
+          {formatCurrency(totals.caixa)}
+        </td>
+        <td className={`${listPageTableTdCls} text-right font-semibold tabular-nums`} style={moneyStyle(totals.account)}>
+          {formatCurrency(totals.account)}
+        </td>
+        <td className={`${listPageTableTdCls} text-right font-semibold tabular-nums`} style={moneyStyle(totals.shared)}>
+          {formatCurrency(totals.shared)}
+        </td>
+      </tr>
+    </ListPageTable>
+  )
+}
+
+function isSharedItem(item: AccountPeriodItem) {
+  return Boolean(
+    item.shared_partner_id
+    || item.shared_partner_name
+    || item.expense_sharing_id
+    || Number(item.amount_shared ?? 0) !== 0,
+  )
+}
+
+function itemGroupKey(item: AccountPeriodItem) {
+  if (!isSharedItem(item)) return 'own'
+  if (item.shared_partner_id != null) return `partner:${item.shared_partner_id}`
+  if (item.expense_sharing_id != null) return `sharing:${item.expense_sharing_id}`
+  const name = (item.shared_partner_name || '').trim()
+  return name ? `name:${name}` : 'shared:unknown'
+}
+
+type PeriodItemGroup = {
+  key: string
+  kind: 'shared' | 'own'
+  partner: AccountPeriodSharedPartner | null
+  items: AccountPeriodItem[]
+  totals: ItemColumnTotals
+}
+
+function groupAccountLabel(group: PeriodItemGroup) {
+  if (group.kind === 'own') return 'Conta própria'
+  return group.partner?.shared_partner_name ?? 'Conta compartilhada'
+}
+
+function partnerFromItem(
+  item: AccountPeriodItem,
+  partners: AccountPeriodSharedPartner[],
+): AccountPeriodSharedPartner {
+  const byId = item.shared_partner_id != null
+    ? partners.find((row) => row.shared_partner_id === item.shared_partner_id)
+    : undefined
+  if (byId) return byId
+  const byName = item.shared_partner_name
+    ? partners.find((row) => row.shared_partner_name === item.shared_partner_name)
+    : undefined
+  if (byName) return byName
+  return {
+    shared_partner_id: item.shared_partner_id ?? null,
+    shared_partner_name: item.shared_partner_name || 'Conta compartilhada',
+    shared_partner_bank: item.shared_partner_bank ?? null,
+    shared_partner_agency: item.shared_partner_agency ?? null,
+    shared_partner_account_number: item.shared_partner_account_number ?? null,
+    entries: 0,
+    exits: 0,
+  }
+}
+
+function groupPeriodItems(
+  items: AccountPeriodItem[],
+  partners: AccountPeriodSharedPartner[],
+): PeriodItemGroup[] {
+  const buckets = new Map<string, PeriodItemGroup>()
+  for (const item of items) {
+    const key = itemGroupKey(item)
+    const kind: 'shared' | 'own' = key === 'own' ? 'own' : 'shared'
+    let group = buckets.get(key)
+    if (!group) {
+      group = {
+        key,
+        kind,
+        partner: kind === 'shared' ? partnerFromItem(item, partners) : null,
+        items: [],
+        totals: emptyColumnTotals(),
+      }
+      buckets.set(key, group)
+    }
+    group.items.push(item)
+  }
+  for (const group of buckets.values()) {
+    group.totals = sumItemColumns(group.items)
+    group.items.sort(comparePeriodItems)
+  }
+  const shared = [...buckets.values()]
+    .filter((group) => group.kind === 'shared')
+    .sort((left, right) =>
+      (left.partner?.shared_partner_name || '').localeCompare(right.partner?.shared_partner_name || '', 'pt-BR'),
+    )
+  const own = buckets.get('own')
+  return own ? [...shared, own] : shared
+}
+
+function OpenSharedNotice({
+  message,
+  onGoToShared,
+}: {
+  message: string
+  onGoToShared: () => void
+}) {
+  return (
+    <div className="mt-5 flex items-start gap-3 rounded-xl border border-[var(--color-warning)]/30 bg-[color-mix(in_srgb,var(--color-warning)_10%,transparent)] p-3 first:mt-0">
+      <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-[var(--color-warning)]" />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-gray-900 dark:text-white">
+          Fechamento compartilhado em aberto
+        </p>
+        <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">{message}</p>
+        <button
+          type="button"
+          onClick={onGoToShared}
+          className="mt-2 text-sm font-semibold text-[var(--color-1)] hover:underline"
+        >
+          Ir para Fechamentos compartilhados
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function UnmatchedCardWarning({ items }: { items: AccountPeriodItem[] }) {
+  const visible = items.filter((item) => Boolean(item.date))
+  if (visible.length === 0) return null
+  return (
+    <div className="mt-5 flex items-start gap-3 rounded-xl border border-[var(--color-warning)]/30 bg-[color-mix(in_srgb,var(--color-warning)_10%,transparent)] p-3 first:mt-0">
+      <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-[var(--color-warning)]" />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-gray-900 dark:text-white">
+          Reconciliação sem itens de fatura
+        </p>
+        <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+          Há vínculo de reconciliação, mas a fatura do ciclo não trouxe itens. O débito permanece no extrato.
+        </p>
+        <ul className="mt-2 space-y-1 text-sm text-gray-700 dark:text-gray-200">
+          {visible.map((item) => (
+            <li key={String(item.id)} className="flex flex-wrap items-baseline justify-between gap-2">
+              <span className="truncate">
+                {item.date ? `${formatDateBR(item.date)} · ` : ''}
+                {item.description || 'Cartão'}
+              </span>
+              <span className="font-semibold tabular-nums" style={moneyStyle(Number(item.amount))}>
+                {formatCurrency(Number(item.amount))}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  )
+}
+
+function AllocationMiniTable({ rows }: { rows: AccountPeriodItem[] }) {
+  const accountTotal = rows.reduce((sum, row) => sum + Number(row.amount_account ?? 0), 0)
+  const sharedTotal = rows.reduce((sum, row) => sum + Number(row.amount_shared ?? 0), 0)
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className={closureTableHeadCls}>
+          <tr>
+            <th className={closureTableThLeftCls}>Data</th>
+            <th className={closureTableThLeftCls}>Descrição</th>
+            <th className={closureTableThRightCls}>Conta</th>
+            <th className={closureTableThRightCls}>Comp.</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const accountAmount = Number(row.amount_account ?? 0)
+            const sharedAmount = Number(row.amount_shared ?? 0)
+            return (
+              <tr key={`${row.source ?? 'row'}-${row.id}`}>
+                <td className={`${closureTableTdCls} whitespace-nowrap`}>{formatDateBR(row.date)}</td>
+                <td className={closureTableTdCls}>{row.description || '—'}</td>
+                <td className={`${closureTableTdCls} text-right font-semibold tabular-nums`} style={moneyStyle(accountAmount)}>
+                  {accountAmount === 0 ? <span className="text-gray-400">—</span> : formatCurrency(accountAmount)}
+                </td>
+                <td className={`${closureTableTdCls} text-right font-semibold tabular-nums`} style={moneyStyle(sharedAmount)}>
+                  {sharedAmount === 0 ? <span className="text-gray-400">—</span> : formatCurrency(sharedAmount)}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+        <tfoot className={closureTableFootCls}>
+          <tr>
+            <td className="px-3 py-2.5 font-semibold text-gray-800 dark:text-gray-100" colSpan={2}>Total</td>
+            <td className="px-3 py-2.5 text-right font-semibold tabular-nums" style={moneyStyle(accountTotal)}>
+              {accountTotal === 0 ? <span className="text-gray-400">—</span> : formatCurrency(accountTotal)}
+            </td>
+            <td className="px-3 py-2.5 text-right font-semibold tabular-nums" style={moneyStyle(sharedTotal)}>
+              {sharedTotal === 0 ? <span className="text-gray-400">—</span> : formatCurrency(sharedTotal)}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  )
+}
+
+const SOURCE_META: Record<AccountPeriodItemSource, {
+  Icon: typeof Landmark
+  color: string
+  label: string
+}> = {
+  bank: { Icon: Landmark, color: 'var(--color-1)', label: 'Extrato Bancário' },
+  card: { Icon: CreditCard, color: 'var(--color-2)', label: 'Fatura de Cartão' },
+  benefit: { Icon: Gift, color: 'var(--color-3)', label: 'Benefício' },
+  settlement: { Icon: Scale, color: 'var(--color-4)', label: 'Acerto compartilhado' },
+}
+
+const ItemSourceSymbols = ({ item }: { item: AccountPeriodItem }) => {
+  const source: AccountPeriodItemSource =
+    item.source === 'card' || item.source === 'benefit' || item.source === 'settlement'
+      ? item.source
+      : 'bank'
+  const meta = SOURCE_META[source]
+  const Icon = meta.Icon
+  return (
+    <div className="flex items-center gap-1">
+      <Icon className="inline" style={{ color: meta.color }} size={20} aria-label={meta.label} title={meta.label} />
+      {item.migrated_from_account_id ? (
+        <ArrowLeftRight
+          size={16}
+          className="text-cyan-600 dark:text-cyan-400"
+          aria-label="Item Invertido/Migrado"
+          title="Item invertido de outra conta"
+        />
+      ) : null}
+      {source === 'bank' && item.is_manual && !item.migrated_from_account_id ? (
+        <span
+          className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-orange-500 text-[10px] font-bold text-white shadow-sm"
+          title="Lançamento Manual"
+        >
+          M
+        </span>
+      ) : null}
+    </div>
+  )
+}
+
+const previousPeriod = (year: number, month: number) => (
+  month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 }
+)
+
+const sortMonths = (items: AccountPeriodMonth[]) =>
+  [...items].sort((left, right) => left.year - right.year || left.month - right.month)
+
+const sortMonthsDesc = (items: AccountPeriodMonth[]) =>
+  [...items].sort((left, right) => right.year - left.year || right.month - left.month)
+
+const selectionError = (
+  selected: AccountPeriodMonth[],
+  nextCloseable: string | null,
+) => {
+  if (selected.length === 0) return 'Selecione pelo menos um mês'
+  const sorted = sortMonths(selected)
+  if (sorted.some((item) => item.status === 'current')) {
+    return 'Não é possível fechar o mês corrente'
+  }
+  if (!nextCloseable) return 'Não há mês disponível para fechar'
+  if (monthKey(sorted[0]) !== nextCloseable) {
+    const month = Number(nextCloseable.slice(5, 7))
+    const year = nextCloseable.slice(0, 4)
+    return `A seleção precisa começar em ${MONTH_LABELS[month - 1]} ${year}`
+  }
+  for (let index = 1; index < sorted.length; index += 1) {
+    const prev = sorted[index - 1]
+    const expectedMonth = prev.month === 12 ? 1 : prev.month + 1
+    const expectedYear = prev.month === 12 ? prev.year + 1 : prev.year
+    if (sorted[index].year !== expectedYear || sorted[index].month !== expectedMonth) {
+      return 'Os meses precisam ser consecutivos, a partir do próximo mês a fechar'
+    }
+  }
+  return null
+}
+
+const AccountClosuresPage = () => {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const { showConfirm, ConfirmComponent, isConfirmOpen } = useConfirm()
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const activeTab: ClosureTab = location.pathname.endsWith('/fechados') ? 'closed' : 'open'
+
+  const [draftYear, setDraftYear] = useState('')
+  const [appliedYear, setAppliedYear] = useState<number | 'all' | null>(null)
+  const [filtersApplied, setFiltersApplied] = useState(false)
+  const [filterOptions, setFilterOptions] = useState<AccountPeriodFilterOptions | null>(null)
+  const [filtersLoading, setFiltersLoading] = useState(true)
+  const [series, setSeries] = useState<AccountPeriodYearResponse | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [toast, setToast] = useState<ToastState>({ show: false, message: '', type: 'success' })
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set())
+  const [showBackToTop, setShowBackToTop] = useState(false)
+  const [modalMonths, setModalMonths] = useState<AccountPeriodMonth[] | null>(null)
+  const [modalLoading, setModalLoading] = useState(false)
+  const [adjustmentCents, setAdjustmentCents] = useState('')
+  const [adjustmentNegative, setAdjustmentNegative] = useState(false)
+  const [notes, setNotes] = useState('')
+  const [itemsMonth, setItemsMonth] = useState<AccountPeriodMonth | null>(null)
+  const [itemsPreview, setItemsPreview] = useState<AccountPeriodMonth | null>(null)
+  const [itemsLoading, setItemsLoading] = useState(false)
+  const [itemsError, setItemsError] = useState<string | null>(null)
+  const [itemsViewTab, setItemsViewTab] = useState('geral')
+
+  const yearOptions = useMemo(() => {
+    const years = filterOptions?.years?.length
+      ? filterOptions.years
+      : (series?.years ?? [])
+    return [...years].sort((left, right) => right - left)
+  }, [filterOptions?.years, series?.years])
+
+  const openMonths = useMemo(
+    () => (series?.months ?? []).filter((item) => (
+      item.status === 'can_close' || item.status === 'blocked' || item.status === 'pending_shared' || item.status === 'current'
+    )),
+    [series],
+  )
+  const selectableMonths = useMemo(
+    () => openMonths.filter((item) => item.status !== 'current'),
+    [openMonths],
+  )
+  const closedMonths = useMemo(
+    () => (series?.months ?? []).filter((item) => item.is_closed),
+    [series],
+  )
+  const visibleMonths = useMemo(
+    () => (activeTab === 'open' ? sortMonths(openMonths) : sortMonthsDesc(closedMonths)),
+    [activeTab, openMonths, closedMonths],
+  )
+
+  const selectedMonths = useMemo(
+    () => openMonths.filter((item) => selectedKeys.has(monthKey(item))),
+    [openMonths, selectedKeys],
+  )
+
+  const selectAllState = useMemo(() => {
+    if (selectableMonths.length === 0) return 'none' as const
+    const selectedCount = selectableMonths.filter((item) => selectedKeys.has(monthKey(item))).length
+    if (selectedCount === 0) return 'none' as const
+    if (selectedCount === selectableMonths.length) return 'all' as const
+    return 'partial' as const
+  }, [selectableMonths, selectedKeys])
+
+  const loadOptions = useCallback(async () => {
+    setFiltersLoading(true)
+    try {
+      const data = await listAccountPeriodClosureOptions()
+      setFilterOptions(data)
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Não foi possível carregar os filtros.'))
+    } finally {
+      setFiltersLoading(false)
+    }
+  }, [])
+
+  const loadYear = useCallback(async (nextYear: number | 'all') => {
+    setLoading(true)
+    setError(null)
+    try {
+      const data = nextYear === 'all'
+        ? await listAccountPeriodClosures(null, true)
+        : await listAccountPeriodClosures(nextYear)
+      setSeries(data)
+      setAppliedYear(nextYear)
+      setFiltersApplied(true)
+      setSelectedKeys(new Set())
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Não foi possível carregar os fechamentos da conta.'))
+      setSeries(null)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  const reloadApplied = useCallback(async () => {
+    if (appliedYear == null) return
+    await loadYear(appliedYear)
+  }, [appliedYear, loadYear])
+
+  useEffect(() => {
+    void loadOptions()
+  }, [loadOptions])
+
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+    const handleScroll = () => setShowBackToTop(container.scrollTop > 300)
+    handleScroll()
+    container.addEventListener('scroll', handleScroll)
+    return () => container.removeEventListener('scroll', handleScroll)
+  }, [loading, activeTab, visibleMonths.length])
+
+  const handleTabChange = (tab: ClosureTab) => {
+    setSelectedKeys(new Set())
+    navigate(tab === 'closed' ? '/fechamentos/conta/fechados' : '/fechamentos/conta')
+  }
+
+  const hasActiveFilters = draftYear !== '' || filtersApplied
+
+  const applyFilters = () => {
+    void loadYear(draftYear === '' ? 'all' : Number(draftYear))
+  }
+
+  const clearFilters = () => {
+    setDraftYear('')
+    setAppliedYear(null)
+    setFiltersApplied(false)
+    setSeries(null)
+    setSelectedKeys(new Set())
+    setError(null)
+  }
+
+  const lastClosedYearMonth = series?.last_closed_year_month ?? filterOptions?.last_closed_year_month
+  const lastClosedHint = lastClosedYearMonth
+    ? `Último fechado: ${MONTH_LABELS[Number(lastClosedYearMonth.slice(5, 7)) - 1]} ${lastClosedYearMonth.slice(0, 4)}`
+    : 'Nenhum mês fechado ainda'
+
+  const toggleSelect = (key: string) => {
+    if (openMonths.some((item) => monthKey(item) === key && item.status === 'current')) return
+    setSelectedKeys((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    if (selectAllState === 'all') {
+      setSelectedKeys(new Set())
+      return
+    }
+    setSelectedKeys(new Set(selectableMonths.map((item) => monthKey(item))))
+  }
+
+  const scrollToTop = () => {
+    setShowBackToTop(false)
+    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const openCloseModal = (months: AccountPeriodMonth[]) => {
+    const ordered = sortMonths(months)
+    const invalid = selectionError(ordered, series?.next_closeable_year_month ?? null)
+    if (invalid) {
+      setToast({ show: true, message: invalid, type: 'error' })
+      return
+    }
+    const first = ordered[0]
+    if (ordered.length === 1 && !first.can_close) {
+      const previous = previousPeriod(first.year, first.month)
+      setToast({
+        show: true,
+        message: first.block_reason || `Feche ${monthTitle(previous)} antes de fechar ${monthTitle(first)}.`,
+        type: 'error',
+      })
+      return
+    }
+    setModalMonths(ordered)
+    setAdjustmentCents('')
+    setAdjustmentNegative(false)
+    setNotes('')
+    setModalLoading(true)
+    void (async () => {
+      try {
+        const previews = await Promise.all(
+          ordered.map((item) => previewAccountPeriod(item.year, item.month)),
+        )
+        setModalMonths(previews)
+      } catch (err) {
+        setToast({
+          show: true,
+          message: apiErrorMessage(err, 'Não foi possível carregar a repartição Conta / Compartilhado.'),
+          type: 'error',
+        })
+      } finally {
+        setModalLoading(false)
+      }
+    })()
+  }
+
+  const closeModal = () => {
+    if (saving) return
+    setModalMonths(null)
+    setModalLoading(false)
+    setAdjustmentCents('')
+    setAdjustmentNegative(false)
+    setNotes('')
+  }
+
+  const closeItemsModal = () => {
+    setItemsMonth(null)
+    setItemsPreview(null)
+    setItemsError(null)
+    setItemsLoading(false)
+    setItemsViewTab('geral')
+  }
+
+  const openItemsModal = async (item: AccountPeriodMonth) => {
+    setItemsMonth(item)
+    setItemsPreview(null)
+    setItemsError(null)
+    setItemsLoading(true)
+    setItemsViewTab('geral')
+    try {
+      const data = await previewAccountPeriod(item.year, item.month)
+      setItemsPreview(data)
+    } catch (err) {
+      setItemsError(apiErrorMessage(err, 'Não foi possível carregar os lançamentos.'))
+    } finally {
+      setItemsLoading(false)
+    }
+  }
+
+  useEscapeKey(closeItemsModal, itemsMonth != null && !isConfirmOpen)
+  useEscapeKey(closeModal, modalMonths != null && itemsMonth == null && !isConfirmOpen)
+
+  const handleConfirmClose = async () => {
+    if (!modalMonths?.length) return
+    setSaving(true)
+    setError(null)
+    const amount = amountFromCents(adjustmentCents, adjustmentNegative)
+    const payloadNotes = notes.trim() || undefined
+    try {
+      if (modalMonths.length === 1) {
+        const target = modalMonths[0]
+        await closeAccountPeriod({
+          year: target.year,
+          month: target.month,
+          adjustment: amount || undefined,
+          notes: payloadNotes,
+        })
+        setToast({
+          show: true,
+          message: `${monthTitle(target)} foi fechado.`,
+          type: 'success',
+        })
+      } else {
+        const ordered = sortMonths(modalMonths)
+        await bulkCloseAccountPeriods({
+          months: ordered.map((item) => ({ year: item.year, month: item.month })),
+          adjustment: amount || undefined,
+          notes: payloadNotes,
+        })
+        setToast({
+          show: true,
+          message: `${modalMonths.length} meses foram fechados.`,
+          type: 'success',
+        })
+      }
+      setModalMonths(null)
+      await reloadApplied()
+    } catch (err) {
+      setToast({
+        show: true,
+        message: apiErrorMessage(err, 'Não foi possível fechar o período.'),
+        type: 'error',
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleReopen = async (item: AccountPeriodMonth) => {
+    if (!item.id || !item.can_reopen) return
+    const confirmed = await showConfirm({
+      title: `Reabrir ${monthTitle(item)}?`,
+      message: 'O snapshot será descartado e o lançamento de ajuste deste fechamento também será removido do extrato.',
+      confirmText: 'Reabrir',
+      type: 'danger',
+    })
+    if (!confirmed) return
+    setSaving(true)
+    try {
+      await reopenAccountPeriod(item.id)
+      setToast({ show: true, message: `${monthTitle(item)} foi reaberto.`, type: 'success' })
+      await reloadApplied()
+    } catch (err) {
+      setToast({
+        show: true,
+        message: apiErrorMessage(err, 'Não foi possível reabrir o período.'),
+        type: 'error',
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const newestModalMonth = modalMonths?.length ? modalMonths[modalMonths.length - 1] : null
+  const bulkSplitTotal = modalMonths && modalMonths.length > 1 ? sumSplits(modalMonths) : null
+  const adjustmentValue = amountFromCents(adjustmentCents, adjustmentNegative)
+  const projectedClosing = newestModalMonth
+    ? Number(newestModalMonth.closing_balance) + adjustmentValue
+    : 0
+  const footerVisible = selectedKeys.size > 0 || showBackToTop
+
+  const moneyCell = (value: number, invert = false) => (
+    <span className="font-semibold tabular-nums" style={moneyStyle(value, invert)}>
+      {formatCurrency(value)}
+    </span>
+  )
+
+  const openingCell = (item: AccountPeriodMonth) => (
+    hasOfficialOpening(item)
+      ? moneyCell(item.opening_balance)
+      : <span className="text-gray-400">—</span>
+  )
+
+  const openingSource = itemsPreview ?? itemsMonth
+  const items = useMemo(
+    () => [...(itemsPreview?.items ?? []), ...(itemsPreview?.card_items ?? []), ...(itemsPreview?.shared_settlements ?? [])]
+      .sort(comparePeriodItems),
+    [itemsPreview],
+  )
+  const itemGroups = useMemo(
+    () => groupPeriodItems(items, openingSource?.shared_by_account ?? []),
+    [items, openingSource?.shared_by_account],
+  )
+  const activeItemGroup = itemsViewTab === 'geral'
+    ? null
+    : itemGroups.find((group) => group.key === itemsViewTab) ?? null
+  const activeItemFlows = splitItemsByFlow(activeItemGroup?.items ?? [])
+  const itemsTotal = openingSource
+    ? Number(openingSource.entries) - Number(openingSource.exits)
+    : 0
+  const previousOpeningPeriod = itemsMonth
+    ? previousPeriod(itemsMonth.year, itemsMonth.month)
+    : null
+
+  useEffect(() => {
+    if (itemsViewTab === 'geral') return
+    if (!itemGroups.some((group) => group.key === itemsViewTab)) {
+      setItemsViewTab('geral')
+    }
+  }, [itemGroups, itemsViewTab])
+
+  return (
+    <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900">
+      <Sidebar />
+      <CadastroListPageShell>
+        <CadastroListPageBody
+          scrollRef={scrollContainerRef}
+          header={
+            <CadastroListPageHero
+              icon={<Scale className="h-8 w-8" />}
+              title="Fechamentos da conta"
+              subtitle="Feche o extrato e grave a repartição Conta / Compartilhado. A saúde financeira soma esses totais mês a mês."
+            />
+          }
+          tabs={
+            <CadastroListPageFilterCard
+              hasActiveFilters={hasActiveFilters}
+              onClearFilters={clearFilters}
+              onApply={applyFilters}
+              applying={loading || filtersLoading}
+              resultHint={lastClosedHint}
+            >
+              <CadastroFilterField label="Ano" icon={<Calendar size={12} />}>
+                <select
+                  value={draftYear}
+                  onChange={(event) => setDraftYear(event.target.value)}
+                  className={cadastroFilterFieldCls}
+                  disabled={filtersLoading || loading}
+                >
+                  <option value="">Todos</option>
+                  {yearOptions.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              </CadastroFilterField>
+            </CadastroListPageFilterCard>
+          }
+        >
+          {(filtersLoading || loading) && (
+            <div className="flex items-center justify-center py-12">
+              <LoadingSpinner message={filtersLoading ? 'Carregando filtros...' : 'Carregando fechamentos...'} />
+            </div>
+          )}
+
+          {!filtersLoading && !loading && error && (
+            <div className="mb-6 flex items-start gap-3 rounded-xl border border-[var(--color-danger)]/30 bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] p-4">
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-[var(--color-danger)]" />
+              <div>
+                <p className="text-sm font-medium text-gray-900 dark:text-white">Erro</p>
+                <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">{error}</p>
+              </div>
+            </div>
+          )}
+
+          {!filtersLoading && !loading && !error && !filtersApplied && (
+            <div className="rounded-xl border border-gray-200 bg-white p-12 text-center dark:border-gray-700 dark:bg-gray-800">
+              <Filter size={48} className="mx-auto mb-4 text-gray-300 dark:text-gray-600" />
+              <h3 className="mb-2 text-lg font-semibold text-gray-900 dark:text-white">Nenhum filtro aplicado</h3>
+              <p className="text-gray-600 dark:text-gray-400">
+                Selecione o ano (ou Todos) e clique em Aplicar para visualizar os fechamentos.
+              </p>
+            </div>
+          )}
+
+          {!loading && filtersApplied && series && (
+            <div className={`overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800 ${footerVisible ? 'mb-20' : ''}`}>
+              <div className="px-4 pt-3">
+                <CadastroListPageTabs
+                  tabs={[
+                    { key: 'open', label: 'Em aberto', icon: <Unlock size={16} />, count: openMonths.length },
+                    { key: 'closed', label: 'Fechados', icon: <Lock size={16} />, count: closedMonths.length },
+                  ]}
+                  active={activeTab}
+                  onChange={handleTabChange}
+                />
+              </div>
+
+              <div className="p-4">
+                {activeTab === 'open' && selectableMonths.length > 0 && (
+                  <div className="mb-4 flex items-center justify-between gap-3 px-1">
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={toggleSelectAll}
+                        className="rounded p-1 transition-colors hover:bg-gray-200 dark:hover:bg-gray-600"
+                        title={selectAllState === 'all' ? 'Limpar seleção' : 'Selecionar todos'}
+                      >
+                        {selectAllState === 'none' && <Square size={18} className="text-gray-400" />}
+                        {selectAllState === 'partial' && <MinusSquare size={18} className="text-[var(--color-1)]" />}
+                        {selectAllState === 'all' && <CheckSquare size={18} className="text-[var(--color-1)]" />}
+                      </button>
+                      <span className="text-sm text-gray-600 dark:text-gray-400">
+                        Selecionar todos ({selectableMonths.length} {selectableMonths.length === 1 ? 'mês' : 'meses'})
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {visibleMonths.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-gray-500">
+                    {activeTab === 'open'
+                      ? 'Nenhum mês em aberto para o filtro selecionado.'
+                      : 'Nenhum mês fechado para o filtro selecionado.'}
+                  </p>
+                ) : (
+                  <ListPageTable
+                    colsRest={
+                      <>
+                        <ListTableSpacerCol />
+                        {activeTab === 'open' ? <ListTableLeadingCols /> : null}
+                        <col style={{ width: 76, minWidth: 76, maxWidth: 76 }} />
+                        <col style={{ width: 48, minWidth: 48, maxWidth: 48 }} />
+                        <col style={{ width: 120, minWidth: 120, maxWidth: 140 }} />
+                      </>
+                    }
+                    head={
+                      <tr>
+                        {activeTab === 'open' ? (
+                          <th className="w-10 px-0 py-3 text-center" style={{ width: LIST_TABLE_INDEX_COL_PX }}>
+                            <input
+                              type="checkbox"
+                              className={cadastroAccentControlCls}
+                              checked={selectAllState === 'all'}
+                              ref={(element) => {
+                                if (element) element.indeterminate = selectAllState === 'partial'
+                              }}
+                              onChange={toggleSelectAll}
+                              aria-label="Selecionar todos"
+                            />
+                          </th>
+                        ) : (
+                          <ListTableIndexHeader />
+                        )}
+                        <ListTableSpacerHeader />
+                        {activeTab === 'open' ? <ListTableIndexHeader /> : null}
+                        <ListTableStaticHeader label="Ano" />
+                        <ListTableStaticHeader label="Nº" />
+                        <ListTableStaticHeader label="Mês" />
+                        <ListTableStaticHeader label="Status" />
+                        <ListTableStaticHeader label="Lançamentos" />
+                        <ListTableStaticHeader label="Saldo anterior" />
+                        <ListTableStaticHeader label="Entradas" />
+                        <ListTableStaticHeader label="Saídas" />
+                        <ListTableStaticHeader label="Resultado" />
+                        {activeTab === 'closed' ? <ListTableStaticHeader label="Ajuste" /> : null}
+                        {activeTab === 'closed' ? <ListTableStaticHeader label="Fechado em" /> : null}
+                        <ListTableStaticHeader label="Ações" className="w-[10%]" />
+                      </tr>
+                    }
+                  >
+                    {visibleMonths.map((item, index) => {
+                      const key = monthKey(item)
+                      const selected = selectedKeys.has(key)
+                      return (
+                        <tr key={key} className={listPageTableRowHoverCls}>
+                          {activeTab === 'open' ? (
+                            <td className="px-0 py-3 text-center" style={{ width: LIST_TABLE_INDEX_COL_PX }}>
+                              <input
+                                type="checkbox"
+                                className={cadastroAccentControlCls}
+                                checked={selected}
+                                disabled={item.status === 'current'}
+                                onChange={() => toggleSelect(key)}
+                                aria-label={`Selecionar ${monthTitle(item)}`}
+                                title={
+                                  item.status === 'current'
+                                    ? (item.block_reason || 'Não é possível fechar o mês corrente')
+                                    : item.has_open_shared_closure
+                                      ? (item.open_shared_notice || 'Há fechamento compartilhado em aberto. Pagamentos entram pela data real.')
+                                      : undefined
+                                }
+                              />
+                            </td>
+                          ) : (
+                            <ListTableIndexCell index={index + 1} />
+                          )}
+                          <ListTableSpacerCell />
+                          {activeTab === 'open' ? <ListTableIndexCell index={index + 1} /> : null}
+                          <td className={`${listPageTableTdCls} whitespace-nowrap tabular-nums text-gray-800 dark:text-gray-100`}>
+                            {item.year}
+                          </td>
+                          <td className={`${listPageTableTdCls} tabular-nums text-gray-500 dark:text-gray-400`}>
+                            {String(item.month).padStart(2, '0')}
+                          </td>
+                          <td className={`${listPageTableTdCls} font-semibold text-gray-900 dark:text-white`}>
+                            {MONTH_LABELS[item.month - 1]}
+                          </td>
+                          <td className={listPageTableTdCls}>
+                            <Badge
+                              variant={badgeVariantForColumnRole('statusPrimary')}
+                              tone={statusTone(item.status)}
+                              label={statusLabel[item.status]}
+                            />
+                          </td>
+                          <td className={`${listPageTableTdCls} tabular-nums`}>{item.item_count ?? 0}</td>
+                          <td className={listPageTableTdCls}>{openingCell(item)}</td>
+                          <td className={`${listPageTableTdCls} align-top`}>
+                            <FlowSplitLines
+                              total={item.entries}
+                              account={splitOf(item).account.entries}
+                              shared={splitOf(item).shared.entries}
+                              compact
+                            />
+                          </td>
+                          <td className={`${listPageTableTdCls} align-top`}>
+                            <FlowSplitLines
+                              total={item.exits}
+                              account={splitOf(item).account.exits}
+                              shared={splitOf(item).shared.exits}
+                              invert
+                              compact
+                            />
+                          </td>
+                          <td className={listPageTableTdCls}>{moneyCell(item.closing_balance)}</td>
+                          {activeTab === 'closed' ? (
+                            <td className={listPageTableTdCls}>
+                              {item.adjustment_amount
+                                ? moneyCell(item.adjustment_amount)
+                                : <span className="text-gray-400">—</span>}
+                            </td>
+                          ) : null}
+                          {activeTab === 'closed' ? (
+                            <td className={`${listPageTableTdCls} whitespace-nowrap`}>
+                              {item.closed_at ? formatDateBR(item.closed_at) : '—'}
+                            </td>
+                          ) : null}
+                          <td className={listPageTableTdCls}>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                className={cadastroRowIconBtnCls}
+                                title={`Ver lançamentos de ${monthTitle(item)}`}
+                                onClick={() => void openItemsModal(item)}
+                              >
+                                <Eye size={16} />
+                              </button>
+                              {activeTab === 'open' && (
+                                <>
+                                  {index === 0 && item.can_close ? (
+                                    <button
+                                      type="button"
+                                      className={cadastroRowIconBtnCls}
+                                      title={`Fechar ${monthTitle(item)}`}
+                                      disabled={saving}
+                                      onClick={() => openCloseModal([item])}
+                                      style={{ color: 'var(--color-1)' }}
+                                    >
+                                      <Unlock size={16} />
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className={`${cadastroRowIconBtnCls} cursor-not-allowed opacity-40 hover:bg-transparent hover:text-gray-400`}
+                                      title={item.block_reason || `Feche ${monthTitle(previousPeriod(item.year, item.month))} antes deste`}
+                                      disabled
+                                    >
+                                      <Lock size={16} />
+                                    </button>
+                                  )}
+                                  {item.has_open_shared_closure ? (
+                                    <button
+                                      type="button"
+                                      className={cadastroRowIconBtnCls}
+                                      title={item.open_shared_notice || 'Há fechamento compartilhado em aberto. Pagamentos entram pela data real.'}
+                                      aria-label={item.open_shared_notice || 'Há fechamento compartilhado em aberto'}
+                                      onClick={() => navigate('/fechamentos/compartilhado/lista')}
+                                      style={{ color: 'var(--color-warning)' }}
+                                    >
+                                      <AlertTriangle size={16} />
+                                    </button>
+                                  ) : null}
+                                </>
+                              )}
+                              {activeTab === 'closed' && item.can_reopen && (
+                                <button
+                                  type="button"
+                                  className={cadastroRowIconDangerCls}
+                                  title={`Reabrir ${monthTitle(item)}`}
+                                  disabled={saving}
+                                  onClick={() => void handleReopen(item)}
+                                >
+                                  <Unlock size={16} />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </ListPageTable>
+                )}
+              </div>
+            </div>
+          )}
+        </CadastroListPageBody>
+      </CadastroListPageShell>
+
+      {activeTab === 'open' && selectedKeys.size > 0 && (
+        <FloatingFooterBar>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <span className="font-medium text-color-primary">
+                {selectedKeys.size} {selectedKeys.size === 1 ? 'mês selecionado' : 'meses selecionados'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedKeys(new Set())}
+                className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                <X size={14} />
+                Limpar
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => openCloseModal(selectedMonths)}
+                disabled={saving}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
+                style={{ background: 'var(--color-save)', color: 'var(--on-color-save)' }}
+              >
+                <Lock size={14} />
+                Fechar selecionados
+              </button>
+              {showBackToTop && (
+                <button
+                  type="button"
+                  onClick={scrollToTop}
+                  className="flex items-center gap-1.5 rounded-lg bg-color-primary px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90"
+                  title="Voltar ao topo"
+                >
+                  <ArrowUp size={14} />
+                  Topo
+                </button>
+              )}
+            </div>
+          </div>
+        </FloatingFooterBar>
+      )}
+
+      {showBackToTop && (activeTab !== 'open' || selectedKeys.size === 0) && (
+        <FloatingFooterBar>
+          <div className="flex items-center justify-end">
+            <button
+              type="button"
+              onClick={scrollToTop}
+              className="flex items-center gap-1.5 rounded-lg bg-color-primary px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90"
+              title="Voltar ao topo"
+            >
+              <ArrowUp size={14} />
+              Voltar ao Topo
+            </button>
+          </div>
+        </FloatingFooterBar>
+      )}
+
+      {modalMonths && newestModalMonth && (
+        <CadastroModalShell maxWidth="max-w-4xl">
+          <CadastroModalHeader
+            isEdit={false}
+            title={modalMonths.length === 1 ? `Fechar ${monthTitle(modalMonths[0])}` : `Fechar ${modalMonths.length} meses`}
+            subtitle={
+              modalMonths.length === 1
+                ? 'Confira o caixa do extrato e a repartição Conta / Compartilhado antes de fechar.'
+                : `O ajuste entra no extrato em ${lastDayLabel(newestModalMonth.year, newestModalMonth.month)}.`
+            }
+            icon={<Lock size={18} />}
+            iconStyle={{ backgroundColor: 'var(--color-save)', color: 'var(--on-color-save)' }}
+            onClose={closeModal}
+          />
+          <CadastroModalBody>
+            {modalLoading ? (
+              <div className="py-12">
+                <LoadingSpinner message="Carregando repartição Conta / Compartilhado..." />
+              </div>
+            ) : (
+              <>
+            {modalMonths.some((item) => item.has_open_shared_closure) ? (
+              <OpenSharedNotice
+                message={
+                  modalMonths.find((item) => item.open_shared_notice)?.open_shared_notice
+                  || 'Há fechamento compartilhado em aberto. Somente os pagamentos realizados até o final deste mês entram neste fechamento.'
+                }
+                onGoToShared={() => {
+                  closeModal()
+                  navigate('/fechamentos/compartilhado/lista')
+                }}
+              />
+            ) : null}
+            <CadastroFormSection
+              title="Caixa do extrato"
+              hint="Estes totais travam o saldo bancário do mês."
+              icon={<Scale size={14} />}
+              bodyClassName="p-0"
+            >
+              <CaixaTotals item={newestModalMonth} />
+              {modalMonths.length > 1 ? (
+                <div className="overflow-x-auto border-t border-gray-200 dark:border-gray-700">
+                  <table className="w-full text-sm">
+                    <thead className={closureTableHeadCls}>
+                      <tr>
+                        <th className={closureTableThLeftCls}>Mês</th>
+                        <th className={closureTableThRightCls}>Anterior</th>
+                        <th className={closureTableThRightCls}>Entradas</th>
+                        <th className={closureTableThRightCls}>Saídas</th>
+                        <th className={closureTableThRightCls}>Resultado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {modalMonths.map((item) => (
+                        <tr key={monthKey(item)}>
+                          <td className={`${closureTableTdCls} font-medium text-gray-800 dark:text-gray-100`}>{monthTitle(item)}</td>
+                          <td className={`${closureTableTdCls} text-right tabular-nums`}>
+                            {hasOfficialOpening(item) ? formatCurrency(item.opening_balance) : '—'}
+                          </td>
+                          <td className={`${closureTableTdCls} text-right tabular-nums`} style={moneyStyle(item.entries)}>
+                            {formatCurrency(item.entries)}
+                          </td>
+                          <td className={`${closureTableTdCls} text-right tabular-nums`} style={moneyStyle(item.exits, true)}>
+                            {formatCurrency(item.exits)}
+                          </td>
+                          <td className={`${closureTableTdCls} text-right tabular-nums`} style={moneyStyle(item.closing_balance)}>
+                            {formatCurrency(item.closing_balance)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </CadastroFormSection>
+
+            <CadastroFormSection
+              title="Repartição Conta / Compartilhado"
+              hint="Esta divisão é gravada no fechamento para a saúde somar depois."
+              icon={<Users size={14} />}
+              bodyClassName="p-0"
+            >
+              {modalMonths.length > 1 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className={closureTableHeadCls}>
+                      <tr>
+                        <th className={closureTableThLeftCls}>Mês</th>
+                        <th className={closureTableThRightCls}>Entradas conta</th>
+                        <th className={closureTableThRightCls}>Entradas comp.</th>
+                        <th className={closureTableThRightCls}>Saídas conta</th>
+                        <th className={closureTableThRightCls}>Saídas comp.</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {modalMonths.map((item) => {
+                        const split = splitOf(item)
+                        return (
+                          <tr key={`split-${monthKey(item)}`}>
+                            <td className={`${closureTableTdCls} font-medium text-gray-800 dark:text-gray-100`}>{monthTitle(item)}</td>
+                            <td className={`${closureTableTdCls} text-right tabular-nums`} style={moneyStyle(split.account.entries)}>
+                              {formatCurrency(split.account.entries)}
+                            </td>
+                            <td className={`${closureTableTdCls} text-right tabular-nums`} style={moneyStyle(split.shared.entries)}>
+                              {formatCurrency(split.shared.entries)}
+                            </td>
+                            <td className={`${closureTableTdCls} text-right tabular-nums`} style={moneyStyle(split.account.exits, true)}>
+                              {formatCurrency(split.account.exits)}
+                            </td>
+                            <td className={`${closureTableTdCls} text-right tabular-nums`} style={moneyStyle(split.shared.exits, true)}>
+                              {formatCurrency(split.shared.exits)}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                    <tfoot className={closureTableFootCls}>
+                      {bulkSplitTotal ? (
+                        <tr>
+                          <td className="px-3 py-2.5 font-semibold text-gray-800 dark:text-gray-100">Total</td>
+                          <td className="px-3 py-2.5 text-right font-semibold tabular-nums" style={moneyStyle(bulkSplitTotal.accountEntries)}>
+                            {formatCurrency(bulkSplitTotal.accountEntries)}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-semibold tabular-nums" style={moneyStyle(bulkSplitTotal.sharedEntries)}>
+                            {formatCurrency(bulkSplitTotal.sharedEntries)}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-semibold tabular-nums" style={moneyStyle(bulkSplitTotal.accountExits, true)}>
+                            {formatCurrency(bulkSplitTotal.accountExits)}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-semibold tabular-nums" style={moneyStyle(bulkSplitTotal.sharedExits, true)}>
+                            {formatCurrency(bulkSplitTotal.sharedExits)}
+                          </td>
+                        </tr>
+                      ) : null}
+                    </tfoot>
+                  </table>
+                </div>
+              ) : (
+                <SplitBreakdownTable item={newestModalMonth} />
+              )}
+            </CadastroFormSection>
+
+            <CadastroFormSection
+              title="Compartilhado por conta"
+              hint="Mesmas entradas, saídas e resultado do compartilhado, separados pela conta parceira."
+              icon={<Users size={14} />}
+              bodyClassName="p-0"
+            >
+              <SharedByAccountTable rows={mergeSharedByAccount(modalMonths)} />
+            </CadastroFormSection>
+
+            {modalMonths.some((item) => (item.card_items ?? []).length > 0) ? (
+              <CadastroFormSection
+                title="Itens da fatura"
+                hint="Despesa sai na conta/compartilhado do item; estorno entra. O débito bancário reconciliado não conta como 100% da conta."
+                icon={<CreditCard size={14} />}
+                bodyClassName="p-0"
+              >
+                {modalMonths.map((item) => {
+                  const rows = item.card_items ?? []
+                  if (rows.length === 0) return null
+                  return (
+                    <div key={`card-${monthKey(item)}`}>
+                      {modalMonths.length > 1 ? (
+                        <p className="border-b border-gray-200 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:border-gray-700">
+                          {monthTitle(item)}
+                        </p>
+                      ) : null}
+                      <AllocationMiniTable rows={rows} />
+                    </div>
+                  )
+                })}
+              </CadastroFormSection>
+            ) : null}
+            <UnmatchedCardWarning
+              items={modalMonths.flatMap((item) => item.unmatched_card_payments ?? [])}
+            />
+
+            {modalMonths.some((item) => (item.shared_settlements ?? []).length > 0) ? (
+              <CadastroFormSection
+                title="Acertos compartilhados"
+                hint="PIX/pagamento do Balanço e empréstimo gerado no fechamento entram como crédito compartilhado."
+                icon={<Scale size={14} />}
+                bodyClassName="p-0"
+              >
+                {modalMonths.map((item) => {
+                  const rows = item.shared_settlements ?? []
+                  if (rows.length === 0) return null
+                  return (
+                    <div key={`settlement-${monthKey(item)}`}>
+                      {modalMonths.length > 1 ? (
+                        <p className="border-b border-gray-200 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:border-gray-700">
+                          {monthTitle(item)}
+                        </p>
+                      ) : null}
+                      <AllocationMiniTable rows={rows} />
+                    </div>
+                  )
+                })}
+              </CadastroFormSection>
+            ) : null}
+              </>
+            )}
+
+            {!modalLoading && (
+            <CadastroFormSection
+              title="Ajuste manual"
+              hint={`Positivo lança crédito e negativo lança débito no extrato em ${lastDayLabel(newestModalMonth.year, newestModalMonth.month)}. Deixe em branco para fechar sem ajuste.`}
+              icon={<Calendar size={14} />}
+            >
+              <CadastroModalFieldsGrid>
+                <CadastroModalFieldsRow cols={2}>
+                  <label className="block min-w-0">
+                    <CadastroFieldLabel>Valor do ajuste</CadastroFieldLabel>
+                    <div className="relative mt-0.5">
+                      <span
+                        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold"
+                        style={adjustmentValue === 0 ? { color: 'var(--color-neutral)' } : moneyStyle(adjustmentValue)}
+                      >
+                        R$
+                      </span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={`${adjustmentNegative ? '-' : ''}${formatAmountMask(adjustmentCents)}`}
+                        onChange={(event) => {
+                          const raw = event.target.value
+                          const negative = raw.includes('-')
+                          const cents = raw.replace(/\D/g, '')
+                          const absValue = parseInt(cents || '0', 10) / 100
+                          if (absValue > MAX_ADJUSTMENT) return
+                          setAdjustmentNegative(negative)
+                          setAdjustmentCents(cents)
+                        }}
+                        className={`${cadastroFieldCls} pl-9 font-semibold tabular-nums`}
+                        style={adjustmentValue === 0 ? undefined : moneyStyle(adjustmentValue)}
+                        placeholder="0,00"
+                      />
+                    </div>
+                  </label>
+                  <label className="block min-w-0">
+                    <CadastroFieldLabel>Observação</CadastroFieldLabel>
+                    <input
+                      type="text"
+                      value={notes}
+                      onChange={(event) => setNotes(event.target.value)}
+                      className={`${cadastroFieldCls} mt-0.5`}
+                      placeholder="Opcional"
+                    />
+                  </label>
+                </CadastroModalFieldsRow>
+                <CadastroModalFieldsRow>
+                  <div>
+                    <p className="text-xs text-gray-500">Resultado após ajuste</p>
+                    <p className="text-lg font-bold tabular-nums" style={moneyStyle(projectedClosing)}>
+                      {formatCurrency(projectedClosing)}
+                    </p>
+                  </div>
+                </CadastroModalFieldsRow>
+              </CadastroModalFieldsGrid>
+            </CadastroFormSection>
+            )}
+          </CadastroModalBody>
+          <CadastroModalFooter
+            onClose={closeModal}
+            onSave={() => void handleConfirmClose()}
+            saving={saving || modalLoading}
+            saveLabel={modalMonths.length === 1 ? 'Fechar período' : `Fechar ${modalMonths.length} meses`}
+            saveIcon={<Lock size={15} />}
+          />
+        </CadastroModalShell>
+      )}
+
+      {itemsMonth && (
+        <CadastroModalShell maxWidth="max-w-[95vw] xl:max-w-[90rem]">
+          <CadastroModalHeader
+            isEdit={false}
+            title={`Lançamentos de ${monthTitle(itemsMonth)}`}
+            subtitle={
+              itemsPreview
+                ? `${items.length} lançamento${items.length === 1 ? '' : 's'} · caixa do extrato`
+                : 'Extrato do período'
+            }
+            icon={<Eye size={18} />}
+            iconStyle={{ backgroundColor: 'var(--color-1)', color: 'var(--on-color-1)' }}
+            onClose={closeItemsModal}
+          />
+          <CadastroModalBody
+            chrome={
+              !itemsLoading && !itemsError ? (
+                <CadastroListPageTabs
+                  tabs={[
+                    { key: 'geral', label: 'Geral', icon: <Scale size={14} /> },
+                    ...itemGroups.map((group) => ({
+                      key: group.key,
+                      label: groupAccountLabel(group),
+                      icon: group.kind === 'own' ? <Landmark size={14} /> : <Users size={14} />,
+                      count: group.items.length,
+                    })),
+                  ]}
+                  active={itemsViewTab}
+                  onChange={setItemsViewTab}
+                />
+              ) : null
+            }
+          >
+            {itemsLoading && (
+              <div className="py-12">
+                <LoadingSpinner message="Carregando lançamentos..." />
+              </div>
+            )}
+            {!itemsLoading && itemsError && (
+              <p className="py-8 text-center text-sm text-[var(--color-danger)]">{itemsError}</p>
+            )}
+            {!itemsLoading && !itemsError && itemsViewTab === 'geral' && (
+              <>
+                {(itemsPreview ?? itemsMonth)?.has_open_shared_closure ? (
+                  <OpenSharedNotice
+                    message={
+                      (itemsPreview ?? itemsMonth)?.open_shared_notice
+                      || 'Há fechamento compartilhado em aberto. Somente os pagamentos realizados até o final deste mês entram neste fechamento.'
+                    }
+                    onGoToShared={() => {
+                      closeItemsModal()
+                      navigate('/fechamentos/compartilhado/lista')
+                    }}
+                  />
+                ) : null}
+                <CadastroFormSection
+                  title="Caixa do extrato"
+                  hint={
+                    previousOpeningPeriod
+                      ? `Saldo em ${lastDayLabel(previousOpeningPeriod.year, previousOpeningPeriod.month)}.`
+                      : 'Saldo do mês anterior.'
+                  }
+                  icon={<Scale size={14} />}
+                  bodyClassName="p-0"
+                >
+                  {openingSource ? (
+                    <CaixaTotals item={openingSource} />
+                  ) : (
+                    <p className="px-3 py-3 text-base font-bold tabular-nums text-gray-400">—</p>
+                  )}
+                </CadastroFormSection>
+
+                {openingSource ? (
+                  <CadastroFormSection
+                    title="Repartição Conta / Compartilhado"
+                    icon={<Users size={14} />}
+                    bodyClassName="p-0"
+                  >
+                    <SplitBreakdownTable item={openingSource} />
+                  </CadastroFormSection>
+                ) : null}
+
+                {openingSource ? (
+                  <CadastroFormSection
+                    title="Compartilhado por conta"
+                    hint="Mesmas entradas, saídas e resultado do compartilhado, separados pela conta parceira."
+                    icon={<Users size={14} />}
+                    bodyClassName="p-0"
+                  >
+                    <SharedByAccountTable rows={mergeSharedByAccount([openingSource])} />
+                  </CadastroFormSection>
+                ) : null}
+              </>
+            )}
+            {!itemsLoading && !itemsError && itemsViewTab !== 'geral' && (
+              <>
+                <UnmatchedCardWarning items={itemsPreview?.unmatched_card_payments ?? []} />
+                {activeItemGroup ? (
+                  <>
+                    <CadastroFormSection
+                      title="Receitas"
+                      icon={<ArrowUpCircle size={14} />}
+                      bodyClassName="p-0"
+                    >
+                      <PeriodItemsFlowTable items={activeItemFlows.receitas} />
+                    </CadastroFormSection>
+                    <CadastroFormSection
+                      title="Despesas"
+                      icon={<ArrowDownCircle size={14} />}
+                      bodyClassName="p-0"
+                    >
+                      <PeriodItemsFlowTable items={activeItemFlows.despesas} />
+                    </CadastroFormSection>
+                    <div className={`${closureTableFootCls} flex flex-wrap items-center justify-between gap-3 px-3 py-2.5`}>
+                      <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                        Resultado · {groupAccountLabel(activeItemGroup)}
+                      </span>
+                      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm font-semibold tabular-nums">
+                        <span style={moneyStyle(activeItemGroup.totals.caixa)}>
+                          Caixa {formatCurrency(activeItemGroup.totals.caixa)}
+                        </span>
+                        <span style={moneyStyle(activeItemGroup.totals.account)}>
+                          Conta {formatCurrency(activeItemGroup.totals.account)}
+                        </span>
+                        <span style={moneyStyle(activeItemGroup.totals.shared)}>
+                          Comp. {formatCurrency(activeItemGroup.totals.shared)}
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <p className="px-3 py-4 text-center text-sm text-gray-500">Nenhum lançamento neste período.</p>
+                )}
+              </>
+            )}
+          </CadastroModalBody>
+          <CadastroModalFooter
+            onClose={closeItemsModal}
+            hideSave
+            closeLabel="Fechar"
+            leading={
+              !itemsLoading && !itemsError ? (
+                <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                  Caixa {formatCurrency(itemsTotal)}
+                  <span className="ml-3 font-medium text-gray-500">
+                    Conta {formatCurrency(splitOf(openingSource).account.entries - splitOf(openingSource).account.exits)}
+                    {' · '}
+                    Comp. {formatCurrency(splitOf(openingSource).shared.entries - splitOf(openingSource).shared.exits)}
+                  </span>
+                </span>
+              ) : null
+            }
+          />
+        </CadastroModalShell>
+      )}
+
+      {toast.show && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          duration={toast.type === 'success' ? 4000 : 5000}
+          onClose={() => setToast((prev) => ({ ...prev, show: false }))}
+        />
+      )}
+      <ConfirmComponent />
+    </div>
+  )
+}
+
+export default AccountClosuresPage

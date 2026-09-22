@@ -5,11 +5,13 @@ Fornece endpoints para CRUD de cartões.
 
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.exc import IntegrityError
 from typing import List
 from pydantic import BaseModel, Field
 from app.database import get_db
-from app.models.unified_models import Cartao
-from app.dependencies.auth import get_current_user
+from app.models.unified_models import Cartao, CreditCardInvoiceGroup
+from app.dependencies.auth import get_current_user, require_account
+from app.services import invoice_payment_match_service as match_service
 
 router = APIRouter(prefix="/api/cartoes", tags=["cartoes"])
 
@@ -56,6 +58,9 @@ class CartaoCreate(BaseModel):
     account_id: int | None = None
     expense_sharing_id: int | None = None
     closing_day: int = Field(default=14, ge=1, le=30)
+    is_account_card: bool | None = None
+    invoice_group_id: int | None = None
+    active: bool = True
 
 
 class CartaoUpdate(BaseModel):
@@ -67,6 +72,8 @@ class CartaoUpdate(BaseModel):
     expense_sharing_id: int | None = None
     active: bool | None = None
     closing_day: int | None = Field(default=None, ge=1, le=30)
+    is_account_card: bool | None = None
+    invoice_group_id: int | None = None
     update_existing_records: bool = False  # Flag para atualizar registros existentes
 
 
@@ -83,9 +90,150 @@ class CartaoResponse(BaseModel):
     expense_sharing: ExpenseSharingInfo | None = None
     active: bool
     closing_day: int
+    is_account_card: bool | None = None
+    invoice_group_id: int | None = None
+    invoice_group_name: str | None = None
 
     class Config:
         from_attributes = True
+
+
+class InvoiceGroupCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    card_ids: List[int] = []
+
+
+class InvoiceGroupUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    active: bool | None = None
+    card_ids: List[int] | None = None
+
+
+class InvoiceGroupResponse(BaseModel):
+    id: int
+    name: str
+    account_id: int
+    active: bool
+    card_count: int = 0
+
+    class Config:
+        from_attributes = True
+
+
+def _current_user_id(current_user: dict) -> int:
+    user_id = current_user.get("user_id") or current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Usuário inválido no token")
+    return int(user_id)
+
+
+def _serialize_cartao(cartao: Cartao) -> dict:
+    return {
+        "id": cartao.id,
+        "name": cartao.name,
+        "description": cartao.description,
+        "number": cartao.number,
+        "type": cartao.type,
+        "account_id": cartao.account_id,
+        "account_name": None,
+        "ownership_type": cartao.ownership_type,
+        "expense_sharing_id": cartao.expense_sharing_id,
+        "expense_sharing": None,
+        "active": cartao.active,
+        "closing_day": cartao.closing_day,
+        "is_account_card": cartao.is_account_card,
+        "invoice_group_id": cartao.invoice_group_id,
+        "invoice_group_name": cartao.invoice_group.name if getattr(cartao, "invoice_group", None) else None,
+    }
+
+
+def _current_account_id(current_user: dict) -> int | None:
+    account_id = current_user.get("account_id")
+    return int(account_id) if account_id is not None else None
+
+
+def _require_account_id(current_user: dict) -> int:
+    account_id = _current_account_id(current_user)
+    if account_id is None:
+        raise HTTPException(status_code=400, detail="Nenhuma conta selecionada. Por favor, selecione uma conta primeiro.")
+    return account_id
+
+
+def _validate_invoice_group(
+    db: Session,
+    tenant_id: int,
+    account_id: int | None,
+    invoice_group_id: int | None,
+    card_type: str | None,
+) -> int | None:
+    if card_type == "beneficios" or invoice_group_id is None:
+        return None
+    if account_id is None:
+        raise HTTPException(status_code=400, detail="Selecione uma conta para vincular o cartão a um grupo de fatura")
+    group = db.query(CreditCardInvoiceGroup).filter(
+        CreditCardInvoiceGroup.id == invoice_group_id,
+        CreditCardInvoiceGroup.tenant_id == tenant_id,
+        CreditCardInvoiceGroup.account_id == account_id,
+        CreditCardInvoiceGroup.active == True,
+    ).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="Grupo de fatura não encontrado")
+    return group.id
+
+
+def _serialize_invoice_group(group: CreditCardInvoiceGroup) -> dict:
+    cards = group.credit_cards or []
+    return {
+        "id": group.id,
+        "name": group.name,
+        "account_id": group.account_id,
+        "active": group.active,
+        "card_count": len([c for c in cards if c.type == "credito"]),
+    }
+
+
+def _reload_invoice_group(db: Session, group_id: int, tenant_id: int, account_id: int) -> CreditCardInvoiceGroup:
+    group = db.query(CreditCardInvoiceGroup).options(
+        joinedload(CreditCardInvoiceGroup.credit_cards)
+    ).filter(
+        CreditCardInvoiceGroup.id == group_id,
+        CreditCardInvoiceGroup.tenant_id == tenant_id,
+        CreditCardInvoiceGroup.account_id == account_id,
+    ).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="Grupo de fatura não encontrado")
+    return group
+
+
+def _set_group_cards(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    group_id: int,
+    card_ids: List[int],
+) -> None:
+    unique_ids = list(dict.fromkeys(card_ids))
+    if len(unique_ids) < 2:
+        raise HTTPException(status_code=400, detail="Selecione pelo menos dois cartões de crédito")
+
+    cards = db.query(Cartao).filter(
+        Cartao.tenant_id == tenant_id,
+        Cartao.account_id == account_id,
+        Cartao.id.in_(unique_ids),
+        Cartao.type == "credito",
+    ).all()
+    if len(cards) != len(unique_ids):
+        raise HTTPException(status_code=400, detail="Só cartões de crédito da conta podem entrar no grupo")
+
+    db.query(Cartao).filter(
+        Cartao.tenant_id == tenant_id,
+        Cartao.account_id == account_id,
+        Cartao.invoice_group_id == group_id,
+        ~Cartao.id.in_(unique_ids),
+    ).update({Cartao.invoice_group_id: None}, synchronize_session=False)
+
+    for card in cards:
+        card.invoice_group_id = group_id
 
 
 @router.get("/", response_model=List[CartaoResponse])
@@ -109,7 +257,8 @@ async def listar_cartoes(
     # Filtra por tenant_id e carrega relacionamentos
     query = db.query(Cartao).options(
         joinedload(Cartao.account).joinedload(Account.bank),
-        joinedload(Cartao.expense_sharing).joinedload(ExpenseSharingSetting.shared_account).joinedload(Account.bank)
+        joinedload(Cartao.expense_sharing).joinedload(ExpenseSharingSetting.shared_account).joinedload(Account.bank),
+        joinedload(Cartao.invoice_group),
     ).filter(Cartao.tenant_id == tenant_id)
 
     # Se account_id estiver disponível no token, filtra por ele
@@ -135,7 +284,10 @@ async def listar_cartoes(
             "expense_sharing_id": cartao.expense_sharing_id,
             "expense_sharing": None,
             "active": cartao.active,
-            "closing_day": cartao.closing_day
+            "closing_day": cartao.closing_day,
+            "is_account_card": cartao.is_account_card,
+            "invoice_group_id": cartao.invoice_group_id,
+            "invoice_group_name": cartao.invoice_group.name if cartao.invoice_group else None,
         }
 
         # Buscar dados completos da conta (já carregado via joinedload)
@@ -177,8 +329,8 @@ async def listar_cartoes(
                         "name": shared_acc.name,
                         "description": shared_acc.description,
                         "bank": None,
-                        "agency": shared_acc.agency,
-                        "account_number": shared_acc.account_number
+                        "agency": str(shared_acc.agency) if shared_acc.agency is not None else None,
+                        "account_number": str(shared_acc.account_number) if shared_acc.account_number is not None else None
                     }
 
                     # Incluir dados do banco se disponível
@@ -261,13 +413,156 @@ async def listar_cartoes_agrupados(
                         "type": c.type,
                         "ownership_type": c.ownership_type,
                         "active": c.active,
-                        "account_id": c.account_id
+                        "account_id": c.account_id,
+                        "is_account_card": c.is_account_card,
+                        "invoice_group_id": c.invoice_group_id,
                     }
                     for c in cartoes
                 ]
             })
 
     return resultado
+
+
+@router.get("/invoice-groups", response_model=List[InvoiceGroupResponse])
+async def listar_grupos_fatura(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    tenant_id = current_user.get("tenant_id", 1)
+    account_id = _require_account_id(current_user)
+    groups = (
+        db.query(CreditCardInvoiceGroup)
+        .options(joinedload(CreditCardInvoiceGroup.credit_cards))
+        .filter(
+            CreditCardInvoiceGroup.tenant_id == tenant_id,
+            CreditCardInvoiceGroup.account_id == account_id,
+            CreditCardInvoiceGroup.active == True,
+        )
+        .order_by(CreditCardInvoiceGroup.name)
+        .all()
+    )
+    return [_serialize_invoice_group(group) for group in groups]
+
+
+@router.post("/invoice-groups", response_model=InvoiceGroupResponse, status_code=201)
+async def criar_grupo_fatura(
+    payload: InvoiceGroupCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    tenant_id = current_user.get("tenant_id", 1)
+    account_id = _require_account_id(current_user)
+    user_id = _current_user_id(current_user)
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Nome do grupo é obrigatório")
+
+    existing = db.query(CreditCardInvoiceGroup).filter(
+        CreditCardInvoiceGroup.tenant_id == tenant_id,
+        CreditCardInvoiceGroup.account_id == account_id,
+        CreditCardInvoiceGroup.name == name,
+    ).first()
+    if existing:
+        if existing.active:
+            raise HTTPException(status_code=400, detail="Já existe um grupo com este nome")
+        existing.active = True
+        try:
+            _set_group_cards(db, tenant_id, account_id, existing.id, payload.card_ids)
+            db.commit()
+        except HTTPException:
+            db.rollback()
+            raise
+        return _serialize_invoice_group(_reload_invoice_group(db, existing.id, tenant_id, account_id))
+
+    group = CreditCardInvoiceGroup(
+        name=name,
+        account_id=account_id,
+        tenant_id=tenant_id,
+        created_by=user_id,
+        active=True,
+    )
+    db.add(group)
+    try:
+        db.flush()
+        _set_group_cards(db, tenant_id, account_id, group.id, payload.card_ids)
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Já existe um grupo com este nome")
+    return _serialize_invoice_group(_reload_invoice_group(db, group.id, tenant_id, account_id))
+
+
+@router.put("/invoice-groups/{group_id}", response_model=InvoiceGroupResponse)
+async def atualizar_grupo_fatura(
+    group_id: int,
+    payload: InvoiceGroupUpdate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    tenant_id = current_user.get("tenant_id", 1)
+    account_id = _require_account_id(current_user)
+    group = db.query(CreditCardInvoiceGroup).options(
+        joinedload(CreditCardInvoiceGroup.credit_cards)
+    ).filter(
+        CreditCardInvoiceGroup.id == group_id,
+        CreditCardInvoiceGroup.tenant_id == tenant_id,
+        CreditCardInvoiceGroup.account_id == account_id,
+    ).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="Grupo de fatura não encontrado")
+
+    data = payload.model_dump(exclude_unset=True)
+    if "name" in data and data["name"] is not None:
+        name = data["name"].strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Nome do grupo é obrigatório")
+        group.name = name
+    if "active" in data and data["active"] is not None:
+        group.active = data["active"]
+    if "card_ids" in data and data["card_ids"] is not None:
+        try:
+            _set_group_cards(db, tenant_id, account_id, group.id, data["card_ids"])
+            db.commit()
+        except HTTPException:
+            db.rollback()
+            raise
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=400, detail="Já existe um grupo com este nome")
+        return _serialize_invoice_group(_reload_invoice_group(db, group.id, tenant_id, account_id))
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Já existe um grupo com este nome")
+    return _serialize_invoice_group(_reload_invoice_group(db, group.id, tenant_id, account_id))
+
+
+@router.delete("/invoice-groups/{group_id}", status_code=204)
+async def deletar_grupo_fatura(
+    group_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    tenant_id = current_user.get("tenant_id", 1)
+    account_id = _require_account_id(current_user)
+    group = db.query(CreditCardInvoiceGroup).filter(
+        CreditCardInvoiceGroup.id == group_id,
+        CreditCardInvoiceGroup.tenant_id == tenant_id,
+        CreditCardInvoiceGroup.account_id == account_id,
+    ).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="Grupo de fatura não encontrado")
+
+    match_service.unmatch_group_matches(db, tenant_id, account_id, group.id)
+    db.delete(group)
+    db.commit()
+    return None
 
 
 @router.get("/{cartao_id}", response_model=CartaoResponse)
@@ -280,7 +575,7 @@ async def obter_cartao(
     tenant_id = current_user.get("tenant_id", 1)
     account_id = current_user.get("account_id")
 
-    query = db.query(Cartao).filter(
+    query = db.query(Cartao).options(joinedload(Cartao.invoice_group)).filter(
         Cartao.id == cartao_id,
         Cartao.tenant_id == tenant_id,
         Cartao.active == True
@@ -293,7 +588,7 @@ async def obter_cartao(
     cartao = query.first()
     if not cartao:
         raise HTTPException(status_code=404, detail="Cartão não encontrado")
-    return cartao
+    return _serialize_cartao(cartao)
 
 
 @router.post("/", response_model=CartaoResponse, status_code=201)
@@ -304,10 +599,19 @@ async def criar_cartao(
 ):
     """Cria um novo cartão."""
     tenant_id = current_user.get("tenant_id", 1)
+    account_id = current_user.get("account_id")
+    user_id = _current_user_id(current_user)
 
     # Validações
     if cartao_data.type not in ['credito', 'beneficios']:
         raise HTTPException(status_code=400, detail="type deve ser 'credito' ou 'beneficios'")
+
+    payload = cartao_data.model_dump()
+    if not payload.get("account_id"):
+        payload["account_id"] = account_id
+    payload["invoice_group_id"] = _validate_invoice_group(
+        db, tenant_id, payload.get("account_id"), payload.get("invoice_group_id"), payload.get("type"),
+    )
 
     # Verifica se já existe um cartão com o mesmo name e número
     cartao_existente = db.query(Cartao).filter(
@@ -320,23 +624,36 @@ async def criar_cartao(
         if cartao_existente.active:
             raise HTTPException(status_code=400, detail="Cartão já existe")
         else:
-            # Reativa o cartão se estava inativo
             cartao_existente.active = True
-            db.commit()
-            db.refresh(cartao_existente)
-            return cartao_existente
+            cartao_existente.description = payload.get("description")
+            cartao_existente.type = payload.get("type") or cartao_existente.type
+            cartao_existente.closing_day = payload.get("closing_day") or cartao_existente.closing_day
+            cartao_existente.expense_sharing_id = payload.get("expense_sharing_id")
+            cartao_existente.is_account_card = payload.get("is_account_card")
+            cartao_existente.invoice_group_id = payload.get("invoice_group_id")
+            if payload.get("account_id"):
+                cartao_existente.account_id = payload["account_id"]
+            try:
+                db.commit()
+                db.refresh(cartao_existente)
+            except IntegrityError:
+                db.rollback()
+                raise HTTPException(status_code=400, detail="Cartão já existe")
+            return _serialize_cartao(cartao_existente)
 
-    # Cria novo cartão
-    user_id = current_user.get("user_id", 1)
     novo_cartao = Cartao(
         tenant_id=tenant_id,
         created_by=user_id,
-        **cartao_data.model_dump()
+        **payload
     )
     db.add(novo_cartao)
-    db.commit()
-    db.refresh(novo_cartao)
-    return novo_cartao
+    try:
+        db.commit()
+        db.refresh(novo_cartao)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Não foi possível criar o cartão. Verifique nome, número e conta.")
+    return _serialize_cartao(novo_cartao)
 
 
 @router.put("/{cartao_id}", response_model=CartaoResponse)
@@ -375,6 +692,13 @@ async def atualizar_cartao(
     if 'type' in update_data:
         if update_data['type'] not in ['credito', 'beneficios']:
             raise HTTPException(status_code=400, detail="type deve ser 'credito' ou 'beneficios'")
+
+    card_type = update_data.get('type', cartao.type)
+    if 'invoice_group_id' in update_data or 'type' in update_data:
+        group_id = update_data.get('invoice_group_id', cartao.invoice_group_id)
+        update_data['invoice_group_id'] = _validate_invoice_group(
+            db, tenant_id, cartao.account_id, group_id, card_type,
+        )
 
     # Verifica se já existe outro cartão com o mesmo name e número
     if 'name' in update_data and 'number' in update_data:
@@ -447,7 +771,7 @@ async def atualizar_cartao(
 
     db.commit()
     db.refresh(cartao)
-    return cartao
+    return _serialize_cartao(cartao)
 
 
 @router.delete("/{cartao_id}", status_code=204)
@@ -509,5 +833,5 @@ async def reativar_cartao(
     cartao.active = True
     db.commit()
     db.refresh(cartao)
-    return cartao
+    return _serialize_cartao(cartao)
 

@@ -1,7 +1,20 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
-import { X, Users, Tag as TagIcon, Percent } from 'lucide-react'
+import { Users, Tag as TagIcon, Pencil } from 'lucide-react'
 import Toast from './Toast'
+import {
+  CadastroModalShell,
+  CadastroModalHeader,
+  CadastroModalBody,
+  CadastroModalFooter,
+  CadastroFormSection,
+  CadastroModalFieldsGrid,
+  CadastroModalFieldsRow,
+  CadastroFieldLabel,
+  cadastroFieldCls,
+  cadastroOptionLabelCls,
+  cadastroAccentControlCls,
+} from './CadastroFormLayout'
 import { useEscapeKey } from '../hooks/useEscapeKey'
 
 interface ToastState {
@@ -243,7 +256,6 @@ const BatchEditExpenseModal = ({ isOpen, onClose, selectedItems, expenseType, on
 
   return (
     <>
-      {/* Toast só aparece se show=true E não estiver carregando dados */}
       {toast.show && !isLoadingData && (
         <Toast
           message={toast.message}
@@ -252,255 +264,209 @@ const BatchEditExpenseModal = ({ isOpen, onClose, selectedItems, expenseType, on
         />
       )}
 
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div
-          className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto relative"
-          data-modal="batch-edit-expense"
-        >
-          {/* ✅ Loading overlay cobrindo todo o modal */}
+      <CadastroModalShell maxWidth="max-w-2xl" onBackdropClick={onClose}>
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           {isLoadingData && (
-            <div className="absolute inset-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm z-50 rounded-xl flex items-center justify-center">
+            <div className="absolute inset-0 z-50 flex items-center justify-center rounded-xl bg-white/80 backdrop-blur-sm dark:bg-gray-800/80">
               <div className="text-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent mx-auto mb-3"></div>
-                <p className="text-sm font-medium text-blue-700 dark:text-blue-300">Carregando dados...</p>
+                <div className="mx-auto mb-3 h-12 w-12 animate-spin rounded-full border-4 border-[var(--color-1)] border-t-transparent"></div>
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Carregando dados...</p>
               </div>
             </div>
           )}
 
-          {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-            <div>
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                Editar em Lote
-              </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                {selectedItems.length} {expenseType === 'despesa' ? 'despesa(s)' : 'receita(s)'} selecionada(s)
-              </p>
-            </div>
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-            >
-              <X size={20} className="text-gray-500" />
-            </button>
-          </div>
-
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="p-6 space-y-5">
-            {/* Tag e Subtag */}
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                <TagIcon size={16} />
-                Tag / Subtag
-              </label>
-
-              <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 ${clearSubtag ? 'opacity-50 pointer-events-none' : ''}`}>
-                {/* Tag */}
-                <div>
-                  <select
-                    value={formData.tag_id || ''}
-                    onChange={(e) => {
-                      const newTagId = parseInt(e.target.value) || 0
-                      setFormData({ ...formData, tag_id: newTagId, subtag_id: 0 })
-                    }}
-                    disabled={isLoading || clearSubtag}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
-                  >
-                    <option value="">Selecione uma tag...</option>
-                    {tags.map(tag => (
-                      <option key={tag.id} value={tag.id}>
-                        {tag.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Subtag */}
-                <div>
-                  <select
-                    value={formData.subtag_id || ''}
-                    onChange={(e) => setFormData({ ...formData, subtag_id: parseInt(e.target.value) || 0 })}
-                    disabled={isLoading || !formData.tag_id || clearSubtag}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
-                  >
-                    <option value="">
-                      {formData.tag_id === 0 ? 'Selecione uma tag primeiro' : 'Selecione uma subtag...'}
-                    </option>
-                    {subtags
-                      .filter(subtag => {
-                        if (subtag.tag_id !== formData.tag_id) return false
-                        return subtag.tag_type === expenseType
-                      })
-                      .map(subtag => (
-                        <option key={subtag.id} value={subtag.id}>
-                          {subtag.name}
-                        </option>
-                      ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Checkbox limpar - abaixo dos campos */}
-              <label className="flex items-center gap-2 cursor-pointer pt-1">
-                <input
-                  type="checkbox"
-                  checked={clearSubtag}
-                  onChange={(e) => {
-                    setClearSubtag(e.target.checked)
-                    if (e.target.checked) {
-                      setFormData({ ...formData, tag_id: 0, subtag_id: 0 })
-                    }
-                  }}
-                  disabled={isLoading}
-                  className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
-                />
-                <span className="text-xs text-red-600 dark:text-red-400 font-medium">Limpar categoria</span>
-              </label>
-            </div>
-
-            {/* Compartilhamento */}
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                <Users size={16} />
-                Compartilhamento
-              </label>
-
-              {/* Tipo de Ajuste e Parceiro - desabilitado se clearSharing */}
-              <div className={`space-y-3 ${clearSharing ? 'opacity-50 pointer-events-none' : ''}`}>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      value="proprio"
-                      checked={formData.adjustment_type === 'proprio'}
-                      onChange={() => setFormData({
-                        ...formData,
-                        adjustment_type: 'proprio',
-                        shared_partner_id: null,
-                        ownership_percentage: '100.00'
-                      })}
-                      disabled={isLoading || clearSharing}
-                      className="text-blue-600 focus:ring-blue-500"
-                    />
-                    <span className="text-sm text-gray-700 dark:text-gray-300">Próprio (100%)</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      value="compartilhado"
-                      checked={formData.adjustment_type === 'compartilhado'}
-                      onChange={() => setFormData({
-                        ...formData,
-                        adjustment_type: 'compartilhado'
-                      })}
-                      disabled={isLoading || clearSharing}
-                      className="text-blue-600 focus:ring-blue-500"
-                    />
-                    <span className="text-sm text-gray-700 dark:text-gray-300">Compartilhado</span>
-                  </label>
-                </div>
-
-                {/* Parceiro Compartilhado (condicional) */}
-                {formData.adjustment_type === 'compartilhado' && !clearSharing && (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="md:col-span-2">
-                      <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">
-                        Parceiro *
-                      </label>
+          <CadastroModalHeader
+            isEdit
+            title="Editar em Lote"
+            subtitle={`${selectedItems.length} ${expenseType === 'despesa' ? 'despesa(s)' : 'receita(s)'} selecionada(s)`}
+            onClose={onClose}
+            icon={<Pencil size={18} />}
+          />
+          <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col" id="batch-edit-expense-form">
+            <CadastroModalBody>
+              <CadastroFormSection title="Classificação" icon={<TagIcon size={14} />}>
+                <CadastroModalFieldsGrid>
+                  <CadastroModalFieldsRow cols={2}>
+                    <label className={`block min-w-0 ${clearSubtag ? 'opacity-50 pointer-events-none' : ''}`}>
+                      <CadastroFieldLabel>Tag</CadastroFieldLabel>
                       <select
-                        value={formData.shared_partner_id || 0}
+                        value={formData.tag_id || ''}
                         onChange={(e) => {
-                          const partnerId = Number(e.target.value) || null
-                          const selectedPartner = partners.find(p => p.id === partnerId)
-                          setFormData({
-                            ...formData,
-                            shared_partner_id: partnerId,
-                            ownership_percentage: selectedPartner ? selectedPartner.my_contribution_percentage.toString() : '50.00'
+                          const newTagId = parseInt(e.target.value) || 0
+                          setFormData({ ...formData, tag_id: newTagId, subtag_id: 0 })
+                        }}
+                        disabled={isLoading || clearSubtag}
+                        className={`${cadastroFieldCls} mt-0.5 disabled:opacity-50`}
+                      >
+                        <option value="">Selecione uma tag...</option>
+                        {tags.map(tag => (
+                          <option key={tag.id} value={tag.id}>
+                            {tag.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className={`block min-w-0 ${clearSubtag ? 'opacity-50 pointer-events-none' : ''}`}>
+                      <CadastroFieldLabel>Subtag</CadastroFieldLabel>
+                      <select
+                        value={formData.subtag_id || ''}
+                        onChange={(e) => setFormData({ ...formData, subtag_id: parseInt(e.target.value) || 0 })}
+                        disabled={isLoading || !formData.tag_id || clearSubtag}
+                        className={`${cadastroFieldCls} mt-0.5 disabled:opacity-50`}
+                      >
+                        <option value="">
+                          {formData.tag_id === 0 ? 'Selecione uma tag primeiro' : 'Selecione uma subtag...'}
+                        </option>
+                        {subtags
+                          .filter(subtag => {
+                            if (subtag.tag_id !== formData.tag_id) return false
+                            return subtag.tag_type === expenseType
                           })
+                          .map(subtag => (
+                            <option key={subtag.id} value={subtag.id}>
+                              {subtag.name}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                  </CadastroModalFieldsRow>
+                  <CadastroModalFieldsRow>
+                    <label className={cadastroOptionLabelCls}>
+                      <input
+                        type="checkbox"
+                        checked={clearSubtag}
+                        onChange={(e) => {
+                          setClearSubtag(e.target.checked)
+                          if (e.target.checked) {
+                            setFormData({ ...formData, tag_id: 0, subtag_id: 0 })
+                          }
                         }}
                         disabled={isLoading}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
-                        required
-                      >
-                        <option value={0}>Selecione um compartilhamento</option>
-                        {[...partners]
-                          .sort((a, b) => {
-                            const nameA = a.shared_account?.name || a.shared_account?.description || ''
-                            const nameB = b.shared_account?.name || b.shared_account?.description || ''
-                            return nameA.localeCompare(nameB, 'pt-BR')
-                          })
-                          .map(partner => (
-                            <option key={partner.id} value={partner.id}>
-                              {getPartnerLabel(partner)}
-                            </option>
-                          ))
-                        }
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">
-                        Minha Contribuição (%)
-                      </label>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={formData.ownership_percentage}
-                        onChange={(e) => setFormData({ ...formData, ownership_percentage: e.target.value })}
-                        disabled={isLoading || isLoadingData}
-                        placeholder="0.00"
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                        className={`${cadastroAccentControlCls} h-4 w-4 rounded border-gray-300`}
                       />
+                      <span className="text-xs font-medium text-red-600 dark:text-red-400">Limpar categoria</span>
+                    </label>
+                  </CadastroModalFieldsRow>
+                </CadastroModalFieldsGrid>
+              </CadastroFormSection>
+
+              <CadastroFormSection title="Compartilhamento" icon={<Users size={14} />}>
+                <CadastroModalFieldsGrid>
+                  <CadastroModalFieldsRow>
+                    <div className={`flex flex-wrap gap-4 ${clearSharing ? 'opacity-50 pointer-events-none' : ''}`}>
+                      <label className={cadastroOptionLabelCls}>
+                        <input
+                          type="radio"
+                          value="proprio"
+                          checked={formData.adjustment_type === 'proprio'}
+                          onChange={() => setFormData({
+                            ...formData,
+                            adjustment_type: 'proprio',
+                            shared_partner_id: null,
+                            ownership_percentage: '100.00'
+                          })}
+                          disabled={isLoading || clearSharing}
+                          className={cadastroAccentControlCls}
+                        />
+                        Próprio (100%)
+                      </label>
+                      <label className={cadastroOptionLabelCls}>
+                        <input
+                          type="radio"
+                          value="compartilhado"
+                          checked={formData.adjustment_type === 'compartilhado'}
+                          onChange={() => setFormData({
+                            ...formData,
+                            adjustment_type: 'compartilhado'
+                          })}
+                          disabled={isLoading || clearSharing}
+                          className={cadastroAccentControlCls}
+                        />
+                        Compartilhado
+                      </label>
                     </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Checkbox limpar - abaixo dos campos */}
-              <label className="flex items-center gap-2 cursor-pointer pt-1">
-                <input
-                  type="checkbox"
-                  checked={clearSharing}
-                  onChange={(e) => {
-                    setClearSharing(e.target.checked)
-                    if (e.target.checked) {
-                      setFormData({ ...formData, adjustment_type: '', shared_partner_id: null, ownership_percentage: '' })
-                    }
-                  }}
-                  disabled={isLoading}
-                  className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
-                />
-                <span className="text-xs text-red-600 dark:text-red-400 font-medium">Limpar compartilhamento</span>
-              </label>
-            </div>
-
-            {/* Botões */}
-            <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
-              <button
-                type="button"
-                onClick={onClose}
-                disabled={isLoading}
-                className="px-4 py-2 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors disabled:opacity-50"
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
-              >
-                {isLoading ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Atualizando...
-                  </>
-                ) : (
-                  `Atualizar ${selectedItems.length} registro(s)`
-                )}
-              </button>
-            </div>
+                  </CadastroModalFieldsRow>
+                  {formData.adjustment_type === 'compartilhado' && !clearSharing ? (
+                    <CadastroModalFieldsRow cols={2}>
+                      <label className="block min-w-0">
+                        <CadastroFieldLabel required>Parceiro</CadastroFieldLabel>
+                        <select
+                          value={formData.shared_partner_id || 0}
+                          onChange={(e) => {
+                            const partnerId = Number(e.target.value) || null
+                            const selectedPartner = partners.find(p => p.id === partnerId)
+                            setFormData({
+                              ...formData,
+                              shared_partner_id: partnerId,
+                              ownership_percentage: selectedPartner ? selectedPartner.my_contribution_percentage.toString() : '50.00'
+                            })
+                          }}
+                          disabled={isLoading}
+                          className={`${cadastroFieldCls} mt-0.5 disabled:opacity-50`}
+                          required
+                        >
+                          <option value={0}>Selecione um compartilhamento</option>
+                          {[...partners]
+                            .sort((a, b) => {
+                              const nameA = a.shared_account?.name || a.shared_account?.description || ''
+                              const nameB = b.shared_account?.name || b.shared_account?.description || ''
+                              return nameA.localeCompare(nameB, 'pt-BR')
+                            })
+                            .map(partner => (
+                              <option key={partner.id} value={partner.id}>
+                                {getPartnerLabel(partner)}
+                              </option>
+                            ))
+                          }
+                        </select>
+                      </label>
+                      <label className="block min-w-0">
+                        <CadastroFieldLabel>Minha Contribuição (%)</CadastroFieldLabel>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={formData.ownership_percentage}
+                          onChange={(e) => setFormData({ ...formData, ownership_percentage: e.target.value })}
+                          disabled={isLoading || isLoadingData}
+                          placeholder="0.00"
+                          className={`${cadastroFieldCls} mt-0.5 disabled:opacity-50`}
+                        />
+                      </label>
+                    </CadastroModalFieldsRow>
+                  ) : null}
+                  <CadastroModalFieldsRow>
+                    <label className={cadastroOptionLabelCls}>
+                      <input
+                        type="checkbox"
+                        checked={clearSharing}
+                        onChange={(e) => {
+                          setClearSharing(e.target.checked)
+                          if (e.target.checked) {
+                            setFormData({ ...formData, adjustment_type: '', shared_partner_id: null, ownership_percentage: '' })
+                          }
+                        }}
+                        disabled={isLoading}
+                        className={`${cadastroAccentControlCls} h-4 w-4 rounded border-gray-300`}
+                      />
+                      <span className="text-xs font-medium text-red-600 dark:text-red-400">Limpar compartilhamento</span>
+                    </label>
+                  </CadastroModalFieldsRow>
+                </CadastroModalFieldsGrid>
+              </CadastroFormSection>
+            </CadastroModalBody>
+            <CadastroModalFooter
+              onClose={onClose}
+              onSave={() => {
+                const form = document.getElementById('batch-edit-expense-form') as HTMLFormElement | null
+                form?.requestSubmit()
+              }}
+              saving={isLoading}
+              disabled={isLoading}
+              saveLabel={`Atualizar ${selectedItems.length} registro(s)`}
+            />
           </form>
         </div>
-      </div>
+      </CadastroModalShell>
     </>
   )
 }

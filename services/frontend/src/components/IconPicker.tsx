@@ -1,7 +1,15 @@
 import { useState } from 'react'
-import { Search, X } from 'lucide-react'
+import { Search } from 'lucide-react'
 import { getIconComponent } from '../utils/iconMapper'
 import { useEscapeKey } from '../hooks/useEscapeKey'
+import {
+  cadastroFieldCls,
+  CadastroFormSection,
+  CadastroModalBody,
+  CadastroModalFooter,
+  CadastroModalHeader,
+  CadastroModalShell,
+} from './CadastroFormLayout'
 
 interface IconPickerProps {
   value: string
@@ -151,101 +159,81 @@ const IconPicker = ({ value, onChange, availableIcons, iconNamesPt = {} }: IconP
         <span className="text-gray-400 text-xs">▼</span>
       </button>
 
-      {/* Modal do picker */}
       {isOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-5xl w-full max-h-[85vh] flex flex-col">
-            {/* Header */}
-            <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                Selecionar Ícone
-              </h3>
-              <button
-                onClick={() => setIsOpen(false)}
-                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                title="Fechar (ESC)"
-              >
-                <X size={20} className="text-gray-500 dark:text-gray-400" />
-              </button>
-            </div>
-
-            {/* Search */}
-            <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-              <div className="relative">
-                <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+        <CadastroModalShell maxWidth="max-w-5xl" zClass="z-[110]" onBackdropClick={() => setIsOpen(false)}>
+          <CadastroModalHeader
+            isEdit={false}
+            title="Selecionar Ícone"
+            onClose={() => setIsOpen(false)}
+            icon={<Search size={18} />}
+          />
+          <CadastroModalBody
+            chrome={
+              <div className="relative pb-3">
+                <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
                   type="text"
                   placeholder="Buscar ícone..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  className={`${cadastroFieldCls} pl-10`}
                   autoFocus
                 />
               </div>
-            </div>
+            }
+          >
+            {Object.entries(categorizedIcons).map(([category, icons]) => (
+              <CadastroFormSection key={category} title={category}>
+                <div className="grid grid-cols-8 gap-2">
+                  {icons.map((iconName) => {
+                    const IconComponent = getIconComponent(iconName)
+                    const isSelected = iconName === value
 
-            {/* Grid de ícones por categoria */}
-            <div className="flex-1 overflow-y-auto p-4">
-              {Object.entries(categorizedIcons).map(([category, icons]) => (
-                <div key={category} className="mb-6 last:mb-0">
-                  <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 px-1">
-                    {category}
-                  </h4>
-                  <div className="grid grid-cols-8 gap-2">
-                    {icons.map((iconName) => {
-                      const IconComponent = getIconComponent(iconName)
-                      const isSelected = iconName === value
-
-                      return (
-                        <button
-                          key={iconName}
-                          type="button"
-                          onClick={() => {
-                            onChange(iconName)
-                            setIsOpen(false)
-                          }}
-                          className={`p-3 rounded-lg border-2 flex flex-col items-center justify-center gap-1 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
-                            isSelected
-                              ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                              : 'border-gray-200 dark:border-gray-600'
-                          }`}
-                          title={iconNamesPt[iconName] || iconName}
-                        >
-                          <IconComponent size={24} className={isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'} />
-                          <span className={`text-xs truncate w-full text-center ${
-                            isSelected ? 'text-blue-600 dark:text-blue-400 font-medium' : 'text-gray-500 dark:text-gray-400'
-                          }`}>
-                            {iconNamesPt[iconName] || iconName}
-                          </span>
-                        </button>
-                      )
-                    })}
-                  </div>
+                    return (
+                      <button
+                        key={iconName}
+                        type="button"
+                        onClick={() => {
+                          onChange(iconName)
+                          setIsOpen(false)
+                        }}
+                        className={`p-3 rounded-lg border-2 flex flex-col items-center justify-center gap-1 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
+                          isSelected
+                            ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                            : 'border-gray-200 dark:border-gray-600'
+                        }`}
+                        title={iconNamesPt[iconName] || iconName}
+                      >
+                        <IconComponent size={24} className={isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'} />
+                        <span className={`text-xs truncate w-full text-center ${
+                          isSelected ? 'text-blue-600 dark:text-blue-400 font-medium' : 'text-gray-500 dark:text-gray-400'
+                        }`}>
+                          {iconNamesPt[iconName] || iconName}
+                        </span>
+                      </button>
+                    )
+                  })}
                 </div>
-              ))}
+              </CadastroFormSection>
+            ))}
 
-              {filteredIcons.length === 0 && (
-                <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                  Nenhum ícone encontrado
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
+            {filteredIcons.length === 0 && (
+              <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                Nenhum ícone encontrado
+              </div>
+            )}
+          </CadastroModalBody>
+          <CadastroModalFooter
+            onClose={() => setIsOpen(false)}
+            hideSave
+            closeLabel="Fechar"
+            leading={
               <span className="text-sm text-gray-500 dark:text-gray-400">
                 {filteredIcons.length} ícones disponíveis
               </span>
-              <button
-                type="button"
-                onClick={() => setIsOpen(false)}
-                className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600"
-              >
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
+            }
+          />
+        </CadastroModalShell>
       )}
     </div>
   )

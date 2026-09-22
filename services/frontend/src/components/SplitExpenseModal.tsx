@@ -1,7 +1,17 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
-import { X } from 'lucide-react'
+import { Scissors, Tag, DollarSign } from 'lucide-react'
 import Toast from './Toast'
+import {
+  CadastroModalShell,
+  CadastroModalHeader,
+  CadastroModalBody,
+  CadastroModalFooter,
+  CadastroFormSection,
+  CadastroFieldLabel,
+  cadastroFieldCls,
+  cadastroAccentControlCls,
+} from './CadastroFormLayout'
 import { useEscapeKey } from '../hooks/useEscapeKey'
 
 interface ToastState {
@@ -58,7 +68,7 @@ const SplitExpenseModal = ({ isOpen, onClose, expense, onSuccess }: SplitExpense
         const target = e.target as HTMLElement
         if (target.tagName !== 'TEXTAREA' && target.tagName !== 'SELECT' && target.tagName !== 'INPUT') {
           e.preventDefault()
-          const form = document.querySelector('form')
+          const form = document.getElementById('split-expense-form') as HTMLFormElement | null
           if (form) {
             form.requestSubmit()
           }
@@ -290,70 +300,39 @@ const SplitExpenseModal = ({ isOpen, onClose, expense, onSuccess }: SplitExpense
   const remaining = expense.amount - getTotalAmount()
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-5xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-6 flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-              Dividir Despesa
-            </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              {expense.description}
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-          >
-            <X size={24} />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="p-6">
-          {/* Valor Original */}
-          <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Valor Original:
-              </span>
-              <span className="text-lg font-bold text-gray-900 dark:text-white">
-                {formatCurrency(expense.amount)}
-              </span>
-            </div>
-          </div>
-
-          {/* Partes */}
-          <div className="space-y-4 mb-6">
-            {/* Slider de porcentagem - UX Moderna */}
-            {expense && parts.length === 2 && parts[0] && parts[1] && (
-              <div className="mb-6">
-                {/* Barra de Progresso Visual Dual-Color */}
-                <div className="mb-4">
-                  <div className="flex items-center justify-between mb-3">
+    <>
+      <CadastroModalShell maxWidth="max-w-5xl" onBackdropClick={onClose}>
+        <CadastroModalHeader
+          isEdit
+          title="Dividir Despesa"
+          subtitle={expense.description}
+          onClose={onClose}
+          icon={<Scissors size={18} />}
+        />
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col" id="split-expense-form">
+          <CadastroModalBody>
+            <CadastroFormSection title="Valores" icon={<DollarSign size={14} />}>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-600 dark:text-gray-400">Valor original</span>
+                <span className="text-lg font-bold text-gray-900 dark:text-white">{formatCurrency(expense.amount)}</span>
+              </div>
+              {expense && parts.length === 2 && parts[0] && parts[1] && (
+                <div className="mt-4">
+                  <div className="mb-3 flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full bg-gradient-to-r from-[var(--color-1)] to-[var(--color-2)]"></div>
-                      <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                        Minha Parte
-                      </span>
-                      <span className="text-lg font-bold text-[var(--color-1)]">
-                        {getSliderPercentage()}%
-                      </span>
+                      <div className="h-3 w-3 rounded-full bg-gradient-to-r from-[var(--color-1)] to-[var(--color-2)]"></div>
+                      <span className="text-sm font-semibold text-gray-900 dark:text-white">Minha Parte</span>
+                      <span className="text-lg font-bold text-[var(--color-1)]">{getSliderPercentage()}%</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-lg font-bold text-[var(--color-3)]">
-                        {100 - getSliderPercentage()}%
-                      </span>
-                      <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                        Outra Parte
-                      </span>
-                      <div className="w-3 h-3 rounded-full bg-gradient-to-r from-[var(--color-3)] to-[var(--color-4)]"></div>
+                      <span className="text-lg font-bold text-[var(--color-3)]">{100 - getSliderPercentage()}%</span>
+                      <span className="text-sm font-semibold text-gray-900 dark:text-white">Outra Parte</span>
+                      <div className="h-3 w-3 rounded-full bg-gradient-to-r from-[var(--color-3)] to-[var(--color-4)]"></div>
                     </div>
                   </div>
-
-                  {/* Barra Visual Dual-Color */}
-                  <div className="relative h-8 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden mb-2">
+                  <div className="relative mb-2 h-8 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
                     <div
-                      className="absolute left-0 top-0 h-full bg-gradient-to-r from-[var(--color-1)] to-[var(--color-2)] transition-all duration-300 ease-out flex items-center justify-center"
+                      className="absolute left-0 top-0 flex h-full items-center justify-center bg-gradient-to-r from-[var(--color-1)] to-[var(--color-2)] transition-all duration-300 ease-out"
                       style={{ width: `${getSliderPercentage()}%` }}
                     >
                       {getSliderPercentage() > 15 && (
@@ -363,7 +342,7 @@ const SplitExpenseModal = ({ isOpen, onClose, expense, onSuccess }: SplitExpense
                       )}
                     </div>
                     <div
-                      className="absolute right-0 top-0 h-full bg-gradient-to-r from-[var(--color-3)] to-[var(--color-4)] transition-all duration-300 ease-out flex items-center justify-center"
+                      className="absolute right-0 top-0 flex h-full items-center justify-center bg-gradient-to-r from-[var(--color-3)] to-[var(--color-4)] transition-all duration-300 ease-out"
                       style={{ width: `${100 - getSliderPercentage()}%` }}
                     >
                       {(100 - getSliderPercentage()) > 15 && (
@@ -373,141 +352,109 @@ const SplitExpenseModal = ({ isOpen, onClose, expense, onSuccess }: SplitExpense
                       )}
                     </div>
                   </div>
-
-                  {/* Slider */}
                   <input
                     type="range"
                     min="0"
                     max="100"
                     value={getSliderPercentage()}
                     onChange={(e) => handleSliderChange(parseInt(e.target.value))}
-                    className="w-full h-2 bg-transparent rounded-lg appearance-none cursor-pointer slider-modern"
-                    style={{
-                      background: 'transparent',
-                    }}
+                    className={`${cadastroAccentControlCls} slider-modern h-2 w-full cursor-pointer appearance-none rounded-lg bg-transparent`}
                   />
                 </div>
-              </div>
-            )}
+              )}
+            </CadastroFormSection>
 
-            {parts.map((part, index) => (
-              <div
-                key={part.id}
-                className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600"
-              >
-                <div className="flex items-end gap-4">
-                  {/* Número da parte */}
-                  <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-lg mb-2 ${
-                    index === 0
-                      ? 'bg-gradient-to-r from-[var(--color-1)] to-[var(--color-2)]'
-                      : 'bg-gradient-to-r from-[var(--color-3)] to-[var(--color-4)]'
-                  }`}>
-                    {index + 1}
-                  </div>
-
-                  {/* Valor */}
-                  <div className="w-40">
-                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Valor
+            <CadastroFormSection title="Partes" icon={<Tag size={14} />}>
+              <div className="space-y-3">
+                {parts.map((part, index) => (
+                  <div key={part.id} className="flex items-end gap-3">
+                    <div className={`mb-1.5 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-lg font-bold text-white ${
+                      index === 0
+                        ? 'bg-gradient-to-r from-[var(--color-1)] to-[var(--color-2)]'
+                        : 'bg-gradient-to-r from-[var(--color-3)] to-[var(--color-4)]'
+                    }`}>
+                      {index + 1}
+                    </div>
+                    <label className="block w-40 min-w-0">
+                      <CadastroFieldLabel required>Valor</CadastroFieldLabel>
+                      <input
+                        type="number"
+                        step="0.01"
+                        required
+                        value={part.amount || ''}
+                        onChange={(e) => updatePart(part.id, 'amount', parseFloat(e.target.value) || 0)}
+                        className={`${cadastroFieldCls} mt-0.5 font-semibold`}
+                        placeholder="0.00"
+                      />
                     </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      required
-                      value={part.amount || ''}
-                      onChange={(e) => updatePart(part.id, 'amount', parseFloat(e.target.value) || 0)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white font-semibold"
-                      placeholder="0.00"
-                    />
-                  </div>
-
-                  {/* Tag */}
-                  <div className="flex-1 min-w-[200px]">
-                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Tag
+                    <label className="block min-w-0 flex-1">
+                      <CadastroFieldLabel required>Tag</CadastroFieldLabel>
+                      <select
+                        required
+                        value={part.tag_id || ''}
+                        onChange={(e) => updatePart(part.id, 'tag_id', parseInt(e.target.value))}
+                        className={`${cadastroFieldCls} mt-0.5`}
+                      >
+                        <option value="">Selecione a tag...</option>
+                        {Array.from(new Set(subtags
+                          .filter(subtag => !originalTagType || subtag.tag_type === originalTagType)
+                          .map(s => JSON.stringify({ id: s.tag_id, name: s.tag_name }))))
+                          .map(tagStr => {
+                            const tag = JSON.parse(tagStr)
+                            return (
+                              <option key={tag.id} value={tag.id}>
+                                {tag.name}
+                              </option>
+                            )
+                          })}
+                      </select>
                     </label>
-                    <select
-                      required
-                      value={part.tag_id || ''}
-                      onChange={(e) => updatePart(part.id, 'tag_id', parseInt(e.target.value))}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                    >
-                      <option value="">Selecione a tag...</option>
-                      {/* Extrai tags únicas */}
-                      {Array.from(new Set(subtags
-                        .filter(subtag => !originalTagType || subtag.tag_type === originalTagType)
-                        .map(s => JSON.stringify({ id: s.tag_id, name: s.tag_name }))))
-                        .map(tagStr => {
-                          const tag = JSON.parse(tagStr)
-                          return (
-                            <option key={tag.id} value={tag.id}>
-                              {tag.name}
-                            </option>
+                    <label className="block min-w-0 flex-1">
+                      <CadastroFieldLabel required>Subtag</CadastroFieldLabel>
+                      <select
+                        required
+                        value={part.subtag_id || ''}
+                        onChange={(e) => updatePart(part.id, 'subtag_id', parseInt(e.target.value))}
+                        className={`${cadastroFieldCls} mt-0.5`}
+                        disabled={!part.tag_id}
+                      >
+                        <option value="">Selecione a subtag...</option>
+                        {subtags
+                          .filter(subtag =>
+                            (!originalTagType || subtag.tag_type === originalTagType) &&
+                            (part.tag_id === 0 || subtag.tag_id === part.tag_id)
                           )
-                        })}
-                    </select>
-                  </div>
-
-                  {/* Subtag */}
-                  <div className="flex-1 min-w-[200px]">
-                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Subtag
+                          .map(subtag => (
+                            <option key={subtag.id} value={subtag.id}>
+                              {subtag.name}
+                            </option>
+                          ))}
+                      </select>
                     </label>
-                    <select
-                      required
-                      value={part.subtag_id || ''}
-                      onChange={(e) => updatePart(part.id, 'subtag_id', parseInt(e.target.value))}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                      disabled={!part.tag_id}
-                    >
-                      <option value="">Selecione a subtag...</option>
-                      {subtags
-                        .filter(subtag =>
-                          (!originalTagType || subtag.tag_type === originalTagType) &&
-                          (part.tag_id === 0 || subtag.tag_id === part.tag_id)
-                        )
-                        .map(subtag => (
-                          <option key={subtag.id} value={subtag.id}>
-                            {subtag.name}
-                          </option>
-                        ))}
-                    </select>
                   </div>
-                </div>
+                ))}
               </div>
-            ))}
-          </div>
-
-          {/* Botões */}
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isLoading}
-              className="flex-1 px-4 py-2 rounded-md text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
-              style={{ backgroundColor: 'var(--crud-cancel)' }}
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={
-                isLoading ||
-                Math.abs(remaining) >= 0.01 ||
-                parts.some(p => p.subtag_id === 0) ||
-                (expense && expense.amount < 0 && parts.some(p => p.amount >= 0)) ||
-                (expense && expense.amount > 0 && parts.some(p => p.amount <= 0))
-              }
-              className="flex-1 px-4 py-2 text-white rounded-md hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
-              style={{ backgroundColor: 'var(--crud-edit)' }}
-            >
-              {isLoading ? 'Dividindo...' : 'Dividir Despesa'}
-            </button>
-          </div>
+            </CadastroFormSection>
+          </CadastroModalBody>
+          <CadastroModalFooter
+            onClose={onClose}
+            onSave={() => {
+              const form = document.getElementById('split-expense-form') as HTMLFormElement | null
+              form?.requestSubmit()
+            }}
+            saving={isLoading}
+            disabled={
+              isLoading ||
+              Math.abs(remaining) >= 0.01 ||
+              parts.some(p => p.subtag_id === 0) ||
+              (expense.amount < 0 && parts.some(p => p.amount >= 0)) ||
+              (expense.amount > 0 && parts.some(p => p.amount <= 0))
+            }
+            saveLabel="Dividir Despesa"
+          />
         </form>
-      </div>
+      </CadastroModalShell>
 
-      {/* Toast de notificações */}
       {toast.show && (
         <Toast
           message={toast.message}
@@ -515,7 +462,7 @@ const SplitExpenseModal = ({ isOpen, onClose, expense, onSuccess }: SplitExpense
           onClose={() => setToast({ ...toast, show: false })}
         />
       )}
-    </div>
+    </>
   )
 }
 

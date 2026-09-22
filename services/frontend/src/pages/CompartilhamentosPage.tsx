@@ -1,11 +1,56 @@
 import { useState, useEffect } from 'react'
 import Sidebar from '../components/Sidebar'
+import {
+  CadastroListCreateButton,
+  CadastroListPageBody,
+  CadastroListPageEmptyCard,
+  CadastroListPageHero,
+  CadastroListPageLoading,
+  CadastroListPageShell,
+  CadastroListPageTabs,
+  cadastroRowIconBtnCls,
+  cadastroRowIconDangerCls,
+  listPageTableRowHoverCls,
+  listPageTableRowInactiveCls,
+  type StatusFilter,
+} from '../components/CadastroListPageLayout'
+import { ListPageTable } from '../components/ListPageTable'
+import {
+  ListTableIndexCell,
+  ListTableIndexHeader,
+  ListTableSpacerCell,
+  ListTableSpacerCol,
+  ListTableSpacerHeader,
+  ListTableStaticHeader,
+} from '../components/ListTableSelectColumns'
+import StatusSwitch from '../components/StatusSwitch'
+import {
+  CadastroFieldLabel,
+  CadastroFormSection,
+  CadastroModalBody,
+  CadastroModalFieldsGrid,
+  CadastroModalFieldsRow,
+  CadastroModalFooter,
+  CadastroModalHeader,
+  CadastroModalShell,
+  cadastroFieldCls,
+} from '../components/CadastroFormLayout'
+import Badge from '../components/Badge'
+import { badgeVariantForColumnRole } from '../utils/badgeSurfaces'
+import type { BadgeTone } from '../utils/badgeTones'
 import Toast from '../components/Toast'
-import LoadingSpinner from '../components/LoadingSpinner'
-import { Plus, Edit2, Trash2, X, Archive, RotateCcw, Users, Lock } from 'lucide-react'
+import { Edit2, Trash2, Users, Lock } from 'lucide-react'
 import axios from 'axios'
 import { useConfirm } from '../hooks/useConfirm'
 import { formatAccountDisplay } from '../utils/accountFormatter'
+
+function percentageTone(percentage: number): BadgeTone {
+  if (percentage > 80) return 'brand1'
+  if (percentage > 60) return 'brand2'
+  if (percentage > 40) return 'brand3'
+  if (percentage > 20) return 'brand4'
+  return 'brand5'
+}
 
 interface Bank {
   id: number
@@ -52,6 +97,7 @@ const CompartilhamentosPage = () => {
     description: ''
   })
   const [toast, setToast] = useState<ToastState>({ show: false, message: '', type: 'success' })
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('active')
   const { showConfirm, ConfirmComponent } = useConfirm()
 
   const showToast = (message: string, type: 'success' | 'error' | 'warning') => {
@@ -243,474 +289,287 @@ const CompartilhamentosPage = () => {
 
 
 
-  const compartilhamentosAtivos = compartilhamentos.filter(c => c.active)
-  const compartilhamentosInativos = compartilhamentos.filter(c => !c.active)
+  const compartilhamentosAtivos = compartilhamentos.filter((c) => c.active)
+  const compartilhamentosInativos = compartilhamentos.filter((c) => !c.active)
+  const compartilhamentosFiltrados = statusFilter === 'active'
+    ? compartilhamentosAtivos
+    : statusFilter === 'inactive'
+      ? compartilhamentosInativos
+      : compartilhamentos
+
+  const handleToggleActive = (comp: ExpenseSharing) => {
+    if (comp.is_inverse) return
+    if (comp.active) handleInativar(comp.id)
+    else handleReativar(comp.id)
+  }
 
   return (
-    <div className="flex h-screen bg-gray-100 dark:bg-gray-900">
+    <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900">
       <Sidebar />
 
-      <main className="flex-1 overflow-y-auto p-8">
-        <div className="w-full">
-          <div className="flex justify-between items-center mb-8">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-3">
-                <Users className="w-8 h-8" />
-                Configurações de Compartilhamento
-              </h1>
-              <p className="text-lg text-gray-600 dark:text-gray-400">
-                Configure como dividir despesas com outras contas
-              </p>
-            </div>
-            <button
-              onClick={abrirModalNovo}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg text-white hover:opacity-90"
-              style={{ backgroundColor: 'var(--crud-create)' }}
-            >
-              <Plus size={20} />
-              Novo Compartilhamento
-            </button>
-          </div>
+      <CadastroListPageShell>
+        <CadastroListPageBody
+          header={
+            <CadastroListPageHero
+              icon={<Users className="w-8 h-8" />}
+              title="Configurações de Compartilhamento"
+              subtitle="Configure como dividir despesas com outras contas"
+              actions={<CadastroListCreateButton label="Novo Compartilhamento" onClick={abrirModalNovo} />}
+            />
+          }
+          tabs={
+            compartilhamentos.length > 0 ? (
+              <CadastroListPageTabs
+                tabs={[
+                  { key: 'all', label: 'Todos', count: compartilhamentos.length },
+                  { key: 'active', label: 'Ativos', count: compartilhamentosAtivos.length },
+                  { key: 'inactive', label: 'Inativos', count: compartilhamentosInativos.length },
+                ]}
+                active={statusFilter}
+                onChange={setStatusFilter}
+              />
+            ) : undefined
+          }
+          contentOverflow="auto"
+        >
           {loading ? (
-            <div className="text-center py-12">
-              <LoadingSpinner message="Carregando..." />
-            </div>
+            <CadastroListPageLoading label="Carregando compartilhamentos…" />
           ) : compartilhamentos.length === 0 ? (
-            <div
-              className="bg-white dark:bg-gray-800 rounded-lg p-12 text-center border border-gray-200 dark:border-gray-700"
-              style={{ boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2)' }}
-            >
-              <Users size={48} className="mx-auto text-gray-400 mb-4" />
-              <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-                Nenhum compartilhamento cadastrado
-              </h3>
-              <p className="text-gray-600 dark:text-gray-400 mb-6">
-                Comece adicionando seu primeiro compartilhamento de despesas
-              </p>
-              <button
-                onClick={abrirModalNovo}
-                className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
-              >
-                Adicionar Compartilhamento
-              </button>
-            </div>
+            <CadastroListPageEmptyCard
+              icon={<Users size={32} className="text-gray-400" />}
+              title="Nenhum compartilhamento cadastrado"
+              description="Comece adicionando seu primeiro compartilhamento de despesas"
+              action={<CadastroListCreateButton label="Adicionar Compartilhamento" onClick={abrirModalNovo} />}
+            />
+          ) : compartilhamentosFiltrados.length === 0 ? (
+            <CadastroListPageEmptyCard
+              icon={<Users size={32} className="text-gray-400" />}
+              title={statusFilter === 'inactive' ? 'Nenhum compartilhamento inativo' : 'Nenhum compartilhamento ativo'}
+              description="Não há compartilhamentos neste filtro."
+            />
           ) : (
-            <div className="space-y-6">
-              {/* Compartilhamentos Ativos */}
-              {compartilhamentosAtivos.length > 0 && (
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-                  <table className="min-w-full" style={{ tableLayout: 'fixed' }}>
-                    <thead className="border-b border-gray-200 dark:border-gray-700">
-                      <tr>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" style={{ width: '4%' }}>
-                          #
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" style={{ width: '15%' }}>
-                          Nome da Conta
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" style={{ width: '15%' }}>
-                          Banco
-                        </th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" style={{ width: '10%' }}>
-                          Agência
-                        </th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" style={{ width: '10%' }}>
-                          Conta
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" style={{ width: '20%' }}>
-                          Descrição
-                        </th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" style={{ width: '12%' }}>
-                          Minha Contribuição
-                        </th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" style={{ width: '10%' }}>
-                          A Contraparte Paga
-                        </th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" style={{ width: '8%' }}>
-                          Ações
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white dark:bg-gray-800">
-                      {compartilhamentosAtivos.map((comp, index) => {
-                        // Define cores dos badges baseadas na porcentagem
-                        const minhaContribuicao = comp.my_contribution_percentage
-                        const outraContaPaga = 100 - minhaContribuicao
-
-                        // Escala de cores em 5 faixas:
-                        // >80: color-1 (vermelho - paga muito)
-                        // 60<x<=80: color-2 (verde)
-                        // 40<x<=60: color-3 (amarelo)
-                        // 20<x<=40: color-4 (laranja)
-                        // 0<=x<=20: color-5 (roxo - paga pouco)
-                        const getColorByPercentage = (percentage: number) => {
-                          if (percentage > 80) return '1' // Vermelho
-                          if (percentage > 60) return '2' // Verde
-                          if (percentage > 40) return '3' // Amarelo
-                          if (percentage > 20) return '4' // Laranja
-                          return '5' // Roxo
-                        }
-
-                        return (
-                          <tr
-                            key={comp.id}
-                            className="border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all"
-                            onMouseEnter={(e) => { e.currentTarget.style.borderLeftColor = 'var(--color-1)' }}
-                            onMouseLeave={(e) => { e.currentTarget.style.borderLeftColor = '' }}
-                          >
-                            <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500 dark:text-gray-400">
-                              {index + 1}
-                            </td>
-                            <td className="px-6 py-4">
-                              <div className="flex items-center gap-2">
-                                <div
-                                  className="p-1.5 rounded-md shadow-sm flex-shrink-0"
-                                  style={{ background: 'var(--gradient-1-2)' }}
-                                >
-                                  <Users size={16} style={{ color: 'var(--on-gradient-1-2)' }} />
-                                </div>
-                                <span className="text-sm font-medium text-gray-900 dark:text-white">
-                                  {comp.shared_account?.name || '-'}
-                                </span>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
-                              {comp.shared_account?.bank?.code || '---'} - {comp.shared_account?.bank?.name || '-'}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900 dark:text-white">
-                              {comp.shared_account?.agency ? formatAgency(comp.shared_account.agency) : '-'}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900 dark:text-white">
-                              {comp.shared_account?.account_number ? formatAccount(comp.shared_account.account_number) : '-'}
-                            </td>
-                            <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 truncate">
-                              {comp.description || '-'}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-center">
-                              <span
-                                className="inline-block px-3 py-1 text-xs font-medium rounded w-[90px] text-center"
-                                style={{
-                                  backgroundColor: `var(--color-${getColorByPercentage(minhaContribuicao)})`,
-                                  color: `var(--on-color-${getColorByPercentage(minhaContribuicao)})`
-                                }}
-                              >
-                                {minhaContribuicao}%
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-center">
-                              <span
-                                className="inline-block px-3 py-1 text-xs font-medium rounded w-[90px] text-center"
-                                style={{
-                                  backgroundColor: `var(--color-${getColorByPercentage(outraContaPaga)})`,
-                                  color: `var(--on-color-${getColorByPercentage(outraContaPaga)})`
-                                }}
-                              >
-                                {outraContaPaga}%
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
-                              {comp.is_inverse ? (
-                                <div
-                                  className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 cursor-help"
-                                  title="Este compartilhamento foi configurado pela conta parceira. Apenas a conta que criou pode editá-lo."
-                                >
-                                  <Lock size={12} className="text-gray-500 dark:text-gray-400" />
-                                  <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">Contraparte</span>
-                                </div>
-                              ) : (
-                                <div className="flex items-center justify-center gap-2">
-                                  <button
-                                    onClick={() => abrirModalEditar(comp)}
-                                    className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300"
-                                    title="Editar"
-                                  >
-                                    <Edit2 size={16} />
-                                  </button>
-                                  <button
-                                    onClick={() => handleInativar(comp.id)}
-                                    className="text-orange-600 dark:text-orange-400 hover:text-orange-900 dark:hover:text-orange-300"
-                                    title="Inativar"
-                                  >
-                                    <Archive size={16} />
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeletar(comp.id)}
-                                    className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300"
-                                    title="Deletar Permanentemente"
-                                  >
-                                    <Trash2 size={16} />
-                                  </button>
-                                </div>
-                              )}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              {/* Divisor para Compartilhamentos Inativos */}
-              {compartilhamentosInativos.length > 0 && (
-                <>
-                  <div className="relative py-4">
-                    <div className="absolute inset-0 flex items-center">
-                      <div className="w-full border-t-2 border-gray-300 dark:border-gray-600"></div>
-                    </div>
-                    <div className="relative flex justify-center">
-                      <span className="px-4 bg-gray-100 dark:bg-gray-900 text-sm font-medium text-gray-500 dark:text-gray-400">
-                        Compartilhamentos Inativos
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden opacity-60">
-                    <table className="min-w-full" style={{ tableLayout: 'fixed' }}>
-                      <thead className="border-b border-gray-200 dark:border-gray-700">
-                        <tr>
-                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" style={{ width: '4%' }}>
-                            #
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" style={{ width: '15%' }}>
-                            Nome da Conta
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" style={{ width: '15%' }}>
-                            Banco
-                          </th>
-                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" style={{ width: '10%' }}>
-                            Agência
-                          </th>
-                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" style={{ width: '10%' }}>
-                            Conta
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" style={{ width: '18%' }}>
-                            Descrição
-                          </th>
-                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" style={{ width: '10%' }}>
-                            Minha Contribuição
-                          </th>
-                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" style={{ width: '10%' }}>
-                            A Contraparte Paga
-                          </th>
-                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" style={{ width: '8%' }}>
-                            Ações
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white dark:bg-gray-800">
-                        {compartilhamentosInativos.map((comp, index) => {
-                          const minhaContribuicao = comp.my_contribution_percentage
-                          const outraContaPaga = 100 - minhaContribuicao
-
-                          return (
-                            <tr
-                              key={comp.id}
-                              className="border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all"
-                              onMouseEnter={(e) => { e.currentTarget.style.borderLeftColor = 'var(--color-1)' }}
-                              onMouseLeave={(e) => { e.currentTarget.style.borderLeftColor = '' }}
-                            >
-                              <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500 dark:text-gray-400">
-                                {index + 1}
-                              </td>
-                              <td className="px-6 py-4">
-                                <div className="flex items-center gap-2">
-                                  <div
-                                    className="p-1.5 rounded-md shadow-sm flex-shrink-0 opacity-50"
-                                    style={{ background: 'var(--gradient-1-2)' }}
-                                  >
-                                    <Users size={16} style={{ color: 'var(--on-gradient-1-2)' }} />
-                                  </div>
-                                  <span className="text-sm font-medium text-gray-900 dark:text-white">
-                                    {comp.shared_account?.name || '-'}
-                                  </span>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
-                                {comp.shared_account?.bank?.code || '---'} - {comp.shared_account?.bank?.name || '-'}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900 dark:text-white">
-                                {comp.shared_account?.agency ? formatAgency(comp.shared_account.agency) : '-'}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900 dark:text-white">
-                                {comp.shared_account?.account_number ? formatAccount(comp.shared_account.account_number) : '-'}
-                              </td>
-                              <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 truncate">
-                                {comp.description || '-'}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-center">
-                                <span className="inline-block px-3 py-1 text-xs font-medium rounded w-[90px] text-center bg-gray-400 text-white">
-                                  {minhaContribuicao}%
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-center">
-                                <span className="inline-block px-3 py-1 text-xs font-medium rounded w-[90px] text-center bg-gray-400 text-white">
-                                  {outraContaPaga}%
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
-                                {comp.is_inverse ? (
-                                  <div
-                                    className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 cursor-help"
-                                    title="Este compartilhamento foi configurado pela conta parceira. Apenas a conta que criou pode editá-lo."
-                                  >
-                                    <Lock size={12} className="text-gray-500 dark:text-gray-400" />
-                                    <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">Contraparte</span>
-                                  </div>
-                                ) : (
-                                  <div className="flex items-center justify-center gap-2">
-                                    <button
-                                      onClick={() => abrirModalEditar(comp)}
-                                      className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300"
-                                      title="Editar"
-                                    >
-                                      <Edit2 size={16} />
-                                    </button>
-                                    <button
-                                      onClick={() => handleReativar(comp.id)}
-                                      className="text-green-600 dark:text-green-400 hover:text-green-900 dark:hover:text-green-300"
-                                      title="Reativar"
-                                    >
-                                      <RotateCcw size={16} />
-                                    </button>
-                                    <button
-                                      onClick={() => handleDeletar(comp.id)}
-                                      className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300"
-                                      title="Deletar Permanentemente"
-                                    >
-                                      <Trash2 size={16} />
-                                    </button>
-                                  </div>
-                                )}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-      </main>
-
-      {/* Modal */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                {editingCompartilhamento ? 'Editar Compartilhamento' : 'Novo Compartilhamento'}
-              </h2>
-              <button
-                onClick={fecharModal}
-                className="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-4">
-              {/* Conta Compartilhada */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Compartilhar com *
-                </label>
-                {minhasOutrasContas.length === 0 ? (
-                  <div className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
-                    Carregando contas disponíveis...
-                  </div>
-                ) : (
-                  <select
-                    value={formData.shared_account_id}
-                    onChange={(e) => setFormData({ ...formData, shared_account_id: e.target.value })}
-                    disabled={!!editingCompartilhamento}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[var(--color-1)] focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                    required
+            <ListPageTable
+              colsRest={<ListTableSpacerCol />}
+              head={
+                <tr>
+                  <ListTableIndexHeader />
+                  <ListTableSpacerHeader />
+                  <ListTableStaticHeader label="Conta" className="w-[16%]" />
+                  <ListTableStaticHeader label="Banco" className="w-[16%]" />
+                  <ListTableStaticHeader label="Agência" className="w-[10%]" />
+                  <ListTableStaticHeader label="Conta nº" className="w-[10%]" />
+                  <ListTableStaticHeader label="Descrição" className="w-[16%]" />
+                  <ListTableStaticHeader label="Minha parte" className="w-[10%]" />
+                  <ListTableStaticHeader label="Contraparte" className="w-[10%]" />
+                  <ListTableStaticHeader label="Status" className="w-[8%]" />
+                  <ListTableStaticHeader label="Ações" className="w-[8%]" />
+                </tr>
+              }
+            >
+              {compartilhamentosFiltrados.map((comp, index) => {
+                const minhaContribuicao = Number(comp.my_contribution_percentage)
+                const outraContaPaga = 100 - minhaContribuicao
+                return (
+                  <tr
+                    key={comp.id}
+                    className={`${listPageTableRowHoverCls} ${!comp.active ? listPageTableRowInactiveCls : ''}`}
                   >
-                    <option value="">Selecione uma conta...</option>
-                    {minhasOutrasContas.map((conta) => (
-                      <option key={conta.id} value={conta.id}>
-                        {formatAccountDisplay(conta)}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                {editingCompartilhamento && (
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    A conta compartilhada não pode ser alterada após a criação
-                  </p>
-                )}
-              </div>
+                    <ListTableIndexCell index={index + 1} />
+                    <ListTableSpacerCell />
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="flex-shrink-0 rounded-md p-1.5 shadow-sm"
+                          style={{ background: 'var(--gradient-1-2)' }}
+                        >
+                          <Users size={15} style={{ color: 'var(--on-gradient-1-2)' }} />
+                        </div>
+                        <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                          {comp.shared_account?.name || '—'}
+                        </span>
+                        {comp.is_inverse && (
+                          <Badge
+                            variant={badgeVariantForColumnRole('scope')}
+                            tone="neutral"
+                            label="Contraparte"
+                            title="Configurado pela conta parceira — somente leitura"
+                          />
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-sm text-gray-700 dark:text-gray-300">
+                      {comp.shared_account?.bank?.code || '—'} · {comp.shared_account?.bank?.name || '—'}
+                    </td>
+                    <td className="px-3 py-3 text-sm tabular-nums text-gray-700 dark:text-gray-300">
+                      {comp.shared_account?.agency ? formatAgency(comp.shared_account.agency) : '—'}
+                    </td>
+                    <td className="px-3 py-3 text-sm tabular-nums text-gray-700 dark:text-gray-300">
+                      {comp.shared_account?.account_number
+                        ? formatAccount(comp.shared_account.account_number)
+                        : '—'}
+                    </td>
+                    <td className="truncate px-3 py-3 text-sm text-gray-500 dark:text-gray-400">
+                      {comp.description || '—'}
+                    </td>
+                    <td className="px-3 py-3">
+                      <Badge
+                        variant={badgeVariantForColumnRole('statusPrimary')}
+                        tone={percentageTone(minhaContribuicao)}
+                        label={`${minhaContribuicao}%`}
+                      />
+                    </td>
+                    <td className="px-3 py-3">
+                      <Badge
+                        variant={badgeVariantForColumnRole('classificationSecondary')}
+                        tone={percentageTone(outraContaPaga)}
+                        label={`${outraContaPaga}%`}
+                      />
+                    </td>
+                    <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                      {comp.is_inverse ? (
+                        <span
+                          className="inline-flex items-center gap-1 text-xs text-gray-400"
+                          title="Apenas a conta que criou pode alterar o status"
+                        >
+                          <Lock size={12} />
+                          {comp.active ? 'Ativo' : 'Inativo'}
+                        </span>
+                      ) : (
+                        <StatusSwitch
+                          checked={comp.active}
+                          onChange={() => handleToggleActive(comp)}
+                          size="sm"
+                          labelOn="Ativo"
+                          labelOff="Inativo"
+                          showLabel
+                        />
+                      )}
+                    </td>
+                    <td className="px-3 py-3">
+                      {comp.is_inverse ? (
+                        <span className="text-xs text-gray-400">—</span>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => abrirModalEditar(comp)}
+                            className={cadastroRowIconBtnCls}
+                            title="Editar"
+                          >
+                            <Edit2 size={15} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeletar(comp.id)}
+                            className={cadastroRowIconDangerCls}
+                            title="Excluir"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </ListPageTable>
+          )}
+        </CadastroListPageBody>
+      </CadastroListPageShell>
 
-              {/* Minha Contribuição */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Minha Contribuição (%) *
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.01"
-                  value={formData.my_contribution_percentage}
-                  onChange={(e) => {
-                    const value = e.target.value
-                    // Permitir campo vazio ou valores entre 0 e 100
-                    if (value === '' || (parseFloat(value) >= 0 && parseFloat(value) <= 100)) {
-                      setFormData({ ...formData, my_contribution_percentage: value })
-                    }
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[var(--color-1)] focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  required
-                />
-                <div className="mt-2 flex items-center justify-between text-sm">
-                  <span className="text-gray-600 dark:text-gray-400">
-                    Minha parte: {formData.my_contribution_percentage}%
-                  </span>
-                  <span className="text-gray-600 dark:text-gray-400">
-                    Outra conta: {100 - parseFloat(formData.my_contribution_percentage || '0')}%
-                  </span>
-                </div>
-              </div>
-
-              {/* Descrição */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Descrição
-                </label>
-                <textarea
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[var(--color-1)] focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none"
-                  placeholder="Observações sobre este compartilhamento..."
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-3 p-6 border-t border-gray-200 dark:border-gray-700">
-              <button
-                type="button"
-                onClick={fecharModal}
-                className="flex-1 px-4 py-2 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleSubmit}
-                disabled={!formData.shared_account_id || !formData.my_contribution_percentage}
-                className="flex-1 px-4 py-2 text-white rounded-md hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{ backgroundColor: 'var(--crud-create)' }}
-              >
-                {editingCompartilhamento ? 'Atualizar' : 'Criar'}
-              </button>
-            </div>
-          </div>
-        </div>
+      {showModal && (
+        <CadastroModalShell maxWidth="max-w-2xl" onBackdropClick={fecharModal}>
+          <CadastroModalHeader
+            isEdit={!!editingCompartilhamento}
+            title={editingCompartilhamento ? 'Editar Compartilhamento' : 'Novo Compartilhamento'}
+            subtitle="Divisão de despesas com outra conta"
+            onClose={fecharModal}
+            icon={<Users size={18} />}
+          />
+          <form
+            className="flex min-h-0 flex-1 flex-col"
+            id="compartilhamento-form"
+            onSubmit={(e) => {
+              e.preventDefault()
+              void handleSubmit()
+            }}
+          >
+            <CadastroModalBody>
+              <CadastroFormSection title="Conta parceira" icon={<Users size={14} />}>
+                <CadastroModalFieldsGrid>
+                  <CadastroModalFieldsRow>
+                    <label className="block min-w-0">
+                      <CadastroFieldLabel required>Compartilhar com</CadastroFieldLabel>
+                      {minhasOutrasContas.length === 0 ? (
+                        <div className={`${cadastroFieldCls} mt-0.5 text-gray-500`}>Carregando contas disponíveis…</div>
+                      ) : (
+                        <select
+                          value={formData.shared_account_id}
+                          onChange={(e) => setFormData({ ...formData, shared_account_id: e.target.value })}
+                          disabled={!!editingCompartilhamento}
+                          className={`${cadastroFieldCls} mt-0.5`}
+                          required
+                        >
+                          <option value="">Selecione uma conta…</option>
+                          {minhasOutrasContas.map((conta) => (
+                            <option key={conta.id} value={conta.id}>
+                              {formatAccountDisplay(conta)}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      {editingCompartilhamento && (
+                        <p className="mt-1 text-xs text-gray-500">A conta compartilhada não pode ser alterada após a criação</p>
+                      )}
+                    </label>
+                  </CadastroModalFieldsRow>
+                  <CadastroModalFieldsRow>
+                    <label className="block min-w-0">
+                      <CadastroFieldLabel required>Minha contribuição (%)</CadastroFieldLabel>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        value={formData.my_contribution_percentage}
+                        onChange={(e) => {
+                          const value = e.target.value
+                          if (value === '' || (parseFloat(value) >= 0 && parseFloat(value) <= 100)) {
+                            setFormData({ ...formData, my_contribution_percentage: value })
+                          }
+                        }}
+                        className={`${cadastroFieldCls} mt-0.5`}
+                        required
+                      />
+                      <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
+                        <span>Minha parte: {formData.my_contribution_percentage}%</span>
+                        <span>Outra conta: {100 - parseFloat(formData.my_contribution_percentage || '0')}%</span>
+                      </div>
+                    </label>
+                  </CadastroModalFieldsRow>
+                  <CadastroModalFieldsRow>
+                    <label className="block min-w-0">
+                      <CadastroFieldLabel>Descrição</CadastroFieldLabel>
+                      <textarea
+                        value={formData.description}
+                        onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                        rows={3}
+                        className={`${cadastroFieldCls} mt-0.5 resize-none`}
+                        placeholder="Observações sobre este compartilhamento…"
+                      />
+                    </label>
+                  </CadastroModalFieldsRow>
+                </CadastroModalFieldsGrid>
+              </CadastroFormSection>
+            </CadastroModalBody>
+            <CadastroModalFooter
+              onClose={fecharModal}
+              onSave={() => void handleSubmit()}
+              disabled={!formData.shared_account_id || !formData.my_contribution_percentage}
+              saveLabel={editingCompartilhamento ? 'Atualizar' : 'Criar'}
+            />
+          </form>
+        </CadastroModalShell>
       )}
 
       {/* Toast */}

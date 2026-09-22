@@ -1,6 +1,17 @@
 import { useState, useEffect } from 'react'
-import { X, ArrowUpCircle, ArrowDownCircle, Landmark, CreditCard, Gift, Tag as TagIcon, Tags as TagsIcon, Users } from 'lucide-react'
+import { ArrowUpCircle, ArrowDownCircle, Landmark, CreditCard, Gift, Users, Calendar } from 'lucide-react'
 import { formatCurrencyWithColor } from '../utils/currency'
+import {
+  CadastroFieldLabel,
+  CadastroFormSection,
+  cadastroFieldCls,
+  CadastroModalBody,
+  CadastroModalFieldsGrid,
+  CadastroModalFieldsRow,
+  CadastroModalFooter,
+  CadastroModalHeader,
+  CadastroModalShell,
+} from './CadastroFormLayout'
 
 interface Tag {
   id: number
@@ -337,209 +348,146 @@ const GroupDetailsModal = ({
   const groupedRecords = groupRecordsByYearAndMonth()
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-7xl w-full max-h-[90vh] flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-          <div className="flex items-center gap-3">
-            {tipo === 'receita' ? (
-              <ArrowUpCircle size={24} className="text-green-600 dark:text-green-400 flex-shrink-0" />
-            ) : (
-              <ArrowDownCircle size={24} className="text-red-600 dark:text-red-400 flex-shrink-0" />
-            )}
-            <h2 className={`text-xl font-semibold ${tipo === 'receita' ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
-              {groupDescription} <span className="text-sm font-normal text-gray-600 dark:text-gray-400">({records.length} {records.length === 1 ? 'registro' : 'registros'})</span>
-            </h2>
-          </div>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
-            <X size={20} className="text-gray-600 dark:text-gray-400" />
-          </button>
-        </div>
-
-        {/* Aplicar a Todos - Fixo no Topo */}
-        <div className="p-4 border-b-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 shadow-sm">
-          <div className="flex items-center gap-3 mb-2">
-            <span className="text-sm font-bold text-gray-700 dark:text-gray-300">
-              Aplicar a Todos:
-            </span>
-          </div>
-          <div className="flex gap-3">
-            {/* Tag */}
-            <div className="flex-1">
-              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">
-                <TagIcon size={14} className="inline mr-1 text-color-primary" />
-                Tag
-              </label>
-              <select
-                value={globalTag || ''}
-                onChange={(e) => {
-                  const value = e.target.value
-                  if (value) {
-                    setGlobalTag(Number(value))
-                    setGlobalSubtag(null)
-                  } else {
-                    setGlobalTag(null)
-                    setGlobalSubtag(null)
-                  }
-                }}
-                className="w-full px-2 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Selecione...</option>
-                {filteredTags.map(tag => (
-                  <option key={tag.id} value={tag.id}>{tag.name}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Subtag */}
-            <div className="flex-1">
-              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">
-                <TagsIcon size={14} className="inline mr-1 text-color-primary" />
-                Subtag
-              </label>
-              <select
-                value={globalSubtag || ''}
-                onChange={(e) => {
-                  const value = e.target.value
-                  if (value) {
-                    setGlobalSubtag(Number(value))
-                  } else {
-                    setGlobalSubtag(null)
-                  }
-                }}
-                disabled={!globalTag}
-                className="w-full px-2 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 dark:disabled:bg-gray-800"
-              >
-                <option value="">Selecione...</option>
-                {getFilteredSubtags(globalTag).map(subtag => (
-                  <option key={subtag.id} value={subtag.id}>{subtag.name}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Compartilhamento */}
-            <div className="flex-1">
-              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">
-                <Users size={14} className="inline mr-1 text-color-primary" />
-                Compartilhamento
-              </label>
-              <select
-                value={globalSharing || ''}
-                onChange={(e) => {
-                  const value = e.target.value
-                  if (value) {
-                    const partner = partners.find(p => p.id === Number(value))
-                    setGlobalSharing(Number(value))
-                    setGlobalPercentage(partner?.my_contribution_percentage?.toString() || '50')
-                  } else {
-                    setGlobalSharing(null)
-                    setGlobalPercentage('')
-                  }
-                }}
-                className="w-full px-2 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Selecione...</option>
-                {partners.filter(p => p.active).map(partner => {
-                  const account = partner.shared_account
-                  const displayParts = [
-                    account?.name,
-                    account?.bank?.name,
-                    account?.agency,
-                    account?.account_number
-                  ].filter(Boolean)
-                  const displayText = displayParts.length > 0
-                    ? displayParts.join(' - ')
-                    : partner.description || `Conta ${partner.shared_account_id}`
-                  return (
-                    <option key={partner.id} value={partner.id}>
-                      {displayText}
-                    </option>
-                  )
-                })}
-              </select>
-            </div>
-
-            {/* Porcentagem */}
-            <div className="w-16">
-              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">
-                %
-              </label>
-              <input
-                type="text"
-                inputMode="decimal"
-                value={globalPercentage}
-                onChange={(e) => setGlobalPercentage(e.target.value)}
-                disabled={!globalSharing}
-                placeholder="50"
-                className="w-full px-2 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-center bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 dark:disabled:bg-gray-800"
-              />
-            </div>
-
-            {/* Botão Aplicar */}
-            <div className="flex items-end">
+    <CadastroModalShell maxWidth="max-w-7xl" onBackdropClick={onClose}>
+      <CadastroModalHeader
+        isEdit={false}
+        title={groupDescription}
+        subtitle={`${records.length} ${records.length === 1 ? 'registro' : 'registros'}`}
+        onClose={onClose}
+        icon={tipo === 'receita' ? <ArrowUpCircle size={18} /> : <ArrowDownCircle size={18} />}
+        iconStyle={
+          tipo === 'receita'
+            ? { backgroundColor: 'var(--color-success)', color: 'var(--on-color-success)' }
+            : { backgroundColor: 'var(--color-danger)', color: 'var(--on-color-danger)' }
+        }
+      />
+      <CadastroModalBody
+        chrome={
+          <CadastroFormSection
+            title="Aplicar a Todos"
+            icon={<Users size={14} />}
+            trailing={
               <button
                 onClick={handleApplyToAll}
                 disabled={!(globalTag && globalSubtag) && !globalSharing}
-                className="px-4 py-2 text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 text-sm font-medium whitespace-nowrap"
-                style={{ backgroundColor: 'var(--crud-create)' }}
+                className="rounded-lg px-4 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                style={{ backgroundColor: 'var(--color-create)' }}
               >
                 Aplicar
               </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Content - Tabelas por Ano */}
-        <div className="flex-1 overflow-y-auto p-4">
-          {groupedRecords.map((yearData, yearIndex) => {
-            return (
-            <div key={yearData.year}>
-              {/* Separador entre anos (exceto no primeiro) */}
-              {yearIndex > 0 && (
-                <div className="relative my-8">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t-2 border-gray-300 dark:border-gray-600"></div>
-                  </div>
-                  <div className="relative flex justify-center">
-                    <span className="bg-white dark:bg-gray-800 px-4 text-sm text-gray-500 dark:text-gray-400 font-medium">
-                      • • •
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              <div className="mb-6">
-                {/* Cabeçalho do Ano com gradiente 3-4 */}
-                <div
-                  className="rounded-lg px-6 py-3 shadow-md mb-4"
-                  style={{ background: 'linear-gradient(135deg, var(--color-3), var(--color-4))' }}
+            }
+          >
+            <CadastroModalFieldsGrid>
+              <CadastroModalFieldsRow cols={4}>
+                <label className="block min-w-0">
+                  <CadastroFieldLabel>Tag</CadastroFieldLabel>
+                  <select
+                    value={globalTag || ''}
+                    onChange={(e) => {
+                      const value = e.target.value
+                      if (value) {
+                        setGlobalTag(Number(value))
+                        setGlobalSubtag(null)
+                      } else {
+                        setGlobalTag(null)
+                        setGlobalSubtag(null)
+                      }
+                    }}
+                    className={`${cadastroFieldCls} mt-0.5`}
+                  >
+                    <option value="">Selecione...</option>
+                    {filteredTags.map(tag => (
+                      <option key={tag.id} value={tag.id}>{tag.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block min-w-0">
+                  <CadastroFieldLabel>Subtag</CadastroFieldLabel>
+                  <select
+                    value={globalSubtag || ''}
+                    onChange={(e) => {
+                      const value = e.target.value
+                      if (value) {
+                        setGlobalSubtag(Number(value))
+                      } else {
+                        setGlobalSubtag(null)
+                      }
+                    }}
+                    disabled={!globalTag}
+                    className={`${cadastroFieldCls} mt-0.5 disabled:bg-gray-100 dark:disabled:bg-gray-800`}
+                  >
+                    <option value="">Selecione...</option>
+                    {getFilteredSubtags(globalTag).map(subtag => (
+                      <option key={subtag.id} value={subtag.id}>{subtag.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block min-w-0">
+                  <CadastroFieldLabel>Compartilhamento</CadastroFieldLabel>
+                  <select
+                    value={globalSharing || ''}
+                    onChange={(e) => {
+                      const value = e.target.value
+                      if (value) {
+                        const partner = partners.find(p => p.id === Number(value))
+                        setGlobalSharing(Number(value))
+                        setGlobalPercentage(partner?.my_contribution_percentage?.toString() || '50')
+                      } else {
+                        setGlobalSharing(null)
+                        setGlobalPercentage('')
+                      }
+                    }}
+                    className={`${cadastroFieldCls} mt-0.5`}
+                  >
+                    <option value="">Selecione...</option>
+                    {partners.filter(p => p.active).map(partner => {
+                      const account = partner.shared_account
+                      const displayParts = [
+                        account?.name,
+                        account?.bank?.name,
+                        account?.agency,
+                        account?.account_number
+                      ].filter(Boolean)
+                      const displayText = displayParts.length > 0
+                        ? displayParts.join(' - ')
+                        : partner.description || `Conta ${partner.shared_account_id}`
+                      return (
+                        <option key={partner.id} value={partner.id}>
+                          {displayText}
+                        </option>
+                      )
+                    })}
+                  </select>
+                </label>
+                <label className="block min-w-0">
+                  <CadastroFieldLabel>%</CadastroFieldLabel>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={globalPercentage}
+                    onChange={(e) => setGlobalPercentage(e.target.value)}
+                    disabled={!globalSharing}
+                    placeholder="50"
+                    className={`${cadastroFieldCls} mt-0.5 text-center disabled:bg-gray-100 dark:disabled:bg-gray-800`}
+                  />
+                </label>
+              </CadastroModalFieldsRow>
+            </CadastroModalFieldsGrid>
+          </CadastroFormSection>
+        }
+      >
+          {groupedRecords.map((yearData) => (
+            <CadastroFormSection
+              key={yearData.year}
+              title={yearData.year}
+              icon={<Calendar size={14} />}
+            >
+              {yearData.months.map((monthData) => (
+                <CadastroFormSection
+                  key={`month-${yearData.year}-${monthData.month}`}
+                  title={`${monthData.month} (${monthData.records.length} ${monthData.records.length === 1 ? 'registro' : 'registros'})`}
+                  bodyClassName="p-0"
                 >
-                  <h3 className="text-lg font-bold text-white flex items-center gap-3">
-                    📅 {yearData.year}
-                  </h3>
-                </div>
-
-                {/* Tabelas por Mês */}
-                <div className="space-y-4">
-                  {yearData.months.map((monthData) => (
-                    <div
-                      key={`month-${yearData.year}-${monthData.month}`}
-                      className="bg-white dark:bg-gray-800 rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden"
-                    >
-                      {/* Header do Mês com color-5 */}
-                      <div
-                        className="px-4 py-2 border-b border-gray-200 dark:border-gray-700"
-                        style={{ backgroundColor: 'color-mix(in srgb, var(--color-5) 15%, transparent)' }}
-                      >
-                        <span className="text-sm font-semibold capitalize flex items-center gap-2" style={{ color: 'var(--color-5)' }}>
-                          📆 {monthData.month}
-                          <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
-                            ({monthData.records.length} {monthData.records.length === 1 ? 'registro' : 'registros'})
-                          </span>
-                        </span>
-                      </div>
-
-                      {/* Tabela do Mês */}
                       <table className="w-full table-fixed">
                         <thead className="bg-gray-50 dark:bg-gray-700/50">
                           <tr>
@@ -608,7 +556,7 @@ const GroupDetailsModal = ({
                                         handleIndividualTagChange(record.id, Number(value))
                                       }
                                     }}
-                                    className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                                    className={cadastroFieldCls}
                                   >
                                     <option value="">Selecione...</option>
                                     {filteredTags.map(tag => (
@@ -627,7 +575,7 @@ const GroupDetailsModal = ({
                                       }
                                     }}
                                     disabled={!selectedTag}
-                                    className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 dark:disabled:bg-gray-800"
+                                    className={`${cadastroFieldCls} disabled:bg-gray-100 dark:disabled:bg-gray-800`}
                                   >
                                     <option value="">Selecione...</option>
                                     {getFilteredSubtags(selectedTag || null).map(subtag => (
@@ -643,7 +591,7 @@ const GroupDetailsModal = ({
                                       const value = e.target.value
                                       handleIndividualSharingChange(record.id, value ? Number(value) : null)
                                     }}
-                                    className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                                    className={cadastroFieldCls}
                                   >
                                     <option value="">Selecione...</option>
                                     {partners.filter(p => p.active).map(partner => {
@@ -674,7 +622,7 @@ const GroupDetailsModal = ({
                                     onChange={(e) => handleIndividualPercentageChange(record.id, e.target.value)}
                                     disabled={!selectedSharing}
                                     placeholder="50"
-                                    className="w-full px-2 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-center bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:cursor-not-allowed"
+                                    className={`${cadastroFieldCls} text-center disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:cursor-not-allowed`}
                                   />
                                 </td>
                               </tr>
@@ -682,26 +630,13 @@ const GroupDetailsModal = ({
                           })}
                         </tbody>
                       </table>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )})}
-        </div>
-
-        {/* Footer - Botão Fechar */}
-        <div className="flex items-center justify-end gap-3 p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-          <button
-            onClick={onClose}
-            className="px-6 py-2 text-white rounded-lg hover:opacity-90 transition-opacity font-medium"
-            style={{ backgroundColor: 'var(--crud-cancel)' }}
-          >
-            Fechar
-          </button>
-        </div>
-      </div>
-    </div>
+                </CadastroFormSection>
+              ))}
+            </CadastroFormSection>
+          ))}
+      </CadastroModalBody>
+      <CadastroModalFooter onClose={onClose} hideSave closeLabel="Fechar" />
+    </CadastroModalShell>
   )
 }
 

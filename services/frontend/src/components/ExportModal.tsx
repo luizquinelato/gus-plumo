@@ -1,6 +1,17 @@
 import { useState, useEffect } from 'react'
-import { X, Download, Files, FileSpreadsheet, Users } from 'lucide-react'
+import { Download, Files, FileSpreadsheet, Users } from 'lucide-react'
 import { ExpenseExportData, exportToExcel, exportToExcelSeparado, ExportOptions } from '../utils/exportToExcel'
+import {
+  CadastroFormSection,
+  CadastroModalBody,
+  CadastroModalFieldsGrid,
+  CadastroModalFieldsRow,
+  CadastroModalFooter,
+  CadastroModalHeader,
+  CadastroModalShell,
+  cadastroAccentControlCls,
+  cadastroOptionLabelCls,
+} from './CadastroFormLayout'
 
 interface ExportModalProps {
   isOpen: boolean
@@ -14,7 +25,6 @@ export default function ExportModal({ isOpen, onClose, expenses, onSuccess, onEr
   const [exportMode, setExportMode] = useState<'single' | 'separate'>('single')
   const [includeSharing, setIncludeSharing] = useState(false)
 
-  // Atalhos de teclado
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -53,119 +63,89 @@ export default function ExportModal({ isOpen, onClose, expenses, onSuccess, onEr
     onClose()
   }
 
-  // Conta quantos registros têm compartilhamento
   const sharedCount = expenses.filter(e => e.shared_partner_name).length
 
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md mx-4">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-            <FileSpreadsheet size={20} className="text-color-primary" />
-            Exportar para Excel
-          </h2>
-          <button
-            onClick={onClose}
-            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-          >
-            <X size={20} className="text-gray-500" />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="p-4 space-y-4">
-          {/* Info */}
-          <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              <span className="font-semibold text-gray-900 dark:text-white">{expenses.length}</span> transações serão exportadas
-            </p>
-          </div>
-
-          {/* Modo de Exportação */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Formato de Exportação
-            </label>
-            <div className="space-y-2">
-              <label className="flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-600 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+    <CadastroModalShell maxWidth="max-w-md" onBackdropClick={onClose}>
+      <CadastroModalHeader
+        isEdit={false}
+        title="Exportar para Excel"
+        subtitle={`${expenses.length} transações serão exportadas`}
+        onClose={onClose}
+        icon={<FileSpreadsheet size={18} />}
+      />
+      <CadastroModalBody>
+        <CadastroFormSection title="Formato" icon={<Download size={14} />}>
+          <CadastroModalFieldsGrid>
+            <CadastroModalFieldsRow>
+              <label className={cadastroOptionLabelCls}>
                 <input
                   type="radio"
                   name="exportMode"
                   value="single"
                   checked={exportMode === 'single'}
                   onChange={() => setExportMode('single')}
-                  className="w-4 h-4 text-color-primary"
+                  className={`${cadastroAccentControlCls} h-4 w-4 border-gray-300`}
                 />
-                <Download size={18} className="text-gray-500" />
-                <div>
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">Arquivo Único</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">1 arquivo Excel com 3 abas</p>
-                </div>
+                <span>
+                  <span className="block text-sm font-medium">Arquivo único</span>
+                  <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">1 arquivo Excel com 3 abas</span>
+                </span>
               </label>
-
-              <label className="flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-600 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+            </CadastroModalFieldsRow>
+            <CadastroModalFieldsRow>
+              <label className={cadastroOptionLabelCls}>
                 <input
                   type="radio"
                   name="exportMode"
                   value="separate"
                   checked={exportMode === 'separate'}
                   onChange={() => setExportMode('separate')}
-                  className="w-4 h-4 text-color-primary"
+                  className={`${cadastroAccentControlCls} h-4 w-4 border-gray-300`}
                 />
-                <Files size={18} className="text-gray-500" />
-                <div>
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">Arquivos Separados</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">3 arquivos individuais (extratos, faturas, benefícios)</p>
-                </div>
+                <span>
+                  <span className="flex items-center gap-2 text-sm font-medium">
+                    <Files size={14} />
+                    Arquivos separados
+                  </span>
+                  <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                    3 arquivos individuais (extratos, faturas, benefícios)
+                  </span>
+                </span>
               </label>
-            </div>
-          </div>
-
-          {/* Opção de Compartilhamento */}
-          <div>
-            <label className="flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-600 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-              <input
-                type="checkbox"
-                checked={includeSharing}
-                onChange={(e) => setIncludeSharing(e.target.checked)}
-                className="w-4 h-4 text-color-primary rounded"
-              />
-              <Users size={18} className="text-gray-500" />
-              <div className="flex-1">
-                <p className="text-sm font-medium text-gray-900 dark:text-white">Incluir Compartilhamento</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Adiciona colunas: Conta Parceira, Minha Contribuição (%)
-                  {sharedCount > 0 && (
-                    <span className="ml-1 text-color-primary">• {sharedCount} com compartilhamento</span>
-                  )}
-                </p>
-              </div>
-            </label>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="flex justify-end gap-3 p-4 border-t border-gray-200 dark:border-gray-700">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-            style={{ backgroundColor: 'var(--crud-cancel)' }}
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={handleExport}
-            className="px-4 py-2 text-sm font-medium text-white bg-color-primary hover:opacity-90 rounded-lg transition-opacity flex items-center gap-2"
-          >
-            <Download size={16} />
-            Exportar
-          </button>
-        </div>
-      </div>
-    </div>
+            </CadastroModalFieldsRow>
+          </CadastroModalFieldsGrid>
+        </CadastroFormSection>
+        <CadastroFormSection title="Opções" icon={<Users size={14} />}>
+          <CadastroModalFieldsGrid>
+            <CadastroModalFieldsRow>
+              <label className={cadastroOptionLabelCls}>
+                <input
+                  type="checkbox"
+                  checked={includeSharing}
+                  onChange={(e) => setIncludeSharing(e.target.checked)}
+                  className={`${cadastroAccentControlCls} h-4 w-4 rounded border-gray-300`}
+                />
+                <span>
+                  <span className="block text-sm font-medium">Incluir compartilhamento</span>
+                  <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                    Adiciona colunas: Conta Parceira, Minha Contribuição (%)
+                    {sharedCount > 0 ? ` · ${sharedCount} com compartilhamento` : ''}
+                  </span>
+                </span>
+              </label>
+            </CadastroModalFieldsRow>
+          </CadastroModalFieldsGrid>
+        </CadastroFormSection>
+      </CadastroModalBody>
+      <CadastroModalFooter
+        onClose={onClose}
+        onSave={handleExport}
+        saveLabel="Exportar"
+        saveIcon={<Download size={15} />}
+      />
+    </CadastroModalShell>
   )
 }
-

@@ -15,6 +15,10 @@ from app.models.unified_models import Tag, Subtag, TransactionMapping, BankState
 from app.models.auth_models import ConfiguracaoSistema, Usuario
 from app.dependencies.auth import get_current_user, require_account
 from app.utils.card_helper import CardHelper
+from app.services.account_period_closure_service import (
+    AccountPeriodClosedError,
+    ensure_period_open,
+)
 import json
 import re
 from datetime import datetime
@@ -24,6 +28,15 @@ import hashlib
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/expenses", tags=["expenses"])
+
+
+def _guard_closed_account_period(db: Session, tenant_id: int, account_id: int | None, *dates) -> None:
+    if account_id is None:
+        return
+    try:
+        ensure_period_open(db, tenant_id, account_id, *dates)
+    except AccountPeriodClosedError as exc:
+        raise HTTPException(status_code=409, detail=exc.message) from exc
 
 
 # Schemas
@@ -2231,6 +2244,8 @@ async def update_bank_statement(
     if not statement:
         raise HTTPException(status_code=404, detail="Extrato não encontrado")
 
+    _guard_closed_account_period(db, tenant_id, statement.account_id, statement.date, request.date)
+
     # Atualiza os campos
     statement.description = request.description
     statement.amount = request.amount
@@ -2332,6 +2347,8 @@ async def delete_bank_statement(
     if not statement:
         raise HTTPException(status_code=404, detail="Extrato não encontrado")
 
+    _guard_closed_account_period(db, tenant_id, statement.account_id, statement.date)
+
     db.delete(statement)
     db.commit()
 
@@ -2401,6 +2418,8 @@ async def split_bank_statement(
 
     if not original:
         raise HTTPException(status_code=404, detail="Extrato não encontrado")
+
+    _guard_closed_account_period(db, tenant_id, original.account_id, original.date)
 
     # Validações
     if len(request.parts) < 2:
@@ -2521,7 +2540,8 @@ async def split_credit_card_invoice(
             amount=part.amount,
             current_installment=original.current_installment,
             total_installments=original.total_installments,
-            subtag_id=part.subtag_id
+            subtag_id=part.subtag_id,
+            issuer=original.issuer or 'btg',
             # NOTA: credit_card_invoices NÃO tem coluna 'active' - usa hard delete
         )
         db.add(new_invoice)
@@ -2640,6 +2660,8 @@ async def create_manual_transaction(
             status_code=400,
             detail="Percentual de propriedade deve estar entre 0 e 100"
         )
+
+    _guard_closed_account_period(db, tenant_id, request.account_id, request.date)
 
     # ========================================
     # CRIAR LANÇAMENTO
@@ -2876,6 +2898,12 @@ async def batch_delete_expenses(
 
     # Hard delete bank_statements
     if bank_ids:
+        bank_rows = db.query(BankStatement).filter(
+            BankStatement.id.in_(bank_ids),
+            BankStatement.tenant_id == tenant_id
+        ).all()
+        for statement in bank_rows:
+            _guard_closed_account_period(db, tenant_id, statement.account_id, statement.date)
         result = db.query(BankStatement).filter(
             BankStatement.id.in_(bank_ids),
             BankStatement.tenant_id == tenant_id

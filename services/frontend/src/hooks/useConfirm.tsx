@@ -107,6 +107,6 @@ export const useConfirm = () => {
     />
   )
 
-  return { showConfirm, ConfirmComponent }
+  return { showConfirm, ConfirmComponent, isConfirmOpen: confirmState.isOpen }
 }
 

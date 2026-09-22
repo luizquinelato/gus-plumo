@@ -1,19 +1,16 @@
 import Sidebar from '../components/Sidebar'
+import { CadastroListPageShell } from '../components/CadastroListPageLayout'
 import TransactionMappingsTab from './tabs/TransactionMappingsTab'
 
 const MappingsPage = () => {
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900">
       <Sidebar />
-      <main className="flex-1 overflow-y-auto p-8">
-        <div className="w-full">
-          {/* Content */}
-          <TransactionMappingsTab />
-        </div>
-      </main>
+      <CadastroListPageShell>
+        <TransactionMappingsTab />
+      </CadastroListPageShell>
     </div>
   )
 }
 
 export default MappingsPage
-

@@ -1,5 +1,11 @@
+import { AlertTriangle, Info } from 'lucide-react'
 import { useEffect } from 'react'
-import { AlertTriangle, X } from 'lucide-react'
+import {
+  CadastroModalBody,
+  CadastroModalFooter,
+  CadastroModalHeader,
+  CadastroModalShell,
+} from './CadastroFormLayout'
 
 interface ConfirmDialogProps {
   isOpen: boolean
@@ -20,14 +26,13 @@ const ConfirmDialog = ({
   message,
   confirmText = 'Confirmar',
   cancelText = 'Cancelar',
-  type = 'warning'
+  type = 'warning',
 }: ConfirmDialogProps) => {
   const handleConfirm = () => {
     onConfirm()
     onClose()
   }
 
-  // Adicionar listener para teclas Enter, Espaço e Escape
   useEffect(() => {
     if (!isOpen) return
 
@@ -47,58 +52,34 @@ const ConfirmDialog = ({
 
   if (!isOpen) return null
 
-  return (
-    <div 
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]"
-      onClick={onClose}
-    >
-      <div
-        className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4"
-        onClick={(e) => e.stopPropagation()}
-        style={{ boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.3)' }}
-      >
-        {/* Header com ícone */}
-        <div className="flex items-start gap-4 mb-4">
-          <div className="flex-shrink-0 w-12 h-12 rounded-full bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 flex items-center justify-center">
-            <AlertTriangle className="text-yellow-600 dark:text-yellow-400" size={24} />
-          </div>
-          <div className="flex-1">
-            <h3 className="text-lg font-semibold text-yellow-900 dark:text-yellow-100 mb-2">
-              {title}
-            </h3>
-            <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line">
-              {message}
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="flex-shrink-0 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
-          >
-            <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
-          </button>
-        </div>
+  const iconStyle =
+    type === 'danger'
+      ? { backgroundColor: 'var(--color-danger)', color: 'var(--on-color-danger)' }
+      : type === 'info'
+        ? { backgroundColor: 'var(--color-info)', color: 'var(--on-color-info)' }
+        : { backgroundColor: 'var(--color-warning)', color: 'var(--on-color-warning)' }
 
-        {/* Botões de ação */}
-        <div className="flex justify-end gap-3 mt-6">
-          <button
-            onClick={onClose}
-            className="px-6 py-2 rounded-lg hover:opacity-90 transition-opacity font-medium"
-            style={{ backgroundColor: 'var(--crud-cancel)', color: 'var(--on-crud-cancel)' }}
-          >
-            {cancelText}
-          </button>
-          <button
-            onClick={handleConfirm}
-            className="px-6 py-2 rounded-lg hover:opacity-90 transition-opacity font-medium"
-            style={{ backgroundColor: 'var(--crud-delete)', color: 'var(--on-crud-delete)' }}
-          >
-            {confirmText}
-          </button>
-        </div>
-      </div>
-    </div>
+  return (
+    <CadastroModalShell maxWidth="max-w-md" onBackdropClick={onClose}>
+      <CadastroModalHeader
+        isEdit={false}
+        title={title}
+        onClose={onClose}
+        icon={type === 'info' ? <Info size={18} /> : <AlertTriangle size={18} />}
+        iconStyle={iconStyle}
+      />
+      <CadastroModalBody>
+        <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line">{message}</p>
+      </CadastroModalBody>
+      <CadastroModalFooter
+        onClose={onClose}
+        onSave={handleConfirm}
+        closeLabel={cancelText}
+        saveLabel={confirmText}
+        saveTone={type === 'danger' ? 'danger' : type === 'info' ? 'default' : 'success'}
+      />
+    </CadastroModalShell>
   )
 }
 
 export default ConfirmDialog
-

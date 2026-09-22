@@ -1,11 +1,29 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
+import {
+  CadastroListPageBody,
+  CadastroListPageHero,
+  CadastroListPageShell,
+} from '../components/CadastroListPageLayout'
+import {
+  CadastroFieldLabel,
+  CadastroFormSection,
+  CadastroModalBody,
+  CadastroModalFieldsGrid,
+  CadastroModalFieldsRow,
+  CadastroModalFooter,
+  CadastroModalHeader,
+  CadastroModalShell,
+  cadastroAccentControlCls,
+  cadastroFieldCls,
+  cadastroOptionLabelCls,
+} from '../components/CadastroFormLayout'
 import LoadingSpinner from '../components/LoadingSpinner'
 import Toast from '../components/Toast'
 import BrazilianDatePicker from '../components/BrazilianDatePicker'
 import { parseLocalDate } from '../utils/dateUtils'
-import { Wallet, Plus, Edit2, Trash2, ChevronDown, ChevronRight, Search, X, Filter, Calendar, Users, TrendingUp, TrendingDown, CheckCircle, Check, Clock, AlertTriangle, Percent, DollarSign, ArrowUp, ArrowDown, Building2, UserX, Link2, Lock, HelpCircle } from 'lucide-react'
+import { Wallet, Plus, Edit2, Trash2, ChevronDown, ChevronRight, Search, X, Filter, Calendar, TrendingUp, TrendingDown, CheckCircle, Check, Clock, AlertTriangle, Percent, DollarSign, ArrowUp, ArrowDown, Building2, UserX, Link2, Lock, HelpCircle } from 'lucide-react'
 import { useConfirm } from '../hooks/useConfirm'
 
 interface ToastState {
@@ -733,32 +751,29 @@ export default function EmprestimosPage() {
 
   // Labels dinâmicos baseados na direção do empréstimo
   return (
-    <div className="flex h-screen bg-gray-100 dark:bg-gray-900">
+    <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900">
       <Sidebar />
-      <main className="flex-1 overflow-auto p-6">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-color-primary-light rounded-lg">
-              <Wallet className="h-6 w-6 text-color-primary" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Empréstimos</h1>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Gerencie empréstimos feitos e recebidos</p>
-            </div>
-          </div>
-          <button
-            onClick={() => { resetForm(); setShowCreateModal(true) }}
-            className="flex items-center gap-2 px-4 py-2 text-white rounded-lg transition-colors"
-            style={{ backgroundColor: 'var(--crud-create)' }}
-          >
-            <Plus size={18} /> Novo Empréstimo
-          </button>
-        </div>
-
-        {/* Filtros */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <CadastroListPageShell>
+        <CadastroListPageBody
+          header={
+            <CadastroListPageHero
+              icon={<Wallet className="h-6 w-6" />}
+              title="Empréstimos"
+              subtitle="Gerencie empréstimos feitos e recebidos"
+              actions={
+                <button
+                  onClick={() => { resetForm(); setShowCreateModal(true) }}
+                  className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+                  style={{ backgroundColor: 'var(--crud-create)' }}
+                >
+                  <Plus size={18} /> Novo Empréstimo
+                </button>
+              }
+            />
+          }
+          tabs={
+            <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
             {/* Busca */}
             <div className="relative">
               <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
@@ -825,8 +840,9 @@ export default function EmprestimosPage() {
                 })}
             </select>
           </div>
-        </div>
-
+            </div>
+          }
+        >
         {/* Lista de Empréstimos Ativos */}
         <div>
           {isLoading ? (
@@ -1315,386 +1331,435 @@ export default function EmprestimosPage() {
           </div>
         )}
 
+        </CadastroListPageBody>
+      </CadastroListPageShell>
+
         {/* Modal de Criar/Editar Empréstimo */}
         {showCreateModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
-              <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-                <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                  <Wallet size={20} className="text-color-primary" />
-                  {editingLoan ? (editingSettled ? 'Editar Empréstimo (Quitado)' : 'Editar Empréstimo') : 'Novo Empréstimo'}
-                </h2>
-                <button onClick={() => { setShowCreateModal(false); resetForm() }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
-                  <X className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                </button>
-              </div>
-              <form onSubmit={handleCreate} className="p-4 space-y-4">
-                {/* Aviso para edição de quitado */}
+          <CadastroModalShell
+            maxWidth="max-w-lg"
+            onBackdropClick={() => { setShowCreateModal(false); resetForm() }}
+            zClass="z-50"
+          >
+            <CadastroModalHeader
+              isEdit={!!editingLoan}
+              title={editingLoan ? (editingSettled ? 'Editar Empréstimo (Quitado)' : 'Editar Empréstimo') : 'Novo Empréstimo'}
+              subtitle={editingSettled ? 'Empréstimo quitado: apenas descrição e contraparte podem ser alterados' : 'Cadastro de empréstimo entre contas ou entidade externa'}
+              onClose={() => { setShowCreateModal(false); resetForm() }}
+              icon={<Wallet size={18} />}
+            />
+            <form onSubmit={handleCreate} className="flex min-h-0 flex-1 flex-col" id="emprestimo-form">
+              <CadastroModalBody>
                 {editingSettled && (
-                  <div className="bg-yellow-50 dark:bg-yellow-900/30 rounded-lg p-3 text-sm text-yellow-700 dark:text-yellow-300 flex items-center gap-2">
-                    <AlertTriangle size={16} />
-                    <span>Empréstimo quitado: apenas descrição e contraparte podem ser alterados</span>
-                  </div>
+                  <CadastroFormSection title="Aviso" icon={<AlertTriangle size={14} />}>
+                    <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                      Empréstimo quitado: apenas descrição e contraparte podem ser alterados
+                    </p>
+                  </CadastroFormSection>
                 )}
-                {/* Tipo - Switch estilo ConflictReviewModal */}
-                <div className={editingSettled ? 'opacity-50 pointer-events-none' : ''}>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Tipo de Empréstimo</label>
-                  <div className="flex rounded-lg overflow-hidden border border-gray-300 dark:border-gray-600 w-fit">
-                    <button
-                      type="button"
-                      onClick={() => setFormLoanType('lent')}
-                      className={`px-4 py-2 text-sm font-medium transition-all ${
-                        formLoanType === 'lent'
-                          ? 'text-white bg-green-600'
-                          : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-                      }`}
-                    >
-                      Emprestei (a receber)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFormLoanType('borrowed')}
-                      className={`px-4 py-2 text-sm font-medium transition-all border-l border-gray-300 dark:border-gray-600 ${
-                        formLoanType === 'borrowed'
-                          ? 'text-white bg-red-600'
-                          : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-                      }`}
-                    >
-                      Peguei emprestado (a pagar)
-                    </button>
-                  </div>
-                </div>
-                {/* Valor e Data - Layout igual ManualTransactionModal */}
-                <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 ${editingSettled ? 'opacity-50 pointer-events-none' : ''}`}>
-                  <div>
-                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      <DollarSign size={16} />
-                      Valor *
-                    </label>
-                    <div className="relative">
-                      <span className={`absolute left-3 top-1/2 -translate-y-1/2 font-semibold ${
-                        formLoanType === 'lent' ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'
-                      }`}>
-                        R$
-                      </span>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        value={`${formLoanType === 'lent' && formAmountCents && formAmountCents !== '0' ? '-' : ''}${formatAmountMask(formAmountCents)}`}
-                        onChange={(e) => {
-                          const cents = e.target.value.replace(/\D/g, '')
-                          const absValue = parseInt(cents || '0', 10) / 100
-                          if (absValue > 99999999.99) return
-                          const signedValue = formLoanType === 'lent' ? -absValue : absValue
-                          setFormAmountCents(cents)
-                          setFormAmount(signedValue === 0 ? '' : signedValue.toFixed(2))
-                        }}
-                        placeholder="0,00"
-                        required
-                        disabled={editingSettled}
-                        className={`w-full pl-12 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 font-semibold focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                          formLoanType === 'lent' ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'
-                        } ${editingSettled ? 'cursor-not-allowed' : ''}`}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      <Calendar size={16} />
-                      Data *
-                    </label>
-                    <BrazilianDatePicker
-                      value={formLoanDate}
-                      onChange={setFormLoanDate}
-                      disabled={editingSettled}
-                      className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent ${editingSettled ? 'cursor-not-allowed opacity-50' : ''}`}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Descrição</label>
-                  <input type="text" value={formDescription} onChange={(e) => setFormDescription(e.target.value)} required
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
-                </div>
-                {/* Contraparte */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    <Users size={14} className="inline mr-1" /> Contraparte
-                  </label>
-                  <div className="flex items-center gap-2 mb-2">
-                    <input type="checkbox" checked={formUseExternal} onChange={(e) => setFormUseExternal(e.target.checked)} className="w-4 h-4" />
-                    <span className="text-sm text-gray-600 dark:text-gray-400">Entidade externa</span>
-                  </div>
-                  {formUseExternal ? (
-                    <input type="text" value={formExternalName} onChange={(e) => setFormExternalName(e.target.value)}
-                      placeholder="Nome da pessoa/empresa" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700" />
-                  ) : (
-                    <select value={formPartnerId || ''} onChange={(e) => setFormPartnerId(e.target.value ? parseInt(e.target.value) : null)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
-                      <option value="">Selecione uma conta parceira</option>
-                      {[...partners]
-                        .sort((a, b) => {
-                          const nameA = getAccountDisplayName(a.shared_account).toLowerCase()
-                          const nameB = getAccountDisplayName(b.shared_account).toLowerCase()
-                          return nameA.localeCompare(nameB, 'pt-BR')
-                        })
-                        .map(p => {
-                          const acc = p.shared_account
-                          const bankName = acc?.bank?.name || 'Sem banco'
-                          const agencyInfo = acc?.agency ? `Ag: ${acc.agency}` : ''
-                          const accountInfo = acc?.account_number ? `Conta: ${acc.account_number}` : ''
-                          const details = [bankName, agencyInfo, accountInfo].filter(Boolean).join(' • ')
-                          return (
-                            <option key={p.shared_account_id} value={p.shared_account_id}>
-                              {getAccountDisplayName(acc)} • {details}
-                            </option>
-                          )
-                        })}
-                    </select>
-                  )}
-                </div>
-                {/* Vencimento */}
-                <div className={editingSettled ? 'opacity-50 pointer-events-none' : ''}>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    <Calendar size={14} className="inline mr-1" /> Vencimento (opcional)
-                  </label>
-                  <BrazilianDatePicker
-                    value={formDueDate}
-                    onChange={setFormDueDate}
-                    minDate={formLoanDate ? parseLocalDate(formLoanDate) ?? undefined : undefined}
-                    disabled={editingSettled}
-                    className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent ${editingSettled ? 'cursor-not-allowed opacity-50' : ''}`}
-                  />
-                </div>
-                {/* Juros */}
-                <div className={`border-t border-gray-200 dark:border-gray-700 pt-4 ${editingSettled ? 'opacity-50 pointer-events-none' : ''}`}>
-                  <label className="flex items-center gap-2 cursor-pointer mb-2">
-                    <input type="checkbox" checked={formInterestEnabled} onChange={(e) => setFormInterestEnabled(e.target.checked)} className="w-4 h-4" disabled={editingSettled} />
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      <Percent size={14} className="inline mr-1" /> Aplicar juros
-                    </span>
-                  </label>
-                  {formInterestEnabled && (
-                    <div className="grid grid-cols-3 gap-2 mt-2">
-                      <select value={formInterestType} onChange={(e) => setFormInterestType(e.target.value as any)} disabled={editingSettled}
-                        className="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700">
-                        <option value="simple">Simples</option>
-                        <option value="compound">Composto</option>
-                      </select>
-                      <input type="number" step="0.01" value={formInterestRate} onChange={(e) => setFormInterestRate(e.target.value)} disabled={editingSettled}
-                        placeholder="Taxa %" className="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700" />
-                      <select value={formInterestPeriod} onChange={(e) => setFormInterestPeriod(e.target.value as any)} disabled={editingSettled}
-                        className="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700">
-                        <option value="daily">ao dia</option>
-                        <option value="monthly">ao mês</option>
-                        <option value="yearly">ao ano</option>
-                      </select>
-                    </div>
-                  )}
-                </div>
-                {/* Botões */}
-                <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
-                  <button type="button" onClick={() => { setShowCreateModal(false); resetForm() }} disabled={isSubmitting}
-                    className="px-4 py-2 text-white hover:opacity-90 rounded-lg" style={{ backgroundColor: 'var(--crud-cancel)' }}>
-                    Cancelar
-                  </button>
-                  <button type="submit" disabled={isSubmitting}
-                    className="px-4 py-2 text-white rounded-lg flex items-center gap-2 disabled:opacity-50" style={{ backgroundColor: 'var(--crud-create)' }}>
-                    {isSubmitting ? 'Salvando...' : editingLoan ? 'Salvar' : 'Criar'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
+                <CadastroFormSection title="Identificação" icon={<Wallet size={14} />}>
+                  <CadastroModalFieldsGrid>
+                    <CadastroModalFieldsRow>
+                      <div className={editingSettled ? 'pointer-events-none opacity-50' : ''}>
+                        <CadastroFieldLabel>Tipo de Empréstimo</CadastroFieldLabel>
+                        <div className="mt-0.5 flex w-fit overflow-hidden rounded-lg border border-gray-300 dark:border-gray-600">
+                          <button
+                            type="button"
+                            onClick={() => setFormLoanType('lent')}
+                            className={`px-4 py-2 text-sm font-medium transition-all ${
+                              formLoanType === 'lent'
+                                ? 'bg-green-600 text-white'
+                                : 'bg-white text-gray-600 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700'
+                            }`}
+                          >
+                            Emprestei (a receber)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setFormLoanType('borrowed')}
+                            className={`border-l border-gray-300 px-4 py-2 text-sm font-medium transition-all dark:border-gray-600 ${
+                              formLoanType === 'borrowed'
+                                ? 'bg-red-600 text-white'
+                                : 'bg-white text-gray-600 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700'
+                            }`}
+                          >
+                            Peguei emprestado (a pagar)
+                          </button>
+                        </div>
+                      </div>
+                    </CadastroModalFieldsRow>
+                    <CadastroModalFieldsRow cols={2}>
+                      <label className={`block min-w-0 ${editingSettled ? 'pointer-events-none opacity-50' : ''}`}>
+                        <CadastroFieldLabel required>Valor</CadastroFieldLabel>
+                        <div className="relative mt-0.5">
+                          <span className={`absolute left-3 top-1/2 -translate-y-1/2 font-semibold ${
+                            formLoanType === 'lent' ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'
+                          }`}>
+                            R$
+                          </span>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={`${formLoanType === 'lent' && formAmountCents && formAmountCents !== '0' ? '-' : ''}${formatAmountMask(formAmountCents)}`}
+                            onChange={(e) => {
+                              const cents = e.target.value.replace(/\D/g, '')
+                              const absValue = parseInt(cents || '0', 10) / 100
+                              if (absValue > 99999999.99) return
+                              const signedValue = formLoanType === 'lent' ? -absValue : absValue
+                              setFormAmountCents(cents)
+                              setFormAmount(signedValue === 0 ? '' : signedValue.toFixed(2))
+                            }}
+                            placeholder="0,00"
+                            required
+                            disabled={editingSettled}
+                            className={`${cadastroFieldCls} pl-12 font-semibold ${
+                              formLoanType === 'lent' ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'
+                            } ${editingSettled ? 'cursor-not-allowed' : ''}`}
+                          />
+                        </div>
+                      </label>
+                      <label className={`block min-w-0 ${editingSettled ? 'pointer-events-none opacity-50' : ''}`}>
+                        <CadastroFieldLabel required>Data</CadastroFieldLabel>
+                        <BrazilianDatePicker
+                          value={formLoanDate}
+                          onChange={setFormLoanDate}
+                          disabled={editingSettled}
+                          className={`${cadastroFieldCls} mt-0.5 ${editingSettled ? 'cursor-not-allowed opacity-50' : ''}`}
+                        />
+                      </label>
+                    </CadastroModalFieldsRow>
+                    <CadastroModalFieldsRow>
+                      <label className="block min-w-0">
+                        <CadastroFieldLabel required>Descrição</CadastroFieldLabel>
+                        <input
+                          type="text"
+                          value={formDescription}
+                          onChange={(e) => setFormDescription(e.target.value)}
+                          required
+                          className={`${cadastroFieldCls} mt-0.5`}
+                        />
+                      </label>
+                    </CadastroModalFieldsRow>
+                    <CadastroModalFieldsRow>
+                      <div className="min-w-0">
+                        <CadastroFieldLabel>Contraparte</CadastroFieldLabel>
+                        <label className={`${cadastroOptionLabelCls} mt-1.5`}>
+                          <input
+                            type="checkbox"
+                            checked={formUseExternal}
+                            onChange={(e) => setFormUseExternal(e.target.checked)}
+                            className={`${cadastroAccentControlCls} h-4 w-4 rounded border-gray-300`}
+                          />
+                          Entidade externa
+                        </label>
+                        {formUseExternal ? (
+                          <input
+                            type="text"
+                            value={formExternalName}
+                            onChange={(e) => setFormExternalName(e.target.value)}
+                            placeholder="Nome da pessoa/empresa"
+                            className={`${cadastroFieldCls} mt-2`}
+                          />
+                        ) : (
+                          <select
+                            value={formPartnerId || ''}
+                            onChange={(e) => setFormPartnerId(e.target.value ? parseInt(e.target.value) : null)}
+                            className={`${cadastroFieldCls} mt-2`}
+                          >
+                            <option value="">Selecione uma conta parceira</option>
+                            {[...partners]
+                              .sort((a, b) => {
+                                const nameA = getAccountDisplayName(a.shared_account).toLowerCase()
+                                const nameB = getAccountDisplayName(b.shared_account).toLowerCase()
+                                return nameA.localeCompare(nameB, 'pt-BR')
+                              })
+                              .map(p => {
+                                const acc = p.shared_account
+                                const bankName = acc?.bank?.name || 'Sem banco'
+                                const agencyInfo = acc?.agency ? `Ag: ${acc.agency}` : ''
+                                const accountInfo = acc?.account_number ? `Conta: ${acc.account_number}` : ''
+                                const details = [bankName, agencyInfo, accountInfo].filter(Boolean).join(' • ')
+                                return (
+                                  <option key={p.shared_account_id} value={p.shared_account_id}>
+                                    {getAccountDisplayName(acc)} • {details}
+                                  </option>
+                                )
+                              })}
+                          </select>
+                        )}
+                      </div>
+                    </CadastroModalFieldsRow>
+                  </CadastroModalFieldsGrid>
+                </CadastroFormSection>
+                <CadastroFormSection title="Condições" icon={<Percent size={14} />}>
+                  <CadastroModalFieldsGrid>
+                    <CadastroModalFieldsRow>
+                      <label className={`block min-w-0 ${editingSettled ? 'pointer-events-none opacity-50' : ''}`}>
+                        <CadastroFieldLabel>Vencimento</CadastroFieldLabel>
+                        <BrazilianDatePicker
+                          value={formDueDate}
+                          onChange={setFormDueDate}
+                          minDate={formLoanDate ? parseLocalDate(formLoanDate) ?? undefined : undefined}
+                          disabled={editingSettled}
+                          className={`${cadastroFieldCls} mt-0.5 ${editingSettled ? 'cursor-not-allowed opacity-50' : ''}`}
+                        />
+                      </label>
+                    </CadastroModalFieldsRow>
+                    <CadastroModalFieldsRow>
+                      <div className={editingSettled ? 'pointer-events-none opacity-50' : ''}>
+                        <label className={cadastroOptionLabelCls}>
+                          <input
+                            type="checkbox"
+                            checked={formInterestEnabled}
+                            onChange={(e) => setFormInterestEnabled(e.target.checked)}
+                            className={`${cadastroAccentControlCls} h-4 w-4 rounded border-gray-300`}
+                            disabled={editingSettled}
+                          />
+                          Aplicar juros
+                        </label>
+                        {formInterestEnabled && (
+                          <div className="mt-2 grid grid-cols-3 gap-2">
+                            <select
+                              value={formInterestType}
+                              onChange={(e) => setFormInterestType(e.target.value as any)}
+                              disabled={editingSettled}
+                              className={cadastroFieldCls}
+                            >
+                              <option value="simple">Simples</option>
+                              <option value="compound">Composto</option>
+                            </select>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={formInterestRate}
+                              onChange={(e) => setFormInterestRate(e.target.value)}
+                              disabled={editingSettled}
+                              placeholder="Taxa %"
+                              className={cadastroFieldCls}
+                            />
+                            <select
+                              value={formInterestPeriod}
+                              onChange={(e) => setFormInterestPeriod(e.target.value as any)}
+                              disabled={editingSettled}
+                              className={cadastroFieldCls}
+                            >
+                              <option value="daily">ao dia</option>
+                              <option value="monthly">ao mês</option>
+                              <option value="yearly">ao ano</option>
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                    </CadastroModalFieldsRow>
+                  </CadastroModalFieldsGrid>
+                </CadastroFormSection>
+              </CadastroModalBody>
+              <CadastroModalFooter
+                onClose={() => { setShowCreateModal(false); resetForm() }}
+                onSave={() => {
+                  const form = document.getElementById('emprestimo-form') as HTMLFormElement | null
+                  form?.requestSubmit()
+                }}
+                saving={isSubmitting}
+                saveLabel={editingLoan ? 'Salvar' : 'Criar'}
+              />
+            </form>
+          </CadastroModalShell>
         )}
 
         {/* Modal de Pagamento */}
         {showPaymentModal && payingLoan && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md mx-4">
-              <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-                <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                  <DollarSign size={20} className="text-green-600 dark:text-green-400" />
-                  {editingPayment ? 'Editar Pagamento' : 'Registrar Pagamento'}
-                </h2>
-                <button onClick={() => { setShowPaymentModal(false); setEditingPayment(null) }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
-                  <X className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                </button>
-              </div>
-              <div className="p-4 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
-                <p className="text-sm text-gray-600 dark:text-gray-400">{payingLoan.description}</p>
-                <p className="text-sm text-gray-500">Saldo restante: <span className={`font-bold ${payingLoan.loan_type === 'lent' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{formatCurrency(payingLoan.remaining_balance)}</span></p>
-              </div>
-              <form onSubmit={handleAddPayment} className="p-4 space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      <DollarSign size={16} />
-                      Valor *
-                    </label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 font-semibold text-green-600 dark:text-green-400">
-                        R$
-                      </span>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        value={formatAmountMask(paymentAmountCents)}
-                        onChange={(e) => {
-                          let cents = e.target.value.replace(/\D/g, '')
-                          const amountValue = parseInt(cents || '0', 10) / 100
-                          if (!editingPayment && amountValue > payingLoan.remaining_balance) {
-                            cents = String(Math.round(payingLoan.remaining_balance * 100))
-                          }
-                          setPaymentAmountCents(cents)
-                        }}
-                        placeholder="0,00"
-                        required
-                        className="w-full pl-12 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 font-semibold text-green-600 dark:text-green-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                    </div>
-                    {!editingPayment && (
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        Máx: {formatCurrency(payingLoan.remaining_balance)}
-                      </p>
-                    )}
-                  </div>
-                  <div>
-                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      <Calendar size={16} />
-                      Data *
-                    </label>
-                    <BrazilianDatePicker
-                      value={paymentDate}
-                      onChange={setPaymentDate}
-                      maxDate={new Date()}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Observações (opcional)</label>
-                  <input type="text" value={paymentNotes} onChange={(e) => setPaymentNotes(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700" />
-                </div>
-                <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
-                  <button type="button" onClick={() => { setShowPaymentModal(false); setEditingPayment(null) }} disabled={isSubmitting}
-                    className="px-4 py-2 text-white hover:opacity-90 rounded-lg" style={{ backgroundColor: 'var(--crud-cancel)' }}>Cancelar</button>
-                  <button type="submit" disabled={isSubmitting}
-                    className="px-4 py-2 text-white rounded-lg disabled:opacity-50" style={{ backgroundColor: 'var(--crud-create)' }}>
-                    {isSubmitting ? 'Salvando...' : editingPayment ? 'Salvar' : 'Registrar'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
+          <CadastroModalShell
+            maxWidth="max-w-md"
+            onBackdropClick={() => { setShowPaymentModal(false); setEditingPayment(null) }}
+            zClass="z-50"
+          >
+            <CadastroModalHeader
+              isEdit={!!editingPayment}
+              title={editingPayment ? 'Editar Pagamento' : 'Registrar Pagamento'}
+              subtitle={`${payingLoan.description} · saldo restante ${formatCurrency(payingLoan.remaining_balance)}`}
+              onClose={() => { setShowPaymentModal(false); setEditingPayment(null) }}
+              icon={<DollarSign size={18} />}
+            />
+            <form onSubmit={handleAddPayment} className="flex min-h-0 flex-1 flex-col" id="emprestimo-pagamento-form">
+              <CadastroModalBody>
+                <CadastroFormSection title="Pagamento" icon={<DollarSign size={14} />}>
+                  <CadastroModalFieldsGrid>
+                    <CadastroModalFieldsRow cols={2}>
+                      <label className="block min-w-0">
+                        <CadastroFieldLabel required>Valor</CadastroFieldLabel>
+                        <div className="relative mt-0.5">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 font-semibold text-green-600 dark:text-green-400">
+                            R$
+                          </span>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={formatAmountMask(paymentAmountCents)}
+                            onChange={(e) => {
+                              let cents = e.target.value.replace(/\D/g, '')
+                              const amountValue = parseInt(cents || '0', 10) / 100
+                              if (!editingPayment && amountValue > payingLoan.remaining_balance) {
+                                cents = String(Math.round(payingLoan.remaining_balance * 100))
+                              }
+                              setPaymentAmountCents(cents)
+                            }}
+                            placeholder="0,00"
+                            required
+                            className={`${cadastroFieldCls} pl-12 font-semibold text-green-600 dark:text-green-400`}
+                          />
+                        </div>
+                        {!editingPayment && (
+                          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            Máx: {formatCurrency(payingLoan.remaining_balance)}
+                          </p>
+                        )}
+                      </label>
+                      <label className="block min-w-0">
+                        <CadastroFieldLabel required>Data</CadastroFieldLabel>
+                        <BrazilianDatePicker
+                          value={paymentDate}
+                          onChange={setPaymentDate}
+                          maxDate={new Date()}
+                          className={`${cadastroFieldCls} mt-0.5`}
+                        />
+                      </label>
+                    </CadastroModalFieldsRow>
+                    <CadastroModalFieldsRow>
+                      <label className="block min-w-0">
+                        <CadastroFieldLabel>Observações</CadastroFieldLabel>
+                        <input
+                          type="text"
+                          value={paymentNotes}
+                          onChange={(e) => setPaymentNotes(e.target.value)}
+                          className={`${cadastroFieldCls} mt-0.5`}
+                        />
+                      </label>
+                    </CadastroModalFieldsRow>
+                  </CadastroModalFieldsGrid>
+                </CadastroFormSection>
+              </CadastroModalBody>
+              <CadastroModalFooter
+                onClose={() => { setShowPaymentModal(false); setEditingPayment(null) }}
+                onSave={() => {
+                  const form = document.getElementById('emprestimo-pagamento-form') as HTMLFormElement | null
+                  form?.requestSubmit()
+                }}
+                saving={isSubmitting}
+                saveLabel={editingPayment ? 'Salvar' : 'Registrar'}
+              />
+            </form>
+          </CadastroModalShell>
         )}
 
         {/* Modal de Reabrir Empréstimo */}
         {showReopenModal && reopeningLoan && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md mx-4">
-              <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-                <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                  <Lock size={20} className="text-color-primary" />
-                  Reabrir Empréstimo
-                </h2>
-                <button onClick={() => { setShowReopenModal(false); setReopeningLoan(null) }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
-                  <X className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                </button>
-              </div>
-              <form onSubmit={handleReopenSubmit} className="p-4 space-y-4">
-                <div className="text-sm text-gray-700 dark:text-gray-300">
-                  <p><strong>{reopeningLoan.description}</strong></p>
-                  <p className="mt-1">
-                    Principal atual: <span className={reopeningLoan.loan_type === 'lent' ? 'text-red-600 dark:text-red-400 font-semibold' : 'text-green-600 dark:text-green-400 font-semibold'}>
-                      {formatCurrency(reopeningLoan.loan_type === 'lent' ? -reopeningLoan.principal_amount : reopeningLoan.principal_amount)}
-                    </span>
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Valor Adicional *
-                  </label>
-                  <input
-                    type="text"
-                    value={reopenAmount}
-                    onChange={(e) => handleAmountChange(e.target.value, setReopenAmount, 'positive')}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-color-primary focus:border-transparent"
-                    placeholder="0.00"
-                  />
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    O valor será adicionado ao principal existente
-                  </p>
-                </div>
-
-                {/* Juros */}
-                <div className="space-y-3">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={reopenInterestEnabled}
-                      onChange={(e) => setReopenInterestEnabled(e.target.checked)}
-                      className="w-4 h-4 text-color-primary rounded"
-                    />
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1">
-                      <Percent size={14} /> Aplicar Juros
-                    </span>
-                  </label>
-
-                  {reopenInterestEnabled && (
-                    <div className="grid grid-cols-3 gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Tipo</label>
-                        <select
-                          value={reopenInterestType}
-                          onChange={(e) => setReopenInterestType(e.target.value as 'simple' | 'compound')}
-                          className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                        >
-                          <option value="simple">Simples</option>
-                          <option value="compound">Composto</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Taxa (%)</label>
+          <CadastroModalShell
+            maxWidth="max-w-md"
+            onBackdropClick={() => { setShowReopenModal(false); setReopeningLoan(null) }}
+            zClass="z-50"
+          >
+            <CadastroModalHeader
+              isEdit={true}
+              title="Reabrir Empréstimo"
+              subtitle={reopeningLoan.description}
+              onClose={() => { setShowReopenModal(false); setReopeningLoan(null) }}
+              icon={<Lock size={18} />}
+            />
+            <form onSubmit={handleReopenSubmit} className="flex min-h-0 flex-1 flex-col" id="emprestimo-reabrir-form">
+              <CadastroModalBody>
+                <CadastroFormSection title="Valor" icon={<DollarSign size={14} />}>
+                  <CadastroModalFieldsGrid>
+                    <CadastroModalFieldsRow>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">
+                        Principal atual:{' '}
+                        <span className={reopeningLoan.loan_type === 'lent' ? 'font-semibold text-red-600 dark:text-red-400' : 'font-semibold text-green-600 dark:text-green-400'}>
+                          {formatCurrency(reopeningLoan.loan_type === 'lent' ? -reopeningLoan.principal_amount : reopeningLoan.principal_amount)}
+                        </span>
+                      </p>
+                    </CadastroModalFieldsRow>
+                    <CadastroModalFieldsRow>
+                      <label className="block min-w-0">
+                        <CadastroFieldLabel required>Valor Adicional</CadastroFieldLabel>
                         <input
                           type="text"
-                          value={reopenInterestRate}
-                          onChange={(e) => setReopenInterestRate(e.target.value.replace(/[^0-9.,]/g, ''))}
-                          className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                          value={reopenAmount}
+                          onChange={(e) => handleAmountChange(e.target.value, setReopenAmount, 'positive')}
+                          className={`${cadastroFieldCls} mt-0.5`}
                           placeholder="0.00"
                         />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Período</label>
-                        <select
-                          value={reopenInterestPeriod}
-                          onChange={(e) => setReopenInterestPeriod(e.target.value as 'daily' | 'monthly' | 'yearly')}
-                          className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                        >
-                          <option value="daily">Diário</option>
-                          <option value="monthly">Mensal</option>
-                          <option value="yearly">Anual</option>
-                        </select>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
-                  <button type="button" onClick={() => { setShowReopenModal(false); setReopeningLoan(null) }} disabled={isSubmitting}
-                    className="px-4 py-2 text-white hover:opacity-90 rounded-lg" style={{ backgroundColor: 'var(--crud-cancel)' }}>
-                    Cancelar
-                  </button>
-                  <button type="submit" disabled={isSubmitting || !reopenAmount}
-                    className="px-4 py-2 text-white rounded-lg disabled:opacity-50" style={{ backgroundColor: 'var(--crud-create)' }}>
-                    {isSubmitting ? 'Reabrindo...' : 'Reabrir'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
+                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          O valor será adicionado ao principal existente
+                        </p>
+                      </label>
+                    </CadastroModalFieldsRow>
+                  </CadastroModalFieldsGrid>
+                </CadastroFormSection>
+                <CadastroFormSection title="Juros" icon={<Percent size={14} />}>
+                  <CadastroModalFieldsGrid>
+                    <CadastroModalFieldsRow>
+                      <label className={cadastroOptionLabelCls}>
+                        <input
+                          type="checkbox"
+                          checked={reopenInterestEnabled}
+                          onChange={(e) => setReopenInterestEnabled(e.target.checked)}
+                          className={`${cadastroAccentControlCls} h-4 w-4 rounded border-gray-300`}
+                        />
+                        Aplicar juros
+                      </label>
+                    </CadastroModalFieldsRow>
+                    {reopenInterestEnabled && (
+                      <CadastroModalFieldsRow cols={3}>
+                        <label className="block min-w-0">
+                          <CadastroFieldLabel>Tipo</CadastroFieldLabel>
+                          <select
+                            value={reopenInterestType}
+                            onChange={(e) => setReopenInterestType(e.target.value as 'simple' | 'compound')}
+                            className={`${cadastroFieldCls} mt-0.5`}
+                          >
+                            <option value="simple">Simples</option>
+                            <option value="compound">Composto</option>
+                          </select>
+                        </label>
+                        <label className="block min-w-0">
+                          <CadastroFieldLabel>Taxa (%)</CadastroFieldLabel>
+                          <input
+                            type="text"
+                            value={reopenInterestRate}
+                            onChange={(e) => setReopenInterestRate(e.target.value.replace(/[^0-9.,]/g, ''))}
+                            className={`${cadastroFieldCls} mt-0.5`}
+                            placeholder="0.00"
+                          />
+                        </label>
+                        <label className="block min-w-0">
+                          <CadastroFieldLabel>Período</CadastroFieldLabel>
+                          <select
+                            value={reopenInterestPeriod}
+                            onChange={(e) => setReopenInterestPeriod(e.target.value as 'daily' | 'monthly' | 'yearly')}
+                            className={`${cadastroFieldCls} mt-0.5`}
+                          >
+                            <option value="daily">Diário</option>
+                            <option value="monthly">Mensal</option>
+                            <option value="yearly">Anual</option>
+                          </select>
+                        </label>
+                      </CadastroModalFieldsRow>
+                    )}
+                  </CadastroModalFieldsGrid>
+                </CadastroFormSection>
+              </CadastroModalBody>
+              <CadastroModalFooter
+                onClose={() => { setShowReopenModal(false); setReopeningLoan(null) }}
+                onSave={() => {
+                  const form = document.getElementById('emprestimo-reabrir-form') as HTMLFormElement | null
+                  form?.requestSubmit()
+                }}
+                saving={isSubmitting}
+                disabled={!reopenAmount}
+                saveLabel="Reabrir"
+              />
+            </form>
+          </CadastroModalShell>
         )}
 
         {/* Toast */}
@@ -1702,7 +1767,6 @@ export default function EmprestimosPage() {
 
         {/* Confirm Dialog */}
         <ConfirmComponent />
-      </main>
     </div>
   )
 }

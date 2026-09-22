@@ -3,10 +3,24 @@ import axios from 'axios'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import '../styles/datepicker-custom.css'
-import { X, Users, Edit2, FileText, Tag as TagIcon, CreditCard, Percent, Calendar } from 'lucide-react'
+import { Users, Edit2, Tag as TagIcon, Calendar } from 'lucide-react'
 import Toast from './Toast'
+import {
+  CadastroModalShell,
+  CadastroModalHeader,
+  CadastroModalBody,
+  CadastroModalFooter,
+  CadastroFormSection,
+  CadastroModalFieldsGrid,
+  CadastroModalFieldsRow,
+  CadastroFieldLabel,
+  cadastroFieldCls,
+  cadastroOptionLabelCls,
+  cadastroAccentControlCls,
+} from './CadastroFormLayout'
 import { useEscapeKey } from '../hooks/useEscapeKey'
-import { dateToLocalTimestamp } from '../utils/dateUtils'
+import { dateToLocalString, dateToLocalTimestamp } from '../utils/dateUtils'
+import { validateAccountPeriodDate } from '../services/accountPeriodClosuresApi'
 
 interface ToastState {
   show: boolean
@@ -115,9 +129,8 @@ const EditExpenseModal = ({ isOpen, onClose, expense, onSuccess, limitedMode = f
           return
         }
 
-        // Verificar se o target está dentro do modal
-        const modalElement = document.querySelector('[data-modal="edit-expense"]')
-        if (!modalElement || !modalElement.contains(target)) {
+        const form = document.getElementById('edit-expense-form')
+        if (!form || !form.contains(target)) {
           return
         }
 
@@ -127,8 +140,7 @@ const EditExpenseModal = ({ isOpen, onClose, expense, onSuccess, limitedMode = f
         }
 
         e.preventDefault()
-        const form = modalElement.querySelector('form')
-        if (form) {
+        if (form instanceof HTMLFormElement) {
           form.requestSubmit()
         }
       }
@@ -372,6 +384,24 @@ const EditExpenseModal = ({ isOpen, onClose, expense, onSuccess, limitedMode = f
       return
     }
 
+    if (expense.source === 'bank') {
+      const datesToCheck = [expense.date.slice(0, 10)]
+      if (!limitedMode) {
+        datesToCheck.push(dateToLocalString(selectedDate))
+      }
+      for (const dateValue of [...new Set(datesToCheck)]) {
+        try {
+          const validation = await validateAccountPeriodDate(dateValue)
+          if (validation.is_closed) {
+            showToast(validation.message || 'Este mês da conta já está fechado.', 'warning')
+            return
+          }
+        } catch (error) {
+          console.error('Erro ao validar mês fechado da conta:', error)
+        }
+      }
+    }
+
     try {
       setIsLoading(true)
       const endpoint = expense.source === 'bank'
@@ -415,335 +445,273 @@ const EditExpenseModal = ({ isOpen, onClose, expense, onSuccess, limitedMode = f
   if (!isOpen || !expense) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div data-modal="edit-expense" className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto relative">
-        {/* ✅ Loading overlay cobrindo todo o modal */}
+    <>
+      <CadastroModalShell maxWidth="max-w-3xl" onBackdropClick={onClose}>
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
         {isLoadingData && (
-          <div className="absolute inset-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm z-50 rounded-lg flex items-center justify-center">
+          <div className="absolute inset-0 z-50 flex items-center justify-center rounded-xl bg-white/80 backdrop-blur-sm dark:bg-gray-800/80">
             <div className="text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent mx-auto mb-3"></div>
-              <p className="text-sm font-medium text-blue-700 dark:text-blue-300">Carregando dados...</p>
+              <div className="mx-auto mb-3 h-12 w-12 animate-spin rounded-full border-4 border-[var(--color-1)] border-t-transparent"></div>
+              <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Carregando dados...</p>
             </div>
           </div>
         )}
-        {/* Header */}
-        <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between z-10">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'var(--crud-edit)', color: 'white' }}>
-              <Edit2 className="w-6 h-6" />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                Editar Despesa
-              </h2>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Atualize as informações da transação
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
+        <CadastroModalHeader
+          isEdit
+          title="Editar Despesa"
+          subtitle="Atualize as informações da transação"
+          onClose={onClose}
+          icon={<Edit2 size={18} />}
+        />
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col" id="edit-expense-form">
+          <CadastroModalBody>
+            {!limitedMode && (
+              <CadastroFormSection title="Identificação" icon={<Calendar size={14} />}>
+                <CadastroModalFieldsGrid>
+                  <CadastroModalFieldsRow cols={2}>
+                    <label className="block min-w-0">
+                      <CadastroFieldLabel required>Data e Hora</CadastroFieldLabel>
+                      <DatePicker
+                        selected={selectedDate}
+                        onChange={(date: Date | null) => setSelectedDate(date || new Date())}
+                        showTimeSelect
+                        timeFormat="HH:mm"
+                        timeIntervals={15}
+                        dateFormat="dd/MM/yyyy HH:mm"
+                        disabled={isLoading}
+                        className={`${cadastroFieldCls} mt-0.5`}
+                        required
+                      />
+                    </label>
+                    <label className="block min-w-0">
+                      <CadastroFieldLabel required>Valor</CadastroFieldLabel>
+                      <div className="relative mt-0.5">
+                        <span className={`absolute left-2.5 top-1/2 -translate-y-1/2 text-sm font-semibold ${
+                          parseFloat(formData.amount) < 0
+                            ? 'text-red-600 dark:text-red-400'
+                            : parseFloat(formData.amount) > 0
+                              ? 'text-green-600 dark:text-green-400'
+                              : 'text-gray-500 dark:text-gray-400'
+                        }`}>
+                          R$
+                        </span>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          required
+                          value={formData.amount}
+                          onChange={handleAmountChange}
+                          onBlur={handleAmountBlur}
+                          disabled={isLoading}
+                          placeholder="0.00"
+                          className={`${cadastroFieldCls} pl-10 font-semibold disabled:opacity-50 ${
+                            parseFloat(formData.amount) < 0
+                              ? 'text-red-600 dark:text-red-400'
+                              : parseFloat(formData.amount) > 0
+                                ? 'text-green-600 dark:text-green-400'
+                                : ''
+                          }`}
+                        />
+                      </div>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        Use valores negativos para despesas e positivos para receitas
+                      </p>
+                    </label>
+                  </CadastroModalFieldsRow>
+                  <CadastroModalFieldsRow>
+                    <label className="block min-w-0">
+                      <CadastroFieldLabel required>Descrição</CadastroFieldLabel>
+                      <input
+                        type="text"
+                        required
+                        value={formData.description}
+                        onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                        disabled={isLoading}
+                        placeholder="Ex: Almoço Restaurante X"
+                        className={`${cadastroFieldCls} mt-0.5 disabled:opacity-50`}
+                      />
+                    </label>
+                  </CadastroModalFieldsRow>
+                  {expense?.source === 'card' ? (
+                    <CadastroModalFieldsRow>
+                      <label className="block min-w-0">
+                        <CadastroFieldLabel required>Cartão</CadastroFieldLabel>
+                        <select
+                          required
+                          value={formData.card_number}
+                          onChange={(e) => setFormData({ ...formData, card_number: e.target.value })}
+                          disabled={isLoading}
+                          className={`${cadastroFieldCls} mt-0.5 disabled:opacity-50`}
+                        >
+                          <option value="">Selecione um cartão...</option>
+                          {cards.map(card => (
+                            <option key={card.id} value={card.number}>
+                              {card.owner} - {card.number} {card.description ? `(${card.description})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </CadastroModalFieldsRow>
+                  ) : null}
+                </CadastroModalFieldsGrid>
+              </CadastroFormSection>
+            )}
+
+            <CadastroFormSection title="Classificação" icon={<TagIcon size={14} />}>
+              <CadastroModalFieldsGrid>
+                <CadastroModalFieldsRow cols={2}>
+                  <label className="block min-w-0">
+                    <CadastroFieldLabel>Tag</CadastroFieldLabel>
+                    <select
+                      value={formData.tag_id || ''}
+                      onChange={(e) => {
+                        const newTagId = parseInt(e.target.value) || 0
+                        setFormData({ ...formData, tag_id: newTagId, subtag_id: 0 })
+                      }}
+                      disabled={isLoading}
+                      className={`${cadastroFieldCls} mt-0.5 disabled:opacity-50`}
+                    >
+                      <option value="">Selecione uma tag...</option>
+                      {tags.map(tag => (
+                        <option key={tag.id} value={tag.id}>
+                          {tag.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block min-w-0">
+                    <CadastroFieldLabel>Subtag</CadastroFieldLabel>
+                    <select
+                      value={formData.subtag_id || ''}
+                      onChange={(e) => setFormData({ ...formData, subtag_id: parseInt(e.target.value) || 0 })}
+                      disabled={isLoading || !formData.tag_id}
+                      className={`${cadastroFieldCls} mt-0.5 disabled:opacity-50`}
+                    >
+                      <option value="">
+                        {formData.tag_id === 0 ? 'Selecione uma tag primeiro' : 'Selecione uma subtag...'}
+                      </option>
+                      {subtags
+                        .filter(subtag => {
+                          if (subtag.tag_id !== formData.tag_id) return false
+                          const amountStr = formData.amount || ''
+                          const amount = amountStr !== '' ? parseFloat(amountStr) : (expense?.amount || 0)
+                          const expectedType = amount < 0 ? 'despesa' : 'receita'
+                          return subtag.tag_type === expectedType
+                        })
+                        .map(subtag => (
+                          <option key={subtag.id} value={subtag.id}>
+                            {subtag.name}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                </CadastroModalFieldsRow>
+                {expense.category ? (
+                  <CadastroModalFieldsRow>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600 dark:text-gray-400">Categoria original</span>
+                      <span className="text-gray-900 dark:text-white">{expense.category}</span>
+                    </div>
+                  </CadastroModalFieldsRow>
+                ) : null}
+              </CadastroModalFieldsGrid>
+            </CadastroFormSection>
+
+            <CadastroFormSection title="Compartilhamento" icon={<Users size={14} />}>
+              <CadastroModalFieldsGrid>
+                <CadastroModalFieldsRow>
+                  <div className="flex flex-wrap gap-4">
+                    <label className={cadastroOptionLabelCls}>
+                      <input
+                        type="radio"
+                        value="proprio"
+                        checked={formData.adjustment_type === 'proprio'}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          adjustment_type: e.target.value as 'proprio' | 'compartilhado',
+                          shared_partner_id: null,
+                          ownership_percentage: '100.00'
+                        })}
+                        disabled={isLoading}
+                        className={cadastroAccentControlCls}
+                      />
+                      Próprio
+                    </label>
+                    <label className={cadastroOptionLabelCls}>
+                      <input
+                        type="radio"
+                        value="compartilhado"
+                        checked={formData.adjustment_type === 'compartilhado'}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          adjustment_type: e.target.value as 'proprio' | 'compartilhado'
+                        })}
+                        disabled={isLoading}
+                        className={cadastroAccentControlCls}
+                      />
+                      Compartilhado
+                    </label>
+                  </div>
+                </CadastroModalFieldsRow>
+                {formData.adjustment_type === 'compartilhado' ? (
+                  <CadastroModalFieldsRow cols={2}>
+                    <label className="block min-w-0">
+                      <CadastroFieldLabel required>Compartilhamento</CadastroFieldLabel>
+                      <select
+                        value={formData.shared_partner_id || 0}
+                        onChange={(e) => {
+                          const partnerId = Number(e.target.value) || null
+                          const selectedPartner = partners.find(p => p.id === partnerId)
+                          setFormData({
+                            ...formData,
+                            shared_partner_id: partnerId,
+                            ownership_percentage: selectedPartner ? selectedPartner.my_contribution_percentage.toString() : '100.00'
+                          })
+                        }}
+                        disabled={isLoading}
+                        className={`${cadastroFieldCls} mt-0.5 disabled:opacity-50`}
+                        required
+                      >
+                        <option value={0}>Selecione um compartilhamento</option>
+                        {partners.map(partner => (
+                          <option key={partner.id} value={partner.id}>
+                            {getPartnerLabel(partner)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block min-w-0">
+                      <CadastroFieldLabel>Minha Contribuição (%)</CadastroFieldLabel>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={formData.ownership_percentage}
+                        onChange={handleOwnershipPercentageChange}
+                        onBlur={handleOwnershipPercentageBlur}
+                        disabled={isLoading}
+                        placeholder="0.00"
+                        className={`${cadastroFieldCls} mt-0.5 disabled:opacity-50`}
+                      />
+                    </label>
+                  </CadastroModalFieldsRow>
+                ) : null}
+              </CadastroModalFieldsGrid>
+            </CadastroFormSection>
+          </CadastroModalBody>
+          <CadastroModalFooter
+            onClose={onClose}
+            onSave={() => {
+              const form = document.getElementById('edit-expense-form') as HTMLFormElement | null
+              form?.requestSubmit()
+            }}
+            saving={isLoading}
             disabled={isLoading}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50"
-          >
-            <X className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-          </button>
-        </div>
-
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* Data e Hora — oculto no modo limitado */}
-          {!limitedMode && (
-            <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                <Calendar size={16} />
-                Data e Hora *
-              </label>
-              <DatePicker
-                selected={selectedDate}
-                onChange={(date: Date | null) => setSelectedDate(date || new Date())}
-                showTimeSelect
-                timeFormat="HH:mm"
-                timeIntervals={15}
-                dateFormat="dd/MM/yyyy HH:mm"
-                disabled={isLoading}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
-                required
-              />
-            </div>
-          )}
-
-          {/* Descrição — oculto no modo limitado */}
-          {!limitedMode && (
-            <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                <FileText size={16} />
-                Descrição *
-              </label>
-              <input
-                type="text"
-                required
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                disabled={isLoading}
-                placeholder="Ex: Almoço Restaurante X"
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
-              />
-            </div>
-          )}
-
-          {/* Valor — oculto no modo limitado */}
-          {!limitedMode && (
-            <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                <span className="text-sm font-bold">R$</span>
-                Valor *
-              </label>
-              <div className="relative">
-                <span className={`absolute left-3 top-1/2 -translate-y-1/2 font-semibold ${
-                  parseFloat(formData.amount) < 0
-                    ? 'text-red-600 dark:text-red-400'
-                    : parseFloat(formData.amount) > 0
-                      ? 'text-green-600 dark:text-green-400'
-                      : 'text-gray-500 dark:text-gray-400'
-                }`}>
-                  R$
-                </span>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  required
-                  value={formData.amount}
-                  onChange={handleAmountChange}
-                  onBlur={handleAmountBlur}
-                  disabled={isLoading}
-                  placeholder="0.00"
-                  className={`w-full pl-12 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 font-semibold focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 ${
-                    parseFloat(formData.amount) < 0
-                      ? 'text-red-600 dark:text-red-400'
-                      : parseFloat(formData.amount) > 0
-                        ? 'text-green-600 dark:text-green-400'
-                        : 'text-gray-900 dark:text-white'
-                  }`}
-                />
-              </div>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Use valores negativos para despesas e positivos para receitas
-              </p>
-            </div>
-          )}
-
-          {/* Cartão (apenas para faturas de cartão, oculto no modo limitado) */}
-          {expense?.source === 'card' && !limitedMode && (
-            <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                <CreditCard size={16} />
-                Cartão *
-              </label>
-              <select
-                required
-                value={formData.card_number}
-                onChange={(e) => setFormData({ ...formData, card_number: e.target.value })}
-                disabled={isLoading}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
-              >
-                <option value="">Selecione um cartão...</option>
-                {cards.map(card => (
-                  <option key={card.id} value={card.number}>
-                    {card.owner} - {card.number} {card.description ? `(${card.description})` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Tag e Subtag */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Tag */}
-            <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                <TagIcon size={16} />
-                Tag
-              </label>
-              <select
-                value={formData.tag_id || ''}
-                onChange={(e) => {
-                  const newTagId = parseInt(e.target.value) || 0
-                  setFormData({ ...formData, tag_id: newTagId, subtag_id: 0 })
-                }}
-                disabled={isLoading}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
-              >
-                <option value="">Selecione uma tag...</option>
-                {tags.map(tag => (
-                  <option key={tag.id} value={tag.id}>
-                    {tag.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Subtag */}
-            <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                <TagIcon size={16} />
-                Subtag
-              </label>
-              <select
-                value={formData.subtag_id || ''}
-                onChange={(e) => setFormData({ ...formData, subtag_id: parseInt(e.target.value) || 0 })}
-                disabled={isLoading || !formData.tag_id}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
-              >
-                <option value="">
-                  {formData.tag_id === 0 ? 'Selecione uma tag primeiro' : 'Selecione uma subtag...'}
-                </option>
-                {subtags
-                  .filter(subtag => {
-                    // Filtra por tag_id
-                    if (subtag.tag_id !== formData.tag_id) return false
-                    // Filtra por tipo baseado no valor (negativo = despesa, positivo = receita)
-                    // Usa formData.amount se disponível, senão usa expense.amount
-                    const amountStr = formData.amount || ''
-                    const amount = amountStr !== '' ? parseFloat(amountStr) : (expense?.amount || 0)
-                    const expectedType = amount < 0 ? 'despesa' : 'receita'
-                    return subtag.tag_type === expectedType
-                  })
-                  .map(subtag => (
-                    <option key={subtag.id} value={subtag.id}>
-                      {subtag.name}
-                    </option>
-                  ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Tipo de Ajuste */}
-          <div>
-            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              <Users size={16} />
-              Tipo de Ajuste
-            </label>
-            <div className="flex gap-4">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  value="proprio"
-                  checked={formData.adjustment_type === 'proprio'}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    adjustment_type: e.target.value as any,
-                    shared_partner_id: null,
-                    ownership_percentage: '100.00'
-                  })}
-                  disabled={isLoading}
-                  className="text-blue-600 focus:ring-blue-500"
-                />
-                <span className="text-sm text-gray-700 dark:text-gray-300">Próprio</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  value="compartilhado"
-                  checked={formData.adjustment_type === 'compartilhado'}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    adjustment_type: e.target.value as any
-                  })}
-                  disabled={isLoading}
-                  className="text-blue-600 focus:ring-blue-500"
-                />
-                <span className="text-sm text-gray-700 dark:text-gray-300">Compartilhado</span>
-              </label>
-            </div>
-          </div>
-
-          {/* Parceiro Compartilhado (condicional) */}
-          {formData.adjustment_type === 'compartilhado' && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="md:col-span-2">
-                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  <Users size={16} />
-                  Compartilhamento *
-                </label>
-                <select
-                  value={formData.shared_partner_id || 0}
-                  onChange={(e) => {
-                    const partnerId = Number(e.target.value) || null
-                    const selectedPartner = partners.find(p => p.id === partnerId)
-                    setFormData({
-                      ...formData,
-                      shared_partner_id: partnerId,
-                      ownership_percentage: selectedPartner ? selectedPartner.my_contribution_percentage.toString() : '100.00'
-                    })
-                  }}
-                  disabled={isLoading}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
-                  required
-                >
-                  <option value={0}>Selecione um compartilhamento</option>
-                  {partners.map(partner => (
-                    <option key={partner.id} value={partner.id}>
-                      {getPartnerLabel(partner)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  <Percent size={16} />
-                  Minha Contribuição (%)
-                </label>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={formData.ownership_percentage}
-                  onChange={handleOwnershipPercentageChange}
-                  onBlur={handleOwnershipPercentageBlur}
-                  disabled={isLoading}
-                  placeholder="0.00"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Informações adicionais (apenas se houver categoria original) */}
-          {expense.category && (
-            <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">Categoria Original:</span>
-                  <span className="text-gray-900 dark:text-white">{expense.category}</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Botões */}
-          <div className="flex gap-3 pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isLoading}
-              className="flex-1 px-4 py-2.5 rounded-lg text-white font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
-              style={{ backgroundColor: 'var(--crud-cancel)' }}
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="flex-1 px-4 py-2.5 text-white font-medium rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
-              style={{ backgroundColor: 'var(--crud-edit)' }}
-            >
-              {isLoading ? 'Salvando...' : 'Salvar'}
-            </button>
-          </div>
+            saveLabel="Salvar"
+          />
         </form>
-      </div>
+        </div>
+      </CadastroModalShell>
 
-      {/* Toast de notificações */}
       {toast.show && (
         <Toast
           message={toast.message}
@@ -751,7 +719,7 @@ const EditExpenseModal = ({ isOpen, onClose, expense, onSuccess, limitedMode = f
           onClose={() => setToast({ ...toast, show: false })}
         />
       )}
-    </div>
+    </>
   )
 }
 

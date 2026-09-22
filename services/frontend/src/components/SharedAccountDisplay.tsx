@@ -1,6 +1,16 @@
 import { useState } from 'react'
 import { useEffect } from 'react'
-import { Users, X } from 'lucide-react'
+import { Users } from 'lucide-react'
+import {
+  CadastroFieldLabel,
+  CadastroFormSection,
+  CadastroModalBody,
+  CadastroModalFieldsGrid,
+  CadastroModalFieldsRow,
+  CadastroModalFooter,
+  CadastroModalHeader,
+  CadastroModalShell,
+} from './CadastroFormLayout'
 
 interface Bank {
   id?: number
@@ -58,6 +68,7 @@ const SharedAccountDisplay = ({ account, ownershipPercentage, compact = false }:
   const bankCode = account.bank?.code || ''
   const agency = account.agency ? String(account.agency).padStart(5, '0') + '-0' : '-'
   const accountNumber = account.account_number ? String(account.account_number).padStart(9, '0') + '-6' : '-'
+  const closeModal = () => setIsModalOpen(false)
 
   return (
     <>
@@ -74,72 +85,59 @@ const SharedAccountDisplay = ({ account, ownershipPercentage, compact = false }:
         </button>
       </span>
 
-      {/* Modal de Detalhes do Compartilhamento */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-sm mx-4">
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                <Users size={20} className="text-color-primary" />
-                Detalhes do Compartilhamento
-              </h3>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Content */}
-            <div className="px-5 py-4 space-y-3">
-              <div>
-                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Conta Compartilhada</label>
-                <p className="text-sm font-semibold text-gray-900 dark:text-white">{displayName}</p>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Banco</label>
-                <p className="text-sm text-gray-900 dark:text-white">
-                  {bankCode && `${bankCode} - `}{bankName}
-                </p>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Agência</label>
-                  <p className="text-sm text-gray-900 dark:text-white">{agency}</p>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Conta</label>
-                  <p className="text-sm text-gray-900 dark:text-white">{accountNumber}</p>
-                </div>
-              </div>
-              {ownershipPercentage != null && (
-                <div>
-                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Minha Contribuição</label>
-                  <p className="text-sm font-semibold text-color-primary">
-                    {Number(ownershipPercentage).toFixed(2)}%
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end">
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="px-4 py-2 text-sm font-medium rounded-lg transition-colors hover:opacity-80"
-                style={{ backgroundColor: 'var(--crud-cancel)', color: 'var(--on-crud-cancel)' }}
-              >
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
+        <CadastroModalShell maxWidth="max-w-sm" zClass="z-[110]" onBackdropClick={closeModal}>
+          <CadastroModalHeader
+            isEdit={false}
+            title="Detalhes do Compartilhamento"
+            onClose={closeModal}
+            icon={<Users size={18} />}
+          />
+          <CadastroModalBody>
+            <CadastroFormSection title="Identificação" icon={<Users size={14} />}>
+              <CadastroModalFieldsGrid>
+                <CadastroModalFieldsRow>
+                  <div className="min-w-0">
+                    <CadastroFieldLabel>Conta Compartilhada</CadastroFieldLabel>
+                    <p className="mt-0.5 text-sm font-semibold text-gray-800 dark:text-gray-100">{displayName}</p>
+                  </div>
+                </CadastroModalFieldsRow>
+                <CadastroModalFieldsRow>
+                  <div className="min-w-0">
+                    <CadastroFieldLabel>Banco</CadastroFieldLabel>
+                    <p className="mt-0.5 text-sm text-gray-800 dark:text-gray-100">
+                      {bankCode && `${bankCode} - `}{bankName}
+                    </p>
+                  </div>
+                </CadastroModalFieldsRow>
+                <CadastroModalFieldsRow cols={2}>
+                  <div className="min-w-0">
+                    <CadastroFieldLabel>Agência</CadastroFieldLabel>
+                    <p className="mt-0.5 text-sm text-gray-800 dark:text-gray-100">{agency}</p>
+                  </div>
+                  <div className="min-w-0">
+                    <CadastroFieldLabel>Conta</CadastroFieldLabel>
+                    <p className="mt-0.5 text-sm text-gray-800 dark:text-gray-100">{accountNumber}</p>
+                  </div>
+                </CadastroModalFieldsRow>
+                {ownershipPercentage != null && (
+                  <CadastroModalFieldsRow>
+                    <div className="min-w-0">
+                      <CadastroFieldLabel>Minha Contribuição</CadastroFieldLabel>
+                      <p className="mt-0.5 text-sm font-semibold text-color-primary">
+                        {Number(ownershipPercentage).toFixed(2)}%
+                      </p>
+                    </div>
+                  </CadastroModalFieldsRow>
+                )}
+              </CadastroModalFieldsGrid>
+            </CadastroFormSection>
+          </CadastroModalBody>
+          <CadastroModalFooter onClose={closeModal} hideSave closeLabel="Fechar" />
+        </CadastroModalShell>
       )}
     </>
   )
 }
 
 export default SharedAccountDisplay
-

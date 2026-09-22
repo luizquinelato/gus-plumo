@@ -1,5 +1,12 @@
 import { useState, useEffect } from 'react'
-import { X, Receipt, CreditCard, Gift, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { Receipt, CreditCard, Gift, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import {
+  CadastroFormSection,
+  CadastroModalBody,
+  CadastroModalFooter,
+  CadastroModalHeader,
+  CadastroModalShell,
+} from './CadastroFormLayout'
 
 interface BalanceItem {
   id: number
@@ -334,103 +341,85 @@ const BalanceDetailsModal = ({
     })
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-[95vw] xl:max-w-[90vw] 2xl:max-w-[85vw] max-h-[90vh] flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-          <div className="flex items-center gap-3">
-            {getIcon()}
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white">{title}</h2>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-          >
-            <X size={24} />
-          </button>
-        </div>
-
-        {/* Tabs */}
-        {isCreditCard ? (
-          // Tabs hierárquicas: Anos (linha 1) e Meses (linha 2)
-          <div className="flex-shrink-0">
-            {/* Linha 1: Abas de Anos */}
-            <div className="flex border-b border-gray-200 dark:border-gray-700 px-6 overflow-x-auto bg-gray-100 dark:bg-gray-800">
-              {sortedYears.map(year => {
-                const totalItemsInYear = groupedByYear[year].reduce((sum, month) => sum + groupedByMonth[month].length, 0)
-                return (
+    <CadastroModalShell maxWidth="max-w-[95vw] xl:max-w-[90vw] 2xl:max-w-[85vw]" onBackdropClick={onClose}>
+      <CadastroModalHeader
+        isEdit={false}
+        title={title}
+        onClose={onClose}
+        icon={getIcon()}
+      />
+      <CadastroModalBody
+        chrome={
+          isCreditCard ? (
+            <div>
+              <div className="flex overflow-x-auto border-b border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-800">
+                {sortedYears.map(year => {
+                  const totalItemsInYear = groupedByYear[year].reduce((sum, month) => sum + groupedByMonth[month].length, 0)
+                  return (
+                    <button
+                      key={year}
+                      onClick={() => {
+                        setActiveYear(year)
+                        const firstMonth = groupedByYear[year]?.[0]
+                        if (firstMonth) setActiveTab(firstMonth)
+                      }}
+                      className={`px-4 py-2 text-xs font-bold transition-all whitespace-nowrap flex-shrink-0 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white ${
+                        activeYear === year
+                          ? 'border-b-2 border-color-primary'
+                          : 'border-b-2 border-transparent'
+                      }`}
+                    >
+                      {year} <span className="text-[10px] font-normal opacity-70">({totalItemsInYear})</span>
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="flex border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-700">
+                {monthsOfActiveYear.map(month => (
                   <button
-                    key={year}
-                    onClick={() => {
-                      setActiveYear(year)
-                      // Ao trocar de ano, seleciona o primeiro mês desse ano
-                      const firstMonth = groupedByYear[year]?.[0]
-                      if (firstMonth) setActiveTab(firstMonth)
-                    }}
-                    className={`px-4 py-2 text-xs font-bold transition-all whitespace-nowrap flex-shrink-0 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white ${
-                      activeYear === year
-                        ? 'border-b-2 border-color-primary'
+                    key={month}
+                    onClick={() => setActiveTab(month)}
+                    className={`flex-1 px-2 py-2.5 text-sm font-semibold transition-all whitespace-nowrap text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white ${
+                      activeTab === month
+                        ? 'border-b-2 border-color-secondary'
                         : 'border-b-2 border-transparent'
                     }`}
                   >
-                    {year} <span className="text-[10px] font-normal opacity-70">({totalItemsInYear})</span>
+                    {formatMonthOnly(month)} <span className="text-xs font-normal opacity-60">({groupedByMonth[month].length})</span>
                   </button>
-                )
-              })}
+                ))}
+              </div>
             </div>
-
-            {/* Linha 2: Abas de Meses do Ano Selecionado */}
-            <div className="flex border-b border-gray-200 dark:border-gray-700 px-6 bg-gray-50 dark:bg-gray-700">
-              {monthsOfActiveYear.map(month => (
+          ) : (
+            <div className="flex overflow-x-auto border-b border-gray-200 dark:border-gray-700">
+              {expenseItems.length > 0 && (
                 <button
-                  key={month}
-                  onClick={() => setActiveTab(month)}
-                  className={`flex-1 px-2 py-2.5 text-sm font-semibold transition-all whitespace-nowrap text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white ${
-                    activeTab === month
-                      ? 'border-b-2 border-color-secondary'
-                      : 'border-b-2 border-transparent'
+                  onClick={() => setActiveTab('expenses')}
+                  className={`px-6 py-3 text-sm font-semibold transition-all flex-shrink-0 ${
+                    activeTab === 'expenses'
+                      ? `text-color-${accountColor} border-b-2 border-color-${accountColor}`
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
                   }`}
                 >
-                  {formatMonthOnly(month)} <span className="text-xs font-normal opacity-60">({groupedByMonth[month].length})</span>
+                  Despesas ({expenseItems.length})
                 </button>
-              ))}
+              )}
+              {filteredRevenueItems.length > 0 && (
+                <button
+                  onClick={() => setActiveTab('revenues')}
+                  className={`px-6 py-3 text-sm font-semibold transition-all flex-shrink-0 ${
+                    activeTab === 'revenues'
+                      ? `text-color-${accountColor} border-b-2 border-color-${accountColor}`
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  Receitas ({filteredRevenueItems.length})
+                </button>
+              )}
             </div>
-          </div>
-        ) : (
-          // Tabs de Despesas/Receitas para extrato e benefícios
-          <div className="flex border-b border-gray-200 dark:border-gray-700 px-6 overflow-x-auto flex-shrink-0">
-            {expenseItems.length > 0 && (
-              <button
-                onClick={() => setActiveTab('expenses')}
-                className={`px-6 py-3 text-sm font-semibold transition-all flex-shrink-0 ${
-                  activeTab === 'expenses'
-                    ? `text-color-${accountColor} border-b-2 border-color-${accountColor}`
-                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-                }`}
-              >
-                Despesas ({expenseItems.length})
-              </button>
-            )}
-            {filteredRevenueItems.length > 0 && (
-              <button
-                onClick={() => setActiveTab('revenues')}
-                className={`px-6 py-3 text-sm font-semibold transition-all flex-shrink-0 ${
-                  activeTab === 'revenues'
-                    ? `text-color-${accountColor} border-b-2 border-color-${accountColor}`
-                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-                }`}
-              >
-                Receitas ({filteredRevenueItems.length})
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Espaçamento fixo (não rola) */}
-        <div className="px-6 pt-6 flex-shrink-0"></div>
-
-        {/* Content (área rolável) */}
-        <div className="flex-1 overflow-y-auto px-6 pb-6">
+          )
+        }
+      >
           {isCreditCard ? (
             // Renderiza tabelas separadas por cartão
             <div className="space-y-6">
@@ -447,51 +436,40 @@ const BalanceDetailsModal = ({
                 }, 0)
 
                 return (
-                  <div key={cardName} className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-                    {/* Header do Cartão */}
-                    <div className="bg-gray-100 dark:bg-gray-700 p-4 border-b border-gray-200 dark:border-gray-600">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <CreditCard size={18} className="text-color-primary" />
-                          <span className="font-bold text-gray-900 dark:text-white text-lg">
-                            {cardName} {cardNumber ? `*** ${cardNumber.slice(-4)}` : ''}
-                          </span>
-                          <span className="text-sm text-gray-600 dark:text-gray-400">
-                            ({items.length} {items.length === 1 ? 'item' : 'itens'})
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {/* Data de Fechamento */}
-                          {cardClosingDay && items[0]?.year_month && (() => {
-                            const [year, month] = items[0].year_month.split('-')
-                            const closingDate = new Date(parseInt(year), parseInt(month) - 1, cardClosingDay, 23, 59, 59)
-                            const formattedDate = closingDate.toLocaleString('pt-BR', {
-                              day: '2-digit',
-                              month: '2-digit',
-                              year: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                              second: '2-digit'
-                            })
-                            return (
-                              <span className="text-xs text-gray-600 dark:text-gray-400 bg-gray-200 dark:bg-gray-600 px-2 py-1 rounded">
-                                Fechou dia {formattedDate}
-                              </span>
-                            )
-                          })()}
-                          {/* Badge de Ativo/Inativo */}
-                          <span className={`inline-flex items-center justify-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
-                            cardActive
-                              ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
-                              : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
-                          }`}>
-                            {cardActive ? '✅ Ativo' : '⏸️ Inativo'}
-                          </span>
-                        </div>
+                  <CadastroFormSection
+                    key={cardName}
+                    title={`${cardName}${cardNumber ? ` *** ${cardNumber.slice(-4)}` : ''} (${items.length} ${items.length === 1 ? 'item' : 'itens'})`}
+                    icon={<CreditCard size={14} />}
+                    bodyClassName="p-0"
+                    trailing={
+                      <div className="flex items-center gap-2">
+                        {cardClosingDay && items[0]?.year_month && (() => {
+                          const [year, month] = items[0].year_month.split('-')
+                          const closingDate = new Date(parseInt(year), parseInt(month) - 1, cardClosingDay, 23, 59, 59)
+                          const formattedDate = closingDate.toLocaleString('pt-BR', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit'
+                          })
+                          return (
+                            <span className="text-xs text-gray-600 dark:text-gray-400 bg-gray-200 dark:bg-gray-600 px-2 py-1 rounded">
+                              Fechou dia {formattedDate}
+                            </span>
+                          )
+                        })()}
+                        <span className={`inline-flex items-center justify-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
+                          cardActive
+                            ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+                        }`}>
+                          {cardActive ? '✅ Ativo' : '⏸️ Inativo'}
+                        </span>
                       </div>
-                    </div>
-
-                    {/* Tabela do Cartão */}
+                    }
+                  >
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm min-w-[900px]">
                         <thead className="bg-gray-50 dark:bg-gray-700">
@@ -654,12 +632,16 @@ const BalanceDetailsModal = ({
                         </tfoot>
                       </table>
                     </div>
-                  </div>
+                  </CadastroFormSection>
                 )
               })}
             </div>
           ) : (
-            // Renderiza tabela única para extrato e benefícios
+            <CadastroFormSection
+              title={activeTab === 'expenses' ? 'Despesas' : 'Receitas'}
+              icon={isBenefitCard ? <Gift size={14} /> : <Receipt size={14} />}
+              bodyClassName="p-0"
+            >
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[900px]">
                 <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0">
@@ -792,16 +774,15 @@ const BalanceDetailsModal = ({
                 </tbody>
               </table>
             </div>
+            </CadastroFormSection>
           )}
-        </div>
-
-        {/* Espaçamento fixo antes do rodapé (não rola) */}
-        <div className="px-6 pb-6 flex-shrink-0"></div>
-
-        {/* Footer com Total */}
-        <div className="border-t border-gray-200 dark:border-gray-700 p-6 bg-gray-50 dark:bg-gray-700 flex-shrink-0">
-          <div className="flex items-center justify-between mb-4">
-            {/* Legenda */}
+      </CadastroModalBody>
+      <CadastroModalFooter
+        onClose={onClose}
+        hideSave
+        closeLabel="Fechar"
+        leading={
+          <div className="flex min-w-0 flex-wrap items-center gap-6">
             <div className="flex items-center gap-4 text-xs text-gray-600 dark:text-gray-400">
               {!isCreditCard && !isBenefitCard && (
                 <div className="flex items-center gap-1.5">
@@ -822,8 +803,6 @@ const BalanceDetailsModal = ({
                 </div>
               )}
             </div>
-
-            {/* Totais */}
             <div className="flex items-center gap-6">
               <div className="text-right">
                 <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Total ({currentItems.length} {currentItems.length === 1 ? 'item' : 'itens'})</div>
@@ -858,19 +837,9 @@ const BalanceDetailsModal = ({
               </div>
             </div>
           </div>
-
-          {/* Botão Fechar */}
-          <div className="flex justify-end">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-lg transition-all font-semibold"
-            >
-              Fechar
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+        }
+      />
+    </CadastroModalShell>
   )
 }
 

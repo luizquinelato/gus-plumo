@@ -10,7 +10,9 @@ Regras para `services/frontend/`. Stack detalhada em [tech-stack.mdc](tech-stack
 ## 1. Cores e variáveis CSS
 
 - Evite cores Tailwind hardcoded em telas que suportam personalização (`bg-blue-500`, `text-red-600`).
-- Prefira variáveis CSS do tenant: `--color-1` … `--color-N`, `--on-color-*`, `--gradient-*`, `--crud-create`, `--crud-edit`, `--crud-cancel`, etc.
+- Prefira variáveis CSS do tenant: `--color-1` … `--color-N`, `--on-color-*`, `--gradient-*`.
+- Ações CRUD: `--color-create` / `--color-save` / `--color-edit` / `--color-delete` / `--color-cancel` (aliases de `--crud-*` em `colors.css`).
+- Status: `--color-success` / `--color-danger` / `--color-warning` / `--color-info` / `--color-neutral`.
 - Aplicar via `style={{ … }}` ou classes que referenciem essas variáveis (ver `ColorSettingsPage`, `BalancoPage`).
 - Cinzas neutros de layout (`gray-*`, `dark:*`) são aceitáveis para estrutura (sidebar, bordas, fundos base).
 - Sistema multi-tenant: ver `docs/cores.md` e hooks `useColorApplication`.
@@ -30,11 +32,24 @@ Regras para `services/frontend/`. Stack detalhada em [tech-stack.mdc](tech-stack
 ## 4. Componentes reutilizáveis
 
 - Encapsule lógica repetida em `src/components/`.
-- Modais: ESC fecha, Enter confirma — ver [starting_point.mdc](starting_point.mdc).
+- Listagens: `CadastroListPageShell` / `Hero` / `Body` / `Tabs` / `EmptyCard` / `Loading` / chrome de tabela em `CadastroListPageLayout.tsx`.
+- Cadastros com soft-delete: abas **Todas/Todos · Ativas/Ativos · Inativas/Inativos** (`StatusFilter` + `CadastroListPageTabs` com `count`) e **uma** `ListPageTable` (índice `#` + spacer 4px). Não dividir ativas/inativas em tabelas ou faixas.
+- Soft-delete na linha: `StatusSwitch`. Lixeira = exclusão definitiva. Ícones de ação: `cadastroRowIconBtnCls` / `cadastroRowIconDangerCls`.
+- Hierarquia (grupos de fatura, tag→subtags, template→itens): linha pai com resumo nas colunas + `ListPageExpandRow` + `ListPageNestedTable` (régua tracejada `--color-1`). Não misturar filhos como linhas da tabela principal.
+- Modais: `CadastroModalShell` + `Header` + `Body` + `Footer` em `CadastroFormLayout.tsx`. ESC fecha, Enter confirma — ver [starting_point.mdc](starting_point.mdc).
+- Badges: `<Badge />` + [badge-surfaces.mdc](badge-surfaces.mdc). Não inventar `px-3 py-1` com largura fixa.
 - Datas: `BrazilianDatePicker` (`dd/mm/aaaa`, valor interno `YYYY-MM-DD`).
 - Conta compartilhada: `SharedAccountDisplay`.
 - UI específica do Balanço: [balanco-ui.mdc](balanco-ui.mdc).
 - Radix UI: apenas `@radix-ui/react-slot` hoje; preferir componentes existentes antes de adicionar libs.
+
+## 4.1 Fundos e chrome
+
+- Página: `bg-gray-50 dark:bg-gray-900` (shell).
+- Cartão / tabela: `bg-white` + borda `gray-300` (`listPageTableSectionCls`).
+- Cabeçalho de tabela: `bg-gray-100` (`listPageTableChromeHeaderCls`).
+- Overlay de modal: `bg-black/40`; card `rounded-xl shadow-xl`.
+- Hover de linha: classe `table-row-hover` (barra lateral `--color-1`).
 
 ## 5. Chamadas de API
 

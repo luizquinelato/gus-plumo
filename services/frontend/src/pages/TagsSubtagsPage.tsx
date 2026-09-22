@@ -1,12 +1,46 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
+import {
+  CadastroListCreateButton,
+  CadastroListPageBody,
+  CadastroListPageEmptyCard,
+  CadastroListPageHero,
+  CadastroListPageLoading,
+  CadastroListPageSearchField,
+  CadastroListPageShell,
+  cadastroRowIconBtnCls,
+  cadastroRowIconDangerCls,
+  listPageTableRowHoverCls,
+} from '../components/CadastroListPageLayout'
+import { ListPageExpandRow, ListPageNestedTable, ListPageTable } from '../components/ListPageTable'
+import {
+  ListTableIndexCell,
+  ListTableIndexHeader,
+  ListTableSpacerCell,
+  ListTableSpacerCol,
+  ListTableSpacerHeader,
+  ListTableStaticHeader,
+} from '../components/ListTableSelectColumns'
+import {
+  CadastroFieldLabel,
+  CadastroFormSection,
+  CadastroModalBody,
+  CadastroModalFieldsGrid,
+  CadastroModalFieldsRow,
+  CadastroModalFooter,
+  CadastroModalHeader,
+  CadastroModalShell,
+  cadastroAccentControlCls,
+  cadastroFieldCls,
+  cadastroOptionLabelCls,
+} from '../components/CadastroFormLayout'
+import Badge from '../components/Badge'
+import { badgeVariantForColumnRole } from '../utils/badgeSurfaces'
 import IconPicker from '../components/IconPicker'
 import Toast from '../components/Toast'
-import LoadingSpinner from '../components/LoadingSpinner'
 import {
-  Plus, Edit2, Trash2, Tag, Search,
-  ChevronDown, ChevronRight, X
+  Plus, Edit2, Trash2, Tag, ChevronDown, ChevronRight
 } from 'lucide-react'
 import { getIconComponent } from '../utils/iconMapper'
 import { useConfirm } from '../hooks/useConfirm'
@@ -387,508 +421,423 @@ const TagsSubtagsPage = () => {
   })
 
   return (
-    <div className="flex h-screen bg-gray-100 dark:bg-gray-900">
+    <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900">
       <Sidebar />
 
-      <main className="flex-1 overflow-y-auto p-8">
-        <div className="w-full">
-          {/* Header */}
-          <div className="flex justify-between items-center mb-8">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-3">
-                <Tag className="w-8 h-8" />
-                Tags e Subtags
-              </h1>
-              <p className="text-lg text-gray-600 dark:text-gray-400">
-                Gerencie suas tags e subtags de categorização
-              </p>
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={expandAll}
-                className="px-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-              >
-                Expandir Tudo
-              </button>
-              <button
-                onClick={collapseAll}
-                className="px-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-              >
-                Colapsar Tudo
-              </button>
-              <button
-                onClick={handleCreateTag}
-                className="px-4 py-2 rounded-md hover:opacity-90 flex items-center gap-2 text-white"
-                style={{ backgroundColor: 'var(--crud-create)' }}
-              >
-                <Plus size={20} />
-                Nova Tag
-              </button>
-            </div>
-          </div>
-          {/* Barra de busca */}
-          <div className="mb-6">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-              <input
-                type="text"
-                placeholder="Buscar tags ou subtags..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-10 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:border-color-primary focus:outline-none"
-              />
-              {searchTerm && (
-                <button
-                  onClick={() => setSearchTerm('')}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                >
-                  <X size={20} />
-                </button>
-              )}
-            </div>
-          </div>
-
+      <CadastroListPageShell>
+        <CadastroListPageBody
+          header={
+            <CadastroListPageHero
+              icon={<Tag className="w-8 h-8" />}
+              title="Tags e Subtags"
+              subtitle="Gerencie suas tags e subtags de categorização"
+              actions={
+                <>
+                  <button
+                    type="button"
+                    onClick={expandAll}
+                    className="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                  >
+                    Expandir Tudo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={collapseAll}
+                    className="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                  >
+                    Recolher Tudo
+                  </button>
+                  <CadastroListCreateButton label="Nova Tag" onClick={handleCreateTag} />
+                </>
+              }
+            />
+          }
+          tabs={
+            hierarchicalData.length > 0 ? (
+              <div className="w-full max-w-md">
+                <CadastroListPageSearchField
+                  value={searchTerm}
+                  onChange={setSearchTerm}
+                  placeholder="Buscar tags ou subtags…"
+                />
+              </div>
+            ) : undefined
+          }
+        >
           {isLoading ? (
-            <div className="flex items-center justify-center h-64">
-              <LoadingSpinner message="Carregando..." />
-            </div>
+            <CadastroListPageLoading label="Carregando tags…" />
+          ) : hierarchicalData.length === 0 ? (
+            <CadastroListPageEmptyCard
+              icon={<Tag size={32} className="text-gray-400" />}
+              title="Nenhuma tag cadastrada"
+              description="Comece criando sua primeira tag de categorização"
+              action={<CadastroListCreateButton label="Criar primeira tag" onClick={handleCreateTag} />}
+            />
           ) : filteredData.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-64">
-              <Tag size={48} className="text-gray-400 mb-4" />
-              <p className="text-gray-500 dark:text-gray-400 text-lg">
-                {searchTerm ? 'Nenhum resultado encontrado' : 'Nenhuma tag cadastrada'}
-              </p>
-              {!searchTerm && (
-                <button
-                  onClick={handleCreateTag}
-                  className="mt-4 px-4 py-2 rounded-md hover:opacity-90 text-white"
-                  style={{ backgroundColor: 'var(--crud-create)' }}
-                >
-                  Criar primeira tag
-                </button>
-              )}
-            </div>
+            <CadastroListPageEmptyCard
+              icon={<Tag size={32} className="text-gray-400" />}
+              title="Nenhum resultado encontrado"
+              description="Tente outro termo de busca."
+            />
           ) : (
-            <div className="space-y-2">
-              {filteredData.map((item) => (
-                <div
-                  key={item.tag.id}
-                  className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden"
-                >
-                  {/* Tag Level */}
-                  <div className="flex items-center p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                    {/* Botão de expansão */}
-                    <button
-                      onClick={() => toggleTag(item.tag.id)}
-                      className="mr-3 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+            <ListPageTable
+              colsRest={<ListTableSpacerCol />}
+              head={
+                <tr>
+                  <ListTableIndexHeader />
+                  <ListTableSpacerHeader />
+                  <ListTableStaticHeader label="Tag" className="w-[28%]" />
+                  <ListTableStaticHeader label="Descrição" className="w-[36%]" />
+                  <ListTableStaticHeader label="Subtags" className="w-[12%]" />
+                  <ListTableStaticHeader label="Ações" className="w-[14%]" />
+                </tr>
+              }
+            >
+              {filteredData.map((item, index) => {
+                const IconComponent = getIconComponent(item.tag.icon || 'Tag')
+                const isExpanded = expandedTags.has(item.tag.id)
+                const despesas = item.subtags.filter((st) => st.type === 'despesa')
+                const receitas = item.subtags.filter((st) => st.type === 'receita')
+                return (
+                  <Fragment key={item.tag.id}>
+                    <tr
+                      className={`${listPageTableRowHoverCls} ${
+                        isExpanded
+                          ? 'bg-[color-mix(in_srgb,var(--color-1)_4%,transparent)] [&>td]:border-b-0'
+                          : ''
+                      }`}
                     >
-                      {expandedTags.has(item.tag.id) ? (
-                        <ChevronDown size={20} />
-                      ) : (
-                        <ChevronRight size={20} />
-                      )}
-                    </button>
-
-                    {/* Ícone */}
-                    {(() => {
-                      const IconComponent = getIconComponent(item.tag.icon || 'Tag')
-                      return <IconComponent size={20} className="mr-3 text-gray-600 dark:text-gray-400" />
-                    })()}
-
-                    {/* Info */}
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-gray-900 dark:text-white">
-                          {item.tag.name}
-                        </span>
-                      </div>
-                      {item.tag.description && (
-                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                          {item.tag.description}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Contador */}
-                    <div className="flex items-center gap-4 mr-4">
-                      <div className="text-sm text-gray-500 dark:text-gray-400">
-                        <span className="font-medium">{item.subtagsCount}</span> subtags
-                      </div>
-                    </div>
-
-                    {/* Ações */}
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleCreateSubtag(item.tag.id)}
-                        className="p-2 text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300"
-                        title="Nova Subtag"
-                      >
-                        <Plus size={18} />
-                      </button>
-                      <button
-                        onClick={() => handleEditTag(item.tag)}
-                        className="p-2 text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
-                        title="Editar Tag"
-                      >
-                        <Edit2 size={18} />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteTag(item.tag.id)}
-                        className="p-2 text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
-                        title="Deletar Tag"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Subtags (expandido) */}
-                  {expandedTags.has(item.tag.id) && (
-                    <div className="bg-gray-50 dark:bg-gray-900/50 border-t border-gray-200 dark:border-gray-700">
-                      {item.subtags.length === 0 ? (
-                        <div className="p-4 pl-16 text-sm text-gray-500 dark:text-gray-400">
-                          Nenhuma subtag cadastrada
+                      <ListTableIndexCell index={index + 1} />
+                      <ListTableSpacerCell />
+                      <td className="cursor-pointer px-3 py-3" onClick={() => toggleTag(item.tag.id)}>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              toggleTag(item.tag.id)
+                            }}
+                            className={cadastroRowIconBtnCls}
+                            title={isExpanded ? 'Recolher' : 'Expandir'}
+                          >
+                            {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                          </button>
+                          <IconComponent
+                            size={16}
+                            className="shrink-0"
+                            style={{ color: isExpanded ? 'var(--color-1)' : undefined }}
+                          />
+                          <span
+                            className={`text-sm font-semibold ${
+                              isExpanded ? 'text-[var(--color-1)]' : 'text-gray-800 dark:text-gray-100'
+                            }`}
+                          >
+                            {item.tag.name}
+                          </span>
                         </div>
-                      ) : (
-                        <>
-                          {/* Grupo: Despesas */}
-                          {(() => {
-                            const despesas = item.subtags.filter(st => st.type === 'despesa')
-                            if (despesas.length === 0) return null
-
-                            return (
-                              <div>
-                                <div className="px-4 py-2 pl-16 bg-red-50 dark:bg-red-900/10 border-b border-gray-200 dark:border-gray-700">
-                                  <span className="text-xs font-semibold text-red-700 dark:text-red-400 uppercase tracking-wide">
-                                    Despesas ({despesas.length})
-                                  </span>
-                                </div>
-                                {despesas.map((subtag) => (
-                                  <div key={subtag.id} className="border-b border-gray-200 dark:border-gray-700 last:border-b-0">
-                                    {/* Subtag Level */}
-                                    <div
-                                      className="flex items-center p-3 pl-16 border-l-4 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800/50 transition-all"
-                                      onMouseEnter={(e) => {
-                                        e.currentTarget.style.borderLeftColor = 'var(--color-1)'
-                                      }}
-                                      onMouseLeave={(e) => {
-                                        e.currentTarget.style.borderLeftColor = ''
-                                      }}
-                                    >
-                                      {/* Ícone */}
-                                      {(() => {
-                                        const IconComponent = getIconComponent(subtag.icon || 'Tags')
-                                        return <IconComponent size={18} className="mr-2 text-gray-600 dark:text-gray-400" />
-                                      })()}
-                                      <div className="flex-1">
-                                        <div className="flex items-center gap-2">
-                                          <span className="font-medium text-gray-800 dark:text-gray-200">
-                                            {subtag.name}
-                                          </span>
-                                        </div>
-                                        {subtag.description && (
-                                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                                            {subtag.description}
-                                          </p>
-                                        )}
-                                      </div>
-
-                                      {/* Ações */}
-                                      <div className="flex items-center gap-2">
-                                        <button
-                                          onClick={() => handleEditSubtag(subtag)}
-                                          className="p-1.5 text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
-                                          title="Editar Subtag"
-                                        >
-                                          <Edit2 size={16} />
-                                        </button>
-                                        <button
-                                          onClick={() => handleDeleteSubtag(subtag.id)}
-                                          className="p-1.5 text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
-                                          title="Deletar Subtag"
-                                        >
-                                          <Trash2 size={16} />
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )
-                          })()}
-
-                          {/* Grupo: Receitas */}
-                          {(() => {
-                            const receitas = item.subtags.filter(st => st.type === 'receita')
-                            if (receitas.length === 0) return null
-
-                            return (
-                              <div>
-                                <div className="px-4 py-2 pl-16 bg-green-50 dark:bg-green-900/10 border-b border-gray-200 dark:border-gray-700">
-                                  <span className="text-xs font-semibold text-green-700 dark:text-green-400 uppercase tracking-wide">
-                                    Receitas ({receitas.length})
-                                  </span>
-                                </div>
-                                {receitas.map((subtag) => (
-                                  <div key={subtag.id} className="border-b border-gray-200 dark:border-gray-700 last:border-b-0">
-                                    {/* Subtag Level */}
-                                    <div
-                                      className="flex items-center p-3 pl-16 border-l-4 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800/50 transition-all"
-                                      onMouseEnter={(e) => {
-                                        e.currentTarget.style.borderLeftColor = 'var(--color-1)'
-                                      }}
-                                      onMouseLeave={(e) => {
-                                        e.currentTarget.style.borderLeftColor = ''
-                                      }}
-                                    >
-                                      {/* Ícone */}
-                                      {(() => {
-                                        const IconComponent = getIconComponent(subtag.icon || 'Tags')
-                                        return <IconComponent size={18} className="mr-2 text-gray-600 dark:text-gray-400" />
-                                      })()}
-                                      <div className="flex-1">
-                                        <div className="flex items-center gap-2">
-                                          <span className="font-medium text-gray-800 dark:text-gray-200">
-                                            {subtag.name}
-                                          </span>
-                                        </div>
-                                        {subtag.description && (
-                                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                                            {subtag.description}
-                                          </p>
-                                        )}
-                                      </div>
-
-                                      {/* Ações */}
-                                      <div className="flex items-center gap-2">
-                                        <button
-                                          onClick={() => handleEditSubtag(subtag)}
-                                          className="p-1.5 text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
-                                          title="Editar Subtag"
-                                        >
-                                          <Edit2 size={16} />
-                                        </button>
-                                        <button
-                                          onClick={() => handleDeleteSubtag(subtag.id)}
-                                          className="p-1.5 text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
-                                          title="Deletar Subtag"
-                                        >
-                                          <Trash2 size={16} />
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )
-                          })()}
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
+                      </td>
+                      <td className="truncate px-3 py-3 text-sm text-gray-500 dark:text-gray-400">
+                        {item.tag.description || '—'}
+                      </td>
+                      <td className="px-3 py-3">
+                        <Badge
+                          variant={badgeVariantForColumnRole('metricGhost')}
+                          tone="brand3"
+                          label={item.subtagsCount}
+                        />
+                      </td>
+                      <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleCreateSubtag(item.tag.id)}
+                            className={cadastroRowIconBtnCls}
+                            title="Nova subtag"
+                          >
+                            <Plus size={15} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleEditTag(item.tag)}
+                            className={cadastroRowIconBtnCls}
+                            title="Editar tag"
+                          >
+                            <Edit2 size={15} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteTag(item.tag.id)}
+                            className={cadastroRowIconDangerCls}
+                            title="Excluir tag"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    {isExpanded && (
+                      <ListPageExpandRow colSpan={6}>
+                        {item.subtags.length === 0 ? (
+                          <p className="text-sm text-gray-500">Nenhuma subtag cadastrada</p>
+                        ) : (
+                          <ListPageNestedTable
+                            head={
+                              <tr>
+                                <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">#</th>
+                                <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">Subtag</th>
+                                <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">Tipo</th>
+                                <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">Descrição</th>
+                                <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">Ações</th>
+                              </tr>
+                            }
+                          >
+                            {([
+                              ['Despesas', despesas, 'danger'] as const,
+                              ['Receitas', receitas, 'success'] as const,
+                            ]).flatMap(([groupLabel, rows, tone]) =>
+                              rows.length === 0
+                                ? []
+                                : [
+                                    <tr key={`${item.tag.id}-${groupLabel}`}>
+                                      <td
+                                        colSpan={5}
+                                        className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500"
+                                      >
+                                        {groupLabel} ({rows.length})
+                                      </td>
+                                    </tr>,
+                                    ...rows.map((subtag, subIndex) => {
+                                      const SubIcon = getIconComponent(subtag.icon || 'Tags')
+                                      return (
+                                        <tr key={subtag.id} className={listPageTableRowHoverCls}>
+                                          <td className="px-3 py-2 font-mono text-[11px] text-gray-400">
+                                            {subIndex + 1}
+                                          </td>
+                                          <td className="px-3 py-2">
+                                            <div className="flex items-center gap-2">
+                                              <SubIcon size={14} className="shrink-0 text-gray-500" />
+                                              <span className="text-sm font-medium text-gray-800 dark:text-gray-100">
+                                                {subtag.name}
+                                              </span>
+                                            </div>
+                                          </td>
+                                          <td className="px-3 py-2">
+                                            <Badge
+                                              variant={badgeVariantForColumnRole('classificationPrimary')}
+                                              tone={tone}
+                                              label={subtag.type === 'despesa' ? 'Despesa' : 'Receita'}
+                                            />
+                                          </td>
+                                          <td className="truncate px-3 py-2 text-sm text-gray-500">
+                                            {subtag.description || '—'}
+                                          </td>
+                                          <td className="px-3 py-2">
+                                            <div className="flex items-center gap-1">
+                                              <button
+                                                type="button"
+                                                onClick={() => handleEditSubtag(subtag)}
+                                                className={cadastroRowIconBtnCls}
+                                                title="Editar subtag"
+                                              >
+                                                <Edit2 size={14} />
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleDeleteSubtag(subtag.id)}
+                                                className={cadastroRowIconDangerCls}
+                                                title="Excluir subtag"
+                                              >
+                                                <Trash2 size={14} />
+                                              </button>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      )
+                                    }),
+                                  ],
+                            )}
+                          </ListPageNestedTable>
+                        )}
+                      </ListPageExpandRow>
+                    )}
+                  </Fragment>
+                )
+              })}
+            </ListPageTable>
           )}
-        </div>
-      </main>
+        </CadastroListPageBody>
+      </CadastroListPageShell>
 
       {/* Modal de Tag */}
       {showTagModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {editingTag ? 'Editar Tag' : 'Nova Tag'}
-                </h2>
-                <button
-                  type="button"
-                  onClick={() => setShowTagModal(false)}
-                  className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                  title="Fechar (ESC)"
-                >
-                  <X size={24} />
-                </button>
-              </div>
-              <form onSubmit={handleSubmitTag}>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Nome *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={tagFormData.name}
-                      onChange={(e) => setTagFormData({ ...tagFormData, name: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      placeholder="Ex: Alimentação"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Descrição
-                    </label>
-                    <textarea
-                      value={tagFormData.description}
-                      onChange={(e) => setTagFormData({ ...tagFormData, description: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      placeholder="Descrição opcional"
-                      rows={3}
-                    />
-                  </div>
-                  <IconPicker
-                    value={tagFormData.icon}
-                    onChange={(icon) => setTagFormData({ ...tagFormData, icon })}
-                    availableIcons={availableIcons}
-                    iconNamesPt={iconNamesPt}
-                  />
-                  {!editingTag && (
-                    <div className="flex items-center">
+        <CadastroModalShell maxWidth="max-w-lg" onBackdropClick={() => setShowTagModal(false)}>
+          <CadastroModalHeader
+            isEdit={!!editingTag}
+            title={editingTag ? 'Editar Tag' : 'Nova Tag'}
+            subtitle="Categoria usada para classificar lançamentos"
+            onClose={() => setShowTagModal(false)}
+            icon={<Tag size={18} />}
+          />
+          <form onSubmit={handleSubmitTag} className="flex min-h-0 flex-1 flex-col" id="tag-form">
+            <CadastroModalBody>
+              <CadastroFormSection title="Identificação" icon={<Tag size={14} />}>
+                <CadastroModalFieldsGrid>
+                  <CadastroModalFieldsRow>
+                    <label className="block min-w-0">
+                      <CadastroFieldLabel required>Nome</CadastroFieldLabel>
                       <input
-                        type="checkbox"
-                        id="createOutroSubtags"
-                        checked={tagFormData.createOutroSubtags}
-                        onChange={(e) => setTagFormData({ ...tagFormData, createOutroSubtags: e.target.checked })}
-                        className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                        type="text"
+                        required
+                        value={tagFormData.name}
+                        onChange={(e) => setTagFormData({ ...tagFormData, name: e.target.value })}
+                        className={`${cadastroFieldCls} mt-0.5`}
+                        placeholder="Ex: Alimentação"
                       />
-                      <label htmlFor="createOutroSubtags" className="ml-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    </label>
+                  </CadastroModalFieldsRow>
+                  <CadastroModalFieldsRow>
+                    <label className="block min-w-0">
+                      <CadastroFieldLabel>Descrição</CadastroFieldLabel>
+                      <textarea
+                        value={tagFormData.description}
+                        onChange={(e) => setTagFormData({ ...tagFormData, description: e.target.value })}
+                        className={`${cadastroFieldCls} mt-0.5`}
+                        placeholder="Descrição opcional"
+                        rows={3}
+                      />
+                    </label>
+                  </CadastroModalFieldsRow>
+                  <CadastroModalFieldsRow>
+                    <IconPicker
+                      value={tagFormData.icon}
+                      onChange={(icon) => setTagFormData({ ...tagFormData, icon })}
+                      availableIcons={availableIcons}
+                      iconNamesPt={iconNamesPt}
+                    />
+                  </CadastroModalFieldsRow>
+                  {!editingTag ? (
+                    <CadastroModalFieldsRow>
+                      <label className={cadastroOptionLabelCls}>
+                        <input
+                          type="checkbox"
+                          id="createOutroSubtags"
+                          checked={tagFormData.createOutroSubtags}
+                          onChange={(e) => setTagFormData({ ...tagFormData, createOutroSubtags: e.target.checked })}
+                          className={`${cadastroAccentControlCls} h-4 w-4 rounded border-gray-300`}
+                        />
                         Criar automaticamente subtags "Outro" (Despesa e Receita)
                       </label>
-                    </div>
-                  )}
-                </div>
-                <div className="flex gap-3 mt-6">
-                  <button
-                    type="button"
-                    onClick={() => setShowTagModal(false)}
-                    className="flex-1 px-4 py-2 rounded-md hover:opacity-90 transition-opacity"
-                    style={{ backgroundColor: 'var(--crud-cancel)', color: 'var(--on-crud-cancel)' }}
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 px-4 py-2 rounded-md hover:opacity-90 text-white"
-                    style={{
-                      backgroundColor: editingTag ? 'var(--crud-edit)' : 'var(--crud-create)'
-                    }}
-                  >
-                    {editingTag ? 'Atualizar' : 'Criar'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
+                    </CadastroModalFieldsRow>
+                  ) : null}
+                </CadastroModalFieldsGrid>
+              </CadastroFormSection>
+            </CadastroModalBody>
+            <CadastroModalFooter
+              onClose={() => setShowTagModal(false)}
+              onSave={() => {
+                const form = document.getElementById('tag-form') as HTMLFormElement | null
+                form?.requestSubmit()
+              }}
+              saveLabel={editingTag ? 'Atualizar' : 'Criar'}
+            />
+          </form>
+        </CadastroModalShell>
+      )}
 
         {/* Modal de Subtag */}
         {showSubtagModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {editingSubtag ? 'Editar Subtag' : 'Nova Subtag'}
-                </h2>
-                <button
-                  type="button"
-                  onClick={() => setShowSubtagModal(false)}
-                  className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                  title="Fechar (ESC)"
-                >
-                  <X size={24} />
-                </button>
-              </div>
-              <form onSubmit={handleSubmitSubtag}>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Tag *
+        <CadastroModalShell maxWidth="max-w-lg" onBackdropClick={() => setShowSubtagModal(false)}>
+          <CadastroModalHeader
+            isEdit={!!editingSubtag}
+            title={editingSubtag ? 'Editar Subtag' : 'Nova Subtag'}
+            subtitle="Detalhe da categoria para receita ou despesa"
+            onClose={() => setShowSubtagModal(false)}
+            icon={<Tag size={18} />}
+          />
+          <form onSubmit={handleSubmitSubtag} className="flex min-h-0 flex-1 flex-col" id="subtag-form">
+            <CadastroModalBody>
+              <CadastroFormSection title="Identificação" icon={<Tag size={14} />}>
+                <CadastroModalFieldsGrid>
+                  <CadastroModalFieldsRow>
+                    <label className="block min-w-0">
+                      <CadastroFieldLabel required>Tag</CadastroFieldLabel>
+                      <select
+                        required
+                        value={subtagFormData.tag_id}
+                        onChange={(e) => setSubtagFormData({ ...subtagFormData, tag_id: Number(e.target.value) })}
+                        className={`${cadastroFieldCls} mt-0.5`}
+                        disabled={!!contextTagId}
+                      >
+                        <option value={0}>Selecione uma tag</option>
+                        {hierarchicalData.map(h => (
+                          <option key={h.tag.id} value={h.tag.id}>
+                            {h.tag.name}
+                          </option>
+                        ))}
+                      </select>
                     </label>
-                    <select
-                      required
-                      value={subtagFormData.tag_id}
-                      onChange={(e) => setSubtagFormData({ ...subtagFormData, tag_id: Number(e.target.value) })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      disabled={!!contextTagId}
-                    >
-                      <option value={0}>Selecione uma tag</option>
-                      {hierarchicalData.map(h => (
-                        <option key={h.tag.id} value={h.tag.id}>
-                          {h.tag.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Nome *
+                  </CadastroModalFieldsRow>
+                  <CadastroModalFieldsRow>
+                    <label className="block min-w-0">
+                      <CadastroFieldLabel required>Nome</CadastroFieldLabel>
+                      <input
+                        type="text"
+                        required
+                        value={subtagFormData.name}
+                        onChange={(e) => setSubtagFormData({ ...subtagFormData, name: e.target.value })}
+                        className={`${cadastroFieldCls} mt-0.5`}
+                        placeholder="Ex: Restaurante"
+                      />
                     </label>
-                    <input
-                      type="text"
-                      required
-                      value={subtagFormData.name}
-                      onChange={(e) => setSubtagFormData({ ...subtagFormData, name: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      placeholder="Ex: Restaurante"
+                  </CadastroModalFieldsRow>
+                  <CadastroModalFieldsRow>
+                    <label className="block min-w-0">
+                      <CadastroFieldLabel>Descrição</CadastroFieldLabel>
+                      <textarea
+                        value={subtagFormData.description}
+                        onChange={(e) => setSubtagFormData({ ...subtagFormData, description: e.target.value })}
+                        className={`${cadastroFieldCls} mt-0.5`}
+                        placeholder="Descrição opcional"
+                        rows={3}
+                      />
+                    </label>
+                  </CadastroModalFieldsRow>
+                  <CadastroModalFieldsRow>
+                    <IconPicker
+                      value={subtagFormData.icon}
+                      onChange={(icon) => setSubtagFormData({ ...subtagFormData, icon })}
+                      availableIcons={availableIcons}
+                      iconNamesPt={iconNamesPt}
                     />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Descrição
+                  </CadastroModalFieldsRow>
+                  <CadastroModalFieldsRow>
+                    <label className="block min-w-0">
+                      <CadastroFieldLabel required>Tipo</CadastroFieldLabel>
+                      <select
+                        required
+                        value={subtagFormData.type}
+                        onChange={(e) => setSubtagFormData({ ...subtagFormData, type: e.target.value })}
+                        className={`${cadastroFieldCls} mt-0.5`}
+                      >
+                        <option value="despesa">Despesa</option>
+                        <option value="receita">Receita</option>
+                      </select>
                     </label>
-                    <textarea
-                      value={subtagFormData.description}
-                      onChange={(e) => setSubtagFormData({ ...subtagFormData, description: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      placeholder="Descrição opcional"
-                      rows={3}
-                    />
-                  </div>
-                  <IconPicker
-                    value={subtagFormData.icon}
-                    onChange={(icon) => setSubtagFormData({ ...subtagFormData, icon })}
-                    availableIcons={availableIcons}
-                    iconNamesPt={iconNamesPt}
-                  />
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Tipo *
-                    </label>
-                    <select
-                      required
-                      value={subtagFormData.type}
-                      onChange={(e) => setSubtagFormData({ ...subtagFormData, type: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    >
-                      <option value="despesa">Despesa</option>
-                      <option value="receita">Receita</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="flex gap-3 mt-6">
-                  <button
-                    type="button"
-                    onClick={() => setShowSubtagModal(false)}
-                    className="flex-1 px-4 py-2 rounded-md hover:opacity-90 transition-opacity"
-                    style={{ backgroundColor: 'var(--crud-cancel)', color: 'var(--on-crud-cancel)' }}
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 px-4 py-2 rounded-md hover:opacity-90 text-white"
-                    style={{
-                      backgroundColor: editingSubtag ? 'var(--crud-edit)' : 'var(--crud-create)'
-                    }}
-                  >
-                    {editingSubtag ? 'Atualizar' : 'Criar'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
+                  </CadastroModalFieldsRow>
+                </CadastroModalFieldsGrid>
+              </CadastroFormSection>
+            </CadastroModalBody>
+            <CadastroModalFooter
+              onClose={() => setShowSubtagModal(false)}
+              onSave={() => {
+                const form = document.getElementById('subtag-form') as HTMLFormElement | null
+                form?.requestSubmit()
+              }}
+              saveLabel={editingSubtag ? 'Atualizar' : 'Criar'}
+            />
+          </form>
+        </CadastroModalShell>
+      )}
 
       {/* Dialogs */}
       <ConfirmComponent />

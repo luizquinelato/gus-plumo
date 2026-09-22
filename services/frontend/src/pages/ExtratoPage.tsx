@@ -2,6 +2,19 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useLocation } from 'react-router-dom'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
+import {
+  CadastroListPageBody,
+  CadastroListPageHero,
+  CadastroListPageShell,
+  CadastroListPageTabs,
+} from '../components/CadastroListPageLayout'
+import {
+  CadastroFormSection,
+  CadastroModalBody,
+  CadastroModalFooter,
+  CadastroModalHeader,
+  CadastroModalShell,
+} from '../components/CadastroFormLayout'
 import FloatingFooterBar from '../components/FloatingFooterBar'
 import LoadingSpinner from '../components/LoadingSpinner'
 import SplitExpenseModal from '../components/SplitExpenseModal'
@@ -627,7 +640,8 @@ const ExtratoPage = () => {
           loadDetailedReport()
         } catch (error) {
           console.error('Erro ao excluir despesa:', error)
-          handleShowToast('Erro ao excluir despesa', 'error')
+          const detail = axios.isAxiosError(error) ? error.response?.data?.detail : null
+          handleShowToast(typeof detail === 'string' ? detail : 'Erro ao excluir despesa', 'error')
         }
       },
       'Deletar',
@@ -974,6 +988,19 @@ const ExtratoPage = () => {
     }
   }
 
+  useEffect(() => {
+    if (!isInvertModalOpen || invertItems.length === 0) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        handleCloseInvertModal()
+      } else if (e.key === 'Enter' && !invertLoading) {
+        void handleInvert()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isInvertModalOpen, invertItems, invertLoading])
+
   // Filtra subtags baseado nas tags selecionadas e adiciona ícone de tipo
   // Só mostra subtags quando pelo menos uma tag está selecionada
   // Agrupa por tag_name quando múltiplas tags estão selecionadas
@@ -1014,56 +1041,57 @@ const ExtratoPage = () => {
   // Mostra loading inicial enquanto os filtros estão carregando
   if (filtersLoading) {
     return (
-      <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900">
         <Sidebar />
-        <LoadingSpinner fullScreen message="Carregando filtros..." />
+        <CadastroListPageShell>
+          <LoadingSpinner fullScreen message="Carregando filtros..." />
+        </CadastroListPageShell>
       </div>
     )
   }
 
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900">
       <Sidebar />
 
-      <div ref={scrollContainerRef} className="flex-1 overflow-auto">
-        <div className="p-8">
-          {/* Header (não sticky - rola para fora) */}
-          <div className="mb-4 flex items-start justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-                <FileText className="w-8 h-8" />
-                Extrato de Transações
-              </h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">
-                Visualize e gerencie todas as suas transações
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setIsManualTransactionModalOpen(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-color-primary text-white rounded-lg hover:opacity-90 transition-opacity"
-              >
-                <PlusCircle size={18} />
-                Novo Lançamento
-              </button>
-              <button
-                onClick={() => {
-                  if (!filteredExpenses || filteredExpenses.length === 0) {
-                    handleShowToast('Nenhum dado para exportar', 'error')
-                    return
-                  }
-                  setIsExportModalOpen(true)
-                }}
-                disabled={!filteredExpenses || filteredExpenses.length === 0}
-                className="flex items-center gap-2 px-4 py-2 bg-color-primary text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Download size={18} />
-                Exportar Excel
-              </button>
-            </div>
-          </div>
-
-          {/* Filtros - Layout Compacto em 2 Linhas */}
+      <CadastroListPageShell>
+        <CadastroListPageBody
+          scrollRef={scrollContainerRef}
+          contentOverflow="auto"
+          header={
+            <CadastroListPageHero
+              icon={<FileText className="w-8 h-8" />}
+              title="Extrato de Transações"
+              subtitle="Visualize e gerencie todas as suas transações"
+              actions={
+                <>
+                  <button
+                    onClick={() => setIsManualTransactionModalOpen(true)}
+                    className="flex items-center gap-2 rounded-lg bg-color-primary px-4 py-2 text-white transition-opacity hover:opacity-90"
+                  >
+                    <PlusCircle size={18} />
+                    Novo Lançamento
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!filteredExpenses || filteredExpenses.length === 0) {
+                        handleShowToast('Nenhum dado para exportar', 'error')
+                        return
+                      }
+                      setIsExportModalOpen(true)
+                    }}
+                    disabled={!filteredExpenses || filteredExpenses.length === 0}
+                    className="flex items-center gap-2 rounded-lg bg-color-primary px-4 py-2 text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Download size={18} />
+                    Exportar Excel
+                  </button>
+                </>
+              }
+            />
+          }
+          tabs={
+            <div className="space-y-4">
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 mb-6 p-4 transition-all hover:border-color-primary hover:shadow-md">
             {/* Header: Título + Link Limpar Filtros */}
             {(() => {
@@ -1364,35 +1392,19 @@ const ExtratoPage = () => {
             </div>
           </div>
 
-          {/* ===== ÁREA STICKY: Abas + Totais + Busca ===== */}
-          <div className="sticky top-0 z-30 bg-gray-50 dark:bg-gray-900 -mx-8 px-8 pb-4 pt-2 shadow-sm">
+          {/* Abas + Totais + Busca */}
+          <div>
             {/* Abas: Extrato / Gráficos */}
-            <div className="flex gap-1 border-b border-gray-200 dark:border-gray-700 mb-4">
-              <button
-                onClick={() => setActiveTab('extrato')}
-                className={`flex items-center gap-2 px-4 py-2.5 font-medium text-sm transition-all border-b-2 ${
-                  activeTab === 'extrato'
-                    ? 'text-color-primary border-color-primary'
-                    : 'text-gray-500 dark:text-gray-400 border-transparent hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300'
-                }`}
-              >
-                <FileText size={16} />
-                Extrato
-              </button>
-              <button
-                onClick={() => setActiveTab('graficos')}
-                className={`flex items-center gap-2 px-4 py-2.5 font-medium text-sm transition-all border-b-2 ${
-                  activeTab === 'graficos'
-                    ? 'text-color-primary border-color-primary'
-                    : 'text-gray-500 dark:text-gray-400 border-transparent hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300'
-                }`}
-              >
-                <BarChart3 size={16} />
-                Gráficos
-              </button>
-            </div>
+            <CadastroListPageTabs
+              tabs={[
+                { key: 'extrato', label: 'Extrato', icon: <FileText size={16} /> },
+                { key: 'graficos', label: 'Gráficos', icon: <BarChart3 size={16} /> },
+              ]}
+              active={activeTab}
+              onChange={setActiveTab}
+            />
 
-            {/* Conteúdo sticky da aba Extrato: Cards de resumo + Busca */}
+            {/* Cards de resumo + busca da aba Extrato */}
             {activeTab === 'extrato' && !loading && !error && detailedReport && (
               <>
                 {/* Cards de Resumo */}
@@ -1502,8 +1514,9 @@ const ExtratoPage = () => {
               </>
             )}
           </div>
-          {/* ===== FIM DA ÁREA STICKY ===== */}
-
+            </div>
+          }
+        >
           {/* Mensagem de Erro */}
           {error && (
             <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
@@ -2110,8 +2123,8 @@ const ExtratoPage = () => {
               )}
             </>
           )}
-        </div>
-      </div>
+        </CadastroListPageBody>
+      </CadastroListPageShell>
 
       {/* Modal de Split */}
       <SplitExpenseModal
@@ -2188,45 +2201,23 @@ const ExtratoPage = () => {
 
       {/* Modal Unificado de Inversão de Compartilhamento */}
       {isInvertModalOpen && invertItems.length > 0 && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
-          <div
-            className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md mx-4"
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                handleCloseInvertModal()
-              } else if (e.key === 'Enter') {
-                handleInvert()
-              }
-            }}
-            tabIndex={0}
-          >
-            {/* Header */}
-            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-              <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <ArrowLeftRight size={20} className="text-cyan-600 dark:text-cyan-400" />
-                Inverter Compartilhamento
-              </h3>
-              <button
-                onClick={handleCloseInvertModal}
-                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-              >
-                <X size={20} className="text-gray-500" />
-              </button>
-            </div>
-
-            {/* Body */}
-            <div className="px-6 py-4 space-y-4">
-              {/* Mensagem unificada */}
+        <CadastroModalShell maxWidth="max-w-md" onBackdropClick={handleCloseInvertModal} zClass="z-[60]">
+          <CadastroModalHeader
+            isEdit={false}
+            title="Inverter Compartilhamento"
+            onClose={handleCloseInvertModal}
+            icon={<ArrowLeftRight size={18} />}
+          />
+          <CadastroModalBody>
+            <CadastroFormSection title="Aviso" icon={<AlertTriangle size={14} />}>
               {(() => {
                 const cardCount = invertItems.filter(e => e.source === 'card').length
                 const benefitCount = invertItems.filter(e => e.source === 'benefit').length
-                const bankCount = invertItems.filter(e => e.source === 'transaction' || e.source === 'bank').length
                 const convertCount = cardCount + benefitCount
                 const uniquePartners = new Set(invertItems.map(e => e.shared_partner_id).filter(id => id))
                 const partnerCount = uniquePartners.size
                 const total = invertItems.length
 
-                // Monta descrição dos itens
                 let itemsDescription = ''
                 if (total === 1) {
                   if (cardCount > 0) itemsDescription = '1 item de cartão'
@@ -2236,16 +2227,15 @@ const ExtratoPage = () => {
                   itemsDescription = `${total} itens`
                 }
 
-                // Destino
                 const destino = partnerCount > 1
                   ? `${partnerCount} contas parceiras`
                   : 'a conta parceira'
 
                 return (
-                  <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/30">
                     <div className="flex items-start gap-3">
-                      <AlertTriangle size={18} className="text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
-                      <div className="text-sm text-amber-800 dark:text-amber-200 space-y-1">
+                      <AlertTriangle size={18} className="mt-0.5 flex-shrink-0 text-amber-600 dark:text-amber-400" />
+                      <div className="space-y-1 text-sm text-amber-800 dark:text-amber-200">
                         <p>
                           <strong>{itemsDescription}</strong> {total === 1 ? 'será migrado' : 'serão migrados'} para <strong>{destino}</strong>.
                         </p>
@@ -2254,7 +2244,7 @@ const ExtratoPage = () => {
                             {convertCount === total ? (total === 1 ? 'Será convertido' : 'Serão convertidos') : `${convertCount} ${convertCount === 1 ? 'será convertido' : 'serão convertidos'}`} para extrato bancário.
                           </p>
                         )}
-                        <p className="text-amber-700 dark:text-amber-300 font-medium mt-2">
+                        <p className="mt-2 font-medium text-amber-700 dark:text-amber-300">
                           ⚠️ Esta ação não poderá ser desfeita.
                         </p>
                       </div>
@@ -2262,41 +2252,17 @@ const ExtratoPage = () => {
                   </div>
                 )
               })()}
-            </div>
-
-            {/* Footer */}
-            <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
-              <button
-                onClick={handleCloseInvertModal}
-                className="px-4 py-2 rounded-lg transition-colors text-white hover:opacity-90"
-                style={{ backgroundColor: 'var(--crud-cancel)' }}
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleInvert}
-                disabled={invertLoading}
-                className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-2 ${
-                  !invertLoading
-                    ? 'bg-cyan-500 text-white hover:bg-cyan-600'
-                    : 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
-                }`}
-              >
-                {invertLoading ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-                    Invertendo...
-                  </>
-                ) : (
-                  <>
-                    <ArrowLeftRight size={16} />
-                    Confirmar
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
+            </CadastroFormSection>
+          </CadastroModalBody>
+          <CadastroModalFooter
+            onClose={handleCloseInvertModal}
+            onSave={() => { void handleInvert() }}
+            saveLabel="Confirmar"
+            saveTone="success"
+            saving={invertLoading}
+            saveIcon={<ArrowLeftRight size={15} />}
+          />
+        </CadastroModalShell>
       )}
 
       {/* Confirm Dialog */}

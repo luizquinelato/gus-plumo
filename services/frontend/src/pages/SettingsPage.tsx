@@ -100,10 +100,10 @@ const SettingsPage: React.FC = () => {
   }
 
   return (
-    <div className="flex h-screen bg-gray-100 dark:bg-gray-900">
+    <div className="flex h-screen min-h-0 overflow-hidden bg-gray-100 dark:bg-gray-900">
       <Sidebar />
 
-      <main className="flex-1 overflow-y-auto p-8">
+      <main className="flex-1 min-h-0 overflow-y-auto p-8">
         <div className="w-full">
           <div className="flex justify-between items-center mb-8">
             <div>

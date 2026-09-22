@@ -36,7 +36,7 @@ const Toast = ({ message, type, onClose, duration = 3000 }: ToastProps) => {
   }
 
   return (
-    <div className="fixed top-4 right-4 z-50 animate-slide-in-right">
+    <div className="fixed bottom-20 right-4 z-[60] animate-slide-in-right">
       <div className={`flex items-center gap-3 px-4 py-3 rounded-lg border shadow-lg ${styles[type]} min-w-[300px] max-w-md`}>
         <div className="flex-shrink-0">
           {icons[type]}

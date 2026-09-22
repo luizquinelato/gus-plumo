@@ -1,6 +1,21 @@
 import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
+import {
+  CadastroListPageBody,
+  CadastroListPageHero,
+  CadastroListPageShell,
+} from '../components/CadastroListPageLayout'
+import {
+  CadastroFieldLabel,
+  CadastroFormSection,
+  CadastroModalBody,
+  CadastroModalFieldsGrid,
+  CadastroModalFieldsRow,
+  CadastroModalFooter,
+  CadastroModalHeader,
+  CadastroModalShell,
+} from '../components/CadastroFormLayout'
 import FloatingFooterBar from '../components/FloatingFooterBar'
 import SharedAccountDisplay from '../components/SharedAccountDisplay'
 import LoadingSpinner from '../components/LoadingSpinner'
@@ -316,24 +331,21 @@ const GrupoPage = () => {
     searchTerm !== ''
 
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900">
       <Sidebar />
 
-      <div ref={scrollContainerRef} className="flex-1 overflow-auto">
-        <div className="p-8">
-          {/* Sticky Header + Filtros */}
-          <div className="sticky top-0 z-30 bg-gray-50 dark:bg-gray-900 -mx-8 px-8 pt-0 pb-4">
-            {/* Header */}
-            <div className="mb-4 pt-2">
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-                <Layers className="w-8 h-8" />
-                Relatório por Grupo
-              </h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">
-                Transações agrupadas por descrição (apenas grupos com 2+ itens)
-              </p>
-            </div>
-
+      <CadastroListPageShell>
+        <CadastroListPageBody
+          scrollRef={scrollContainerRef}
+          header={
+            <CadastroListPageHero
+              icon={<Layers className="w-8 h-8" />}
+              title="Relatório por Grupo"
+              subtitle="Transações agrupadas por descrição (apenas grupos com 2+ itens)"
+            />
+          }
+          tabs={
+            <div className="space-y-4">
             {/* Filtros - Layout Compacto */}
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 transition-all hover:border-color-primary hover:shadow-md">
             {/* Header: Título + Link Limpar Filtros */}
@@ -451,9 +463,9 @@ const GrupoPage = () => {
               Recolher Tudo
             </button>
           </div>
-          </div>
-          {/* Fim do Sticky Header */}
-
+            </div>
+          }
+        >
           {/* Loading */}
           {loading && (
             <div className="flex items-center justify-center h-64">
@@ -651,168 +663,159 @@ const GrupoPage = () => {
               )}
             </div>
           )}
-        </div>
-      </div>
+        </CadastroListPageBody>
+      </CadastroListPageShell>
 
-      {/* Modal de Estatísticas do Grupo */}
       {groupStatsModal.isOpen && groupStatsModal.stats && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <BarChart3 size={20} className="text-color-primary" />
-                Estatísticas do Grupo
-              </h3>
-              <button
-                onClick={() => setGroupStatsModal({ isOpen: false, stats: null })}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+        <CadastroModalShell
+          maxWidth="max-w-lg"
+          zClass="z-[60]"
+          onBackdropClick={() => setGroupStatsModal({ isOpen: false, stats: null })}
+        >
+          <CadastroModalHeader
+            isEdit={false}
+            title="Estatísticas do Grupo"
+            onClose={() => setGroupStatsModal({ isOpen: false, stats: null })}
+            icon={<BarChart3 size={18} />}
+          />
+          <CadastroModalBody>
+            <CadastroFormSection title="Identificação" icon={<Layers size={14} />}>
+              <p
+                className="truncate text-sm font-medium text-gray-800 dark:text-gray-100"
+                title={groupStatsModal.stats.description}
               >
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Descrição do grupo */}
-            <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-              <p className="text-sm font-medium text-gray-900 dark:text-white truncate" title={groupStatsModal.stats.description}>
                 {groupStatsModal.stats.description}
               </p>
-            </div>
+            </CadastroFormSection>
 
-            <div className="space-y-4">
-              {/* Período */}
-              <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                <div className="flex items-center gap-2 mb-2">
-                  <Calendar size={16} className="text-color-primary" />
-                  <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">Período</span>
-                </div>
-                <div className="grid grid-cols-3 gap-2 text-sm">
-                  <div>
-                    <span className="text-gray-500 dark:text-gray-400">De:</span>
-                    <p className="font-medium text-gray-900 dark:text-white">{formatDate(groupStatsModal.stats.periodStart)}</p>
+            <CadastroFormSection title="Período" icon={<Calendar size={14} />}>
+              <CadastroModalFieldsGrid>
+                <CadastroModalFieldsRow cols={3}>
+                  <div className="min-w-0">
+                    <CadastroFieldLabel>De</CadastroFieldLabel>
+                    <p className="mt-0.5 text-sm font-medium text-gray-800 dark:text-gray-100">
+                      {formatDate(groupStatsModal.stats.periodStart)}
+                    </p>
                   </div>
-                  <div>
-                    <span className="text-gray-500 dark:text-gray-400">Até:</span>
-                    <p className="font-medium text-gray-900 dark:text-white">{formatDate(groupStatsModal.stats.periodEnd)}</p>
+                  <div className="min-w-0">
+                    <CadastroFieldLabel>Até</CadastroFieldLabel>
+                    <p className="mt-0.5 text-sm font-medium text-gray-800 dark:text-gray-100">
+                      {formatDate(groupStatsModal.stats.periodEnd)}
+                    </p>
                   </div>
-                  <div>
-                    <span className="text-gray-500 dark:text-gray-400">Duração:</span>
-                    <p className="font-medium text-gray-900 dark:text-white">{groupStatsModal.stats.periodDays} dias</p>
+                  <div className="min-w-0">
+                    <CadastroFieldLabel>Duração</CadastroFieldLabel>
+                    <p className="mt-0.5 text-sm font-medium text-gray-800 dark:text-gray-100">
+                      {groupStatsModal.stats.periodDays} dias
+                    </p>
                   </div>
-                </div>
-              </div>
+                </CadastroModalFieldsRow>
+              </CadastroModalFieldsGrid>
+            </CadastroFormSection>
 
-              {/* Valores */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <span className="text-xs text-gray-500 dark:text-gray-400 uppercase">Total</span>
-                  <p className={`text-lg font-bold ${groupStatsModal.stats.totalAmount < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                    {formatCurrency(groupStatsModal.stats.totalAmount)}
-                  </p>
-                </div>
-                <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <span className="text-xs text-gray-500 dark:text-gray-400 uppercase">Média por Item</span>
-                  <p className={`text-lg font-bold ${groupStatsModal.stats.avgAmount < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                    {formatCurrency(groupStatsModal.stats.avgAmount)}
-                  </p>
-                </div>
-              </div>
-
-              {/* Min/Max */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <span className="text-xs text-gray-500 dark:text-gray-400 uppercase">Menor Valor</span>
-                  <p className={`font-semibold ${groupStatsModal.stats.minAmount < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                    {formatCurrency(groupStatsModal.stats.minAmount)}
-                  </p>
-                </div>
-                <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <span className="text-xs text-gray-500 dark:text-gray-400 uppercase">Maior Valor</span>
-                  <p className={`font-semibold ${groupStatsModal.stats.maxAmount < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                    {formatCurrency(groupStatsModal.stats.maxAmount)}
-                  </p>
-                </div>
-              </div>
-
-              {/* Frequência e Intervalo */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <span className="text-xs text-gray-500 dark:text-gray-400 uppercase">Frequência</span>
-                  <p className="font-semibold text-gray-900 dark:text-white">
-                    {groupStatsModal.stats.frequencyPerMonth.toFixed(1)}x <span className="text-sm font-normal text-gray-500">por mês</span>
-                  </p>
-                </div>
-                <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <span className="text-xs text-gray-500 dark:text-gray-400 uppercase">Intervalo Médio</span>
-                  <p className="font-semibold text-gray-900 dark:text-white">
-                    {groupStatsModal.stats.avgIntervalDays.toFixed(1)} <span className="text-sm font-normal text-gray-500">dias</span>
-                  </p>
-                </div>
-              </div>
-
-              {/* Tendência */}
-              <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-xs text-gray-500 dark:text-gray-400 uppercase">Tendência</span>
-                    <div className="flex items-center gap-2 mt-1">
-                      {groupStatsModal.stats.trend === 'up' && (
-                        <>
-                          <TrendingUp size={20} className="text-red-500" />
-                          <span className="font-semibold text-red-600 dark:text-red-400">Crescimento</span>
-                        </>
-                      )}
-                      {groupStatsModal.stats.trend === 'down' && (
-                        <>
-                          <TrendingDown size={20} className="text-green-500" />
-                          <span className="font-semibold text-green-600 dark:text-green-400">Declínio</span>
-                        </>
-                      )}
-                      {groupStatsModal.stats.trend === 'stable' && (
-                        <>
-                          <Minus size={20} className="text-gray-500" />
-                          <span className="font-semibold text-gray-600 dark:text-gray-400">Estável</span>
-                        </>
-                      )}
-                    </div>
+            <CadastroFormSection title="Valores" icon={<BarChart3 size={14} />}>
+              <CadastroModalFieldsGrid>
+                <CadastroModalFieldsRow cols={2}>
+                  <div className="min-w-0">
+                    <CadastroFieldLabel>Total</CadastroFieldLabel>
+                    <p className={`mt-0.5 text-lg font-bold ${groupStatsModal.stats.totalAmount < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                      {formatCurrency(groupStatsModal.stats.totalAmount)}
+                    </p>
                   </div>
-                  <div className="text-right">
-                    <span className={`text-xl font-bold ${
-                      groupStatsModal.stats.trend === 'up' ? 'text-red-600 dark:text-red-400' :
-                      groupStatsModal.stats.trend === 'down' ? 'text-green-600 dark:text-green-400' :
-                      'text-gray-600 dark:text-gray-400'
-                    }`}>
-                      {groupStatsModal.stats.trendPercentage > 0 ? '+' : ''}{groupStatsModal.stats.trendPercentage.toFixed(1)}%
-                    </span>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">variação média</p>
+                  <div className="min-w-0">
+                    <CadastroFieldLabel>Média por Item</CadastroFieldLabel>
+                    <p className={`mt-0.5 text-lg font-bold ${groupStatsModal.stats.avgAmount < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                      {formatCurrency(groupStatsModal.stats.avgAmount)}
+                    </p>
                   </div>
+                </CadastroModalFieldsRow>
+                <CadastroModalFieldsRow cols={2}>
+                  <div className="min-w-0">
+                    <CadastroFieldLabel>Menor Valor</CadastroFieldLabel>
+                    <p className={`mt-0.5 font-semibold ${groupStatsModal.stats.minAmount < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                      {formatCurrency(groupStatsModal.stats.minAmount)}
+                    </p>
+                  </div>
+                  <div className="min-w-0">
+                    <CadastroFieldLabel>Maior Valor</CadastroFieldLabel>
+                    <p className={`mt-0.5 font-semibold ${groupStatsModal.stats.maxAmount < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                      {formatCurrency(groupStatsModal.stats.maxAmount)}
+                    </p>
+                  </div>
+                </CadastroModalFieldsRow>
+                <CadastroModalFieldsRow cols={2}>
+                  <div className="min-w-0">
+                    <CadastroFieldLabel>Frequência</CadastroFieldLabel>
+                    <p className="mt-0.5 font-semibold text-gray-800 dark:text-gray-100">
+                      {groupStatsModal.stats.frequencyPerMonth.toFixed(1)}x{' '}
+                      <span className="text-sm font-normal text-gray-500">por mês</span>
+                    </p>
+                  </div>
+                  <div className="min-w-0">
+                    <CadastroFieldLabel>Intervalo Médio</CadastroFieldLabel>
+                    <p className="mt-0.5 font-semibold text-gray-800 dark:text-gray-100">
+                      {groupStatsModal.stats.avgIntervalDays.toFixed(1)}{' '}
+                      <span className="text-sm font-normal text-gray-500">dias</span>
+                    </p>
+                  </div>
+                </CadastroModalFieldsRow>
+                <CadastroModalFieldsRow>
+                  <div className="min-w-0">
+                    <CadastroFieldLabel>Desvio Padrão</CadastroFieldLabel>
+                    <p className="mt-0.5 font-semibold text-gray-800 dark:text-gray-100">
+                      {formatCurrency(Math.abs(groupStatsModal.stats.stdDeviation))}
+                    </p>
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      {groupStatsModal.stats.stdDeviation < Math.abs(groupStatsModal.stats.avgAmount) * 0.3
+                        ? '✓ Valores consistentes'
+                        : '⚠ Alta variação nos valores'}
+                    </p>
+                  </div>
+                </CadastroModalFieldsRow>
+              </CadastroModalFieldsGrid>
+            </CadastroFormSection>
+
+            <CadastroFormSection title="Tendência" icon={<TrendingUp size={14} />}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {groupStatsModal.stats.trend === 'up' && (
+                    <>
+                      <TrendingUp size={20} className="text-red-500" />
+                      <span className="font-semibold text-red-600 dark:text-red-400">Crescimento</span>
+                    </>
+                  )}
+                  {groupStatsModal.stats.trend === 'down' && (
+                    <>
+                      <TrendingDown size={20} className="text-green-500" />
+                      <span className="font-semibold text-green-600 dark:text-green-400">Declínio</span>
+                    </>
+                  )}
+                  {groupStatsModal.stats.trend === 'stable' && (
+                    <>
+                      <Minus size={20} className="text-gray-500" />
+                      <span className="font-semibold text-gray-600 dark:text-gray-400">Estável</span>
+                    </>
+                  )}
+                </div>
+                <div className="text-right">
+                  <span className={`text-xl font-bold ${
+                    groupStatsModal.stats.trend === 'up' ? 'text-red-600 dark:text-red-400' :
+                    groupStatsModal.stats.trend === 'down' ? 'text-green-600 dark:text-green-400' :
+                    'text-gray-600 dark:text-gray-400'
+                  }`}>
+                    {groupStatsModal.stats.trendPercentage > 0 ? '+' : ''}{groupStatsModal.stats.trendPercentage.toFixed(1)}%
+                  </span>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">variação média</p>
                 </div>
               </div>
-
-              {/* Desvio Padrão */}
-              <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                <span className="text-xs text-gray-500 dark:text-gray-400 uppercase">Desvio Padrão</span>
-                <p className="font-semibold text-gray-900 dark:text-white">
-                  {formatCurrency(Math.abs(groupStatsModal.stats.stdDeviation))}
-                </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  {groupStatsModal.stats.stdDeviation < Math.abs(groupStatsModal.stats.avgAmount) * 0.3
-                    ? '✓ Valores consistentes'
-                    : '⚠ Alta variação nos valores'}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-6 flex justify-end">
-              <button
-                onClick={() => setGroupStatsModal({ isOpen: false, stats: null })}
-                className="px-4 py-2 text-sm font-medium rounded-lg transition-colors"
-                style={{ backgroundColor: 'var(--crud-cancel)', color: 'var(--on-crud-cancel)' }}
-              >
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
+            </CadastroFormSection>
+          </CadastroModalBody>
+          <CadastroModalFooter
+            onClose={() => setGroupStatsModal({ isOpen: false, stats: null })}
+            hideSave
+            closeLabel="Fechar"
+          />
+        </CadastroModalShell>
       )}
 
       {/* Barra Flutuante Back to Top */}

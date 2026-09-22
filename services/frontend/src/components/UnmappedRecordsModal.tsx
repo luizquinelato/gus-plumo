@@ -1,9 +1,20 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
-import { X, Save, Check, Copy, Plus, Search } from 'lucide-react'
+import { X, Save, Check, Copy, Plus, Search, AlertTriangle } from 'lucide-react'
 import { useAlert } from '../hooks/useAlert'
 import { useEscapeKey } from '../hooks/useEscapeKey'
 import QuickCreateTagSubtag from './QuickCreateTagSubtag'
+import {
+  CadastroFieldLabel,
+  CadastroFormSection,
+  cadastroFieldCls,
+  CadastroModalBody,
+  CadastroModalFieldsGrid,
+  CadastroModalFieldsRow,
+  CadastroModalFooter,
+  CadastroModalHeader,
+  CadastroModalShell,
+} from './CadastroFormLayout'
 
 interface UnmappedRecord {
   linha: number
@@ -487,201 +498,144 @@ const UnmappedRecordsModal = ({ isOpen, onClose, onCloseAll, records, totalUnmap
   return (
     <>
       <AlertComponent />
-      <div
-        className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-        onClick={onClose}
-      >
-      <div
-        className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-6xl w-full mx-4 max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-        style={{ boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.3)' }}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-              ⚠️ Registros Não Mapeados
-            </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              {totalUnmapped} registro(s) não foram categorizados automaticamente
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-          >
-            <X className="w-6 h-6 text-gray-500 dark:text-gray-400" />
-          </button>
-        </div>
-
-        {/* Info */}
-        <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-          <p className="text-sm text-blue-800 dark:text-blue-200">
-            <strong>Crie mapeamentos</strong> para que futuras importações com as mesmas descrições sejam categorizadas automaticamente.
-          </p>
-        </div>
-
-        {/* Opções Globais */}
-        <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-              Aplicar categorização em massa
-            </h3>
-            <span className="text-xs text-gray-500 dark:text-gray-400 italic">
-              (Aplica apenas aos {paginatedRecords.length} registro(s) da página atual)
-            </span>
-          </div>
-
-          <div className="flex flex-col gap-4">
-            {/* Seção de Receitas */}
-            {hasReceitas && (
-              <div className="flex items-end gap-3">
-                <div className="flex-1">
-                  <label className="text-xs text-gray-700 dark:text-gray-300 block mb-1">💰 Tag de Receita</label>
-                  <select
-                    value={globalReceitaTag || ''}
-                    onChange={(e) => {
-                      setGlobalReceitaTag(Number(e.target.value))
-                      setGlobalReceitaSubtag(null)
-                    }}
-                    className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
-                  >
-                    <option value="">Selecione</option>
-                    {getFilteredTagsByType('receita').map(tag => (
-                      <option key={tag.id} value={tag.id}>{tag.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex-1">
-                  <label className="text-xs text-gray-700 dark:text-gray-300 block mb-1">Subtag de Receita</label>
-                  <select
-                    value={globalReceitaSubtag || ''}
-                    onChange={(e) => setGlobalReceitaSubtag(Number(e.target.value))}
-                    disabled={!globalReceitaTag}
-                    className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm disabled:bg-gray-100 dark:disabled:bg-gray-700 disabled:cursor-not-allowed"
-                  >
-                    <option value="">Selecione</option>
-                    {getFilteredSubtagsByType(globalReceitaTag, 'receita').map(subtag => (
-                      <option key={subtag.id} value={subtag.id}>{subtag.name}</option>
-                    ))}
-                  </select>
-                </div>
-
+      <CadastroModalShell maxWidth="max-w-6xl" onBackdropClick={onClose}>
+        <CadastroModalHeader
+          isEdit={false}
+          title="Registros Não Mapeados"
+          subtitle={`${totalUnmapped} registro(s) não foram categorizados automaticamente`}
+          onClose={onClose}
+          icon={<AlertTriangle size={18} />}
+        />
+        <CadastroModalBody
+          chrome={
+            <div className="relative pb-3">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value)
+                  setCurrentPage(1)
+                }}
+                placeholder="Buscar por descrição..."
+                className={`${cadastroFieldCls} pl-10 pr-10`}
+              />
+              {searchQuery && (
                 <button
-                  onClick={applyGlobalReceitas}
-                  disabled={!globalReceitaTag || !globalReceitaSubtag || savedMappings.size === records.length}
-                  className="flex items-center justify-center gap-2 px-4 py-1.5 text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed text-sm whitespace-nowrap w-44"
-                  style={{ backgroundColor: 'var(--crud-create)' }}
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                 >
-                  <Copy size={16} />
-                  Aplicar Receitas
+                  <X size={18} />
                 </button>
-              </div>
-            )}
-
-            {/* Seção de Despesas */}
-            {hasDespesas && (
-              <div className="flex items-end gap-3">
-                <div className="flex-1">
-                  <label className="text-xs text-gray-700 dark:text-gray-300 block mb-1">💸 Tag de Despesa</label>
-                  <select
-                    value={globalDespesaTag || ''}
-                    onChange={(e) => {
-                      setGlobalDespesaTag(Number(e.target.value))
-                      setGlobalDespesaSubtag(null)
-                    }}
-                    className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
-                  >
-                    <option value="">Selecione</option>
-                    {getFilteredTagsByType('despesa').map(tag => (
-                      <option key={tag.id} value={tag.id}>{tag.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex-1">
-                  <label className="text-xs text-gray-700 dark:text-gray-300 block mb-1">Subtag de Despesa</label>
-                  <select
-                    value={globalDespesaSubtag || ''}
-                    onChange={(e) => setGlobalDespesaSubtag(Number(e.target.value))}
-                    disabled={!globalDespesaTag}
-                    className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm disabled:bg-gray-100 dark:disabled:bg-gray-700 disabled:cursor-not-allowed"
-                  >
-                    <option value="">Selecione</option>
-                    {getFilteredSubtagsByType(globalDespesaTag, 'despesa').map(subtag => (
-                      <option key={subtag.id} value={subtag.id}>{subtag.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <button
-                  onClick={applyGlobalDespesas}
-                  disabled={!globalDespesaTag || !globalDespesaSubtag || savedMappings.size === records.length}
-                  className="flex items-center justify-center gap-2 px-4 py-1.5 text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed text-sm whitespace-nowrap w-44"
-                  style={{ backgroundColor: 'var(--crud-create)' }}
-                >
-                  <Copy size={16} />
-                  Aplicar Despesas
-                </button>
-              </div>
-            )}
-
-            {/* Botão Salvar Todos - Separado e destacado */}
-            <div className="flex justify-end pt-2 border-t border-gray-200 dark:border-gray-700">
-              <button
-                onClick={handleSaveAll}
-                disabled={
-                  isSavingAll ||
-                  savedMappings.size === records.length ||
-                  !records.some(r => {
-                    const key = getRecordKey(r)
-                    const mapping = selectedMappings[key]
-                    return !savedMappings.has(key) && mapping?.tag_id && mapping?.subtag_id
-                  })
-                }
-                className="flex items-center justify-center gap-2 px-4 py-1.5 text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium w-44"
-                style={{ backgroundColor: 'var(--crud-create)' }}
-              >
-                <Save size={16} />
-                {isSavingAll ? 'Salvando...' : 'Salvar Todos'}
-              </button>
+              )}
+              {searchQuery && (
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Mostrando {filteredRecords.length} de {records.length} registro(s)
+                </p>
+              )}
             </div>
-          </div>
-        </div>
+          }
+        >
+          <CadastroFormSection
+            title="Aplicar categorização em massa"
+            hint={`Crie mapeamentos para futuras importações. Aplica apenas aos ${paginatedRecords.length} registro(s) da página atual.`}
+            icon={<Copy size={14} />}
+          >
+            <CadastroModalFieldsGrid>
+              {hasReceitas && (
+                <CadastroModalFieldsRow cols={3}>
+                  <label className="block min-w-0">
+                    <CadastroFieldLabel>Tag de Receita</CadastroFieldLabel>
+                    <select
+                      value={globalReceitaTag || ''}
+                      onChange={(e) => {
+                        setGlobalReceitaTag(Number(e.target.value))
+                        setGlobalReceitaSubtag(null)
+                      }}
+                      className={`${cadastroFieldCls} mt-0.5`}
+                    >
+                      <option value="">Selecione</option>
+                      {getFilteredTagsByType('receita').map(tag => (
+                        <option key={tag.id} value={tag.id}>{tag.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block min-w-0">
+                    <CadastroFieldLabel>Subtag de Receita</CadastroFieldLabel>
+                    <select
+                      value={globalReceitaSubtag || ''}
+                      onChange={(e) => setGlobalReceitaSubtag(Number(e.target.value))}
+                      disabled={!globalReceitaTag}
+                      className={`${cadastroFieldCls} mt-0.5 disabled:bg-gray-100 dark:disabled:bg-gray-700 disabled:cursor-not-allowed`}
+                    >
+                      <option value="">Selecione</option>
+                      {getFilteredSubtagsByType(globalReceitaTag, 'receita').map(subtag => (
+                        <option key={subtag.id} value={subtag.id}>{subtag.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="flex items-end">
+                    <button
+                      onClick={applyGlobalReceitas}
+                      disabled={!globalReceitaTag || !globalReceitaSubtag || savedMappings.size === records.length}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-1.5 text-sm text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                      style={{ backgroundColor: 'var(--color-create)' }}
+                    >
+                      <Copy size={16} />
+                      Aplicar Receitas
+                    </button>
+                  </div>
+                </CadastroModalFieldsRow>
+              )}
+              {hasDespesas && (
+                <CadastroModalFieldsRow cols={3}>
+                  <label className="block min-w-0">
+                    <CadastroFieldLabel>Tag de Despesa</CadastroFieldLabel>
+                    <select
+                      value={globalDespesaTag || ''}
+                      onChange={(e) => {
+                        setGlobalDespesaTag(Number(e.target.value))
+                        setGlobalDespesaSubtag(null)
+                      }}
+                      className={`${cadastroFieldCls} mt-0.5`}
+                    >
+                      <option value="">Selecione</option>
+                      {getFilteredTagsByType('despesa').map(tag => (
+                        <option key={tag.id} value={tag.id}>{tag.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block min-w-0">
+                    <CadastroFieldLabel>Subtag de Despesa</CadastroFieldLabel>
+                    <select
+                      value={globalDespesaSubtag || ''}
+                      onChange={(e) => setGlobalDespesaSubtag(Number(e.target.value))}
+                      disabled={!globalDespesaTag}
+                      className={`${cadastroFieldCls} mt-0.5 disabled:bg-gray-100 dark:disabled:bg-gray-700 disabled:cursor-not-allowed`}
+                    >
+                      <option value="">Selecione</option>
+                      {getFilteredSubtagsByType(globalDespesaTag, 'despesa').map(subtag => (
+                        <option key={subtag.id} value={subtag.id}>{subtag.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="flex items-end">
+                    <button
+                      onClick={applyGlobalDespesas}
+                      disabled={!globalDespesaTag || !globalDespesaSubtag || savedMappings.size === records.length}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-1.5 text-sm text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                      style={{ backgroundColor: 'var(--color-create)' }}
+                    >
+                      <Copy size={16} />
+                      Aplicar Despesas
+                    </button>
+                  </div>
+                </CadastroModalFieldsRow>
+              )}
+            </CadastroModalFieldsGrid>
+          </CadastroFormSection>
 
-        {/* Campo de Busca */}
-        <div className="mb-6">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value)
-                setCurrentPage(1) // Volta para a primeira página ao buscar
-              }}
-              placeholder="Buscar por descrição..."
-              className="w-full pl-10 pr-10 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-              >
-                <X size={20} />
-              </button>
-            )}
-          </div>
-          {searchQuery && (
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Mostrando {filteredRecords.length} de {records.length} registro(s)
-            </p>
-          )}
-        </div>
-
-        {/* Tabela de Registros */}
-        <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+          <CadastroFormSection title="Registros" bodyClassName="p-0">
           <table className="w-full text-sm">
             <thead className="bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
               <tr>
@@ -732,7 +686,7 @@ const UnmappedRecordsModal = ({ isOpen, onClose, onCloseAll, records, totalUnmap
                           value={mapping?.tag_id || ''}
                           onChange={(e) => handleTagChange(recordKey, Number(e.target.value))}
                           disabled={isSaved}
-                          className="flex-1 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-xs bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:cursor-not-allowed"
+                          className={`${cadastroFieldCls} flex-1 disabled:cursor-not-allowed disabled:bg-gray-100 dark:disabled:bg-gray-800`}
                         >
                           <option value="">Tag...</option>
                           {getFilteredTags(record).map(tag => (
@@ -756,7 +710,7 @@ const UnmappedRecordsModal = ({ isOpen, onClose, onCloseAll, records, totalUnmap
                           value={mapping?.subtag_id || ''}
                           onChange={(e) => handleSubtagChange(recordKey, Number(e.target.value))}
                           disabled={!mapping?.tag_id || isSaved}
-                          className="flex-1 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-xs bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:cursor-not-allowed"
+                          className={`${cadastroFieldCls} flex-1 disabled:cursor-not-allowed disabled:bg-gray-100 dark:disabled:bg-gray-800`}
                         >
                           <option value="">Subtag...</option>
                           {getFilteredSubtags(mapping?.tag_id || null, record).map(subtag => (
@@ -797,21 +751,18 @@ const UnmappedRecordsModal = ({ isOpen, onClose, onCloseAll, records, totalUnmap
               })}
             </tbody>
           </table>
-        </div>
+          </CadastroFormSection>
 
-        {/* Controles de Paginação */}
         <div className="mt-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <label className="text-sm text-gray-600 dark:text-gray-400">
-              Registros por página:
-            </label>
+            <CadastroFieldLabel>Registros por página</CadastroFieldLabel>
             <select
               value={itemsPerPage}
               onChange={(e) => {
                 setItemsPerPage(Number(e.target.value))
                 setCurrentPage(1)
               }}
-              className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className={cadastroFieldCls}
             >
               <option value={50}>50</option>
               <option value={100}>100</option>
@@ -846,21 +797,29 @@ const UnmappedRecordsModal = ({ isOpen, onClose, onCloseAll, records, totalUnmap
             Mostrando {startIndex + 1}-{Math.min(endIndex, records.length)} de {records.length}
           </div>
         </div>
-
-        <div className="mt-4 flex justify-between items-center">
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            {savedMappings.size} de {records.length} registros categorizados
-          </p>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-white rounded-lg hover:opacity-90 transition-opacity text-sm"
-            style={{ backgroundColor: 'var(--crud-cancel)' }}
-          >
-            Fechar
-          </button>
-        </div>
-      </div>
-    </div>
+        </CadastroModalBody>
+        <CadastroModalFooter
+          onClose={onClose}
+          onSave={handleSaveAll}
+          saving={isSavingAll}
+          saveLabel={isSavingAll ? 'Salvando...' : 'Salvar Todos'}
+          closeLabel="Fechar"
+          disabled={
+            isSavingAll ||
+            savedMappings.size === records.length ||
+            !records.some(r => {
+              const key = getRecordKey(r)
+              const mapping = selectedMappings[key]
+              return !savedMappings.has(key) && mapping?.tag_id && mapping?.subtag_id
+            })
+          }
+          leading={
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              {savedMappings.size} de {records.length} registros categorizados
+            </p>
+          }
+        />
+      </CadastroModalShell>
 
     {/* Modal de Criação Rápida */}
     {showQuickCreateModal && quickCreateContext && (

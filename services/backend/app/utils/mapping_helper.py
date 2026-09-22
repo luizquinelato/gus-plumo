@@ -37,8 +37,8 @@ class MappingHelper:
         self.expense_mapping_cache = None
         self.months_mapping = []
         
-        # Gera mapeamento de meses para 2021-2025
-        for year in range(2021, 2026):
+        # Gera mapeamento de meses para 2021-2030
+        for year in range(2021, 2031):
             for month_number, (month_name, days_in_month) in enumerate([
                 ("Janeiro", 31), ("Fevereiro", 28), ("Março", 31), ("Abril", 30),
                 ("Maio", 31), ("Junho", 30), ("Julho", 31), ("Agosto", 31),
