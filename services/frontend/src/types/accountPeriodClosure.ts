@@ -2,9 +2,18 @@ export type AccountPeriodStatus = 'closed' | 'can_close' | 'blocked' | 'pending_
 
 export type AccountPeriodItemSource = 'bank' | 'card' | 'benefit' | 'settlement'
 
+export interface AccountPeriodSharedClosure {
+  shared_partner_id: number | null
+  expense_sharing_id?: number | null
+  period_start_date: string | null
+  closing_date: string | null
+  is_settled?: boolean
+}
+
 export interface AccountPeriodItem {
   id: number | string
   date: string
+  occurred_at?: string | null
   description: string
   amount: number
   source?: AccountPeriodItemSource
@@ -63,10 +72,12 @@ export interface AccountPeriodMonth {
   sources: string[]
   items?: AccountPeriodItem[]
   card_items?: AccountPeriodItem[]
+  benefit_items?: AccountPeriodItem[]
   shared_settlements?: AccountPeriodItem[]
   unmatched_card_payments?: AccountPeriodItem[]
   replaced_bank_ids?: number[]
   shared_by_account?: AccountPeriodSharedPartner[]
+  shared_closures?: AccountPeriodSharedClosure[]
   split_account?: AccountPeriodSplit | null
   split_shared?: AccountPeriodSplit | null
 }

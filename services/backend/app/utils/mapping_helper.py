@@ -89,6 +89,7 @@ class MappingHelper:
                     em.is_sensitive,
                     em.expense_sharing_id,
                     em.my_contribution_percentage,
+                    em.revenue_contribution_percentage,
                     s.name as subtag_name,
                     s.type as subtag_type,
                     t.name as tag_name
@@ -129,7 +130,8 @@ class MappingHelper:
                     "mapped_description": row['mapped_description'],  # Pode ser None
                     "is_sensitive": row['is_sensitive'],  # Para descriptografia
                     "expense_sharing_id": row['expense_sharing_id'],  # Compartilhamento do mapeamento
-                    "my_contribution_percentage": row['my_contribution_percentage']  # Percentual de contribuição
+                    "my_contribution_percentage": row['my_contribution_percentage'],
+                    "revenue_contribution_percentage": row['revenue_contribution_percentage'],
                 }
                 for row in results
             ]
@@ -200,7 +202,8 @@ class MappingHelper:
                     "mapped_description": mapping.get("mapped_description"),
                     "is_sensitive": mapping.get("is_sensitive", False),
                     "expense_sharing_id": mapping.get("expense_sharing_id"),
-                    "my_contribution_percentage": mapping.get("my_contribution_percentage")
+                    "my_contribution_percentage": mapping.get("my_contribution_percentage"),
+                    "revenue_contribution_percentage": mapping.get("revenue_contribution_percentage")
                 }
 
         # 2️⃣ PATTERN MATCH (ordenado por prioridade ASC, depois por tamanho DESC)
@@ -226,7 +229,8 @@ class MappingHelper:
                     "mapped_description": mapping.get("mapped_description"),
                     "is_sensitive": mapping.get("is_sensitive", False),
                     "expense_sharing_id": mapping.get("expense_sharing_id"),
-                    "my_contribution_percentage": mapping.get("my_contribution_percentage")
+                    "my_contribution_percentage": mapping.get("my_contribution_percentage"),
+                    "revenue_contribution_percentage": mapping.get("revenue_contribution_percentage")
                 }
 
         # 3️⃣ REGEX MATCH (ordenado por prioridade ASC - menor = mais prioritário)
@@ -250,7 +254,8 @@ class MappingHelper:
                         "mapped_description": mapping.get("mapped_description"),
                         "is_sensitive": mapping.get("is_sensitive", False),
                         "expense_sharing_id": mapping.get("expense_sharing_id"),
-                        "my_contribution_percentage": mapping.get("my_contribution_percentage")
+                        "my_contribution_percentage": mapping.get("my_contribution_percentage"),
+                        "revenue_contribution_percentage": mapping.get("revenue_contribution_percentage")
                     }
             except re.error as e:
                 print(f"⚠️  Regex inválido '{regex_pattern}': {e}")

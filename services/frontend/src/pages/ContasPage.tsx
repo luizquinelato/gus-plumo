@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Sidebar from '../components/Sidebar'
 import {
   CadastroListCreateButton,
@@ -14,8 +14,11 @@ import {
   listPageTableRowInactiveCls,
   type StatusFilter,
 } from '../components/CadastroListPageLayout'
+import FloatingFooterBar from '../components/FloatingFooterBar'
 import { ListPageTable } from '../components/ListPageTable'
 import {
+  ListTableCheckboxCell,
+  ListTableCheckboxHeader,
   ListTableIndexCell,
   ListTableIndexHeader,
   ListTableSpacerCell,
@@ -23,6 +26,7 @@ import {
   ListTableSpacerHeader,
   ListTableStaticHeader,
 } from '../components/ListTableSelectColumns'
+import { selectionHeaderState } from '../utils/listTableSelection'
 import StatusSwitch from '../components/StatusSwitch'
 import {
   CadastroFieldLabel,
@@ -39,7 +43,7 @@ import Badge from '../components/Badge'
 import { badgeVariantForColumnRole } from '../utils/badgeSurfaces'
 import { badgeToneMap } from '../utils/badgePalettes'
 import Toast from '../components/Toast'
-import { Edit2, Trash2, Building2, Landmark } from 'lucide-react'
+import { ArrowUp, Edit2, Trash2, Building2, Landmark, X, FileLock2, Eye, EyeOff } from 'lucide-react'
 import axios from 'axios'
 import { useConfirm } from '../hooks/useConfirm'
 
@@ -63,6 +67,7 @@ interface Conta {
   agency?: number
   account_number?: number
   active: boolean
+  has_default_import_file_password?: boolean
   last_updated_at?: string
 }
 
@@ -88,9 +93,16 @@ const ContasPage = () => {
     agency: '',
     account_number: ''
   })
+  const [importFilePassword, setImportFilePassword] = useState('')
+  const [clearDefaultImportPassword, setClearDefaultImportPassword] = useState(false)
+  const [showImportPassword, setShowImportPassword] = useState(false)
 
   const [toast, setToast] = useState<ToastState>({ show: false, message: '', type: 'success' })
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('active')
+  const [selectedContaIds, setSelectedContaIds] = useState<Set<number>>(() => new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [showBackToTop, setShowBackToTop] = useState(false)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const { showConfirm, ConfirmComponent } = useConfirm()
 
   const showToast = (message: string, type: 'success' | 'error' | 'warning') => {
@@ -161,11 +173,18 @@ const ContasPage = () => {
 
     try {
       // Converte bank_id, agency e account_number para número
-      const payload = {
+      const payload: Record<string, unknown> = {
         ...formData,
         bank_id: formData.bank_id ? parseInt(formData.bank_id) : null,
         agency: formData.agency ? parseInt(formData.agency) : null,
         account_number: formData.account_number ? parseInt(formData.account_number) : null
+      }
+
+      if (importFilePassword.trim()) {
+        payload.default_import_file_password = importFilePassword.trim()
+      }
+      if (editingConta && clearDefaultImportPassword) {
+        payload.clear_default_import_file_password = true
       }
 
       if (editingConta) {
@@ -250,6 +269,9 @@ const ContasPage = () => {
       agency: '',
       account_number: ''
     })
+    setImportFilePassword('')
+    setClearDefaultImportPassword(false)
+    setShowImportPassword(false)
     setShowModal(true)
   }
 
@@ -263,6 +285,9 @@ const ContasPage = () => {
       agency: conta.agency?.toString() || '',
       account_number: conta.account_number?.toString() || ''
     })
+    setImportFilePassword('')
+    setClearDefaultImportPassword(false)
+    setShowImportPassword(false)
     setShowModal(true)
   }
 
@@ -277,6 +302,9 @@ const ContasPage = () => {
       agency: '',
       account_number: ''
     })
+    setImportFilePassword('')
+    setClearDefaultImportPassword(false)
+    setShowImportPassword(false)
   }
 
   const getAccountTypeLabel = (type?: string) => {
@@ -321,11 +349,92 @@ const ContasPage = () => {
 
   const contasAtivas = contas.filter((c) => c.active)
   const contasInativas = contas.filter((c) => !c.active)
-  const contasFiltradas = statusFilter === 'active'
-    ? contasAtivas
-    : statusFilter === 'inactive'
-      ? contasInativas
-      : contas
+  const contasFiltradas = useMemo(
+    () =>
+      statusFilter === 'active'
+        ? contasAtivas
+        : statusFilter === 'inactive'
+          ? contasInativas
+          : contas,
+    [contas, contasAtivas, contasInativas, statusFilter],
+  )
+
+  const visibleContaIds = useMemo(() => contasFiltradas.map((c) => c.id), [contasFiltradas])
+
+  const globalHeaderState = useMemo(
+    () => selectionHeaderState(visibleContaIds, selectedContaIds),
+    [visibleContaIds, selectedContaIds],
+  )
+
+  const scrollToTop = useCallback(() => {
+    setShowBackToTop(false)
+    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [])
+
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+    const handleScroll = () => setShowBackToTop(container.scrollTop > 300)
+    handleScroll()
+    container.addEventListener('scroll', handleScroll)
+    return () => container.removeEventListener('scroll', handleScroll)
+  }, [loading, contas.length, statusFilter])
+
+  useEffect(() => {
+    const visible = new Set(visibleContaIds)
+    setSelectedContaIds((prev) => {
+      const next = new Set([...prev].filter((id) => visible.has(id)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [visibleContaIds])
+
+  const toggleGlobalSelection = useCallback(() => {
+    const any = visibleContaIds.some((id) => selectedContaIds.has(id))
+    setSelectedContaIds((prev) => {
+      const next = new Set(prev)
+      if (any) visibleContaIds.forEach((id) => next.delete(id))
+      else visibleContaIds.forEach((id) => next.add(id))
+      return next
+    })
+  }, [visibleContaIds, selectedContaIds])
+
+  const toggleContaSelection = useCallback((contaId: number) => {
+    setSelectedContaIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(contaId)) next.delete(contaId)
+      else next.add(contaId)
+      return next
+    })
+  }, [])
+
+  const clearBulkSelection = useCallback(() => setSelectedContaIds(new Set()), [])
+
+  const handleBulkDelete = () => {
+    const ids = [...selectedContaIds]
+    if (ids.length === 0) return
+    showConfirm(
+      'Deletar contas',
+      `⚠️ Excluir permanentemente ${ids.length} conta(s)?\n\nEsta ação é irreversível e dados relacionados podem ser perdidos.`,
+      async () => {
+        setBulkDeleting(true)
+        try {
+          for (const id of ids) {
+            await axios.delete(`/api/accounts/${id}`)
+          }
+          clearBulkSelection()
+          await carregarContas()
+          showToast('Contas excluídas com sucesso.', 'success')
+        } catch (error) {
+          console.error('Erro na exclusão em massa:', error)
+          showToast('Não foi possível excluir todas as contas selecionadas.', 'error')
+        } finally {
+          setBulkDeleting(false)
+        }
+      },
+      'Deletar permanentemente',
+      'Cancelar',
+    )
+  }
 
   const handleToggleActive = (conta: Conta) => {
     if (conta.active) handleInativar(conta.id)
@@ -338,6 +447,7 @@ const ContasPage = () => {
 
       <CadastroListPageShell>
         <CadastroListPageBody
+          scrollRef={scrollContainerRef}
           header={
             <CadastroListPageHero
               icon={<Landmark className="w-8 h-8" />}
@@ -378,9 +488,11 @@ const ContasPage = () => {
             />
           ) : (
             <ListPageTable
+              leadingMode="bulk"
               colsRest={<ListTableSpacerCol />}
               head={
                 <tr>
+                  <ListTableCheckboxHeader state={globalHeaderState} onToggle={toggleGlobalSelection} />
                   <ListTableIndexHeader />
                   <ListTableSpacerHeader />
                   <ListTableStaticHeader label="Nome" className="w-[16%]" />
@@ -399,18 +511,23 @@ const ContasPage = () => {
                 const typeKey = (conta.account_type === 'corrente' || conta.account_type === 'poupanca' || conta.account_type === 'investimento')
                   ? conta.account_type
                   : undefined
+                const selected = selectedContaIds.has(conta.id)
                 return (
                   <tr
                     key={conta.id}
-                    className={`${listPageTableRowHoverCls} ${!conta.active ? listPageTableRowInactiveCls : ''}`}
+                    className={`${listPageTableRowHoverCls} ${!conta.active ? listPageTableRowInactiveCls : ''} ${
+                      selected ? 'table-row-selected bg-[color-mix(in_srgb,var(--color-1)_7%,transparent)]' : ''
+                    }`}
                   >
+                    <ListTableCheckboxCell
+                      checked={selected}
+                      onToggle={() => toggleContaSelection(conta.id)}
+                    />
                     <ListTableIndexCell index={index + 1} />
                     <ListTableSpacerCell />
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-2">
-                        <div className="flex-shrink-0 rounded-md p-1.5 shadow-sm" style={{ background: 'var(--gradient-1-2)' }}>
-                          <Landmark size={15} style={{ color: 'var(--on-gradient-1-2)' }} />
-                        </div>
+                        <Landmark size={16} className="shrink-0" style={{ color: 'var(--color-1)' }} />
                         <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">{conta.name || '—'}</span>
                       </div>
                     </td>
@@ -459,6 +576,67 @@ const ContasPage = () => {
           )}
         </CadastroListPageBody>
       </CadastroListPageShell>
+
+      {selectedContaIds.size > 0 && (
+        <FloatingFooterBar>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <span className="font-medium text-color-primary">
+                {selectedContaIds.size}{' '}
+                {selectedContaIds.size === 1 ? 'conta selecionada' : 'contas selecionadas'}
+              </span>
+              <button
+                type="button"
+                onClick={clearBulkSelection}
+                disabled={bulkDeleting}
+                className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 disabled:opacity-50 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                <X size={14} />
+                Limpar
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleBulkDelete}
+                disabled={bulkDeleting}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
+                style={{ backgroundColor: 'var(--crud-delete)' }}
+              >
+                <Trash2 size={14} />
+                {bulkDeleting ? 'Excluindo…' : 'Excluir'}
+              </button>
+              {showBackToTop && (
+                <button
+                  type="button"
+                  onClick={scrollToTop}
+                  className="flex items-center gap-1.5 rounded-lg bg-color-primary px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90"
+                  title="Voltar ao topo"
+                >
+                  <ArrowUp size={14} />
+                  Topo
+                </button>
+              )}
+            </div>
+          </div>
+        </FloatingFooterBar>
+      )}
+
+      {showBackToTop && selectedContaIds.size === 0 && (
+        <FloatingFooterBar>
+          <div className="flex items-center justify-end">
+            <button
+              type="button"
+              onClick={scrollToTop}
+              className="flex items-center gap-1.5 rounded-lg bg-color-primary px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90"
+              title="Voltar ao topo"
+            >
+              <ArrowUp size={14} />
+              Voltar ao Topo
+            </button>
+          </div>
+        </FloatingFooterBar>
+      )}
 
         {showModal && (
           <CadastroModalShell maxWidth="max-w-2xl" onBackdropClick={fecharModal}>
@@ -564,6 +742,65 @@ const ContasPage = () => {
                         />
                       </label>
                     </CadastroModalFieldsRow>
+                  </CadastroModalFieldsGrid>
+                </CadastroFormSection>
+                <CadastroFormSection title="Importação de arquivos" icon={<FileLock2 size={14} />}>
+                  <CadastroModalFieldsGrid>
+                    <CadastroModalFieldsRow>
+                      <label className="block">
+                        <CadastroFieldLabel>Senha padrão para PDFs</CadastroFieldLabel>
+                        <p className="mb-1.5 text-xs text-gray-500 dark:text-gray-400">
+                          Usada na importação de faturas, holerites e outros PDFs protegidos desta conta.
+                          Deixe em branco para manter a senha atual ou não definir uma.
+                        </p>
+                        {editingConta?.has_default_import_file_password && !clearDefaultImportPassword && (
+                          <p className="mb-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                            Há uma senha cadastrada para esta conta.
+                          </p>
+                        )}
+                        <div className="relative mt-0.5">
+                          <input
+                            type={showImportPassword ? 'text' : 'password'}
+                            value={importFilePassword}
+                            onChange={(e) => setImportFilePassword(e.target.value)}
+                            disabled={clearDefaultImportPassword}
+                            className={`${cadastroFieldCls} pr-11`}
+                            placeholder={
+                              editingConta?.has_default_import_file_password
+                                ? 'Nova senha (opcional)'
+                                : 'Ex.: CPF ou senha do banco'
+                            }
+                            autoComplete="new-password"
+                          />
+                          <button
+                            type="button"
+                            className="absolute inset-y-0 right-3 flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => setShowImportPassword((v) => !v)}
+                            tabIndex={-1}
+                            aria-label={showImportPassword ? 'Ocultar senha' : 'Exibir senha'}
+                          >
+                            {showImportPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                          </button>
+                        </div>
+                      </label>
+                    </CadastroModalFieldsRow>
+                    {editingConta?.has_default_import_file_password && (
+                      <CadastroModalFieldsRow>
+                        <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                          <input
+                            type="checkbox"
+                            checked={clearDefaultImportPassword}
+                            onChange={(e) => {
+                              setClearDefaultImportPassword(e.target.checked)
+                              if (e.target.checked) setImportFilePassword('')
+                            }}
+                            className="rounded border-gray-300 text-[var(--color-1)] focus:ring-[var(--color-1)]"
+                          />
+                          Remover senha padrão cadastrada
+                        </label>
+                      </CadastroModalFieldsRow>
+                    )}
                   </CadastroModalFieldsGrid>
                 </CadastroFormSection>
               </CadastroModalBody>

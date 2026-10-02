@@ -18,7 +18,7 @@ Versões de referência: `services/frontend/package.json` e `services/backend/re
 | Estilos | `tailwindcss` | **3.4.x** | **Tailwind v3** — não migrar para v4 sem decisão |
 | HTTP | `axios` | **1.13.x** | Usado em páginas/contextos; ver [design-frontend.mdc](design-frontend.mdc) |
 | Ícones | `lucide-react` | **0.344.x** | Biblioteca exclusiva de ícones |
-| Datas | `react-datepicker` | **9.x** | + `BrazilianDatePicker` para filtros BR |
+| Datas | — (componente próprio) | — | `src/components/date` (`DateField`, `DateCalendar`); sem lib de datepicker |
 | Gráficos | `recharts` | **3.x** | Dashboard / relatórios |
 | Export | `jspdf`, `xlsx` | — | PDF e Excel |
 | UI utils | `clsx`, `tailwind-merge`, `class-variance-authority` | — | Composição de classes |

@@ -21,7 +21,7 @@ const KEY_ORDER: { [key: string]: number } = {
   'calculation_date': 1,
   'year': 2,
   'month': 3,
-  'closing_day': 4,
+  'due_day': 4,
   'start_date': 5,
   'end_date': 6,
   'main_account_card': 7,

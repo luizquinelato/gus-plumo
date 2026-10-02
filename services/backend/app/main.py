@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
-from .routers import import_router, cartoes_router, auth_router, tenant_colors_router, dashboard_router, expenses_router, reports_router, excel_import_router, user_preferences_router, accounts_router, expense_sharing_router, benefit_card_statements_router, settings_router, balance_router, balance_closure_router, expense_templates_router, loans_router, users_router, payroll_router, invoice_payment_matches_router, financial_health_router, account_period_closure_router
+from .routers import import_router, cartoes_router, auth_router, tenant_colors_router, dashboard_router, expenses_router, reports_router, user_preferences_router, accounts_router, expense_sharing_router, benefit_card_statements_router, settings_router, balance_router, balance_closure_router, expense_templates_router, loans_router, users_router, payroll_router, invoice_payment_matches_router, financial_health_router, account_period_closure_router
 from .core.logging_config import setup_logging, get_logger
 import traceback
 
@@ -80,7 +80,6 @@ app.add_middleware(
 # Include routers
 app.include_router(auth_router.router)
 app.include_router(import_router.router)
-app.include_router(excel_import_router.router)
 app.include_router(cartoes_router.router)
 app.include_router(accounts_router.router)
 app.include_router(expense_sharing_router.router)

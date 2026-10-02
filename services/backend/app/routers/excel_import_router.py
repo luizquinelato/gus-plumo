@@ -1,8 +1,8 @@
 """
-Router para importação de arquivos Excel processados (extratos e faturas)
+Persistência de extratos bancários após ETL (importação bruta).
 """
 
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime
@@ -23,64 +23,17 @@ from app.services.fatura_service import FaturaService
 from app.services.account_period_closure_service import closed_periods
 from app.utils.card_helper import CardHelper
 from app.utils.mapping_helper import MappingHelper
+from app.utils.sharing_percentage import resolve_ownership_percentage, card_adjustment_config
 from app.core.logging_config import get_logger
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
 logger = get_logger(__name__)
-router = APIRouter(prefix="/api/excel-import", tags=["excel-import"])
 
 
 def get_card_adjustment_config(db: Session, card_id: int) -> Dict[str, Any]:
-    """
-    Busca as configurações de ajuste padrão de um cartão.
-
-    Args:
-        db: Sessão do banco de dados
-        card_id: ID do cartão
-
-    Returns:
-        Dicionário com:
-        - adjustment_type: 'proprio' ou 'compartilhado'
-        - ownership_percentage: 0-100 (percentual do usuário)
-        - expense_sharing_id: ID da configuração de compartilhamento (se compartilhado)
-    """
     card = db.query(Cartao).filter(Cartao.id == card_id).first()
-
-    if not card:
-        # Padrão se cartão não encontrado
-        return {
-            "adjustment_type": "proprio",
-            "ownership_percentage": Decimal("100.00"),
-            "expense_sharing_id": None
-        }
-
-    # Mapeia ownership_type para adjustment_type
-    if card.ownership_type == "proprio":
-        return {
-            "adjustment_type": "proprio",
-            "ownership_percentage": Decimal("100.00"),
-            "expense_sharing_id": None
-        }
-    elif card.ownership_type == "compartilhado":
-        # Busca percentual do compartilhamento (default 50%)
-        ownership_pct = Decimal("50.00")  # Default 50/50
-        if card.expense_sharing and hasattr(card.expense_sharing, 'my_contribution_percentage'):
-            # Usa o my_contribution_percentage da configuração de compartilhamento
-            ownership_pct = card.expense_sharing.my_contribution_percentage
-
-        return {
-            "adjustment_type": "compartilhado",
-            "ownership_percentage": ownership_pct,
-            "expense_sharing_id": card.expense_sharing_id
-        }
-    else:
-        # Fallback para 'proprio'
-        return {
-            "adjustment_type": "proprio",
-            "ownership_percentage": Decimal("100.00"),
-            "expense_sharing_id": None
-        }
+    return card_adjustment_config(card)
 
 
 def lookup_expense_sharing_by_partner_name(
@@ -463,71 +416,47 @@ def find_subtag_id(db: Session, tenant_id: int, account_id: int, subtag_name: st
     return None
 
 
-@router.post("/upload")
-async def upload_excel(
-    file: UploadFile = File(...),
-    import_type: Literal["extrato", "fatura"] = Form(...),
-    account_id: Optional[int] = Form(None),
-    force_retag: bool = Form(False),
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(require_account)
-):
-    """
-    Importa arquivo Excel processado (extrato ou fatura).
-
-    Args:
-        file: Arquivo Excel (.xlsx ou .xls)
-        import_type: Tipo de importação ('extrato' ou 'fatura')
-        account_id: ID da conta bancária (obrigatório para extratos, opcional para faturas)
-        force_retag: Se True, ignora colunas Tag/Subtag do Excel e busca em mapeamentos
-
-    Extrato: Ano, Mês, Data e hora, Categoria, Transação, Descrição, Valor, Tag, Subtag
-    Fatura: Ano, Mês, Cartão, Titular, Data, Descrição, Descrição Limpa, Valor, Tag, Subtag
-    """
-    tenant_id = current_user.get("tenant_id", 1)
-    user_id = current_user.get("user_id") or current_user.get("id")
-
-    # Valida extensão do arquivo
-    if not file.filename.endswith(('.xlsx', '.xls')):
-        raise HTTPException(status_code=400, detail="Arquivo deve ser Excel (.xlsx ou .xls)")
-
-    # Se account_id não foi fornecido, usa o do JWT (para extratos processados)
-    if import_type == "extrato" and not account_id:
-        account_id = current_user.get("account_id")
-        if not account_id:
-            raise HTTPException(status_code=400, detail="account_id é obrigatório para importação de extratos")
-
-    try:
-        # Lê o arquivo Excel
-        contents = await file.read()
-        df = pd.read_excel(io.BytesIO(contents))
-
-        # Log do modo de processamento
-        mode = "RE-TAGEAMENTO (ignora Excel, usa mapeamentos)" if force_retag else "NORMAL (usa Tag/Subtag do Excel)"
-        logger.info(f"📋 Processando {import_type} em modo: {mode}")
-
-        # Para faturas, também precisa do account_id (do JWT)
-        if import_type == "fatura" and not account_id:
-            account_id = current_user.get("account_id")
-            if not account_id:
-                raise HTTPException(status_code=400, detail="account_id é obrigatório para importação de faturas")
-
-        # Processa conforme o tipo
-        if import_type == "extrato":
-            return await process_extrato_excel(df, db, tenant_id, account_id, force_retag, user_id)
-        else:
-            return await process_fatura_excel(df, db, tenant_id, account_id, force_retag, user_id)
-
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Erro ao processar arquivo: {str(e)}")
+def _amounts_equal(left: Any, right: Any, tolerance: float = 0.005) -> bool:
+    return abs(float(left or 0) - float(right or 0)) < tolerance
 
 
-logger = get_logger(__name__)
+def _optional_id_equal(left: Any, right: Any) -> bool:
+    return (left if left is not None else None) == (right if right is not None else None)
+
+
+def _extrato_row_has_changes(
+    existing_data: dict[str, Any],
+    *,
+    category: str,
+    transaction: str,
+    subtag_id: Optional[int],
+    expense_sharing_id: Optional[int],
+    ownership_percentage: Decimal,
+    amount: Decimal,
+    final_description: str,
+    apply_description_update: bool,
+) -> bool:
+    if (existing_data.get("category") or "") != (category or ""):
+        return True
+    if (existing_data.get("transaction") or "") != (transaction or ""):
+        return True
+    if not _optional_id_equal(existing_data.get("subtag_id"), subtag_id):
+        return True
+    if not _optional_id_equal(existing_data.get("expense_sharing_id"), expense_sharing_id):
+        return True
+    if not _amounts_equal(existing_data.get("amount"), amount):
+        return True
+    if not _amounts_equal(existing_data.get("ownership_percentage"), ownership_percentage):
+        return True
+    if apply_description_update and (existing_data.get("description") or "") != (final_description or ""):
+        return True
+    return False
+
 
 def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_id: int, force_retag: bool = False, user_id: int = None, detect_conflicts: bool = True, enable_tracing: bool = False, original_filenames: list = None) -> dict:
     """
     Função única de insert/update para extratos bancários.
-    Usada tanto para arquivos brutos (após ETL) quanto processados.
+    Usada após ETL de extrato bruto (import_router).
 
     ⚡ OTIMIZADA para performance com:
     - Operações vetorizadas do pandas (10-100x mais rápido que iterrows)
@@ -558,6 +487,7 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
     unmapped_count = 0
     unmapped_records = []
     skipped_rows = []  # Armazena dados completos das linhas ignoradas
+    updated_records = []  # DE-PARA dos registros atualizados (match sem conflito)
     errors = []
     conflicts = []  # Lista de conflitos detectados (tag/subtag ou valor diferente)
 
@@ -640,7 +570,9 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
         BankStatement.description,
         BankStatement.amount,
         BankStatement.id,
-        BankStatement.subtag_id
+        BankStatement.subtag_id,
+        BankStatement.expense_sharing_id,
+        BankStatement.ownership_percentage,
     ).filter(
         BankStatement.tenant_id == tenant_id,
         BankStatement.account_id == account_id
@@ -660,7 +592,12 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
         existing_keys[key].append(e.id)
         existing_records_data[e.id] = {
             'subtag_id': e.subtag_id,
-            'amount': float(e.amount) if e.amount else 0.0
+            'amount': float(e.amount) if e.amount else 0.0,
+            'description': e.description or '',
+            'category': e.category or '',
+            'transaction': e.transaction or '',
+            'expense_sharing_id': e.expense_sharing_id,
+            'ownership_percentage': float(e.ownership_percentage) if e.ownership_percentage is not None else 100.0,
         }
     print(f"   ✅ {len(existing_records_data)} registros existentes carregados (account_id={account_id})")
 
@@ -886,11 +823,12 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
             expense_sharing_id = None
             ownership_percentage = Decimal("100.00")
 
-            # PRIORIDADE 2: Mapeamento (se tiver expense_sharing_id definido)
             if mapping_result and mapping_result.get('expense_sharing_id') is not None:
                 expense_sharing_id = mapping_result['expense_sharing_id']
-                if mapping_result.get('my_contribution_percentage') is not None:
-                    ownership_percentage = Decimal(str(mapping_result['my_contribution_percentage']))
+                ownership_percentage = resolve_ownership_percentage(
+                    tipo=tipo,
+                    mapping=mapping_result,
+                )
 
             # PRIORIDADE 1: Arquivo Excel (se houver colunas de compartilhamento)
             # Sobrescreve configuração do mapeamento
@@ -924,6 +862,7 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
                 conflict_record = {
                     'existing_id': None,  # Será definido pelo usuário
                     'record_type': 'bank_statement',
+                    'source_line': idx + 2,
                     'date': date_obj.strftime('%Y-%m-%d %H:%M:%S') if date_obj else '',
                     'description': final_description,
                     'new_subtag_id': subtag_id,
@@ -977,6 +916,7 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
                     conflict_record = {
                         'existing_id': existing_id,
                         'record_type': 'bank_statement',
+                        'source_line': idx + 2,
                         'date': date_obj.strftime('%Y-%m-%d %H:%M:%S') if date_obj else '',
                         'description': final_description,
                         'new_subtag_id': subtag_id,
@@ -1026,38 +966,75 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
                             "amount": float(amount_decimal)
                         })
                 else:
-                    # Sem conflito - atualiza normalmente
-                    update_record = {
-                        'id': existing_id,
-                        'category': category,
-                        'transaction': transaction,
-                        'subtag_id': subtag_id,
-                        'expense_sharing_id': expense_sharing_id,
-                        'ownership_percentage': ownership_percentage,
-                        'amount': amount_decimal
-                    }
-                    if final_description != description:
-                        update_record['description'] = final_description
-                    records_to_update.append(update_record)
-                    duplicate_count += 1
+                    apply_description_update = final_description != description
+                    has_changes = _extrato_row_has_changes(
+                        existing_data,
+                        category=category,
+                        transaction=transaction,
+                        subtag_id=subtag_id,
+                        expense_sharing_id=expense_sharing_id,
+                        ownership_percentage=ownership_percentage,
+                        amount=amount_decimal,
+                        final_description=final_description,
+                        apply_description_update=apply_description_update,
+                    )
+                    if not has_changes:
+                        if enable_tracing and debug_all_records is not None:
+                            debug_all_records.append({
+                                "linha": idx + 2,
+                                "status": "SEM_ALTERACAO",
+                                "date": date_obj.strftime('%Y-%m-%d %H:%M:%S') if hasattr(date_obj, 'strftime') else str(date_obj),
+                                "description": final_description[:50] if final_description else "",
+                                "amount": float(amount_decimal),
+                            })
+                    else:
+                        update_record = {
+                            'id': existing_id,
+                            'category': category,
+                            'transaction': transaction,
+                            'subtag_id': subtag_id,
+                            'expense_sharing_id': expense_sharing_id,
+                            'ownership_percentage': ownership_percentage,
+                            'amount': amount_decimal
+                        }
+                        if apply_description_update:
+                            update_record['description'] = final_description
+                        records_to_update.append(update_record)
+                        duplicate_count += 1
 
-                    # LOG: Mostra tag/subtag para atualizações
-                    subtag_info = subtag_id_to_info.get(subtag_id, {})
-                    tag_name = subtag_info.get('tag_name', 'N/A')
-                    subtag_name = subtag_info.get('name', 'N/A')
-                    print(f"   🔄 Atualizado: {final_description[:40]:<40} → {tag_name} / {subtag_name}")
-
-                    # DEBUG: Registra como atualizado (se tracing ativo)
-                    if enable_tracing and debug_all_records is not None:
-                        debug_all_records.append({
-                            "linha": idx + 2,
-                            "status": "ATUALIZADO",
-                            "date": date_obj.strftime('%Y-%m-%d %H:%M:%S') if hasattr(date_obj, 'strftime') else str(date_obj),
-                            "description": final_description[:50] if final_description else "",
-                            "amount": float(amount_decimal),
-                            "tag": tag_name,
-                            "subtag": subtag_name
+                        existing_subtag_ctx = subtag_id_to_info.get(existing_subtag_id, {})
+                        new_subtag_ctx = subtag_id_to_info.get(subtag_id, {})
+                        existing_description = existing_data.get('description') or ''
+                        updated_records.append({
+                            'Linha': idx + 2,
+                            'ID': existing_id,
+                            'Data': date_obj.strftime('%Y-%m-%d %H:%M:%S') if date_obj else '',
+                            'Descrição': final_description,
+                            'Valor (DE)': existing_amount,
+                            'Valor (PARA)': float(amount_decimal),
+                            'Tag (DE)': existing_subtag_ctx.get('tag_name') or '',
+                            'Subtag (DE)': existing_subtag_ctx.get('name') or '',
+                            'Tag (PARA)': new_subtag_ctx.get('tag_name') or '',
+                            'Subtag (PARA)': new_subtag_ctx.get('name') or '',
+                            'Descrição (DE)': existing_description,
+                            'Descrição (PARA)': final_description,
                         })
+
+                        subtag_info = subtag_id_to_info.get(subtag_id, {})
+                        tag_name = subtag_info.get('tag_name', 'N/A')
+                        subtag_name = subtag_info.get('name', 'N/A')
+                        print(f"   🔄 Atualizado: {final_description[:40]:<40} → {tag_name} / {subtag_name}")
+
+                        if enable_tracing and debug_all_records is not None:
+                            debug_all_records.append({
+                                "linha": idx + 2,
+                                "status": "ATUALIZADO",
+                                "date": date_obj.strftime('%Y-%m-%d %H:%M:%S') if hasattr(date_obj, 'strftime') else str(date_obj),
+                                "description": final_description[:50] if final_description else "",
+                                "amount": float(amount_decimal),
+                                "tag": tag_name,
+                                "subtag": subtag_name
+                            })
             # CASO 3: Nenhum match - registro novo
             else:
                 # Novo registro - adiciona para insert
@@ -1224,804 +1201,9 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
         "unmapped": unmapped_count,
         "unmapped_records": unmapped_records[:20],  # Limita a 20 registros
         "skippedRows": skipped_rows,  # Dados completos das linhas ignoradas
+        "updated_records": updated_records,  # DE-PARA das linhas atualizadas
         "errors": errors[:10],
         "conflicts": conflicts,  # Lista de conflitos pendentes
         "conflicts_count": len(conflicts),
         "debug_data": debug_data  # Dados de debug para salvar após resolução
     }
-
-
-async def process_extrato_excel(df: pd.DataFrame, db: Session, tenant_id: int, account_id: int, force_retag: bool = False, user_id: int = None):
-    """
-    Processa arquivo Excel de extrato bancário PROCESSADO.
-
-    Args:
-        df: DataFrame com dados do Excel
-        db: Sessão do banco de dados
-        tenant_id: ID do tenant
-        account_id: ID da conta bancária
-        force_retag: Se True, ignora colunas Tag/Subtag e busca em mapeamentos
-        user_id: ID do usuário (para filtrar mapeamentos)
-
-    Colunas esperadas: Ano, Mês, Data e hora, Categoria, Transação, Descrição, Valor, Tag, Subtag
-    """
-    required_columns = ['Data e hora', 'Descrição', 'Valor']
-
-    # Se force_retag=False, exige coluna Subtag
-    if not force_retag:
-        required_columns.append('Subtag')
-
-    missing = [col for col in required_columns if col not in df.columns]
-    if missing:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Colunas obrigatórias faltando: {', '.join(missing)}"
-        )
-
-    # Usa a função única de insert/update
-    return save_extrato_records(df, db, tenant_id, account_id, force_retag, user_id)
-
-
-async def process_fatura_excel(df: pd.DataFrame, db: Session, tenant_id: int, account_id: int, force_retag: bool = False, user_id: int = None, detect_conflicts: bool = True):
-    """
-    Processa arquivo Excel de fatura de cartão COM OTIMIZAÇÕES DE PERFORMANCE.
-
-    Args:
-        df: DataFrame com dados do Excel
-        db: Sessão do banco de dados
-        tenant_id: ID do tenant
-        account_id: ID da conta bancária (para filtrar subtags)
-        force_retag: Se True, ignora colunas Tag/Subtag e busca em mapeamentos
-        user_id: ID do usuário (para filtrar mapeamentos)
-        detect_conflicts: Se True, detecta conflitos de tag/subtag e valor ao invés de atualizar diretamente
-
-    Colunas: Ano, Mês, Cartão, Titular, Data, Descrição, Descrição Limpa, Valor, Tag, Subtag
-    """
-    import time
-    start_time = time.time()
-
-    required_columns = ['Ano', 'Mês', 'Cartão', 'Data', 'Descrição', 'Descrição Limpa', 'Valor']
-
-    # Se force_retag=False, exige coluna Subtag
-    if not force_retag:
-        required_columns.append('Subtag')
-
-    missing = [col for col in required_columns if col not in df.columns]
-    if missing:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Colunas obrigatórias faltando: {', '.join(missing)}"
-        )
-
-    print(f"🚀 [OTIMIZADO] Processando {len(df)} registros de fatura...")
-
-    created_count = 0
-    skipped_count = 0
-    duplicate_count = 0
-    unmapped_count = 0
-    unmapped_records = []
-    skipped_rows = []
-    errors = []
-    conflicts = []  # Lista de conflitos detectados (tag/subtag ou valor diferente)
-
-    # Inicializa MappingHelper para suportar exact/pattern/regex
-    psycopg2_conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
-    mapping_helper = MappingHelper(db_connection=psycopg2_conn, tenant_id=tenant_id, user_id=user_id, account_id=account_id)
-
-    # ========================================
-    # ETAPA 1: PRÉ-CARREGA CACHES (1 QUERY CADA)
-    # ========================================
-    print(f"📦 [ETAPA 1/5] Carregando caches...")
-
-    # Cache de subtags (nome, tag, tipo -> id)
-    # Cache reverso: {id: {name, tag_name, type}} - para detecção de conflitos
-    # NOTA: Subtag NÃO tem campo 'active' (não usa soft delete)
-    # NOTA: Tag NÃO tem campo 'active' (não usa soft delete)
-    # IMPORTANTE: Filtra por account_id porque cada conta tem suas próprias tags/subtags
-    subtag_cache = {}
-    subtag_id_to_info = {}  # Cache reverso para buscar nomes a partir do ID
-    subtags = db.query(Subtag, Tag).join(Tag).filter(
-        Subtag.tenant_id == tenant_id,
-        Subtag.account_id == account_id
-    ).all()
-
-    for subtag, tag in subtags:
-        key = (subtag.name, tag.name, subtag.type)
-        subtag_cache[key] = subtag.id
-        subtag_id_to_info[subtag.id] = {'name': subtag.name, 'tag_name': tag.name, 'type': subtag.type}
-
-    print(f"   ✅ {len(subtag_cache)} subtags carregadas")
-
-    # Cache de cartões (últimos 4 dígitos -> id, config)
-    card_cache = {}
-
-    # Busca cartões com JOIN para pegar my_contribution_percentage do compartilhamento
-    from app.models.unified_models import ExpenseSharingSetting
-
-    # IMPORTANTE: Busca TODOS os cartões (ativos E inativos) para permitir importação de dados históricos
-    # IMPORTANTE: Filtra por account_id para evitar conflitos entre contas com cartões de mesmo número
-    cards = db.query(
-        Cartao,
-        ExpenseSharingSetting.my_contribution_percentage
-    ).outerjoin(
-        ExpenseSharingSetting,
-        Cartao.expense_sharing_id == ExpenseSharingSetting.id
-    ).filter(
-        Cartao.tenant_id == tenant_id,
-        Cartao.account_id == account_id  # ✅ Filtro por account_id
-        # NÃO filtra por active - permite importar dados de cartões antigos/inativos
-    ).all()
-
-    for card, partner_split_percentage in cards:
-        # Normaliza número do cartão como inteiro (remove zeros à esquerda)
-        # "0323" -> 323, "1234" -> 1234
-        try:
-            card_number_normalized = str(int(card.number))
-        except ValueError:
-            # Se não for número, usa como está
-            card_number_normalized = card.number
-
-        # Determina ownership_percentage baseado no ownership_type
-        if card.ownership_type == 'terceiro':
-            ownership_percentage = Decimal("0.00")
-        elif card.ownership_type == 'compartilhado' and partner_split_percentage is not None:
-            ownership_percentage = partner_split_percentage
-        else:  # proprio ou compartilhado sem parceiro
-            ownership_percentage = Decimal("100.00")
-
-        card_cache[card_number_normalized] = {
-            'id': card.id,
-            'ownership_percentage': ownership_percentage,
-            'expense_sharing_id': card.expense_sharing_id,
-            'account_id': card.account_id
-        }
-
-    print(f"   ✅ {len(card_cache)} cartões carregados")
-
-    # Detecta colunas de compartilhamento (opcionais)
-    has_sharing_cols = 'Conta Parceira' in df.columns
-    has_contribution_col = 'Minha Contribuição (%)' in df.columns
-    if has_sharing_cols:
-        df['Conta Parceira'] = df['Conta Parceira'].fillna('')
-    if has_contribution_col:
-        df['Minha Contribuição (%)'] = df['Minha Contribuição (%)'].fillna('')
-
-    # Cache de expense_sharing_id por nome de parceiro {partner_name: sharing_id}
-    sharing_cache = {}
-
-    # ========================================
-    # ETAPA 2: PRÉ-CARREGA REGISTROS EXISTENTES (1 QUERY)
-    # ========================================
-    print(f"🔍 [ETAPA 2/5] Carregando registros existentes...")
-
-    # Extrai year_months únicos do DataFrame
-    df['year_month_temp'] = df.apply(
-        lambda row: f"{int(row['Ano'])}-{str(int(row['Mês']) if '-' not in str(row['Mês']) else int(str(row['Mês']).split('-')[1])).zfill(2)}",
-        axis=1
-    )
-    year_months = df['year_month_temp'].unique().tolist()
-
-    # Busca todos os registros existentes desses meses (1 query)
-    # NOTA: CreditCardInvoice NÃO tem campo 'active' (não usa soft delete)
-    # IMPORTANTE: Filtra por account_id através do join com Cartao
-    existing_records = db.query(CreditCardInvoice).join(
-        Cartao, CreditCardInvoice.credit_card_id == Cartao.id
-    ).filter(
-        CreditCardInvoice.tenant_id == tenant_id,
-        CreditCardInvoice.year_month.in_(year_months),
-        Cartao.account_id == account_id  # ✅ Filtro por account_id
-    ).all()
-
-    # Cria dict para lookup O(1): (year_month, card_id, description, date, installments, amount) -> ids
-    #
-    # Valor na chave distingue compras distintas com mesma descrição/data (ex: dois "Donna Vertini" R$ 20).
-    # existing_keys / existing_keys_lower: chave completa com parcelas -> lista de IDs
-    # existing_keys_base / existing_keys_base_lower: chave sem parcelas -> lista de IDs
-    existing_keys = {}
-    existing_keys_lower = {}
-    existing_keys_base = {}
-    existing_keys_base_lower = {}
-    existing_records_data = {}
-    for record in existing_records:
-        amount_rounded = round(float(record.amount), 2) if record.amount else 0.0
-
-        key = (
-            record.year_month,
-            record.credit_card_id,
-            record.description,
-            record.date,
-            record.current_installment,
-            record.total_installments,
-            amount_rounded,
-        )
-        key_lower = (
-            record.year_month,
-            record.credit_card_id,
-            record.description.lower() if record.description else '',
-            record.date,
-            record.current_installment,
-            record.total_installments,
-            amount_rounded,
-        )
-        if key not in existing_keys:
-            existing_keys[key] = []
-        existing_keys[key].append(record.id)
-        if key_lower not in existing_keys_lower:
-            existing_keys_lower[key_lower] = []
-        existing_keys_lower[key_lower].append(record.id)
-
-        key_base = (record.year_month, record.credit_card_id, record.description, record.date)
-        key_base_lower = (
-            record.year_month,
-            record.credit_card_id,
-            record.description.lower() if record.description else '',
-            record.date,
-        )
-        if key_base not in existing_keys_base:
-            existing_keys_base[key_base] = []
-        existing_keys_base[key_base].append(record.id)
-        if key_base_lower not in existing_keys_base_lower:
-            existing_keys_base_lower[key_base_lower] = []
-        existing_keys_base_lower[key_base_lower].append(record.id)
-
-        existing_records_data[record.id] = {
-            'subtag_id': record.subtag_id,
-            'amount': amount_rounded,
-            'description': record.description,
-            'date': record.date,
-            'year_month': record.year_month,
-            'current_installment': record.current_installment,
-            'total_installments': record.total_installments,
-        }
-
-    print(f"   ✅ {len(existing_records)} registros existentes carregados")
-
-    # ========================================
-    # ETAPA 3: PROCESSAMENTO VETORIZADO
-    # ========================================
-    print(f"⚙️  [ETAPA 3/5] Processando registros...")
-
-    # Listas para bulk insert/update
-    records_to_insert = []
-    records_to_update = []
-    consumed_ids: set[int] = set()
-
-    # Converte DataFrame para lista de dicts (mais rápido que iterrows)
-    records = df.to_dict('records')
-
-    for idx, row in enumerate(records):
-        try:
-            # Extrai descrição original (para cálculo de data com parcelas)
-            original_desc = str(row['Descrição'])
-
-            # Extrai número da parcela atual e total da descrição original
-            # Padrão: "NETFLIX (3/12)" -> parcela 3 de 12
-            current_installment = None
-            total_installments = None
-            pattern = r'\((\d+)/(\d+)\)'
-            match = re.search(pattern, original_desc)
-            if match:
-                current_installment = int(match.group(1))
-                total_installments = int(match.group(2))
-
-            # Usa descrição limpa como description
-            description = str(row['Descrição Limpa'])
-
-            # Formata year_month
-            year = int(row['Ano'])
-
-            # Extrai mês do formato "2023-04-Abril" ou "04" ou "4"
-            mes_str = str(row['Mês'])
-            if '-' in mes_str:
-                # Formato: "2023-04-Abril" -> pega o meio
-                parts = mes_str.split('-')
-                month = int(parts[1]) if len(parts) >= 2 else int(parts[0])
-            else:
-                # Formato simples: "04" ou "4"
-                month = int(mes_str)
-
-            year_month = f"{year}-{str(month).zfill(2)}"
-
-            # Converte data - suporta 2 formatos:
-            # 1. DD/MM/YYYY (arquivo processado/exportado) - ex: "12/01/2026"
-            # 2. DD Mês (arquivo bruto/original) - ex: "15 Dez"
-            date_str = str(row['Data']).strip()
-            try:
-                # Verifica se é formato DD/MM/YYYY (arquivo processado)
-                if re.match(r'^\d{2}/\d{2}/\d{4}$', date_str):
-                    # Formato: DD/MM/YYYY - parse direto
-                    date = pd.to_datetime(date_str, format='%d/%m/%Y', dayfirst=True)
-                else:
-                    # Formato: DD Mês (ex: "15 Dez") - usa FaturaService
-                    date = FaturaService.converter_data(
-                        data_str=date_str,
-                        ano_fatura=str(year),
-                        mes_fatura=str(month),
-                        descricao=original_desc
-                    )
-
-                # IMPORTANTE: Converte pd.Timestamp para datetime nativo do Python
-                # pd.Timestamp e datetime têm hashes diferentes, causando falha no lookup do dict
-                if isinstance(date, pd.Timestamp):
-                    date = date.to_pydatetime()
-            except Exception as e:
-                error_msg = f"Linha {idx + 2}: Data inválida '{date_str}' - {str(e)}"
-                errors.append(error_msg)
-                skipped_count += 1
-                logger.warning(f"⚠️ {error_msg}")
-                # Adiciona dados completos da linha ignorada
-                row_dict = {
-                    "Linha": idx + 2,
-                    "Erro": error_msg
-                }
-                # Adiciona todas as colunas originais (convertendo valores pandas para tipos Python nativos)
-                for k, v in row.items():
-                    if pd.isna(v):
-                        row_dict[k] = None
-                    elif isinstance(v, (pd.Timestamp, datetime)):
-                        row_dict[k] = v.strftime('%Y-%m-%d %H:%M:%S') if hasattr(v, 'strftime') else str(v)
-                    elif isinstance(v, (int, float, str, bool)):
-                        row_dict[k] = v
-                    else:
-                        row_dict[k] = str(v)
-                skipped_rows.append(row_dict)
-                logger.info(f"   📝 Linha adicionada a skipped_rows (total: {len(skipped_rows)})")
-                continue
-
-            # Extrai últimos 4 dígitos do cartão e normaliza como inteiro
-            card_str = str(row['Cartão'])
-            card_number_raw = card_str[-4:] if len(card_str) >= 4 else card_str
-
-            # Normaliza número do cartão como inteiro (remove zeros à esquerda)
-            # "0323" -> "323", "1234" -> "1234"
-            try:
-                card_number = str(int(card_number_raw))
-            except ValueError:
-                # Se não for número, usa como está
-                card_number = card_number_raw
-
-            amount = float(row['Valor'])
-
-            # Determina tipo baseado no valor (faturas: positivo=despesa, negativo=receita)
-            tipo = "despesa" if amount >= 0 else "receita"
-
-            # Busca subtag_id e mapped_description usando MappingHelper (suporta exact/pattern/regex)
-            subtag_id = None
-            mapped_description = None
-            is_sensitive = False
-            mapping_result = None  # Inicializa para evitar erro de variável não definida
-
-            if force_retag:
-                # MODO RE-TAGEAMENTO: Busca APENAS em mapeamentos
-                # Usa MappingHelper para suportar exact, pattern e regex
-                mapping_result = mapping_helper.find_mapping(description, tipo)
-                if mapping_result:
-                    subtag_id = mapping_result.get('subtag_id')
-                    mapped_description = mapping_result.get('mapped_description')
-                    is_sensitive = mapping_result.get('is_sensitive', False)
-            else:
-                # MODO NORMAL: Prioridade 1 - Subtag do Excel (respeita o arquivo)
-                subtag_name = str(row.get('Subtag', '')) if row.get('Subtag') else None
-                tag_name = str(row.get('Tag', '')) if row.get('Tag') else None
-
-                if subtag_name:
-                    if tag_name:
-                        # Busca com tag específica
-                        subtag_id = subtag_cache.get((subtag_name, tag_name, tipo))
-                    else:
-                        # Busca sem tag (primeira ocorrência do tipo correto)
-                        for (s_name, s_tag, s_type), s_id in subtag_cache.items():
-                            if s_name == subtag_name and s_type == tipo:
-                                subtag_id = s_id
-                                break
-
-                # Prioridade 2: Mapeamentos (fallback se Excel não tiver subtag)
-                # Também busca mapped_description para substituição de descrição
-                mapping_result = mapping_helper.find_mapping(description, tipo)
-                if mapping_result:
-                    # Só usa subtag do mapeamento se não veio do Excel
-                    if not subtag_id:
-                        subtag_id = mapping_result.get('subtag_id')
-                    # Sempre aplica mapped_description se existir (para ofuscação de dados sensíveis)
-                    mapped_description = mapping_result.get('mapped_description')
-                    is_sensitive = mapping_result.get('is_sensitive', False)
-
-            # Aplica substituição de descrição se houver mapeamento
-            final_description = description
-            if mapped_description is not None:
-                # Se for sensível, descriptografa
-                if is_sensitive:
-                    from app.utils.crypto_helper import get_crypto_helper
-                    crypto = get_crypto_helper()
-                    try:
-                        final_description = crypto.decrypt(mapped_description)
-                        print(f"   🔓 Descriptografado: '{description}' → '{final_description}'")
-                    except Exception as e:
-                        print(f"   ⚠️  Erro ao descriptografar: {e}")
-                        final_description = description
-                else:
-                    final_description = mapped_description
-
-            # IMPORTANTE: Para faturas, invertemos o sinal do valor APÓS determinar o tipo
-            # Excel: positivo = despesa, negativo = receita (cancelamento)
-            # Banco: negativo = despesa, positivo = receita
-            amount_invertido = -amount
-            amount_invertido_decimal = Decimal(str(amount_invertido))
-            amount_rounded = round(float(amount_invertido_decimal), 2)
-
-            # Busca cartão no CACHE (sem query!)
-            card_config = card_cache.get(card_number)
-
-            if not card_config:
-                error_msg = f"Linha {idx + 2}: Cartão não encontrado: {card_number}"
-                errors.append(error_msg)
-                skipped_count += 1
-                # Adiciona dados completos da linha ignorada
-                row_dict = {
-                    "Linha": idx + 2,
-                    "Erro": error_msg
-                }
-                for k, v in row.items():
-                    if pd.isna(v):
-                        row_dict[k] = None
-                    elif isinstance(v, (pd.Timestamp, datetime)):
-                        row_dict[k] = v.strftime('%Y-%m-%d %H:%M:%S') if hasattr(v, 'strftime') else str(v)
-                    elif isinstance(v, (int, float, str, bool)):
-                        row_dict[k] = v
-                    else:
-                        row_dict[k] = str(v)
-                skipped_rows.append(row_dict)
-                continue
-
-            card_id = card_config['id']
-
-            # Verifica se já existe usando CACHE (lookup O(1))
-            # ESTRATÉGIA DE BUSCA PARA MÚLTIPLOS MATCHES:
-            # 1. Primeiro tenta match EXATO (com parcelas) - único resultado
-            # 2. Se não encontrar, busca por chave BASE (sem parcelas) - pode ter múltiplos
-            # 3. Se múltiplos, tenta match por valor; se não, deixa usuário escolher
-
-            # Chaves com parcelas e valor (match exato)
-            key_mapped = (
-                year_month, card_id, final_description, date, current_installment, total_installments, amount_rounded,
-            )
-            key_original = (
-                year_month, card_id, description, date, current_installment, total_installments, amount_rounded,
-            )
-            key_mapped_lower = (
-                year_month, card_id, final_description.lower() if final_description else '', date,
-                current_installment, total_installments, amount_rounded,
-            )
-            key_original_lower = (
-                year_month, card_id, description.lower() if description else '', date,
-                current_installment, total_installments, amount_rounded,
-            )
-
-            # Chaves base (sem parcelas) - para múltiplos matches
-            key_base_mapped = (year_month, card_id, final_description, date)
-            key_base_original = (year_month, card_id, description, date)
-            key_base_mapped_lower = (year_month, card_id, final_description.lower() if final_description else '', date)
-            key_base_original_lower = (year_month, card_id, description.lower() if description else '', date)
-
-            def first_available_id(id_lists: list[list[int]]) -> int | None:
-                for ids in id_lists:
-                    for eid in ids:
-                        if eid not in consumed_ids:
-                            return eid
-                return None
-
-            # 1. Tenta match exato (com parcelas e valor)
-            existing_id = first_available_id([
-                existing_keys.get(key_mapped, []),
-                existing_keys.get(key_original, []) if final_description != description else [],
-                existing_keys_lower.get(key_mapped_lower, []),
-                existing_keys_lower.get(key_original_lower, [])
-                if final_description.lower() != description.lower()
-                else [],
-            ])
-
-            # 2. Se não encontrou match exato, busca por chave base (pode ter múltiplos)
-            existing_ids = []
-            multiple_matches = None
-            if not existing_id:
-                for ids in [
-                    existing_keys_base.get(key_base_mapped, []),
-                    existing_keys_base.get(key_base_original, []) if final_description != description else [],
-                    existing_keys_base_lower.get(key_base_mapped_lower, []),
-                    existing_keys_base_lower.get(key_base_original_lower, [])
-                    if final_description.lower() != description.lower()
-                    else [],
-                ]:
-                    for eid in ids:
-                        if eid not in consumed_ids and eid not in existing_ids:
-                            existing_ids.append(eid)
-
-                # Resolve múltiplos matches
-                if len(existing_ids) == 1:
-                    existing_id = existing_ids[0]
-                elif len(existing_ids) > 1:
-                    # Múltiplos matches - tenta match por valor
-                    file_amount = float(amount_invertido_decimal)
-                    matched_by_amount = None
-
-                    logger.info(f"🔄 [FATURA MÚLTIPLOS] {len(existing_ids)} registros para '{final_description[:40]}...'")
-                    logger.info(f"   Valor do arquivo: {file_amount}")
-
-                    for eid in existing_ids:
-                        edata = existing_records_data.get(eid, {})
-                        existing_amount = edata.get('amount', 0.0)
-                        diff = abs(existing_amount - file_amount)
-                        logger.info(f"   #{eid}: amount={existing_amount}, diff={diff:.4f}")
-                        if diff < 0.005:  # Tolerância para float
-                            matched_by_amount = eid
-                            logger.info(f"   ✅ Match por valor encontrado: #{eid}")
-                            break
-
-                    if matched_by_amount:
-                        existing_id = matched_by_amount
-                    else:
-                        # Nenhum match por valor - prepara lista para seleção do usuário
-                        logger.info(f"   ⚠️ Nenhum match por valor - criando multiple_matches")
-                        multiple_matches = []
-                        for eid in existing_ids:
-                            edata = existing_records_data.get(eid, {})
-                            subtag_info = subtag_id_to_info.get(edata.get('subtag_id'), {})
-                            multiple_matches.append({
-                                'id': eid,
-                                'amount': edata.get('amount', 0.0),
-                                'subtag_id': edata.get('subtag_id'),
-                                'subtag_name': subtag_info.get('name'),
-                                'tag_name': subtag_info.get('tag_name'),
-                                'current_installment': edata.get('current_installment'),
-                                'total_installments': edata.get('total_installments')
-                            })
-
-            # ========================================
-            # PROCESSAMENTO DE COMPARTILHAMENTO (antes de INSERT/UPDATE)
-            # PRIORIDADE: 1) Arquivo Excel → 2) Mapeamento → 3) Cartão
-            # ========================================
-            expense_sharing_id = card_config['expense_sharing_id']
-            ownership_percentage = card_config['ownership_percentage']
-
-            # PRIORIDADE 2: Mapeamento (se tiver expense_sharing_id definido)
-            # Sobrescreve configuração do cartão
-            if mapping_result and mapping_result.get('expense_sharing_id') is not None:
-                expense_sharing_id = mapping_result['expense_sharing_id']
-                if mapping_result.get('my_contribution_percentage') is not None:
-                    ownership_percentage = Decimal(str(mapping_result['my_contribution_percentage']))
-
-            # PRIORIDADE 1: Arquivo Excel (se houver colunas de compartilhamento)
-            # Sobrescreve configuração do mapeamento/cartão
-            if has_sharing_cols:
-                partner_name = str(row.get('Conta Parceira', '')).strip()
-                if partner_name:
-                    # Busca no cache ou faz lookup
-                    if partner_name not in sharing_cache:
-                        sharing_cache[partner_name] = lookup_expense_sharing_by_partner_name(
-                            db, tenant_id, account_id, partner_name
-                        )
-                    excel_sharing_id = sharing_cache[partner_name]
-                    if excel_sharing_id:
-                        expense_sharing_id = excel_sharing_id
-                        # Se encontrou compartilhamento, usa contribuição do Excel se disponível
-                        if has_contribution_col:
-                            contrib_val = row.get('Minha Contribuição (%)', '')
-                            if contrib_val != '' and contrib_val is not None:
-                                try:
-                                    ownership_percentage = Decimal(str(contrib_val))
-                                except:
-                                    pass  # Mantém valor anterior se inválido
-                elif partner_name == '':
-                    # Coluna existe mas está vazia = sem compartilhamento
-                    expense_sharing_id = None
-                    ownership_percentage = Decimal("100.00")
-
-            # CASO 1: Múltiplos matches - usuário precisa selecionar qual atualizar
-            if multiple_matches and detect_conflicts:
-                conflict_record = {
-                    'existing_id': None,  # Será definido pelo usuário
-                    'record_type': 'credit_card_invoice',
-                    'date': date.strftime('%Y-%m-%d %H:%M:%S') if date else '',
-                    'year_month': year_month,
-                    'description': final_description,
-                    'card_number': card_number,
-                    'new_subtag_id': subtag_id,
-                    'new_amount': float(amount_invertido_decimal),
-                    'new_current_installment': current_installment,
-                    'new_total_installments': total_installments,
-                    'new_expense_sharing_id': expense_sharing_id,
-                    'new_ownership_percentage': float(ownership_percentage),
-                    'new_description': final_description if final_description != description else None,
-                    'multiple_matches': multiple_matches
-                }
-                conflicts.append(conflict_record)
-            # CASO 2: Único match encontrado
-            elif existing_id:
-                # Registro duplicado - verifica se há conflitos antes de atualizar
-                existing_data = existing_records_data.get(existing_id, {})
-                existing_subtag_id = existing_data.get('subtag_id')
-                existing_amount = existing_data.get('amount', 0.0)
-
-                # Detecta conflitos de tag/subtag e valor
-                has_tag_conflict = (
-                    detect_conflicts and
-                    existing_subtag_id is not None and
-                    subtag_id is not None and
-                    existing_subtag_id != subtag_id
-                )
-                has_amount_conflict = (
-                    detect_conflicts and
-                    abs(existing_amount - float(amount_invertido_decimal)) >= 0.005  # Tolerância para erros de float
-                )
-
-                if has_tag_conflict or has_amount_conflict:
-                    # Há conflito - adiciona à lista de conflitos ao invés de atualizar
-                    conflict_record = {
-                        'existing_id': existing_id,
-                        'record_type': 'credit_card_invoice',
-                        'date': date.strftime('%Y-%m-%d %H:%M:%S') if date else '',
-                        'year_month': year_month,
-                        'description': final_description,
-                        'card_number': card_number,
-                        'new_subtag_id': subtag_id,
-                        'new_amount': float(amount_invertido_decimal),
-                        'new_current_installment': current_installment,
-                        'new_total_installments': total_installments,
-                        'new_expense_sharing_id': expense_sharing_id,
-                        'new_ownership_percentage': float(ownership_percentage),
-                        'new_description': final_description if final_description != description else None
-                    }
-
-                    if has_tag_conflict:
-                        # Busca nomes das tags para exibição
-                        existing_subtag = subtag_id_to_info.get(existing_subtag_id, {})
-                        new_subtag = subtag_id_to_info.get(subtag_id, {})
-                        conflict_record['tag_conflict'] = {
-                            'original_subtag_id': existing_subtag_id,
-                            'original_subtag_name': existing_subtag.get('name'),
-                            'original_tag_name': existing_subtag.get('tag_name'),
-                            'new_subtag_id': subtag_id,
-                            'new_subtag_name': new_subtag.get('name'),
-                            'new_tag_name': new_subtag.get('tag_name')
-                        }
-
-                    if has_amount_conflict:
-                        conflict_record['amount_conflict'] = {
-                            'original_amount': existing_amount,
-                            'new_amount': float(amount_invertido_decimal)
-                        }
-
-                    conflicts.append(conflict_record)
-                    issuer = FaturaService.issuer_from_row(row)
-                    if issuer:
-                        records_to_update.append({
-                            'id': existing_id,
-                            'issuer': issuer,
-                        })
-                    # Tag/valor esperam resolução; emissor pode ser atualizado agora
-                else:
-                    # Sem conflito - atualiza normalmente
-                    update_record = {
-                        'id': existing_id,
-                        'subtag_id': subtag_id,
-                        'current_installment': current_installment,
-                        'total_installments': total_installments,
-                        'amount': amount_invertido_decimal,
-                        'expense_sharing_id': expense_sharing_id,
-                        'ownership_percentage': ownership_percentage
-                    }
-                    issuer = FaturaService.issuer_from_row(row)
-                    if issuer:
-                        update_record['issuer'] = issuer
-                    if final_description != description:
-                        update_record['description'] = final_description
-                    records_to_update.append(update_record)
-                    duplicate_count += 1
-                    consumed_ids.add(existing_id)
-
-                    # LOG: Mostra tag/subtag para atualizações
-                    subtag_info = subtag_id_to_info.get(subtag_id, {})
-                    tag_name = subtag_info.get('tag_name', 'N/A')
-                    subtag_name = subtag_info.get('name', 'N/A')
-                    print(f"   🔄 Atualizado: {final_description[:40]:<40} → {tag_name} / {subtag_name}")
-            else:
-                # Novo registro - adiciona para insert
-                # IMPORTANTE: Salva final_description (mapeada/descriptografada)
-                records_to_insert.append({
-                    'tenant_id': tenant_id,
-                    'credit_card_id': card_id,
-                    'year_month': year_month,
-                    'date': date,
-                    'description': final_description,
-                    'amount': amount_invertido_decimal,
-                    'current_installment': current_installment,
-                    'total_installments': total_installments,
-                    'subtag_id': subtag_id,
-                    'expense_sharing_id': expense_sharing_id,
-                    'account_id': card_config['account_id'],
-                    'ownership_percentage': ownership_percentage,
-                    'issuer': FaturaService.issuer_from_row(row) or 'btg',
-                    'created_by': user_id  # ✅ Campo obrigatório do BaseEntity
-                })
-                created_count += 1
-
-            # Rastreia se não foi mapeado (subtag_id é None)
-            if subtag_id is None:
-                unmapped_count += 1
-                unmapped_records.append({
-                    "linha": idx + 2,
-                    "data": date.strftime('%Y-%m-%d %H:%M:%S'),  # Formato ISO consistente
-                    "descricao": description,
-                    "valor": amount,
-                    "cartao": card_number
-                })
-
-        except Exception as e:
-            import traceback
-            error_msg = f"Linha {idx + 2}: {str(e)}"
-            errors.append(error_msg)
-            logger.error(f"❌ ERRO FATURA: {error_msg}")
-            logger.debug(f"   Traceback: {traceback.format_exc()}")
-            skipped_count += 1
-            # Adiciona dados completos da linha ignorada
-            row_dict = {
-                "Linha": idx + 2,
-                "Erro": error_msg
-            }
-            # Adiciona todas as colunas originais (convertendo valores pandas para tipos Python nativos)
-            for k, v in row.items():
-                if pd.isna(v):
-                    row_dict[k] = None
-                elif isinstance(v, (pd.Timestamp, datetime)):
-                    row_dict[k] = v.strftime('%Y-%m-%d %H:%M:%S') if hasattr(v, 'strftime') else str(v)
-                elif isinstance(v, (int, float, str, bool)):
-                    row_dict[k] = v
-                else:
-                    row_dict[k] = str(v)
-            skipped_rows.append(row_dict)
-            continue
-
-    # ========================================
-    # ETAPA 4: BULK INSERT/UPDATE (2 OPERAÇÕES)
-    # ========================================
-    print(f"💾 [ETAPA 4/5] Salvando no banco...")
-    print(f"   📝 {len(records_to_insert)} novos registros")
-    print(f"   🔄 {len(records_to_update)} atualizações")
-    if len(conflicts) > 0:
-        print(f"   ⚠️  {len(conflicts)} conflitos detectados (aguardando resolução)")
-
-    if records_to_insert:
-        db.bulk_insert_mappings(CreditCardInvoice, records_to_insert)
-
-    if records_to_update:
-        db.bulk_update_mappings(CreditCardInvoice, records_to_update)
-
-    db.commit()
-
-    # Fecha conexão psycopg2
-    psycopg2_conn.close()
-
-    elapsed = time.time() - start_time
-    records_per_sec = len(df) / elapsed if elapsed > 0 else 0
-    print(f"✅ [OTIMIZADO] Concluído em {elapsed:.2f}s ({records_per_sec:.0f} registros/s)")
-    print(f"   📊 Criados: {created_count} | Duplicados: {duplicate_count} | Conflitos: {len(conflicts)} | Não mapeados: {unmapped_count} | Erros: {skipped_count}")
-
-    # Log para debug
-    if skipped_count > 0:
-        logger.info(f"📋 FATURA: {skipped_count} registros ignorados, {len(skipped_rows)} linhas com dados completos")
-        if len(skipped_rows) > 0:
-            logger.info(f"   Primeira linha ignorada: {skipped_rows[0]}")
-
-    return {
-        "success": True,
-        "created": created_count,
-        "skipped": skipped_count,
-        "duplicates": duplicate_count,
-        "unmapped": unmapped_count,
-        "unmapped_records": unmapped_records[:50],
-        "skippedRows": skipped_rows,
-        "errors": errors[:10],
-        "conflicts": conflicts,  # Lista de conflitos pendentes
-        "conflicts_count": len(conflicts)
-    }
-

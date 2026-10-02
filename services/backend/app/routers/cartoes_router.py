@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from typing import List
 from pydantic import BaseModel, Field
 from app.database import get_db
-from app.models.unified_models import Cartao, CreditCardInvoiceGroup
+from app.models.unified_models import Cartao, CreditCardInvoiceGroup, ExpenseSharingSetting
 from app.dependencies.auth import get_current_user, require_account
 from app.services import invoice_payment_match_service as match_service
 
@@ -43,6 +43,7 @@ class ExpenseSharingInfo(BaseModel):
     account_id: int
     shared_account_id: int
     my_contribution_percentage: float = Field(serialization_alias="my_contribution_percentage")
+    revenue_contribution_percentage: float | None = None
     description: str | None = None
     active: bool
     shared_account: SharedAccountInfo | None = None
@@ -57,8 +58,9 @@ class CartaoCreate(BaseModel):
     type: str = 'credito'  # 'credito', 'beneficios'
     account_id: int | None = None
     expense_sharing_id: int | None = None
-    closing_day: int = Field(default=14, ge=1, le=30)
-    is_account_card: bool | None = None
+    expense_ownership_percentage: float | None = None
+    revenue_ownership_percentage: float | None = None
+    due_day: int = Field(default=14, ge=1, le=30)
     invoice_group_id: int | None = None
     active: bool = True
 
@@ -70,9 +72,10 @@ class CartaoUpdate(BaseModel):
     type: str | None = None
     account_id: int | None = None
     expense_sharing_id: int | None = None
+    expense_ownership_percentage: float | None = None
+    revenue_ownership_percentage: float | None = None
     active: bool | None = None
-    closing_day: int | None = Field(default=None, ge=1, le=30)
-    is_account_card: bool | None = None
+    due_day: int | None = Field(default=None, ge=1, le=30)
     invoice_group_id: int | None = None
     update_existing_records: bool = False  # Flag para atualizar registros existentes
 
@@ -87,10 +90,11 @@ class CartaoResponse(BaseModel):
     account_name: str | None = None
     ownership_type: str  # Calculado automaticamente pela @property do modelo
     expense_sharing_id: int | None
+    expense_ownership_percentage: float | None = None
+    revenue_ownership_percentage: float | None = None
     expense_sharing: ExpenseSharingInfo | None = None
     active: bool
-    closing_day: int
-    is_account_card: bool | None = None
+    due_day: int
     invoice_group_id: int | None = None
     invoice_group_name: str | None = None
 
@@ -100,11 +104,13 @@ class CartaoResponse(BaseModel):
 
 class InvoiceGroupCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
+    due_day: int = Field(default=14, ge=1, le=30)
     card_ids: List[int] = []
 
 
 class InvoiceGroupUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
+    due_day: int | None = Field(default=None, ge=1, le=30)
     active: bool | None = None
     card_ids: List[int] | None = None
 
@@ -114,10 +120,46 @@ class InvoiceGroupResponse(BaseModel):
     name: str
     account_id: int
     active: bool
+    due_day: int
     card_count: int = 0
 
     class Config:
         from_attributes = True
+
+
+def _normalize_card_participation(payload: dict, db: Session, tenant_id: int) -> dict:
+    """Valida participação: compartilhado exige sharing; senão 100% ou 0% (gerenciado)."""
+    sharing_id = payload.get("expense_sharing_id")
+    if sharing_id:
+        sharing = db.query(ExpenseSharingSetting).filter(
+            ExpenseSharingSetting.id == sharing_id,
+            ExpenseSharingSetting.tenant_id == tenant_id,
+        ).first()
+        if not sharing:
+            raise HTTPException(status_code=404, detail="Compartilhamento não encontrado")
+        for key in ("expense_ownership_percentage", "revenue_ownership_percentage"):
+            val = payload.get(key)
+            if val is not None and (val < 0 or val > 100):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{key} deve estar entre 0 e 100",
+                )
+        return payload
+
+    payload["expense_sharing_id"] = None
+    expense_pct = payload.get("expense_ownership_percentage")
+    revenue_pct = payload.get("revenue_ownership_percentage")
+    if expense_pct is not None and float(expense_pct) == 0:
+        payload["expense_ownership_percentage"] = 0
+        payload["revenue_ownership_percentage"] = (
+            0 if revenue_pct is None else revenue_pct
+        )
+    else:
+        if expense_pct is None:
+            payload["expense_ownership_percentage"] = 100
+        if revenue_pct is None:
+            payload["revenue_ownership_percentage"] = 100
+    return payload
 
 
 def _current_user_id(current_user: dict) -> int:
@@ -138,10 +180,11 @@ def _serialize_cartao(cartao: Cartao) -> dict:
         "account_name": None,
         "ownership_type": cartao.ownership_type,
         "expense_sharing_id": cartao.expense_sharing_id,
+        "expense_ownership_percentage": float(cartao.expense_ownership_percentage) if cartao.expense_ownership_percentage is not None else None,
+        "revenue_ownership_percentage": float(cartao.revenue_ownership_percentage) if cartao.revenue_ownership_percentage is not None else None,
         "expense_sharing": None,
         "active": cartao.active,
-        "closing_day": cartao.closing_day,
-        "is_account_card": cartao.is_account_card,
+        "due_day": cartao.due_day,
         "invoice_group_id": cartao.invoice_group_id,
         "invoice_group_name": cartao.invoice_group.name if getattr(cartao, "invoice_group", None) else None,
     }
@@ -188,8 +231,49 @@ def _serialize_invoice_group(group: CreditCardInvoiceGroup) -> dict:
         "name": group.name,
         "account_id": group.account_id,
         "active": group.active,
+        "due_day": int(group.due_day or 14),
         "card_count": len([c for c in cards if c.type == "credito"]),
     }
+
+
+def _load_invoice_group(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    invoice_group_id: int,
+) -> CreditCardInvoiceGroup:
+    group = db.query(CreditCardInvoiceGroup).filter(
+        CreditCardInvoiceGroup.id == invoice_group_id,
+        CreditCardInvoiceGroup.tenant_id == tenant_id,
+        CreditCardInvoiceGroup.account_id == account_id,
+        CreditCardInvoiceGroup.active == True,
+    ).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="Grupo de fatura não encontrado")
+    return group
+
+
+def _resolve_card_due_day(
+    db: Session,
+    tenant_id: int,
+    account_id: int | None,
+    card_type: str | None,
+    invoice_group_id: int | None,
+    requested_due_day: int | None,
+) -> int:
+    if card_type == "beneficios" or not invoice_group_id:
+        return int(requested_due_day or 14)
+    if account_id is None:
+        raise HTTPException(status_code=400, detail="Selecione uma conta para vincular o cartão a um grupo de fatura")
+    group = _load_invoice_group(db, tenant_id, account_id, invoice_group_id)
+    return int(group.due_day or 14)
+
+
+def _sync_group_members_due_day(group: CreditCardInvoiceGroup) -> None:
+    due = int(group.due_day or 14)
+    for card in group.credit_cards or []:
+        if card.type == "credito":
+            card.due_day = due
 
 
 def _reload_invoice_group(db: Session, group_id: int, tenant_id: int, account_id: int) -> CreditCardInvoiceGroup:
@@ -209,9 +293,10 @@ def _set_group_cards(
     db: Session,
     tenant_id: int,
     account_id: int,
-    group_id: int,
+    group: CreditCardInvoiceGroup,
     card_ids: List[int],
 ) -> None:
+    group_id = group.id
     unique_ids = list(dict.fromkeys(card_ids))
     if len(unique_ids) < 2:
         raise HTTPException(status_code=400, detail="Selecione pelo menos dois cartões de crédito")
@@ -232,8 +317,10 @@ def _set_group_cards(
         ~Cartao.id.in_(unique_ids),
     ).update({Cartao.invoice_group_id: None}, synchronize_session=False)
 
+    group_due = int(group.due_day or 14)
     for card in cards:
         card.invoice_group_id = group_id
+        card.due_day = group_due
 
 
 @router.get("/", response_model=List[CartaoResponse])
@@ -282,10 +369,11 @@ async def listar_cartoes(
             "account_name": None,
             "ownership_type": cartao.ownership_type,
             "expense_sharing_id": cartao.expense_sharing_id,
+            "expense_ownership_percentage": float(cartao.expense_ownership_percentage) if cartao.expense_ownership_percentage is not None else None,
+            "revenue_ownership_percentage": float(cartao.revenue_ownership_percentage) if cartao.revenue_ownership_percentage is not None else None,
             "expense_sharing": None,
             "active": cartao.active,
-            "closing_day": cartao.closing_day,
-            "is_account_card": cartao.is_account_card,
+            "due_day": cartao.due_day,
             "invoice_group_id": cartao.invoice_group_id,
             "invoice_group_name": cartao.invoice_group.name if cartao.invoice_group else None,
         }
@@ -316,6 +404,7 @@ async def listar_cartoes(
                     "account_id": cartao.expense_sharing.account_id,
                     "shared_account_id": cartao.expense_sharing.shared_account_id,
                     "my_contribution_percentage": float(cartao.expense_sharing.my_contribution_percentage) if cartao.expense_sharing.my_contribution_percentage else 0.0,
+                    "revenue_contribution_percentage": float(cartao.expense_sharing.revenue_contribution_percentage) if cartao.expense_sharing.revenue_contribution_percentage is not None else None,
                     "description": cartao.expense_sharing.description,
                     "active": cartao.expense_sharing.active,
                     "shared_account": None
@@ -414,7 +503,6 @@ async def listar_cartoes_agrupados(
                         "ownership_type": c.ownership_type,
                         "active": c.active,
                         "account_id": c.account_id,
-                        "is_account_card": c.is_account_card,
                         "invoice_group_id": c.invoice_group_id,
                     }
                     for c in cartoes
@@ -467,8 +555,9 @@ async def criar_grupo_fatura(
         if existing.active:
             raise HTTPException(status_code=400, detail="Já existe um grupo com este nome")
         existing.active = True
+        existing.due_day = payload.due_day
         try:
-            _set_group_cards(db, tenant_id, account_id, existing.id, payload.card_ids)
+            _set_group_cards(db, tenant_id, account_id, existing, payload.card_ids)
             db.commit()
         except HTTPException:
             db.rollback()
@@ -481,11 +570,12 @@ async def criar_grupo_fatura(
         tenant_id=tenant_id,
         created_by=user_id,
         active=True,
+        due_day=payload.due_day,
     )
     db.add(group)
     try:
         db.flush()
-        _set_group_cards(db, tenant_id, account_id, group.id, payload.card_ids)
+        _set_group_cards(db, tenant_id, account_id, group, payload.card_ids)
         db.commit()
     except HTTPException:
         db.rollback()
@@ -523,9 +613,12 @@ async def atualizar_grupo_fatura(
         group.name = name
     if "active" in data and data["active"] is not None:
         group.active = data["active"]
+    if "due_day" in data and data["due_day"] is not None:
+        group.due_day = int(data["due_day"])
+        _sync_group_members_due_day(group)
     if "card_ids" in data and data["card_ids"] is not None:
         try:
-            _set_group_cards(db, tenant_id, account_id, group.id, data["card_ids"])
+            _set_group_cards(db, tenant_id, account_id, group, data["card_ids"])
             db.commit()
         except HTTPException:
             db.rollback()
@@ -612,6 +705,15 @@ async def criar_cartao(
     payload["invoice_group_id"] = _validate_invoice_group(
         db, tenant_id, payload.get("account_id"), payload.get("invoice_group_id"), payload.get("type"),
     )
+    payload["due_day"] = _resolve_card_due_day(
+        db,
+        tenant_id,
+        payload.get("account_id"),
+        payload.get("type"),
+        payload.get("invoice_group_id"),
+        payload.get("due_day"),
+    )
+    _normalize_card_participation(payload, db, tenant_id)
 
     # Verifica se já existe um cartão com o mesmo name e número
     cartao_existente = db.query(Cartao).filter(
@@ -627,10 +729,11 @@ async def criar_cartao(
             cartao_existente.active = True
             cartao_existente.description = payload.get("description")
             cartao_existente.type = payload.get("type") or cartao_existente.type
-            cartao_existente.closing_day = payload.get("closing_day") or cartao_existente.closing_day
-            cartao_existente.expense_sharing_id = payload.get("expense_sharing_id")
-            cartao_existente.is_account_card = payload.get("is_account_card")
             cartao_existente.invoice_group_id = payload.get("invoice_group_id")
+            cartao_existente.due_day = payload.get("due_day") or cartao_existente.due_day
+            cartao_existente.expense_sharing_id = payload.get("expense_sharing_id")
+            cartao_existente.expense_ownership_percentage = payload.get("expense_ownership_percentage")
+            cartao_existente.revenue_ownership_percentage = payload.get("revenue_ownership_percentage")
             if payload.get("account_id"):
                 cartao_existente.account_id = payload["account_id"]
             try:
@@ -689,6 +792,28 @@ async def atualizar_cartao(
     # Remove o flag update_existing_records do update_data (não é campo do modelo)
     update_existing_records = update_data.pop('update_existing_records', False)
 
+    if any(
+        k in update_data
+        for k in (
+            "expense_sharing_id",
+            "expense_ownership_percentage",
+            "revenue_ownership_percentage",
+        )
+    ):
+        merged = {
+            "expense_sharing_id": update_data.get(
+                "expense_sharing_id", cartao.expense_sharing_id
+            ),
+            "expense_ownership_percentage": update_data.get(
+                "expense_ownership_percentage", cartao.expense_ownership_percentage
+            ),
+            "revenue_ownership_percentage": update_data.get(
+                "revenue_ownership_percentage", cartao.revenue_ownership_percentage
+            ),
+        }
+        _normalize_card_participation(merged, db, tenant_id)
+        update_data.update(merged)
+
     if 'type' in update_data:
         if update_data['type'] not in ['credito', 'beneficios']:
             raise HTTPException(status_code=400, detail="type deve ser 'credito' ou 'beneficios'")
@@ -699,6 +824,19 @@ async def atualizar_cartao(
         update_data['invoice_group_id'] = _validate_invoice_group(
             db, tenant_id, cartao.account_id, group_id, card_type,
         )
+
+    final_group_id = update_data.get('invoice_group_id', cartao.invoice_group_id)
+    if card_type == 'credito' and final_group_id:
+        update_data['due_day'] = _resolve_card_due_day(
+            db,
+            tenant_id,
+            cartao.account_id,
+            card_type,
+            final_group_id,
+            update_data.get('due_day', cartao.due_day),
+        )
+    elif cartao.invoice_group_id and card_type == 'credito' and 'due_day' in update_data:
+        update_data.pop('due_day', None)
 
     # Verifica se já existe outro cartão com o mesmo name e número
     if 'name' in update_data and 'number' in update_data:
@@ -712,58 +850,80 @@ async def atualizar_cartao(
         if cartao_duplicado:
             raise HTTPException(status_code=400, detail="Já existe um cartão com este nome e número")
 
-    # Se update_existing_records=True e expense_sharing_id mudou, atualiza registros existentes
-    if update_existing_records and 'expense_sharing_id' in update_data:
-        new_expense_sharing_id = update_data['expense_sharing_id']
+    sharing_fields_changed = any(
+        field in update_data
+        for field in ('expense_sharing_id', 'expense_ownership_percentage', 'revenue_ownership_percentage')
+    )
+    if update_existing_records and sharing_fields_changed:
+        from app.utils.sharing_percentage import resolve_ownership_percentage
 
-        # Busca os dados do novo compartilhamento (se houver)
+        new_expense_sharing_id = update_data.get('expense_sharing_id', cartao.expense_sharing_id)
+        expense_sharing = None
         if new_expense_sharing_id:
             expense_sharing = db.query(ExpenseSharingSetting).filter(
                 ExpenseSharingSetting.id == new_expense_sharing_id,
                 ExpenseSharingSetting.tenant_id == tenant_id
             ).first()
-
             if not expense_sharing:
                 raise HTTPException(status_code=404, detail="Compartilhamento não encontrado")
 
-            # Calcula as porcentagens
-            my_percentage = expense_sharing.my_contribution_percentage
-            partner_percentage = 100 - my_percentage
+        card_for_resolve = {
+            'expense_ownership_percentage': update_data.get(
+                'expense_ownership_percentage', cartao.expense_ownership_percentage
+            ),
+            'revenue_ownership_percentage': update_data.get(
+                'revenue_ownership_percentage', cartao.revenue_ownership_percentage
+            ),
+        }
 
-            # Atualiza credit_card_invoices
-            db.query(CreditCardInvoice).filter(
-                CreditCardInvoice.credit_card_id == cartao_id,
-                CreditCardInvoice.tenant_id == tenant_id
-            ).update({
-                'expense_sharing_id': new_expense_sharing_id,
-                'ownership_percentage': my_percentage
-            }, synchronize_session=False)
-
-            # Atualiza benefit_card_statements
-            db.query(BenefitCardStatement).filter(
-                BenefitCardStatement.credit_card_id == cartao_id,
-                BenefitCardStatement.tenant_id == tenant_id
-            ).update({
-                'expense_sharing_id': new_expense_sharing_id,
-                'ownership_percentage': my_percentage
-            }, synchronize_session=False)
+        if new_expense_sharing_id:
+            expense_pct = resolve_ownership_percentage(
+                kind='expense', sharing=expense_sharing, card=card_for_resolve
+            )
+            revenue_pct = resolve_ownership_percentage(
+                kind='revenue', sharing=expense_sharing, card=card_for_resolve
+            )
+            for model in (CreditCardInvoice, BenefitCardStatement):
+                db.query(model).filter(
+                    model.credit_card_id == cartao_id,
+                    model.tenant_id == tenant_id,
+                    model.amount < 0,
+                ).update({
+                    'expense_sharing_id': new_expense_sharing_id,
+                    'ownership_percentage': expense_pct,
+                }, synchronize_session=False)
+                db.query(model).filter(
+                    model.credit_card_id == cartao_id,
+                    model.tenant_id == tenant_id,
+                    model.amount >= 0,
+                ).update({
+                    'expense_sharing_id': new_expense_sharing_id,
+                    'ownership_percentage': revenue_pct,
+                }, synchronize_session=False)
         else:
-            # Se expense_sharing_id for None, remove o compartilhamento dos registros
-            db.query(CreditCardInvoice).filter(
-                CreditCardInvoice.credit_card_id == cartao_id,
-                CreditCardInvoice.tenant_id == tenant_id
-            ).update({
-                'expense_sharing_id': None,
-                'ownership_percentage': 100.0
-            }, synchronize_session=False)
-
-            db.query(BenefitCardStatement).filter(
-                BenefitCardStatement.credit_card_id == cartao_id,
-                BenefitCardStatement.tenant_id == tenant_id
-            ).update({
-                'expense_sharing_id': None,
-                'ownership_percentage': 100.0
-            }, synchronize_session=False)
+            expense_pct = resolve_ownership_percentage(
+                kind="expense", sharing=None, card=card_for_resolve
+            )
+            revenue_pct = resolve_ownership_percentage(
+                kind="revenue", sharing=None, card=card_for_resolve
+            )
+            for model in (CreditCardInvoice, BenefitCardStatement):
+                db.query(model).filter(
+                    model.credit_card_id == cartao_id,
+                    model.tenant_id == tenant_id,
+                    model.amount < 0,
+                ).update({
+                    "expense_sharing_id": None,
+                    "ownership_percentage": float(expense_pct),
+                }, synchronize_session=False)
+                db.query(model).filter(
+                    model.credit_card_id == cartao_id,
+                    model.tenant_id == tenant_id,
+                    model.amount >= 0,
+                ).update({
+                    "expense_sharing_id": None,
+                    "ownership_percentage": float(revenue_pct),
+                }, synchronize_session=False)
 
     # Atualiza apenas os campos fornecidos no cartão
     for field, value in update_data.items():

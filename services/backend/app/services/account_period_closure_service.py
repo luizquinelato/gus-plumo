@@ -8,7 +8,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Optional
 
-from sqlalchemy import Integer, case, cast, extract, func, or_
+from sqlalchemy import Integer, and_, case, cast, extract, func, or_
 from sqlalchemy.orm import Session, aliased
 
 from app.models.base_entity import now_utc
@@ -16,11 +16,17 @@ from app.models.unified_models import (
     Account,
     AccountPeriodClosure,
     BalanceClosure,
+    BalanceClosurePayment,
     Bank,
     BankStatement,
+    BenefitCardStatement,
+    Cartao,
+    CreditCardInvoice,
     ExpenseSharingSetting,
+    LoanPayment,
 )
 from app.services.financial_health_service import (
+    _load_benefit_items,
     compute_scoped_month_flows,
     period_allocation_details,
     serialize_splits,
@@ -74,6 +80,28 @@ def _as_date(value: Any) -> Optional[date]:
 def _iso_date(value: Any) -> str:
     parsed = _as_date(value)
     return parsed.isoformat() if parsed else ""
+
+
+def _iso_datetime(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%dT%H:%M:%S")
+    if isinstance(value, date):
+        return f"{value.isoformat()}T00:00:00"
+    if isinstance(value, str) and len(value) >= 10:
+        text = value.strip().replace(" ", "T")
+        if "T" not in text:
+            return f"{text[:10]}T00:00:00"
+        return text[:19]
+    return None
+
+
+def _prefixed_int(value: Any, prefix: str) -> Optional[int]:
+    if not isinstance(value, str) or not value.startswith(prefix):
+        return None
+    raw = value[len(prefix):]
+    return int(raw) if raw.isdigit() else None
 
 
 def _year_month_key(year: int, month: int) -> str:
@@ -177,7 +205,21 @@ def ensure_period_open(
             raise AccountPeriodClosedError(result["message"], result)
 
 
-def _first_data_period(db: Session, tenant_id: int, account_id: int) -> Optional[tuple[int, int]]:
+def _benefit_statements_for_account_filter(tenant_id: int, account_id: int):
+    """Mesmo escopo de conta usado em `_load_benefit_items` (balanço / fechamento)."""
+    return and_(
+        BenefitCardStatement.tenant_id == tenant_id,
+        or_(
+            BenefitCardStatement.account_id == account_id,
+            and_(
+                BenefitCardStatement.account_id.is_(None),
+                Cartao.account_id == account_id,
+            ),
+        ),
+    )
+
+
+def _first_bank_period(db: Session, tenant_id: int, account_id: int) -> Optional[tuple[int, int]]:
     first_date = (
         db.query(func.min(BankStatement.date))
         .filter(
@@ -191,6 +233,37 @@ def _first_data_period(db: Session, tenant_id: int, account_id: int) -> Optional
     if parsed is None:
         return None
     return parsed.year, parsed.month
+
+
+def _first_benefit_period(db: Session, tenant_id: int, account_id: int) -> Optional[tuple[int, int]]:
+    first_date = (
+        db.query(func.min(BenefitCardStatement.date))
+        .join(Cartao, Cartao.id == BenefitCardStatement.credit_card_id)
+        .filter(
+            _benefit_statements_for_account_filter(tenant_id, account_id),
+            BenefitCardStatement.date >= datetime(MIN_YEAR, 1, 1),
+        )
+        .scalar()
+    )
+    parsed = _as_date(first_date)
+    if parsed is None:
+        return None
+    return parsed.year, parsed.month
+
+
+def _first_data_period(db: Session, tenant_id: int, account_id: int) -> Optional[tuple[int, int]]:
+    """Primeiro mês com extrato bancário ou lançamento de benefício na conta (cartão ignorado)."""
+    candidates = [
+        p
+        for p in (
+            _first_bank_period(db, tenant_id, account_id),
+            _first_benefit_period(db, tenant_id, account_id),
+        )
+        if p is not None
+    ]
+    if not candidates:
+        return None
+    return min(candidates)
 
 
 def _available_years(first_data: Optional[tuple[int, int]], today: date) -> list[int]:
@@ -529,9 +602,9 @@ def _month_status(
     if (year, month) == (today.year, today.month):
         return "current", "Não é possível fechar o mês corrente"
     if first_data is None:
-        return "no_data", "Sem lançamentos de extrato nesta conta"
+        return "no_data", "Sem lançamentos de extrato ou benefício nesta conta"
     if (year, month) < first_data:
-        return "no_data", "Anterior ao primeiro lançamento de extrato"
+        return "no_data", "Anterior ao primeiro lançamento (extrato ou benefício)"
     expected = first_data if last_closed is None else _add_month(last_closed[0], last_closed[1], 1)
     if (year, month) == expected:
         return "can_close", None
@@ -563,6 +636,164 @@ def _unsettled_shared_periods(db: Session, tenant_id: int, account_id: int) -> s
         .all()
     )
     return {(int(row.year), int(row.month)) for row in rows}
+
+
+def _shared_closures_for_month(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    year: int,
+    month: int,
+) -> list[dict[str, Any]]:
+    month_start = _period_start(year, month)
+    month_end = _period_end_exclusive(year, month)
+    rows = (
+        db.query(BalanceClosure)
+        .filter(
+            BalanceClosure.tenant_id == tenant_id,
+            or_(
+                BalanceClosure.account_id == account_id,
+                BalanceClosure.shared_account_id == account_id,
+            ),
+            or_(
+                and_(BalanceClosure.year == year, BalanceClosure.month == month),
+                and_(
+                    BalanceClosure.closing_date >= month_start,
+                    BalanceClosure.closing_date < month_end,
+                ),
+            ),
+        )
+        .order_by(BalanceClosure.closing_date.desc())
+        .all()
+    )
+    seen: set[int] = set()
+    closures: list[dict[str, Any]] = []
+    for row in rows:
+        partner_id = (
+            int(row.shared_account_id)
+            if int(row.account_id) == account_id
+            else int(row.account_id)
+        )
+        if partner_id in seen:
+            continue
+        seen.add(partner_id)
+        closures.append({
+            "shared_partner_id": partner_id,
+            "expense_sharing_id": int(row.expense_sharing_id) if row.expense_sharing_id else None,
+            "period_start_date": _iso_datetime(row.period_start_date),
+            "closing_date": _iso_datetime(row.closing_date),
+            "is_settled": bool(row.is_settled),
+        })
+    return closures
+
+
+def _hydrate_item_datetimes(
+    db: Session,
+    tenant_id: int,
+    items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    bank_ids: set[int] = set()
+    invoice_ids: set[int] = set()
+    benefit_ids: set[int] = set()
+    payment_ids: set[int] = set()
+    loan_payment_ids: set[int] = set()
+    for item in items:
+        raw_id = item.get("id")
+        invoice_id = _prefixed_int(raw_id, "invoice:")
+        benefit_id = _prefixed_int(raw_id, "benefit:")
+        settlement_id = _prefixed_int(raw_id, "settlement:")
+        loan_id = _prefixed_int(raw_id, "loan-settlement:")
+        if invoice_id is not None:
+            invoice_ids.add(invoice_id)
+        elif benefit_id is not None:
+            benefit_ids.add(benefit_id)
+        elif settlement_id is not None:
+            payment_ids.add(settlement_id)
+        elif loan_id is not None:
+            loan_payment_ids.add(loan_id)
+        elif raw_id is not None and str(raw_id).isdigit():
+            bank_ids.add(int(raw_id))
+
+    bank_dates: dict[int, Any] = {}
+    if bank_ids:
+        bank_dates = {
+            int(row.id): row.date
+            for row in (
+                db.query(BankStatement.id, BankStatement.date)
+                .filter(BankStatement.tenant_id == tenant_id, BankStatement.id.in_(bank_ids))
+                .all()
+            )
+        }
+    invoice_dates: dict[int, Any] = {}
+    if invoice_ids:
+        invoice_dates = {
+            int(row.id): row.date
+            for row in (
+                db.query(CreditCardInvoice.id, CreditCardInvoice.date)
+                .filter(CreditCardInvoice.tenant_id == tenant_id, CreditCardInvoice.id.in_(invoice_ids))
+                .all()
+            )
+        }
+    benefit_dates: dict[int, Any] = {}
+    if benefit_ids:
+        benefit_dates = {
+            int(row.id): row.date
+            for row in (
+                db.query(BenefitCardStatement.id, BenefitCardStatement.date)
+                .filter(
+                    BenefitCardStatement.tenant_id == tenant_id,
+                    BenefitCardStatement.id.in_(benefit_ids),
+                )
+                .all()
+            )
+        }
+    payment_dates: dict[int, Any] = {}
+    if payment_ids:
+        payment_dates = {
+            int(row.id): row.payment_date
+            for row in (
+                db.query(BalanceClosurePayment.id, BalanceClosurePayment.payment_date)
+                .filter(
+                    BalanceClosurePayment.tenant_id == tenant_id,
+                    BalanceClosurePayment.id.in_(payment_ids),
+                )
+                .all()
+            )
+        }
+    loan_dates: dict[int, Any] = {}
+    if loan_payment_ids:
+        loan_dates = {
+            int(row.id): row.payment_date
+            for row in (
+                db.query(LoanPayment.id, LoanPayment.payment_date)
+                .filter(LoanPayment.tenant_id == tenant_id, LoanPayment.id.in_(loan_payment_ids))
+                .all()
+            )
+        }
+
+    hydrated: list[dict[str, Any]] = []
+    for item in items:
+        payload = dict(item)
+        raw_id = payload.get("id")
+        stamp = payload.get("occurred_at")
+        if not stamp:
+            invoice_id = _prefixed_int(raw_id, "invoice:")
+            benefit_id = _prefixed_int(raw_id, "benefit:")
+            settlement_id = _prefixed_int(raw_id, "settlement:")
+            loan_id = _prefixed_int(raw_id, "loan-settlement:")
+            if invoice_id is not None:
+                stamp = _iso_datetime(invoice_dates.get(invoice_id))
+            elif benefit_id is not None:
+                stamp = _iso_datetime(benefit_dates.get(benefit_id))
+            elif settlement_id is not None:
+                stamp = _iso_datetime(payment_dates.get(settlement_id))
+            elif loan_id is not None:
+                stamp = _iso_datetime(loan_dates.get(loan_id))
+            elif raw_id is not None and str(raw_id).isdigit():
+                stamp = _iso_datetime(bank_dates.get(int(raw_id)))
+        payload["occurred_at"] = stamp or _iso_datetime(payload.get("date"))
+        hydrated.append(payload)
+    return hydrated
 
 
 def _enrich_item_splits(
@@ -651,6 +882,7 @@ def _allocation_fields(allocation: Optional[dict[str, Any]]) -> dict[str, Any]:
             continue
     return {
         "card_items": list(data.get("card_items") or []),
+        "benefit_items": list(data.get("benefit_items") or []),
         "shared_settlements": list(data.get("shared_settlements") or []),
         "unmatched_card_payments": list(data.get("unmatched_card_payments") or []),
         "replaced_bank_ids": replaced,
@@ -690,6 +922,10 @@ def _serialize_month(
     live_splits: Optional[dict[str, dict[str, dict[str, Decimal]]]] = None,
     allocation: Optional[dict[str, Any]] = None,
     has_open_shared: bool = False,
+    shared_closures: Optional[list[dict[str, Any]]] = None,
+    db: Optional[Session] = None,
+    tenant_id: Optional[int] = None,
+    account_id: Optional[int] = None,
 ) -> dict[str, Any]:
     closing = (opening + entries - exits).quantize(MONEY)
     is_closed = status == "closed"
@@ -697,6 +933,24 @@ def _serialize_month(
     can_reopen = bool(closure and last_closed == (year, month))
     snapshot = (closure.closure_data or {}) if closure else {}
     adjustment_amount = snapshot.get("adjustment_amount")
+    if closure and db is not None and tenant_id is not None and account_id is not None:
+        snap_amt = _money(adjustment_amount or 0)
+        snap_id = snapshot.get("adjustment_bank_statement_id")
+        anchor = snapshot.get("adjustment_anchor")
+        is_adjustment_anchor = (
+            isinstance(anchor, dict)
+            and int(anchor.get("year", -1)) == year
+            and int(anchor.get("month", -1)) == month
+        )
+        # Só enriquece o mês que de fato possui ajuste (snapshot ou âncora do lote).
+        if snap_id is not None or snap_amt != ZERO or is_adjustment_anchor:
+            resolved_adj = _resolve_closure_adjustment_statement(
+                db, tenant_id, account_id, year, month, snapshot,
+            )
+            if resolved_adj is not None:
+                adjustment_amount = float(resolved_adj.amount)
+            elif snap_amt == ZERO and not is_adjustment_anchor:
+                adjustment_amount = None
     resolved_count = len(items) if items is not None else item_count
     allocation_fields = _allocation_fields(allocation)
     payload = {
@@ -722,10 +976,12 @@ def _serialize_month(
         "open_shared_notice": _open_shared_notice(year, month) if has_open_shared else None,
         "sources": list(snapshot.get("sources", SOURCES)) if closure else SOURCES,
         "card_items": allocation_fields["card_items"],
+        "benefit_items": allocation_fields["benefit_items"],
         "shared_settlements": allocation_fields["shared_settlements"],
         "unmatched_card_payments": allocation_fields["unmatched_card_payments"],
         "replaced_bank_ids": allocation_fields["replaced_bank_ids"],
         "shared_by_account": allocation_fields["shared_by_account"],
+        "shared_closures": list(shared_closures or []),
     }
     if items is not None:
         payload["items"] = _mask_replaced_bank_items(items, allocation_fields["replaced_bank_ids"])
@@ -822,6 +1078,7 @@ def list_year(
                 target_year, month, status, block_reason, opening, entries, exits,
                 closure, last_closed, first_data, item_count=item_count, live_splits=live_splits,
                 has_open_shared=(target_year, month) in unsettled_shared,
+                db=db, tenant_id=tenant_id, account_id=account_id,
             )
             months.append(serialized)
             if closure:
@@ -874,7 +1131,22 @@ def get_preview(
         allocation = _allocation_fields(snapshot)
         allocation["splits"] = snapshot.get("splits")
         allocation["card_items"] = _attach_sharing_partners(db, tenant_id, list(allocation.get("card_items") or []))
+        allocation["benefit_items"] = _attach_sharing_partners(db, tenant_id, list(allocation.get("benefit_items") or []))
         allocation["shared_settlements"] = _attach_sharing_partners(
+            db, tenant_id, list(allocation.get("shared_settlements") or []),
+        )
+        if not allocation["benefit_items"]:
+            allocation["benefit_items"] = _attach_sharing_partners(
+                db, tenant_id, _load_benefit_items(db, tenant_id, account_id, [(year, month)]),
+            )
+        items = _hydrate_item_datetimes(db, tenant_id, items)
+        allocation["card_items"] = _hydrate_item_datetimes(
+            db, tenant_id, list(allocation.get("card_items") or []),
+        )
+        allocation["benefit_items"] = _hydrate_item_datetimes(
+            db, tenant_id, list(allocation.get("benefit_items") or []),
+        )
+        allocation["shared_settlements"] = _hydrate_item_datetimes(
             db, tenant_id, list(allocation.get("shared_settlements") or []),
         )
         return _serialize_month(
@@ -885,6 +1157,8 @@ def get_preview(
             closure, last_closed, first_data, items,
             allocation=allocation,
             has_open_shared=has_open_shared,
+            shared_closures=_shared_closures_for_month(db, tenant_id, account_id, year, month),
+            db=db, tenant_id=tenant_id, account_id=account_id,
         )
 
     flow = _month_flow(db, tenant_id, account_id, year, month, include_items=True)
@@ -894,13 +1168,144 @@ def get_preview(
             db, tenant_id, account_id, year, month, closures_by_period, first_data,
         )
     allocation = period_allocation_details(db, tenant_id, account_id, year, month)
+    allocation["card_items"] = _hydrate_item_datetimes(
+        db, tenant_id, list(allocation.get("card_items") or []),
+    )
+    allocation["benefit_items"] = _hydrate_item_datetimes(
+        db, tenant_id, list(allocation.get("benefit_items") or []),
+    )
+    allocation["shared_settlements"] = _hydrate_item_datetimes(
+        db, tenant_id, list(allocation.get("shared_settlements") or []),
+    )
     return _serialize_month(
         year, month, status, block_reason, opening, flow["entries"], flow["exits"],
         None, last_closed, first_data,
-        _enrich_item_splits(db, tenant_id, account_id, flow["items"]),
+        _hydrate_item_datetimes(
+            db, tenant_id, _enrich_item_splits(db, tenant_id, account_id, flow["items"]),
+        ),
         allocation=allocation,
         has_open_shared=has_open_shared,
+        shared_closures=_shared_closures_for_month(db, tenant_id, account_id, year, month),
     )
+
+
+def _adjustment_description(year: int, month: int) -> str:
+    return f"{ADJUSTMENT_DESCRIPTION_PREFIX} {_period_label(year, month)}"
+
+
+def _resolve_closure_adjustment_statement(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    year: int,
+    month: int,
+    snapshot: dict[str, Any],
+) -> Optional[BankStatement]:
+    """Localiza lançamento de ajuste do fechamento (snapshot, descrição ou data do mês)."""
+    raw_id = snapshot.get("adjustment_bank_statement_id")
+    if raw_id is not None:
+        try:
+            stmt_id = int(raw_id)
+        except (TypeError, ValueError):
+            stmt_id = None
+        if stmt_id:
+            found = (
+                db.query(BankStatement)
+                .filter(
+                    BankStatement.id == stmt_id,
+                    BankStatement.tenant_id == tenant_id,
+                    BankStatement.account_id == account_id,
+                )
+                .first()
+            )
+            if found:
+                return found
+
+    desc = _adjustment_description(year, month)
+    found = (
+        db.query(BankStatement)
+        .filter(
+            BankStatement.tenant_id == tenant_id,
+            BankStatement.account_id == account_id,
+            BankStatement.description == desc,
+        )
+        .order_by(BankStatement.id.desc())
+        .first()
+    )
+    if found:
+        return found
+
+    start = _period_start(year, month)
+    end = _last_moment(year, month)
+    return (
+        db.query(BankStatement)
+        .filter(
+            BankStatement.tenant_id == tenant_id,
+            BankStatement.account_id == account_id,
+            BankStatement.description.like(f"{ADJUSTMENT_DESCRIPTION_PREFIX}%"),
+            BankStatement.date >= start,
+            BankStatement.date <= end,
+        )
+        .order_by(BankStatement.id.desc())
+        .first()
+    )
+
+
+def _find_adjustment_for_reopen(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    row: AccountPeriodClosure,
+    snapshot: dict[str, Any],
+) -> Optional[BankStatement]:
+    """Ajuste deste fechamento, inclusive em lote com âncora no último mês do grupo."""
+    statement = _resolve_closure_adjustment_statement(
+        db, tenant_id, account_id, row.year, row.month, snapshot,
+    )
+    if statement:
+        return statement
+
+    anchor = snapshot.get("adjustment_anchor")
+    if not isinstance(anchor, dict):
+        return None
+    try:
+        ay, am = int(anchor["year"]), int(anchor["month"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+    cursor = _add_month(row.year, row.month, -1)
+    while True:
+        prev_row = (
+            db.query(AccountPeriodClosure)
+            .filter(
+                AccountPeriodClosure.tenant_id == tenant_id,
+                AccountPeriodClosure.account_id == account_id,
+                AccountPeriodClosure.year == cursor[0],
+                AccountPeriodClosure.month == cursor[1],
+            )
+            .first()
+        )
+        if not prev_row:
+            break
+        prev_snap = prev_row.closure_data or {}
+        prev_anchor = prev_snap.get("adjustment_anchor")
+        if not isinstance(prev_anchor, dict):
+            break
+        try:
+            if int(prev_anchor["year"]) != ay or int(prev_anchor["month"]) != am:
+                break
+        except (KeyError, TypeError, ValueError):
+            break
+        statement = _resolve_closure_adjustment_statement(
+            db, tenant_id, account_id, cursor[0], cursor[1], prev_snap,
+        )
+        if statement:
+            return statement
+        cursor = _add_month(cursor[0], cursor[1], -1)
+
+    if (ay, am) != (row.year, row.month):
+        return _resolve_closure_adjustment_statement(db, tenant_id, account_id, ay, am, {})
+    return None
 
 
 def _insert_adjustment(
@@ -924,7 +1329,7 @@ def _insert_adjustment(
         last_updated_at=stamped,
         account_id=account_id,
         date=_last_moment(year, month),
-        description=f"{ADJUSTMENT_DESCRIPTION_PREFIX} {_period_label(year, month)}",
+        description=_adjustment_description(year, month),
         amount=amount,
         category=None,
         transaction=None,
@@ -992,6 +1397,8 @@ def _close_one(
     month: int,
     adjustment: Optional[Decimal],
     notes: Optional[str],
+    *,
+    adjustment_anchor: Optional[tuple[int, int]] = None,
 ) -> dict[str, Any]:
     preview = get_preview(db, tenant_id, account_id, year, month)
     if preview["is_closed"]:
@@ -1004,7 +1411,13 @@ def _close_one(
     first_data = _first_data_period(db, tenant_id, account_id)
     _previous_month_closed(db, tenant_id, account_id, year, month, first_data)
 
-    adj_amount = _money(adjustment) if adjustment is not None else ZERO
+    anchor = adjustment_anchor or (year, month)
+    apply_adjustment = (
+        adjustment is not None
+        and _money(adjustment) != ZERO
+        and (year, month) == anchor
+    )
+    adj_amount = _money(adjustment) if apply_adjustment else ZERO
     statement = _insert_adjustment(
         db, tenant_id, account_id, user_id, year, month, adj_amount, notes,
     )
@@ -1019,11 +1432,13 @@ def _close_one(
     snapshot = {
         "sources": SOURCES,
         "items": flow["items"],
+        "adjustment_anchor": {"year": anchor[0], "month": anchor[1]},
         "adjustment_bank_statement_id": int(statement.id) if statement else None,
         "adjustment_amount": float(adj_amount),
         "adjustment_date": _iso_date(_last_moment(year, month)) if statement else None,
         "splits": allocation["splits"],
         "card_items": allocation["card_items"],
+        "benefit_items": allocation["benefit_items"],
         "shared_settlements": allocation["shared_settlements"],
         "unmatched_card_payments": allocation["unmatched_card_payments"],
         "replaced_bank_ids": allocation["replaced_bank_ids"],
@@ -1065,7 +1480,10 @@ def close_period(
     adjustment: Optional[Decimal] = None,
 ) -> dict[str, Any]:
     del opening_balance
-    result = _close_one(db, tenant_id, account_id, user_id, year, month, adjustment, notes)
+    result = _close_one(
+        db, tenant_id, account_id, user_id, year, month, adjustment, notes,
+        adjustment_anchor=(year, month),
+    )
     db.commit()
     return result
 
@@ -1094,11 +1512,11 @@ def close_periods(
     closed: list[dict[str, Any]] = []
     try:
         for period in periods:
-            adj = adjustment if period == last else ZERO
             closed.append(
                 _close_one(
                     db, tenant_id, account_id, user_id,
-                    period[0], period[1], adj, notes if period == last else notes,
+                    period[0], period[1], adjustment, notes if period == last else None,
+                    adjustment_anchor=last,
                 )
             )
         db.commit()
@@ -1121,6 +1539,8 @@ def reopen_period(
     tenant_id: int,
     account_id: int,
     closure_id: int,
+    *,
+    delete_adjustment: bool = True,
 ) -> dict[str, Any]:
     row = (
         db.query(AccountPeriodClosure)
@@ -1140,20 +1560,14 @@ def reopen_period(
 
     year, month = row.year, row.month
     snapshot = row.closure_data or {}
-    adjustment_id = snapshot.get("adjustment_bank_statement_id")
+    statement = (
+        _find_adjustment_for_reopen(db, tenant_id, account_id, row, snapshot)
+        if delete_adjustment
+        else None
+    )
     db.delete(row)
-    if adjustment_id:
-        statement = (
-            db.query(BankStatement)
-            .filter(
-                BankStatement.id == int(adjustment_id),
-                BankStatement.tenant_id == tenant_id,
-                BankStatement.account_id == account_id,
-            )
-            .first()
-        )
-        if statement:
-            db.delete(statement)
+    if delete_adjustment and statement:
+        db.delete(statement)
     db.commit()
     logger.info("Fechamento da conta reaberto account=%s período=%s-%02d", account_id, year, month)
     return get_preview(db, tenant_id, account_id, year, month)

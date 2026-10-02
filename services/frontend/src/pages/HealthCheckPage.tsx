@@ -388,10 +388,12 @@ interface CardViewData {
   number?: string | null
   description?: string | null
   type?: string | null
-  closing_day?: number | null
+  due_day?: number | null
   invoice_group_name?: string | null
   active?: boolean
-  is_account_card?: boolean | null
+  ownership_type?: string | null
+  expense_ownership_percentage?: number | null
+  revenue_ownership_percentage?: number | null
 }
 
 function cardTypeLabel(type?: string | null) {
@@ -1027,10 +1029,12 @@ const HealthCheckPage = () => {
             number: response.data.number,
             description: response.data.description,
             type: response.data.type,
-            closing_day: response.data.closing_day,
+            due_day: response.data.due_day,
             invoice_group_name: response.data.invoice_group_name,
             active: response.data.active,
-            is_account_card: response.data.is_account_card,
+            ownership_type: response.data.ownership_type,
+            expense_ownership_percentage: response.data.expense_ownership_percentage,
+            revenue_ownership_percentage: response.data.revenue_ownership_percentage,
           }
         })
       })
@@ -1786,12 +1790,18 @@ const HealthCheckPage = () => {
                 </CadastroModalFieldsRow>
                 <CadastroModalFieldsRow cols={2}>
                   <CardInfoRow
-                    label="Dia de fechamento"
-                    value={cardView.closing_day != null ? String(cardView.closing_day) : '—'}
+                    label="Dia de vencimento"
+                    value={cardView.due_day != null ? String(cardView.due_day) : '—'}
                   />
                   <CardInfoRow
-                    label="Cartão da conta"
-                    value={cardView.is_account_card ? 'Sim' : 'Não'}
+                    label="Participação (despesa / receita)"
+                    value={
+                      cardView.ownership_type === 'compartilhado'
+                        ? `Compartilhado — ${cardView.expense_ownership_percentage ?? '—'}% / ${cardView.revenue_ownership_percentage ?? '—'}%`
+                        : cardView.ownership_type === 'gerenciado'
+                          ? 'Gerenciado (0%)'
+                          : 'Próprio (100%)'
+                    }
                   />
                 </CadastroModalFieldsRow>
                 <CadastroModalFieldsRow>

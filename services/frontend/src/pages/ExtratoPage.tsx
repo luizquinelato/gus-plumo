@@ -7,6 +7,9 @@ import {
   CadastroListPageHero,
   CadastroListPageShell,
   CadastroListPageTabs,
+  CadastroListPrimaryButton,
+  CadastroListSecondaryButton,
+  reportRowActionBtnClass,
 } from '../components/CadastroListPageLayout'
 import {
   CadastroFormSection,
@@ -22,8 +25,9 @@ import EditExpenseModal from '../components/EditExpenseModal'
 import BatchEditExpenseModal from '../components/BatchEditExpenseModal'
 import SharedAccountDisplay from '../components/SharedAccountDisplay'
 import { MultiSelectDropdown, SourceMultiSelectDropdown } from '../components/MultiSelectDropdown'
-import BrazilianDatePicker from '../components/BrazilianDatePicker'
-import { FileText, Edit2, Trash2, Split, ArrowDownCircle, ArrowUpCircle, Search, X, Filter, Calendar, Landmark, CreditCard, Gift, ArrowUpDown, ArrowUp, ArrowDown, CheckSquare, Square, MinusSquare, Database, Tag, Tags, Users, TrendingUp, BarChart3, Download, Wallet, PlusCircle, ArrowLeftRight, Building2, AlertTriangle, ArrowRight } from 'lucide-react'
+import { DateField } from '../components/date'
+import { FileText, Edit2, Trash2, Split, ArrowDownCircle, ArrowUpCircle, Search, X, Filter, Calendar, Landmark, Gift, ArrowUpDown, ArrowUp, ArrowDown, CheckSquare, Square, MinusSquare, Database, Tag, Tags, Users, TrendingUp, BarChart3, Download, Wallet, PlusCircle, ArrowLeftRight, AlertTriangle, ArrowRight, Link2 } from 'lucide-react'
+import LinkedInvoiceItemsModal, { type LinkedInvoiceSummary } from '../components/LinkedInvoiceItemsModal'
 import { useConfirm } from '../hooks/useConfirm'
 import { dateToLocalString, parseLocalDate } from '../utils/dateUtils'
 import ExportModal from '../components/ExportModal'
@@ -32,6 +36,13 @@ import ManualTransactionModal from '../components/ManualTransactionModal'
 import Toast from '../components/Toast'
 // import { formatAccountDisplay } from '../utils/accountFormatter'
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import {
+  dailyBalanceRowClass,
+  EXTRATO_DAILY_BALANCE_SOURCE,
+  isExtratoDailyBalanceRow,
+  mergeExpensesWithDailyBalance,
+  sortExtratoExpenses,
+} from '../utils/extratoDailyBalance'
 
 // Interface para state de navegação
 interface NavigationState {
@@ -111,6 +122,18 @@ interface ExpenseDetail {
   account_number: string | null
   year_month: string | null  // Ano/mês da fatura (YYYY-MM) - usado apenas para faturas de cartão
   migrated_from_account_id: number | null  // ID da conta de origem - indica item invertido/migrado
+  linked_invoice?: LinkedInvoiceSummary | null
+  daily_month_end?: boolean
+}
+
+/** Fontes do extrato: extrato bancário + benefícios (faturas de crédito ficam em Faturas). */
+function resolveExtratoApiSources(selectedSources: string[]): string[] {
+  const useBank = selectedSources.length === 0 || selectedSources.includes('bank')
+  const useBenefit = selectedSources.length === 0 || selectedSources.includes('benefit')
+  const out: string[] = []
+  if (useBank) out.push('bank')
+  if (useBenefit) out.push('benefits')
+  return out
 }
 
 interface DetailedReport {
@@ -122,6 +145,8 @@ interface DetailedReport {
   total_expenses_count: number
   expenses_trend: 'up' | 'down' | 'stable' | null
   income_trend: 'up' | 'down' | 'stable' | null
+  opening_balance_before_period?: number | null
+  daily_balance_rows?: ExpenseDetail[] | null
   expenses: ExpenseDetail[]
 }
 
@@ -159,8 +184,7 @@ interface TimeSeriesData {
 // Opções de fonte de dados para o dropdown
 const SOURCE_OPTIONS = [
   { id: 'bank', name: 'Extratos Bancários', icon: <Landmark size={14} />, color: 'var(--color-1)' },
-  { id: 'card', name: 'Faturas de Cartão', icon: <CreditCard size={14} />, color: 'var(--color-2)' },
-  { id: 'benefit', name: 'Cartões de Benefícios', icon: <Gift size={14} />, color: 'var(--color-3)' }
+  { id: 'benefit', name: 'Cartões de Benefícios', icon: <Gift size={14} />, color: 'var(--color-3)' },
 ]
 
 // Opções de origem para o dropdown
@@ -182,10 +206,6 @@ const ExtratoPage = () => {
   const [selectedOrigins, setSelectedOrigins] = useState<string[]>([])
 
   // Compatibilidade com código existente (vazio = todas as fontes)
-  const sourceBankStatements = selectedSources.length === 0 || selectedSources.includes('bank')
-  const sourceCardInvoices = selectedSources.length === 0 || selectedSources.includes('card')
-  const sourceBenefits = selectedSources.length === 0 || selectedSources.includes('benefit')
-
   // Inicializa sem filtro de data (null = sem filtro, carrega tudo)
   const [startDate, setStartDate] = useState<Date | null>(null)
   const [endDate, setEndDate] = useState<Date | null>(null)
@@ -197,6 +217,10 @@ const ExtratoPage = () => {
   const [appliedTransactionType, setAppliedTransactionType] = useState<'all' | 'despesa' | 'receita'>('all')
   const [searchTerm, setSearchTerm] = useState('')
   const [searchAmount, setSearchAmount] = useState('')
+  const [includeDailyBalance, setIncludeDailyBalance] = useState(false)
+  const [appliedIncludeDailyBalance, setAppliedIncludeDailyBalance] = useState(false)
+  /** YYYY-MM-DD do início do período na última consulta (Início + Fim + Aplicar). */
+  const [appliedPeriodStartKey, setAppliedPeriodStartKey] = useState<string | null>(null)
 
   // Flag para controlar se os filtros iniciais já foram aplicados
   const [initialFiltersApplied, setInitialFiltersApplied] = useState(false)
@@ -234,6 +258,9 @@ const ExtratoPage = () => {
   const [isLoanModalOpen, setIsLoanModalOpen] = useState(false)
   const [expenseToLoan, setExpenseToLoan] = useState<any>(null)
   const [isManualTransactionModalOpen, setIsManualTransactionModalOpen] = useState(false)
+  const [linkedInvoiceModalOpen, setLinkedInvoiceModalOpen] = useState(false)
+  const [linkedInvoiceStatementId, setLinkedInvoiceStatementId] = useState<number | null>(null)
+  const [linkedInvoiceSummary, setLinkedInvoiceSummary] = useState<LinkedInvoiceSummary | null>(null)
 
   // Modal unificado de inversão (individual ou batch)
   const [isInvertModalOpen, setIsInvertModalOpen] = useState(false)
@@ -277,7 +304,9 @@ const ExtratoPage = () => {
       }
       // Aplica fontes se fornecidas
       if (navigationState.sources && navigationState.sources.length > 0) {
-        setSelectedSources(navigationState.sources)
+        setSelectedSources(
+          navigationState.sources.filter((s) => s === 'bank' || s === 'benefit'),
+        )
       }
       setInitialFiltersApplied(true)
       // Marca que deve auto-aplicar os filtros
@@ -409,7 +438,7 @@ const ExtratoPage = () => {
       setCardsLoading(true)
       try {
         const response = await axios.get('/api/cartoes/')
-        setCards(response.data)
+        setCards((response.data as { type?: string }[]).filter((c) => c.type === 'beneficios'))
       } catch (error) {
         console.error('Erro ao carregar cartões:', error)
       } finally {
@@ -422,17 +451,13 @@ const ExtratoPage = () => {
   // Removido: useEffect de filtro automático
   // Agora o usuário deve clicar em "Aplicar" para carregar os dados
 
-  const loadDetailedReport = async () => {
+  const loadDetailedReport = async (options?: { withDailyBalance?: boolean }) => {
     setLoading(true)
     setError(null)
     try {
       const params = new URLSearchParams()
 
-      // Determina as fontes selecionadas
-      const sources = []
-      if (sourceBankStatements) sources.push('bank')
-      if (sourceCardInvoices) sources.push('cards')
-      if (sourceBenefits) sources.push('benefits')
+      const sources = resolveExtratoApiSources(selectedSources)
 
       if (sources.length === 0) {
         // Não mostra erro, apenas limpa os dados
@@ -473,6 +498,11 @@ const ExtratoPage = () => {
       // Filtro de origem (manual/invertido)
       if (selectedOrigins.length > 0) params.append('origin', selectedOrigins.join(','))
 
+      const requestDailyBalance = options?.withDailyBalance ?? appliedIncludeDailyBalance
+      if (requestDailyBalance) {
+        params.append('include_daily_balance', 'true')
+      }
+
       const url = `/api/reports/detailed?${params}`
 
       const response = await axios.get(url)
@@ -494,28 +524,16 @@ const ExtratoPage = () => {
     try {
       const params = new URLSearchParams()
 
-      // Determina as fontes selecionadas
-      const sources = []
-      if (sourceBankStatements) sources.push('bank')
-      if (sourceCardInvoices) sources.push('cards')
-      if (sourceBenefits) sources.push('benefits')
+      const sources = resolveExtratoApiSources(selectedSources)
 
-      if (sources.length === 0) {
+      if (sources.length === 0 || !sources.includes('bank')) {
         setTimeSeriesData(null)
         setLoading(false)
         return
       }
 
-      // Mapeia para o formato esperado pela API
-      if (sources.length === 3 || sources.length === 0) {
-        params.append('source', 'combined')
-      } else if (sources.includes('bank') && !sources.includes('cards')) {
-        params.append('source', 'bank')
-      } else if (sources.includes('cards') && !sources.includes('bank')) {
-        params.append('source', 'cards')
-      } else {
-        params.append('source', 'combined')
-      }
+      // Gráficos: série temporal cobre extrato bancário (benefícios não entram na API time-series).
+      params.append('source', 'bank')
 
       // Apenas envia datas se ambas estiverem definidas (mesmo comportamento do Extrato)
       if (startDate && endDate) {
@@ -552,7 +570,11 @@ const ExtratoPage = () => {
   // Função para aplicar filtros - carrega dados de ambas as abas
   const handleApplyFilters = () => {
     setAppliedTransactionType(selectedTransactionType)
-    loadDetailedReport()
+    setAppliedIncludeDailyBalance(includeDailyBalance)
+    setAppliedPeriodStartKey(
+      startDate && endDate ? dateToLocalString(startDate) : null,
+    )
+    loadDetailedReport({ withDailyBalance: includeDailyBalance })
     loadTimeSeriesData()
   }
 
@@ -602,6 +624,9 @@ const ExtratoPage = () => {
     setAppliedTransactionType('all')
     setSearchTerm('')
     setSearchAmount('')
+    setIncludeDailyBalance(false)
+    setAppliedIncludeDailyBalance(false)
+    setAppliedPeriodStartKey(null)
   }
 
   const handleEdit = (expense: ExpenseDetail) => {
@@ -629,8 +654,6 @@ const ExtratoPage = () => {
           let endpoint = ''
           if (expense.source === 'bank') {
             endpoint = `/api/expenses/bank-statements/${expense.id}`
-          } else if (expense.source === 'card') {
-            endpoint = `/api/expenses/credit-card-invoices/${expense.id}`
           } else if (expense.source === 'benefit') {
             endpoint = `/api/benefit-card-statements/${expense.id}`
           }
@@ -660,6 +683,12 @@ const ExtratoPage = () => {
   const handleSendToLoan = (expense: ExpenseDetail) => {
     setExpenseToLoan(expense)
     setIsLoanModalOpen(true)
+  }
+
+  const handleOpenLinkedInvoice = (expense: ExpenseDetail) => {
+    setLinkedInvoiceStatementId(expense.id)
+    setLinkedInvoiceSummary(expense.linked_invoice ?? null)
+    setLinkedInvoiceModalOpen(true)
   }
 
   const handleLoanSuccess = (message?: string) => {
@@ -701,8 +730,7 @@ const ExtratoPage = () => {
     return `${day}/${month}/${year} ${hours}:${minutes}`
   }
 
-  // Filtra despesas por termo de busca, valor e tipo (receita/despesa)
-  let filteredExpenses = detailedReport?.expenses.filter(expense => {
+  const searchedExpenses = useMemo(() => detailedReport?.expenses.filter(expense => {
     // Filtro por descrição
     const matchesDescription = !searchTerm || expense.description.toLowerCase().includes(searchTerm.toLowerCase())
 
@@ -732,45 +760,47 @@ const ExtratoPage = () => {
     }
 
     return matchesDescription && matchesAmount && matchesType
-  }) || []
+  }) ?? [], [detailedReport, searchTerm, searchAmount, appliedTransactionType])
+
+  const filteredExpenses = useMemo(() => {
+    const openingBefore =
+      detailedReport?.opening_balance_before_period != null
+        ? Number(detailedReport.opening_balance_before_period)
+        : 0
+    const serverDailyRows =
+      detailedReport?.daily_balance_rows?.map((row) => ({
+        ...row,
+        source: row.source || EXTRATO_DAILY_BALANCE_SOURCE,
+      })) ?? null
+
+    const merged = mergeExpensesWithDailyBalance(
+      searchedExpenses,
+      appliedIncludeDailyBalance,
+      openingBefore,
+      appliedPeriodStartKey,
+      serverDailyRows as ExpenseDetail[] | null,
+    )
+    return sortExtratoExpenses(merged, sortField, sortDirection)
+  }, [
+    searchedExpenses,
+    appliedIncludeDailyBalance,
+    detailedReport?.opening_balance_before_period,
+    detailedReport?.daily_balance_rows,
+    appliedPeriodStartKey,
+    sortField,
+    sortDirection,
+  ])
+
+  const exportExpenses = useMemo(
+    () => searchedExpenses.filter((row) => !isExtratoDailyBalanceRow(row)),
+    [searchedExpenses],
+  )
 
   // Reseta para página 1 quando os filtros de busca mudam
   // (evita mostrar página vazia ou valores negativos)
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchTerm, searchAmount])
-
-  // Aplica ordenação se houver campo selecionado
-  if (sortField) {
-    filteredExpenses = [...filteredExpenses].sort((a, b) => {
-      let aValue: any = a[sortField as keyof ExpenseDetail]
-      let bValue: any = b[sortField as keyof ExpenseDetail]
-
-      // Trata valores nulos
-      if (aValue === null || aValue === undefined) return 1
-      if (bValue === null || bValue === undefined) return -1
-
-      // Ordenação por data
-      if (sortField === 'date') {
-        aValue = new Date(aValue).getTime()
-        bValue = new Date(bValue).getTime()
-      }
-      // Ordenação por valor numérico
-      else if (sortField === 'amount') {
-        aValue = Number(aValue)
-        bValue = Number(bValue)
-      }
-      // Ordenação por string (descrição, tag, subtag, conta, parceiro, terceiro)
-      else {
-        aValue = String(aValue).toLowerCase()
-        bValue = String(bValue).toLowerCase()
-      }
-
-      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
-      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
-      return 0
-    })
-  }
+  }, [searchTerm, searchAmount, appliedIncludeDailyBalance])
 
   // Função para alternar ordenação
   const handleSort = (field: string) => {
@@ -794,6 +824,7 @@ const ExtratoPage = () => {
 
   // Verifica se item pode ser selecionado (baseado no tipo já selecionado)
   const canSelectItem = (expense: ExpenseDetail) => {
+    if (isExtratoDailyBalanceRow(expense)) return false
     if (selectionType === null) return true
     const itemType = expense.amount < 0 ? 'despesa' : 'receita'
     return itemType === selectionType
@@ -823,13 +854,14 @@ const ExtratoPage = () => {
 
   // Seleciona todos os itens filtrados (do mesmo tipo)
   const selectAllFiltered = () => {
-    if (filteredExpenses.length === 0) return
+    const realRows = filteredExpenses.filter((row) => !isExtratoDailyBalanceRow(row))
+    if (realRows.length === 0) return
 
     // Determina o tipo baseado no primeiro item ou no tipo já selecionado
-    const targetType = selectionType || (filteredExpenses[0].amount < 0 ? 'despesa' : 'receita')
+    const targetType = selectionType || (realRows[0].amount < 0 ? 'despesa' : 'receita')
 
     const newSelected = new Set<string>()
-    filteredExpenses.forEach(expense => {
+    realRows.forEach(expense => {
       const itemType = expense.amount < 0 ? 'despesa' : 'receita'
       if (itemType === targetType) {
         newSelected.add(getItemKey(expense))
@@ -860,7 +892,7 @@ const ExtratoPage = () => {
 
     const targetType = selectionType || 'despesa'
     const selectableItems = filteredExpenses.filter(e =>
-      (e.amount < 0 ? 'despesa' : 'receita') === targetType
+      !isExtratoDailyBalanceRow(e) && (e.amount < 0 ? 'despesa' : 'receita') === targetType
     )
 
     if (selectableItems.length === 0) return 'none'
@@ -1062,17 +1094,13 @@ const ExtratoPage = () => {
             <CadastroListPageHero
               icon={<FileText className="w-8 h-8" />}
               title="Extrato de Transações"
-              subtitle="Visualize e gerencie todas as suas transações"
+              subtitle="Extrato bancário e benefícios por data da transação. Faturas de cartão de crédito: menu Faturas."
               actions={
                 <>
-                  <button
-                    onClick={() => setIsManualTransactionModalOpen(true)}
-                    className="flex items-center gap-2 rounded-lg bg-color-primary px-4 py-2 text-white transition-opacity hover:opacity-90"
-                  >
-                    <PlusCircle size={18} />
-                    Novo Lançamento
-                  </button>
-                  <button
+                  <CadastroListSecondaryButton
+                    label="Exportar Excel"
+                    icon={<Download size={18} />}
+                    disabled={!filteredExpenses || filteredExpenses.length === 0}
                     onClick={() => {
                       if (!filteredExpenses || filteredExpenses.length === 0) {
                         handleShowToast('Nenhum dado para exportar', 'error')
@@ -1080,12 +1108,12 @@ const ExtratoPage = () => {
                       }
                       setIsExportModalOpen(true)
                     }}
-                    disabled={!filteredExpenses || filteredExpenses.length === 0}
-                    className="flex items-center gap-2 rounded-lg bg-color-primary px-4 py-2 text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <Download size={18} />
-                    Exportar Excel
-                  </button>
+                  />
+                  <CadastroListPrimaryButton
+                    label="Novo Lançamento"
+                    icon={<PlusCircle size={18} />}
+                    onClick={() => setIsManualTransactionModalOpen(true)}
+                  />
                 </>
               }
             />
@@ -1104,7 +1132,8 @@ const ExtratoPage = () => {
                 selectedOrigins.length > 0 ||
                 selectedTransactionType !== 'all' ||
                 startDate !== null ||
-                endDate !== null
+                endDate !== null ||
+                includeDailyBalance
 
               return (
                 <div className="flex items-center justify-between mb-3">
@@ -1158,19 +1187,19 @@ const ExtratoPage = () => {
                 />
               </div>
 
-              {/* Cartão */}
+              {/* Cartão de benefício */}
               <div>
                 <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                  <CreditCard size={12} className="inline mr-1 text-color-primary" />
-                  Cartão
+                  <Gift size={12} className="inline mr-1 text-color-primary" />
+                  Cartão de benefício
                 </label>
                 <MultiSelectDropdown
-                  label="Cartão"
+                  label="Cartão de benefício"
                   options={cards.map(c => ({
                     id: c.id,
                     name: `${c.name || 'Sem nome'} • ${c.number}`,
-                    icon: c.type === 'beneficios' ? <Gift size={14} /> : <CreditCard size={14} />,
-                    color: c.type === 'beneficios' ? 'var(--color-3)' : 'var(--color-2)'
+                    icon: <Gift size={14} />,
+                    color: 'var(--color-3)',
                   }))}
                   selectedIds={selectedCardIds}
                   onChange={setSelectedCardIds}
@@ -1268,83 +1297,15 @@ const ExtratoPage = () => {
               </div>
             </div>
 
-            {/* Linha 2: Períodos + Datas + Botões */}
+            {/* Linha 2: Datas + opções + aplicar */}
             <div className="flex flex-wrap items-end gap-3">
-              {/* Períodos Pré-definidos */}
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Períodos:</span>
-                <button
-                  onClick={() => {
-                    const now = new Date()
-                    const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0)
-                    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
-                    setStartDate(start)
-                    setEndDate(end)
-                  }}
-                  className="px-2.5 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-700 dark:hover:text-blue-400 transition-all"
-                >
-                  Mês Atual
-                </button>
-                <button
-                  onClick={() => {
-                    const now = new Date()
-                    const start = new Date(now.getFullYear(), now.getMonth() - 2, now.getDate(), 0, 0, 0, 0)
-                    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
-                    setStartDate(start)
-                    setEndDate(end)
-                  }}
-                  className="px-2.5 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-700 dark:hover:text-blue-400 transition-all"
-                >
-                  3 Meses
-                </button>
-                <button
-                  onClick={() => {
-                    const now = new Date()
-                    const start = new Date(now.getFullYear(), now.getMonth() - 5, now.getDate(), 0, 0, 0, 0)
-                    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
-                    setStartDate(start)
-                    setEndDate(end)
-                  }}
-                  className="px-2.5 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-700 dark:hover:text-blue-400 transition-all"
-                >
-                  6 Meses
-                </button>
-                <button
-                  onClick={() => {
-                    const now = new Date()
-                    const start = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0)
-                    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
-                    setStartDate(start)
-                    setEndDate(end)
-                  }}
-                  className="px-2.5 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-700 dark:hover:text-blue-400 transition-all"
-                >
-                  Ano Atual
-                </button>
-                <button
-                  onClick={() => {
-                    const now = new Date()
-                    const start = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate(), 0, 0, 0, 0)
-                    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
-                    setStartDate(start)
-                    setEndDate(end)
-                  }}
-                  className="px-2.5 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-700 dark:hover:text-blue-400 transition-all"
-                >
-                  1 Ano
-                </button>
-              </div>
-
-              {/* Separador visual */}
-              <div className="hidden lg:block w-px h-6 bg-gray-300 dark:bg-gray-600"></div>
-
               {/* Data de Início */}
               <div className="flex-1 flex items-center gap-2 min-w-[200px]">
                 <label className="text-xs font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap flex items-center gap-1">
                   <Calendar size={12} className="text-color-primary" />
                   Início
                 </label>
-                <BrazilianDatePicker
+                <DateField
                   value={startDate ? dateToLocalString(startDate) : ''}
                   onChange={(value) => {
                     if (!value) {
@@ -1365,7 +1326,7 @@ const ExtratoPage = () => {
                   <Calendar size={12} className="text-color-primary" />
                   Fim
                 </label>
-                <BrazilianDatePicker
+                <DateField
                   value={endDate ? dateToLocalString(endDate) : ''}
                   onChange={(value) => {
                     if (!value) {
@@ -1379,6 +1340,19 @@ const ExtratoPage = () => {
                   className="flex-1 px-2 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-color-primary focus:border-color-primary transition-all"
                 />
               </div>
+
+              <label className="flex items-center gap-2 min-w-[200px] cursor-pointer rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800 dark:border-gray-600 dark:bg-gray-800/60 dark:text-gray-100">
+                <input
+                  type="checkbox"
+                  checked={includeDailyBalance}
+                  onChange={(event) => setIncludeDailyBalance(event.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 text-[var(--color-1)] focus:ring-[var(--color-1)]"
+                />
+                <span className="flex flex-col leading-tight">
+                  <span className="font-medium">Incluir saldo diário</span>
+                  <span className="text-[11px] text-gray-500 dark:text-gray-400">Linha de resultado por dia na lista</span>
+                </span>
+              </label>
 
               {/* Botão Aplicar */}
               <button
@@ -1608,24 +1582,27 @@ const ExtratoPage = () => {
                           itemsPerPage === 0 ? filteredExpenses.length : currentPage * itemsPerPage
                         )
                         .map((expense, index) => {
+                          const isDailyBalance = isExtratoDailyBalanceRow(expense)
                           const lineNumber = itemsPerPage === 0
                             ? index + 1
                             : (currentPage - 1) * itemsPerPage + index + 1
                           return (
                             <tr
                               key={`${expense.source}-${expense.id}`}
-                              className={`group border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all ${
-                                isItemSelected(expense)
-                                  ? 'border-l-blue-600 bg-blue-50 dark:bg-blue-900/20'
-                                  : 'border-l-gray-300 dark:border-l-gray-600'
+                              className={`group border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 transition-all ${
+                                isDailyBalance
+                                  ? `${dailyBalanceRowClass(expense)} font-medium`
+                                  : isItemSelected(expense)
+                                    ? 'border-l-blue-600 bg-blue-50 dark:bg-blue-900/20 hover:bg-gray-50 dark:hover:bg-gray-700'
+                                    : 'border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
                               }`}
                               onMouseEnter={(e) => {
-                                if (!isItemSelected(expense)) {
+                                if (!isDailyBalance && !isItemSelected(expense)) {
                                   e.currentTarget.style.borderLeftColor = 'var(--color-1)'
                                 }
                               }}
                               onMouseLeave={(e) => {
-                                if (!isItemSelected(expense)) {
+                                if (!isDailyBalance && !isItemSelected(expense)) {
                                   e.currentTarget.style.borderLeftColor = ''
                                 }
                               }}
@@ -1664,10 +1641,15 @@ const ExtratoPage = () => {
                               {/* Origem */}
                               <td className="px-2 py-4 text-left whitespace-nowrap">
                                 <div className="flex items-center gap-1">
-                                  {expense.source === 'bank' ? (
+                                  {isDailyBalance ? (
+                                    <TrendingUp
+                                      className="inline"
+                                      style={{ color: 'var(--color-4)' }}
+                                      size={20}
+                                      aria-label="Saldo diário"
+                                    />
+                                  ) : expense.source === 'bank' ? (
                                     <Landmark className="inline" style={{ color: 'var(--color-1)' }} size={20} aria-label="Extrato Bancário" />
-                                  ) : expense.source === 'card' ? (
-                                    <CreditCard className="inline" style={{ color: 'var(--color-2)' }} size={20} aria-label="Fatura de Cartão" />
                                   ) : (
                                     <Gift className="inline" style={{ color: 'var(--color-3)' }} size={20} aria-label="Benefício" />
                                   )}
@@ -1717,7 +1699,9 @@ const ExtratoPage = () => {
 
                               {/* Valor */}
                               <td className="px-3 py-4 text-left whitespace-nowrap">
-                                <span className={`text-sm ${expense.amount >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                <span
+                                  className={`text-sm ${isDailyBalance ? 'font-semibold' : ''} ${expense.amount >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}
+                                >
                                   {formatCurrency(expense.amount)}
                                 </span>
                               </td>
@@ -1725,19 +1709,22 @@ const ExtratoPage = () => {
                               {/* Tag */}
                               <td className="px-3 py-4 text-left">
                                 <span className="text-sm text-gray-900 dark:text-white truncate block" title={expense.tag_name || undefined}>
-                                  {expense.tag_name || '-'}
+                                  {isDailyBalance ? '—' : (expense.tag_name || '-')}
                                 </span>
                               </td>
 
                               {/* Subtag */}
                               <td className="px-3 py-4 text-left">
                                 <span className="text-sm text-gray-900 dark:text-white truncate block" title={expense.subtag_name || undefined}>
-                                  {expense.subtag_name || '-'}
+                                  {isDailyBalance ? '—' : (expense.subtag_name || '-')}
                                 </span>
                               </td>
 
                               {/* Compartilhamento */}
                               <td className="px-3 py-4 text-left min-w-[180px]">
+                                {isDailyBalance ? (
+                                  <span className="text-sm text-gray-500 dark:text-gray-400">—</span>
+                                ) : (
                                 <SharedAccountDisplay
                                   account={expense.shared_partner_name ? {
                                     id: expense.shared_partner_id || 0,
@@ -1748,62 +1735,75 @@ const ExtratoPage = () => {
                                   } : null}
                                   ownershipPercentage={expense.ownership_percentage}
                                 />
+                                )}
                               </td>
 
                               {/* Ações */}
                               <td className={`px-4 py-4 text-left whitespace-nowrap sticky right-0 z-10 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.1)] ${
-                                isItemSelected(expense)
-                                  ? 'bg-blue-50 dark:bg-blue-900/20 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/30'
-                                  : 'bg-white dark:bg-gray-800 group-hover:bg-gray-50 dark:group-hover:bg-gray-700'
+                                isDailyBalance
+                                  ? dailyBalanceRowClass(expense)
+                                  : isItemSelected(expense)
+                                    ? 'bg-blue-50 dark:bg-blue-900/20 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/30'
+                                    : 'bg-white dark:bg-gray-800 group-hover:bg-gray-50 dark:group-hover:bg-gray-700'
                               }`}>
-                                <div className="flex items-center gap-1">
+                                {isDailyBalance ? (
+                                  <span className="text-xs text-gray-500 dark:text-gray-400">Resumo</span>
+                                ) : (
+                                <div className="flex items-center gap-0.5">
+                                  {expense.source === 'bank' && expense.linked_invoice && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenLinkedInvoice(expense)}
+                                      disabled={selectedItems.size > 0}
+                                      className={reportRowActionBtnClass(selectedItems.size === 0)}
+                                      title={selectedItems.size > 0 ? 'Limpe a seleção' : 'Ver itens da fatura vinculada'}
+                                    >
+                                      <Link2 size={18} />
+                                    </button>
+                                  )}
                                   <button
+                                    type="button"
                                     onClick={() => handleEdit(expense)}
                                     disabled={selectedItems.size > 0}
-                                    className={`p-2 rounded-lg transition-colors ${
-                                      selectedItems.size > 0
-                                        ? 'text-gray-400 cursor-not-allowed'
-                                        : 'text-color-primary hover:opacity-80 hover:bg-color-primary-light'
-                                    }`}
+                                    className={reportRowActionBtnClass(selectedItems.size === 0)}
                                     title={selectedItems.size > 0 ? 'Limpe a seleção para editar' : 'Editar'}
                                   >
                                     <Edit2 size={18} />
                                   </button>
                                   <button
+                                    type="button"
                                     onClick={() => handleSplit(expense)}
                                     disabled={selectedItems.size > 0}
-                                    className={`p-2 rounded-lg transition-colors ${
-                                      selectedItems.size > 0
-                                        ? 'text-gray-400 cursor-not-allowed'
-                                        : 'text-purple-600 dark:text-purple-400 hover:text-purple-900 dark:hover:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/20'
-                                    }`}
+                                    className={reportRowActionBtnClass(selectedItems.size === 0)}
                                     title={selectedItems.size > 0 ? 'Limpe a seleção para dividir' : 'Dividir'}
                                   >
                                     <Split size={18} />
                                   </button>
                                   <button
+                                    type="button"
                                     onClick={() => handleSendToLoan(expense)}
                                     disabled={selectedItems.size > 0}
-                                    className={`p-2 rounded-lg transition-colors ${
-                                      selectedItems.size > 0
-                                        ? 'text-gray-400 cursor-not-allowed'
-                                        : 'text-amber-600 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20'
-                                    }`}
+                                    className={reportRowActionBtnClass(selectedItems.size === 0)}
                                     title={selectedItems.size > 0 ? 'Limpe a seleção para empréstimo' : 'Enviar para Empréstimo'}
                                   >
                                     <Wallet size={18} />
                                   </button>
                                   <button
+                                    type="button"
                                     onClick={(e) => {
                                       e.stopPropagation()
                                       handleOpenInvertModal(expense)
                                     }}
-                                    disabled={selectedItems.size > 0 || !expense.shared_partner_id || !!expense.migrated_from_account_id}
-                                    className={`p-2 rounded-lg transition-colors ${
-                                      selectedItems.size > 0 || !expense.shared_partner_id || !!expense.migrated_from_account_id
-                                        ? 'text-gray-400 cursor-not-allowed'
-                                        : 'text-cyan-600 dark:text-cyan-400 hover:text-cyan-900 dark:hover:text-cyan-300 hover:bg-cyan-50 dark:hover:bg-cyan-900/20'
-                                    }`}
+                                    disabled={
+                                      selectedItems.size > 0 ||
+                                      !expense.shared_partner_id ||
+                                      !!expense.migrated_from_account_id
+                                    }
+                                    className={reportRowActionBtnClass(
+                                      selectedItems.size === 0 &&
+                                        !!expense.shared_partner_id &&
+                                        !expense.migrated_from_account_id,
+                                    )}
                                     title={
                                       selectedItems.size > 0
                                         ? 'Limpe a seleção para inverter'
@@ -1817,18 +1817,16 @@ const ExtratoPage = () => {
                                     <ArrowLeftRight size={18} />
                                   </button>
                                   <button
+                                    type="button"
                                     onClick={() => handleDelete(expense)}
                                     disabled={selectedItems.size > 0}
-                                    className={`p-2 rounded-lg transition-colors ${
-                                      selectedItems.size > 0
-                                        ? 'text-gray-400 cursor-not-allowed'
-                                        : 'text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20'
-                                    }`}
+                                    className={reportRowActionBtnClass(selectedItems.size === 0, 'danger')}
                                     title={selectedItems.size > 0 ? 'Limpe a seleção para excluir' : 'Excluir'}
                                   >
                                     <Trash2 size={18} />
                                   </button>
                                 </div>
+                                )}
                               </td>
                             </tr>
                           )
@@ -2176,7 +2174,7 @@ const ExtratoPage = () => {
       <ExportModal
         isOpen={isExportModalOpen}
         onClose={() => setIsExportModalOpen(false)}
-        expenses={filteredExpenses || []}
+        expenses={exportExpenses}
         onSuccess={(message) => handleShowToast(message, 'success')}
         onError={(message) => handleShowToast(message, 'error')}
       />
@@ -2197,6 +2195,20 @@ const ExtratoPage = () => {
         isOpen={isManualTransactionModalOpen}
         onClose={() => setIsManualTransactionModalOpen(false)}
         onSuccess={loadDetailedReport}
+        defaultDestination={
+          selectedSources.length === 1 && selectedSources[0] === 'benefit' ? 'beneficio' : 'extrato'
+        }
+      />
+
+      <LinkedInvoiceItemsModal
+        isOpen={linkedInvoiceModalOpen}
+        onClose={() => {
+          setLinkedInvoiceModalOpen(false)
+          setLinkedInvoiceStatementId(null)
+          setLinkedInvoiceSummary(null)
+        }}
+        bankStatementId={linkedInvoiceStatementId}
+        linkedSummary={linkedInvoiceSummary}
       />
 
       {/* Modal Unificado de Inversão de Compartilhamento */}
@@ -2211,17 +2223,15 @@ const ExtratoPage = () => {
           <CadastroModalBody>
             <CadastroFormSection title="Aviso" icon={<AlertTriangle size={14} />}>
               {(() => {
-                const cardCount = invertItems.filter(e => e.source === 'card').length
                 const benefitCount = invertItems.filter(e => e.source === 'benefit').length
-                const convertCount = cardCount + benefitCount
+                const convertCount = benefitCount
                 const uniquePartners = new Set(invertItems.map(e => e.shared_partner_id).filter(id => id))
                 const partnerCount = uniquePartners.size
                 const total = invertItems.length
 
                 let itemsDescription = ''
                 if (total === 1) {
-                  if (cardCount > 0) itemsDescription = '1 item de cartão'
-                  else if (benefitCount > 0) itemsDescription = '1 item de benefício'
+                  if (benefitCount > 0) itemsDescription = '1 item de benefício'
                   else itemsDescription = '1 item'
                 } else {
                   itemsDescription = `${total} itens`
@@ -2294,12 +2304,13 @@ const ExtratoPage = () => {
                 Editar em Lote
               </button>
               <button
+                type="button"
                 onClick={handleOpenBatchInvertModal}
                 disabled={!allSelectedHaveSharing || invertLoading}
-                className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 text-sm font-semibold ${
+                className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 text-sm font-medium border ${
                   allSelectedHaveSharing && !invertLoading
-                    ? 'bg-cyan-500 text-white hover:bg-cyan-600'
-                    : 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                    ? 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                    : 'border-transparent bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
                 }`}
                 title={!allSelectedHaveSharing ? 'Todos os itens devem ter compartilhamento e não podem ser itens já invertidos' : 'Inverter compartilhamento'}
               >

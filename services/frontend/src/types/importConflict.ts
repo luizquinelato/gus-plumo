@@ -40,6 +40,8 @@ export interface ImportConflict {
   // existing_id pode ser null quando há múltiplos matches
   existing_id: number | null;
   record_type: 'bank_statement' | 'credit_card_invoice' | 'benefit_statement';
+  /** Número da linha no arquivo importado (1-based, inclui cabeçalho). */
+  source_line?: number;
   date: string;
   description: string;
   year_month?: string;

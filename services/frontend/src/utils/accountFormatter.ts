@@ -108,13 +108,41 @@ export const formatAccountDisplay = (
 }
 
 /**
+ * Nome curto do parceiro para dropdowns de compartilhamento.
+ * Detalhe completo (banco/agência/conta/%) fica na lista de Compartilhamentos.
+ */
+export function sharingPartnerLabel(sharing?: {
+  shared_account?: { name?: string | null; description?: string | null } | null
+} | null): string {
+  return sharing?.shared_account?.name || sharing?.shared_account?.description || 'Parceiro'
+}
+
+/**
+ * Percentual default da config conforme o tipo do lançamento.
+ */
+export function sharingPercentForKind(
+  sharing?: {
+    my_contribution_percentage?: number | null
+    revenue_contribution_percentage?: number | null
+  } | null,
+  kind: 'expense' | 'revenue' = 'expense'
+): number {
+  if (!sharing) return 100
+  if (kind === 'revenue') {
+    const value = sharing.revenue_contribution_percentage ?? sharing.my_contribution_percentage
+    return value == null ? 100 : Number(value)
+  }
+  return sharing.my_contribution_percentage == null ? 100 : Number(sharing.my_contribution_percentage)
+}
+
+/**
  * Formata conta compartilhada com percentual de contribuição
  * Formato: Nome • Banco • Agência • Conta (XX%)
- * 
+ *
  * @param account - Objeto da conta
  * @param percentage - Percentual de contribuição
  * @returns String formatada com percentual
- * 
+ *
  * @example
  * formatSharedAccountDisplay(account, 50)
  * // "Polezel • 208 - BTG Pactual • Ag: 00001-0 • Conta: 000012345-6 (50%)"

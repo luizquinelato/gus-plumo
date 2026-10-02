@@ -12,6 +12,7 @@ from app.database import get_db
 from app.models.unified_models import Account, Bank
 from app.models.auth_models import Usuario
 from app.dependencies.auth import get_current_user
+from app.utils.account_import_password import set_account_import_file_password
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
@@ -36,6 +37,7 @@ class AccountCreate(BaseModel):
     bank_id: int | None = None
     agency: int | None = None
     account_number: int | None = None
+    default_import_file_password: str | None = None
 
 
 class AccountUpdate(BaseModel):
@@ -46,6 +48,8 @@ class AccountUpdate(BaseModel):
     agency: int | None = None
     account_number: int | None = None
     active: bool | None = None
+    default_import_file_password: str | None = None
+    clear_default_import_file_password: bool = False
 
 
 class AccountResponse(BaseModel):
@@ -59,6 +63,7 @@ class AccountResponse(BaseModel):
     agency: int | None
     account_number: int | None
     active: bool
+    has_default_import_file_password: bool = False
     last_updated_at: datetime | None = None
 
     @field_serializer('last_updated_at')
@@ -219,13 +224,19 @@ async def criar_conta(
     if existing:
         raise HTTPException(status_code=400, detail="Já existe uma conta com este nome")
 
-    # Cria nova conta
+    create_fields = account_data.model_dump(
+        exclude={"default_import_file_password"}
+    )
     nova_conta = Account(
         tenant_id=tenant_id,
         user_id=user_id,
         created_by=user_id,
-        **account_data.model_dump()
+        **create_fields,
     )
+    if account_data.default_import_file_password:
+        set_account_import_file_password(
+            nova_conta, account_data.default_import_file_password
+        )
     db.add(nova_conta)
     db.commit()
     db.refresh(nova_conta)
@@ -252,10 +263,26 @@ async def atualizar_conta(
     if not conta:
         raise HTTPException(status_code=404, detail="Conta não encontrada")
 
-    # Atualiza apenas os campos fornecidos
-    update_data = account_data.model_dump(exclude_unset=True)
+    update_data = account_data.model_dump(
+        exclude_unset=True,
+        exclude={
+            "default_import_file_password",
+            "clear_default_import_file_password",
+        },
+    )
     for field, value in update_data.items():
         setattr(conta, field, value)
+
+    fields_set = account_data.model_fields_set
+    if (
+        "default_import_file_password" in fields_set
+        and account_data.default_import_file_password
+    ):
+        set_account_import_file_password(
+            conta, account_data.default_import_file_password
+        )
+    elif account_data.clear_default_import_file_password:
+        set_account_import_file_password(conta, None)
 
     db.commit()
     db.refresh(conta)

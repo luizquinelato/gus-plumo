@@ -30,6 +30,7 @@ export interface ExpenseSharingInfo {
   id: number
   shared_account_id: number
   my_contribution_percentage: number
+  revenue_contribution_percentage?: number
   description: string | null
   shared_account?: AccountInfo | null
 }

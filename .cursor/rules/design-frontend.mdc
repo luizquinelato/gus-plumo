@@ -34,11 +34,12 @@ Regras para `services/frontend/`. Stack detalhada em [tech-stack.mdc](tech-stack
 - Encapsule lógica repetida em `src/components/`.
 - Listagens: `CadastroListPageShell` / `Hero` / `Body` / `Tabs` / `EmptyCard` / `Loading` / chrome de tabela em `CadastroListPageLayout.tsx`.
 - Cadastros com soft-delete: abas **Todas/Todos · Ativas/Ativos · Inativas/Inativos** (`StatusFilter` + `CadastroListPageTabs` com `count`) e **uma** `ListPageTable` (índice `#` + spacer 4px). Não dividir ativas/inativas em tabelas ou faixas.
+- Colunas líderes de tabela: constantes e componentes em `ListTableSelectColumns.tsx` (`LIST_TABLE_CHECKBOX_COL_PX` / `LIST_TABLE_INDEX_COL_PX` = 40px, `LIST_TABLE_SPACER_COL_PX` = 4px). `ListPageTable` usa `ListTableLeadingColgroup` + `leadingMode` (`bulk` = checkbox + `#`, `index-only` = só `#`). Cabeçalho/linha: `ListTableCheckboxHeader`/`Cell`, `ListTableIndexHeader`/`Cell`, depois `ListTableSpacer*`. Larguras fixas reforçadas em `index.css` (incl. `table-fixed col { width: 0 }` nas líderes).
 - Soft-delete na linha: `StatusSwitch`. Lixeira = exclusão definitiva. Ícones de ação: `cadastroRowIconBtnCls` / `cadastroRowIconDangerCls`.
 - Hierarquia (grupos de fatura, tag→subtags, template→itens): linha pai com resumo nas colunas + `ListPageExpandRow` + `ListPageNestedTable` (régua tracejada `--color-1`). Não misturar filhos como linhas da tabela principal.
 - Modais: `CadastroModalShell` + `Header` + `Body` + `Footer` em `CadastroFormLayout.tsx`. ESC fecha, Enter confirma — ver [starting_point.mdc](starting_point.mdc).
 - Badges: `<Badge />` + [badge-surfaces.mdc](badge-surfaces.mdc). Não inventar `px-3 py-1` com largura fixa.
-- Datas: `BrazilianDatePicker` (`dd/mm/aaaa`, valor interno `YYYY-MM-DD`).
+- Datas: `DateField` de `src/components/date` (`dd/mm/aaaa`, valor `YYYY-MM-DD`; `withTime` para data e hora). Calendário avulso/período: `DateCalendar` (`mode="range"`). Nunca `<input type="date">` nem libs externas de datepicker.
 - Conta compartilhada: `SharedAccountDisplay`.
 - UI específica do Balanço: [balanco-ui.mdc](balanco-ui.mdc).
 - Radix UI: apenas `@radix-ui/react-slot` hoje; preferir componentes existentes antes de adicionar libs.

@@ -171,7 +171,7 @@ class TransactionItem(BaseModel):
     card_name: str | None = None
     card_number: str | None = None
     card_active: bool | None = None
-    card_closing_day: int | None = None
+    card_due_day: int | None = None
     card_type: str | None = None  # "crédito" ou "benefício"
     current_installment: int | None = None
     total_installments: int | None = None
@@ -238,7 +238,7 @@ def _get_account_info(account: Account) -> AccountInfo:
 
 
 def calculate_invoice_periods(
-    closing_day: int,
+    due_day: int,
     start_date: date,
     end_date: date
 ) -> List[str]:
@@ -246,12 +246,12 @@ def calculate_invoice_periods(
     Calcula quais faturas (year_month) devem ser incluídas no período.
 
     Lógica:
-    - Período da fatura: (closing_day + 1) do mês anterior até closing_day do mês atual
-    - Data de fechamento: closing_day do mês atual
-    - Critério de inclusão: data_inicio <= closing_day (data de fechamento) <= data_fim
+    - Período da fatura: (due_day + 1) do mês anterior até due_day do mês atual
+    - Data de vencimento: due_day do mês atual
+    - Critério de inclusão: data_inicio <= vencimento <= data_fim
 
     Args:
-        closing_day: Dia de fechamento da fatura (1-31)
+        due_day: Dia de vencimento da fatura (1-31)
         start_date: Data de início do filtro
         end_date: Data de fim do filtro
 
@@ -288,9 +288,9 @@ def calculate_invoice_periods(
     while current_month <= end_month:
         # Data de fechamento desta fatura
         try:
-            closing_date = date(current_month.year, current_month.month, closing_day)
+            closing_date = date(current_month.year, current_month.month, due_day)
         except ValueError:
-            # Se o closing_day não existe neste mês (ex: dia 31 em fevereiro)
+            # Se o due_day não existe neste mês (ex: dia 31 em fevereiro)
             # Usa o último dia do mês
             last_day = calendar.monthrange(current_month.year, current_month.month)[1]
             closing_date = date(current_month.year, current_month.month, last_day)
@@ -676,8 +676,7 @@ async def get_annual_history(
         # ========== CÁLCULOS - CONTA LOGADA ==========
         # Combina todas as despesas da conta logada
         main_all_expenses = main_bank_expenses + main_cc_expenses + main_bc_expenses
-        # NOTA: Receitas de cartão benefício NÃO são incluídas nos cálculos de balanço
-        main_all_revenues = main_bank_revenues + main_cc_revenues  # SEM main_bc_revenues
+        main_all_revenues = main_bank_revenues + main_cc_revenues + main_bc_revenues
 
         # Para cada despesa que a CONTA LOGADA pagou:
         # - CONTA LOGADA tem A RECEBER (parte da compartilhada)
@@ -706,8 +705,7 @@ async def get_annual_history(
         # ========== CÁLCULOS - CONTA COMPARTILHADA ==========
         # Combina todas as despesas da conta compartilhada
         shared_all_expenses = shared_bank_expenses + shared_cc_expenses + shared_bc_expenses
-        # NOTA: Receitas de cartão benefício NÃO são incluídas nos cálculos de balanço
-        shared_all_revenues = shared_bank_revenues + shared_cc_revenues  # SEM shared_bc_revenues
+        shared_all_revenues = shared_bank_revenues + shared_cc_revenues + shared_bc_revenues
 
         # Para cada despesa que a CONTA COMPARTILHADA pagou:
         # - CONTA COMPARTILHADA tem A RECEBER (parte da logada)
@@ -1082,18 +1080,15 @@ async def get_monthly_details(
         card_type="benefício") for i in partner_bc_revenues_raw]
 
     # ========== CÁLCULOS DE TOTAIS ==========
-    # NOTA: Receitas de cartão benefício NÃO são incluídas nos cálculos de balanço
-    # (apenas despesas são consideradas para benefícios)
-
     # Conta Logada - A Receber (despesas que EU paguei × % do parceiro)
     main_a_receber = sum(i.partner_share for i in main_bank_expenses + main_cc_expenses + main_benefit_expenses)
-    # Conta Logada - A Receber (parte das receitas do parceiro) - SEM benefit_revenues
-    main_a_receber += sum(i.my_share for i in partner_bank_revenues + partner_cc_revenues)
+    # Conta Logada - A Receber (parte das receitas do parceiro)
+    main_a_receber += sum(i.my_share for i in partner_bank_revenues + partner_cc_revenues + partner_benefit_revenues)
 
     # Conta Logada - A Pagar (despesas do parceiro × minha %)
     main_a_pagar = sum(i.my_share for i in partner_bank_expenses + partner_cc_expenses + partner_benefit_expenses)
-    # Conta Logada - A Pagar (parte das receitas que EU recebi) - SEM benefit_revenues
-    main_a_pagar += sum(i.partner_share for i in main_bank_revenues + main_cc_revenues)
+    # Conta Logada - A Pagar (parte das receitas que EU recebi)
+    main_a_pagar += sum(i.partner_share for i in main_bank_revenues + main_cc_revenues + main_benefit_revenues)
 
     main_net = main_a_receber - main_a_pagar
 
@@ -1348,9 +1343,9 @@ async def calculate_balance(
     # Para cada cartão, calcula quais year_month incluir
     main_cc_year_months_to_include = []
     for card in main_cards:
-        closing_day = card.closing_day if hasattr(card, 'closing_day') and card.closing_day else 14
+        due_day = card.due_day if hasattr(card, 'due_day') and card.due_day else 14
         year_months = calculate_invoice_periods(
-            closing_day=closing_day,
+            due_day=due_day,
             start_date=start_date.date() if isinstance(start_date, datetime) else start_date,
             end_date=end_date.date() if isinstance(end_date, datetime) else end_date
         )
@@ -1401,9 +1396,9 @@ async def calculate_balance(
     individual_main_cards = individual_main_cards_q.distinct(Cartao.id).all()
 
     for card in individual_main_cards:
-        closing_day = card.closing_day if hasattr(card, 'closing_day') and card.closing_day else 14
+        due_day = card.due_day if hasattr(card, 'due_day') and card.due_day else 14
         card_year_months = calculate_invoice_periods(
-            closing_day=closing_day,
+            due_day=due_day,
             start_date=start_date.date() if isinstance(start_date, datetime) else start_date,
             end_date=end_date.date() if isinstance(end_date, datetime) else end_date
         )
@@ -1475,12 +1470,10 @@ async def calculate_balance(
         partner_ownership = Decimal(1) - my_ownership
         main_a_receber += item.amount * partner_ownership
 
-    # NOTA: Receitas de cartão benefício NÃO são incluídas nos cálculos de balanço
-    # (apenas despesas são consideradas)
-    # for item in main_bc_revenue_items:
-    #     my_ownership = item.ownership_percentage / Decimal(100)
-    #     partner_ownership = Decimal(1) - my_ownership
-    #     main_a_pagar_from_my_expenses += item.amount * partner_ownership
+    for item in main_bc_revenue_items:
+        my_ownership = item.ownership_percentage / Decimal(100)
+        partner_ownership = Decimal(1) - my_ownership
+        main_a_pagar_from_my_expenses += item.amount * partner_ownership
 
     # ========== CONTA COMPARTILHADA (Shared Account) ==========
     # Busca transações onde a conta COMPARTILHADA pagou e está vinculada ao sharing
@@ -1558,9 +1551,9 @@ async def calculate_balance(
 
     shared_cc_year_months_to_include = []
     for card in shared_cards:
-        closing_day = card.closing_day if hasattr(card, 'closing_day') and card.closing_day else 14
+        due_day = card.due_day if hasattr(card, 'due_day') and card.due_day else 14
         year_months = calculate_invoice_periods(
-            closing_day=closing_day,
+            due_day=due_day,
             start_date=start_date.date() if isinstance(start_date, datetime) else start_date,
             end_date=end_date.date() if isinstance(end_date, datetime) else end_date
         )
@@ -1609,9 +1602,9 @@ async def calculate_balance(
     individual_shared_cards = individual_shared_cards_q.distinct(Cartao.id).all()
 
     for card in individual_shared_cards:
-        closing_day = card.closing_day if hasattr(card, 'closing_day') and card.closing_day else 14
+        due_day = card.due_day if hasattr(card, 'due_day') and card.due_day else 14
         card_year_months = calculate_invoice_periods(
-            closing_day=closing_day,
+            due_day=due_day,
             start_date=start_date.date() if isinstance(start_date, datetime) else start_date,
             end_date=end_date.date() if isinstance(end_date, datetime) else end_date
         )
@@ -1683,12 +1676,10 @@ async def calculate_balance(
         my_ownership = Decimal(1) - shared_ownership
         shared_a_receber += item.amount * my_ownership
 
-    # NOTA: Receitas de cartão benefício NÃO são incluídas nos cálculos de balanço
-    # (apenas despesas são consideradas)
-    # for item in shared_bc_revenue_items:
-    #     shared_ownership = item.ownership_percentage / Decimal(100)
-    #     my_ownership = Decimal(1) - shared_ownership
-    #     shared_a_pagar_from_shared_expenses += item.amount * my_ownership
+    for item in shared_bc_revenue_items:
+        shared_ownership = item.ownership_percentage / Decimal(100)
+        my_ownership = Decimal(1) - shared_ownership
+        shared_a_pagar_from_shared_expenses += item.amount * my_ownership
 
     # Agora calcula os valores finais de cada lado
     # LÓGICA:
@@ -1818,7 +1809,7 @@ async def calculate_balance(
             card_name=item.credit_card.name if item.credit_card else None,
             card_number=item.credit_card.number if item.credit_card else None,
             card_active=item.credit_card.active if item.credit_card else None,
-            card_closing_day=item.credit_card.closing_day if item.credit_card else None,
+            card_due_day=item.credit_card.due_day if item.credit_card else None,
             card_type=item.credit_card.type if item.credit_card else None,
             current_installment=item.current_installment,
             total_installments=item.total_installments,
@@ -1843,7 +1834,7 @@ async def calculate_balance(
             card_name=item.credit_card.name if item.credit_card else None,
             card_number=item.credit_card.number if item.credit_card else None,
             card_active=item.credit_card.active if item.credit_card else None,
-            card_closing_day=item.credit_card.closing_day if item.credit_card else None,
+            card_due_day=item.credit_card.due_day if item.credit_card else None,
             card_type=item.credit_card.type if item.credit_card else None,
             current_installment=item.current_installment,
             total_installments=item.total_installments,
@@ -1868,7 +1859,7 @@ async def calculate_balance(
             card_name=item.credit_card.name if item.credit_card else None,
             card_number=item.credit_card.number if item.credit_card else None,
             card_active=item.credit_card.active if item.credit_card else None,
-            card_closing_day=item.credit_card.closing_day if item.credit_card else None,
+            card_due_day=item.credit_card.due_day if item.credit_card else None,
             card_type=item.credit_card.type if item.credit_card else None,
             current_installment=item.current_installment,
             total_installments=item.total_installments,
@@ -1893,7 +1884,7 @@ async def calculate_balance(
             card_name=item.credit_card.name if item.credit_card else None,
             card_number=item.credit_card.number if item.credit_card else None,
             card_active=item.credit_card.active if item.credit_card else None,
-            card_closing_day=item.credit_card.closing_day if item.credit_card else None,
+            card_due_day=item.credit_card.due_day if item.credit_card else None,
             card_type=item.credit_card.type if item.credit_card else None,
             current_installment=item.current_installment,
             total_installments=item.total_installments,
@@ -1918,7 +1909,7 @@ async def calculate_balance(
             card_name=item.credit_card.name if item.credit_card else None,
             card_number=item.credit_card.number if item.credit_card else None,
             card_active=item.credit_card.active if item.credit_card else None,
-            card_closing_day=item.credit_card.closing_day if item.credit_card else None,
+            card_due_day=item.credit_card.due_day if item.credit_card else None,
             card_type=item.credit_card.type if item.credit_card else None
         )
         for item in main_bc_expense_items
@@ -1940,7 +1931,7 @@ async def calculate_balance(
             card_name=item.credit_card.name if item.credit_card else None,
             card_number=item.credit_card.number if item.credit_card else None,
             card_active=item.credit_card.active if item.credit_card else None,
-            card_closing_day=item.credit_card.closing_day if item.credit_card else None,
+            card_due_day=item.credit_card.due_day if item.credit_card else None,
             card_type=item.credit_card.type if item.credit_card else None
         )
         for item in main_bc_revenue_items
@@ -1962,7 +1953,7 @@ async def calculate_balance(
             card_name=item.credit_card.name if item.credit_card else None,
             card_number=item.credit_card.number if item.credit_card else None,
             card_active=item.credit_card.active if item.credit_card else None,
-            card_closing_day=item.credit_card.closing_day if item.credit_card else None,
+            card_due_day=item.credit_card.due_day if item.credit_card else None,
             card_type=item.credit_card.type if item.credit_card else None
         )
         for item in shared_bc_expense_items
@@ -1984,7 +1975,7 @@ async def calculate_balance(
             card_name=item.credit_card.name if item.credit_card else None,
             card_number=item.credit_card.number if item.credit_card else None,
             card_active=item.credit_card.active if item.credit_card else None,
-            card_closing_day=item.credit_card.closing_day if item.credit_card else None,
+            card_due_day=item.credit_card.due_day if item.credit_card else None,
             card_type=item.credit_card.type if item.credit_card else None
         )
         for item in shared_bc_revenue_items

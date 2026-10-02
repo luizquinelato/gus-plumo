@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
 import {
@@ -13,6 +13,7 @@ import {
   CadastroListPageTabs,
   cadastroFilterFieldCls,
   listPageTableRowHoverCls,
+  listPageTableSectionCls,
   listPageTableTdCls,
 } from '../components/CadastroListPageLayout'
 import {
@@ -23,6 +24,8 @@ import {
 } from '../components/CadastroFormLayout'
 import { ListPageTable } from '../components/ListPageTable'
 import {
+  ListTableCheckboxCell,
+  ListTableCheckboxHeader,
   ListTableIndexCell,
   ListTableIndexHeader,
   ListTableSpacerCell,
@@ -30,20 +33,39 @@ import {
   ListTableSpacerHeader,
   ListTableStaticHeader,
 } from '../components/ListTableSelectColumns'
+import FloatingFooterBar from '../components/FloatingFooterBar'
 import PageScrollRoot from '../components/PageScrollRoot'
 import Badge from '../components/Badge'
 import { badgeVariantForColumnRole } from '../utils/badgeSurfaces'
+import ConfirmDialog from '../components/ConfirmDialog'
 import Toast from '../components/Toast'
 import { InvoiceReconcilePickPanel } from '../components/InvoiceReconcilePickPanel'
 import { useEscapeKey } from '../hooks/useEscapeKey'
 import {
   flattenReconcileCycles,
+  type InvoiceMatchCandidate,
   type InvoiceMatchCycle,
   type InvoiceMatchHistory,
+  type InvoiceSuggestHistoryResponse,
 } from '../types/invoiceReconcile'
-import { Calendar, CheckCircle2, Filter, Link2, Loader2, Wand2 } from 'lucide-react'
+import {
+  ArrowUp,
+  Calendar,
+  CheckCircle2,
+  Filter,
+  Link2,
+  Loader2,
+  Save,
+  Unlink,
+  X,
+} from 'lucide-react'
 
 type ReconcileTab = 'pending' | 'matched' | 'unlinked'
+
+type ReconcileDraftLink = {
+  candidate: InvoiceMatchCandidate
+  match_method: 'auto' | 'manual'
+}
 
 const DESKTOP_INSPECTOR_MQ = '(min-width: 1024px)'
 
@@ -75,8 +97,37 @@ const parseYearMonth = (yearMonth: string) => {
   const [year, month] = yearMonth.split('-').map(Number)
   return {
     year: year || null,
+    month: month >= 1 && month <= 12 ? month : null,
     monthLabel: month >= 1 && month <= 12 ? MONTH_NAMES[month - 1] : yearMonth,
   }
+}
+
+const formatCycleMonthColumn = (yearMonth: string) => {
+  const period = parseYearMonth(yearMonth)
+  if (!period.year || !period.month) return yearMonth
+  return `${String(period.month).padStart(2, '0')}/${period.year}`
+}
+
+const formatInvoiceDueDates = (cycle: InvoiceMatchCycle) => {
+  const dates = cycle.invoice_due_dates?.length
+    ? cycle.invoice_due_dates
+    : cycle.invoice_due_date
+      ? [cycle.invoice_due_date]
+      : []
+  if (dates.length === 0) {
+    const fallbackDays = [...new Set(cycle.cards.map((card) => card.due_day ?? 14))]
+    const [ymYear, ymMonth] = cycle.year_month.split('-').map(Number)
+    if (!ymYear || !ymMonth) return '—'
+    const lastDay = new Date(ymYear, ymMonth, 0).getDate()
+    return fallbackDays
+      .sort((left, right) => left - right)
+      .map((day) => {
+        const closeDay = Math.min(Math.max(day, 1), lastDay)
+        return formatDate(`${ymYear}-${String(ymMonth).padStart(2, '0')}-${String(closeDay).padStart(2, '0')}`)
+      })
+      .join(' · ')
+  }
+  return dates.map((value) => formatDate(value)).join(' · ')
 }
 
 const statusMeta = (status: InvoiceMatchCycle['status']) => {
@@ -88,39 +139,8 @@ const statusMeta = (status: InvoiceMatchCycle['status']) => {
 const isPendingCycle = (cycle: InvoiceMatchCycle) =>
   cycle.status === 'unmatched' || cycle.status === 'ambiguous'
 
-const autoResultToast = (applied: number, skippedMultiple: number) => {
-  if (applied > 0 && skippedMultiple > 0) {
-    return {
-      message:
-        `${applied} ${applied === 1 ? 'vínculo feito' : 'vínculos feitos'}. ` +
-        `${skippedMultiple} ${skippedMultiple === 1 ? 'ciclo continua pendente' : 'ciclos continuam pendentes'}: ` +
-        'o valor da fatura aparece em mais de um débito no extrato. Escolha o lançamento correto.',
-      type: 'warning' as const,
-      duration: 8000,
-    }
-  }
-  if (skippedMultiple > 0) {
-    return {
-      message: skippedMultiple === 1
-        ? 'Não foi possível vincular automaticamente: o valor da fatura aparece em mais de um débito no extrato. Escolha o lançamento correto.'
-        : `Não foi possível vincular automaticamente ${skippedMultiple} ciclos: o valor da fatura aparece em mais de um débito no extrato. Escolha o lançamento correto em cada um.`,
-      type: 'warning' as const,
-      duration: 8000,
-    }
-  }
-  if (applied > 0) {
-    return {
-      message: `${applied} ${applied === 1 ? 'vínculo automático' : 'vínculos automáticos'}`,
-      type: 'success' as const,
-      duration: 3000,
-    }
-  }
-  return {
-    message: 'Nenhum ciclo com um único débito no valor da fatura.',
-    type: 'warning' as const,
-    duration: 5000,
-  }
-}
+const isMatchedCycle = (cycle: InvoiceMatchCycle) =>
+  cycle.status === 'matched' && cycle.match != null
 
 const cycleMatchesQuery = (cycle: InvoiceMatchCycle, raw: string) => {
   if (!raw.trim()) return true
@@ -153,15 +173,17 @@ const emptyCopyForTab = (tab: ReconcileTab) => {
 
 const ReconciliacaoPage = () => {
   const currentYear = String(new Date().getFullYear())
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const [history, setHistory] = useState<InvoiceMatchHistory | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [tab, setTab] = useState<ReconcileTab>('pending')
   const [search, setSearch] = useState('')
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [workingKey, setWorkingKey] = useState<string | null>(null)
-  const [draftYear, setDraftYear] = useState(currentYear)
+  const [draftYear, setDraftYear] = useState('')
   const [appliedYear, setAppliedYear] = useState('')
   const [filtersApplied, setFiltersApplied] = useState(false)
+  const [showBackToTop, setShowBackToTop] = useState(false)
   const [isDesktop, setIsDesktop] = useState(
     () => typeof window !== 'undefined' && window.matchMedia(DESKTOP_INSPECTOR_MQ).matches,
   )
@@ -175,6 +197,10 @@ const ReconciliacaoPage = () => {
     message: '',
     type: 'success',
   })
+  const [draftLinks, setDraftLinks] = useState<Map<string, ReconcileDraftLink>>(new Map())
+  const [selectedRowKeys, setSelectedRowKeys] = useState<Set<string>>(new Set())
+  const [suggestNotFoundKeys, setSuggestNotFoundKeys] = useState<Set<string>>(new Set())
+  const [showUnmatchConfirm, setShowUnmatchConfirm] = useState(false)
 
   const showToast = (
     message: string,
@@ -198,11 +224,90 @@ const ReconciliacaoPage = () => {
     return () => mq.removeEventListener('change', sync)
   }, [])
 
-  const loadHistory = async (opts?: { silent?: boolean }) => {
+  const clearDraftState = useCallback(() => {
+    setDraftLinks(new Map())
+    setSelectedRowKeys(new Set())
+    setSuggestNotFoundKeys(new Set())
+  }, [])
+
+  const scopeCyclesByYear = (cycles: InvoiceMatchCycle[], yearFilter: string) => {
+    if (!yearFilter) return cycles
+    return cycles.filter((cycle) => cycle.year_month.startsWith(`${yearFilter}-`))
+  }
+
+  const applySuggestResponse = (response: InvoiceSuggestHistoryResponse, yearFilter: string) => {
+    const cycles = flattenReconcileCycles(response.preview)
+    const scopedPending = scopeCyclesByYear(cycles, yearFilter).filter(isPendingCycle)
+    const suggestionByKey = new Map(
+      (response.suggestions ?? []).map((item) => [item.key, item] as const),
+    )
+    const nextDrafts = new Map<string, ReconcileDraftLink>()
+    const notFound = new Set<string>()
+    for (const cycle of scopedPending) {
+      const suggestion = suggestionByKey.get(cycle.key)
+      if (suggestion) {
+        nextDrafts.set(cycle.key, {
+          candidate: suggestion.candidate,
+          match_method: 'auto',
+        })
+      } else {
+        notFound.add(cycle.key)
+      }
+    }
+    setDraftLinks(nextDrafts)
+    setSuggestNotFoundKeys(notFound)
+    setSelectedRowKeys(new Set(nextDrafts.keys()))
+    return {
+      foundCount: nextDrafts.size,
+      notFoundCount: notFound.size,
+      skippedMultiple: response.skipped_multiple_count ?? 0,
+    }
+  }
+
+  const loadHistoryWithSuggestions = async (yearFilter: string, opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true)
+    try {
+      const response = await axios.post<InvoiceSuggestHistoryResponse>(
+        '/api/invoice-payment-matches/suggest-history',
+      )
+      setHistory(response.data.preview)
+      const stats = applySuggestResponse(response.data, yearFilter)
+      if (!opts?.silent) {
+        if (stats.foundCount > 0) {
+          showToast(
+            `${stats.foundCount} ${stats.foundCount === 1 ? 'vínculo sugerido' : 'vínculos sugeridos'}${
+              stats.notFoundCount > 0 ? ` · ${stats.notFoundCount} sem match automático` : ''
+            }. Revise e salve no rodapé.`,
+            stats.notFoundCount > 0 || stats.skippedMultiple > 0 ? 'warning' : 'success',
+            stats.notFoundCount > 0 ? 7000 : 4000,
+          )
+        } else if (stats.notFoundCount > 0) {
+          showToast(
+            stats.skippedMultiple > 0
+              ? 'Nenhum vínculo único automático. Há ambiguidade no extrato — concilie manualmente.'
+              : 'Nenhum débito único encontrado para os ciclos pendentes deste recorte.',
+            'warning',
+            6000,
+          )
+        }
+      }
+      return stats
+    } catch (err: any) {
+      showToast(err.response?.data?.detail || 'Erro ao carregar reconciliação', 'error')
+      return null
+    } finally {
+      if (!opts?.silent) setLoading(false)
+    }
+  }
+
+  const loadHistory = async (opts?: { silent?: boolean; keepDrafts?: boolean }) => {
     if (!opts?.silent) setLoading(true)
     try {
       const response = await axios.get<InvoiceMatchHistory>('/api/invoice-payment-matches/preview-history')
       setHistory(response.data)
+      if (!opts?.keepDrafts) {
+        clearDraftState()
+      }
     } catch (err: any) {
       showToast(err.response?.data?.detail || 'Erro ao carregar reconciliação', 'error')
     } finally {
@@ -211,8 +316,13 @@ const ReconciliacaoPage = () => {
   }
 
   useEffect(() => {
-    loadHistory()
-  }, [])
+    const container = scrollContainerRef.current
+    if (!container) return
+    const onScroll = () => setShowBackToTop(container.scrollTop > 300)
+    onScroll()
+    container.addEventListener('scroll', onScroll, { passive: true })
+    return () => container.removeEventListener('scroll', onScroll)
+  }, [filtersApplied, loading, tab])
 
   const allCycles = useMemo(() => flattenReconcileCycles(history), [history])
 
@@ -245,27 +355,48 @@ const ReconciliacaoPage = () => {
     })
   }, [scopedCycles, tab, search])
 
-  const monthGroups = useMemo(() => {
-    const grouped = new Map<string, InvoiceMatchCycle[]>()
-    filtered.forEach((cycle) => {
-      const list = grouped.get(cycle.year_month) ?? []
-      list.push(cycle)
-      grouped.set(cycle.year_month, list)
-    })
-    return [...grouped.entries()]
-      .sort((left, right) => right[0].localeCompare(left[0]))
-      .map(([yearMonth, cycles]) => {
-        const period = parseYearMonth(yearMonth)
-        return {
-          yearMonth,
-          title: period.year ? `${period.monthLabel} ${period.year}` : yearMonth,
-          cycles,
-          total: cycles.reduce((sum, cycle) => sum + cycle.amount_to_pay, 0),
-        }
-      })
-  }, [filtered])
+  const pendingFilteredKeys = useMemo(
+    () => filtered.filter(isPendingCycle).map((cycle) => cycle.key),
+    [filtered],
+  )
+
+  const matchedFilteredKeys = useMemo(
+    () => filtered.filter(isMatchedCycle).map((cycle) => cycle.key),
+    [filtered],
+  )
+
+  const selectableRowKeys = useMemo(() => {
+    if (tab === 'pending') return pendingFilteredKeys
+    if (tab === 'matched') return matchedFilteredKeys
+    return []
+  }, [tab, pendingFilteredKeys, matchedFilteredKeys])
+
+  const rowSelectAllState = useMemo(() => {
+    if (selectableRowKeys.length === 0) return 'none' as const
+    const selectedCount = selectableRowKeys.filter((key) => selectedRowKeys.has(key)).length
+    if (selectedCount === 0) return 'none' as const
+    if (selectedCount === selectableRowKeys.length) return 'all' as const
+    return 'partial' as const
+  }, [selectableRowKeys, selectedRowKeys])
+
+  useEffect(() => {
+    setSelectedRowKeys(new Set())
+  }, [tab])
+
+  const sortedRows = useMemo(
+    () =>
+      [...filtered].sort((left, right) => {
+        const byMonth = right.year_month.localeCompare(left.year_month)
+        if (byMonth !== 0) return byMonth
+        const byDate = (right.invoice_due_date ?? '').localeCompare(left.invoice_due_date ?? '')
+        if (byDate !== 0) return byDate
+        return left.name.localeCompare(right.name, 'pt-BR')
+      }),
+    [filtered],
+  )
 
   const selected = allCycles.find((cycle) => cycle.key === selectedKey) ?? null
+  const selectedDraft = selected ? draftLinks.get(selected.key) : undefined
 
   useEffect(() => {
     if (selectedKey && !allCycles.some((cycle) => cycle.key === selectedKey)) {
@@ -273,23 +404,23 @@ const ReconciliacaoPage = () => {
     }
   }, [allCycles, selectedKey])
 
-  const confirmMatch = async (cycle: InvoiceMatchCycle, bankStatementId: number) => {
-    setWorkingKey(cycle.key)
-    try {
-      await axios.post('/api/invoice-payment-matches/', {
-        year_month: cycle.year_month,
-        bank_statement_id: bankStatementId,
-        invoice_group_id: cycle.invoice_group_id,
-        credit_card_id: cycle.credit_card_id,
-        match_method: 'manual',
-      })
-      showToast('Vínculo confirmado', 'success')
-      await loadHistory({ silent: true })
-    } catch (err: any) {
-      showToast(err.response?.data?.detail || 'Erro ao vincular pagamento', 'error')
-    } finally {
-      setWorkingKey(null)
-    }
+  const stageDraftLink = (
+    cycle: InvoiceMatchCycle,
+    candidate: InvoiceMatchCandidate,
+    matchMethod: 'auto' | 'manual',
+  ) => {
+    setDraftLinks((prev) => {
+      const next = new Map(prev)
+      next.set(cycle.key, { candidate, match_method: matchMethod })
+      return next
+    })
+    setSelectedRowKeys((prev) => new Set(prev).add(cycle.key))
+    setSuggestNotFoundKeys((prev) => {
+      const next = new Set(prev)
+      next.delete(cycle.key)
+      return next
+    })
+    showToast('Vínculo preparado. Use Salvar vínculos no rodapé para gravar.', 'success', 4000)
   }
 
   const unmatch = async (cycle: InvoiceMatchCycle) => {
@@ -298,7 +429,12 @@ const ReconciliacaoPage = () => {
     try {
       await axios.delete(`/api/invoice-payment-matches/${cycle.match.id}`)
       showToast(cycle.status === 'unlinked' ? 'Marca de não vinculado removida' : 'Vínculo desfeito', 'success')
-      await loadHistory({ silent: true })
+      setDraftLinks((prev) => {
+        const next = new Map(prev)
+        next.delete(cycle.key)
+        return next
+      })
+      await loadHistory({ silent: true, keepDrafts: true })
     } catch (err: any) {
       showToast(err.response?.data?.detail || 'Erro ao desfazer', 'error')
     } finally {
@@ -315,6 +451,11 @@ const ReconciliacaoPage = () => {
         credit_card_id: cycle.credit_card_id,
       })
       showToast('Marcado como não vinculado', 'success')
+      setDraftLinks((prev) => {
+        const next = new Map(prev)
+        next.delete(cycle.key)
+        return next
+      })
       await loadHistory({ silent: true })
     } catch (err: any) {
       showToast(err.response?.data?.detail || 'Erro ao marcar como não vinculado', 'error')
@@ -323,18 +464,105 @@ const ReconciliacaoPage = () => {
     }
   }
 
-  const runAuto = async () => {
-    setWorkingKey('auto')
+  const saveSelectedDrafts = async () => {
+    const keysToSave = [...selectedRowKeys].filter((key) => draftLinks.has(key))
+    if (keysToSave.length === 0) {
+      showToast('Selecione ciclos com vínculo preparado para salvar', 'warning')
+      return
+    }
+    setWorkingKey('save-drafts')
+    let saved = 0
+    let failed = 0
     try {
-      const response = await axios.post('/api/invoice-payment-matches/auto-history')
-      setHistory(response.data.preview)
-      const applied = response.data.applied_count ?? 0
-      const skippedMultiple = response.data.skipped_multiple_count
-        ?? flattenReconcileCycles(response.data.preview).filter((cycle) => cycle.multiple_debits).length
-      const result = autoResultToast(applied, skippedMultiple)
-      showToast(result.message, result.type, result.duration)
-    } catch (err: any) {
-      showToast(err.response?.data?.detail || 'Erro no match automático', 'error')
+      for (const key of keysToSave) {
+        const draft = draftLinks.get(key)
+        const cycle = allCycles.find((item) => item.key === key)
+        if (!draft || !cycle) continue
+        try {
+          await axios.post('/api/invoice-payment-matches/', {
+            year_month: cycle.year_month,
+            bank_statement_id: draft.candidate.bank_statement_id,
+            invoice_group_id: cycle.invoice_group_id,
+            credit_card_id: cycle.credit_card_id,
+            match_method: draft.match_method,
+          })
+          saved += 1
+        } catch {
+          failed += 1
+        }
+      }
+      if (saved > 0) {
+        showToast(
+          `${saved} ${saved === 1 ? 'vínculo salvo' : 'vínculos salvos'}${failed > 0 ? `. ${failed} falhou(aram).` : ''}`,
+          failed > 0 ? 'warning' : 'success',
+        )
+      } else {
+        showToast('Não foi possível salvar os vínculos selecionados', 'error')
+      }
+      if (filtersApplied) {
+        await loadHistoryWithSuggestions(appliedYear, { silent: true })
+      } else {
+        await loadHistory({ silent: true })
+      }
+    } finally {
+      setWorkingKey(null)
+    }
+  }
+
+  const toggleRowSelect = (key: string) => {
+    setSelectedRowKeys((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  const toggleRowSelectAll = () => {
+    if (rowSelectAllState === 'all') {
+      setSelectedRowKeys(new Set())
+      return
+    }
+    setSelectedRowKeys(new Set(selectableRowKeys))
+  }
+
+  const selectedMatchedForUnlink = useMemo(
+    () =>
+      [...selectedRowKeys]
+        .map((key) => allCycles.find((cycle) => cycle.key === key))
+        .filter((cycle): cycle is InvoiceMatchCycle => cycle != null && isMatchedCycle(cycle)),
+    [allCycles, selectedRowKeys],
+  )
+
+  const unmatchSelected = async () => {
+    const targets = selectedMatchedForUnlink
+    if (targets.length === 0) {
+      showToast('Selecione ciclos vinculados para desvincular', 'warning')
+      return
+    }
+    setWorkingKey('unmatch-bulk')
+    let removed = 0
+    let failed = 0
+    try {
+      for (const cycle of targets) {
+        if (!cycle.match) continue
+        try {
+          await axios.delete(`/api/invoice-payment-matches/${cycle.match.id}`)
+          removed += 1
+        } catch {
+          failed += 1
+        }
+      }
+      if (removed > 0) {
+        showToast(
+          `${removed} ${removed === 1 ? 'vínculo desfeito' : 'vínculos desfeitos'}${failed > 0 ? `. ${failed} falhou(aram).` : ''}`,
+          failed > 0 ? 'warning' : 'success',
+        )
+      } else {
+        showToast('Não foi possível desvincular os ciclos selecionados', 'error')
+      }
+      setSelectedRowKeys(new Set())
+      await loadHistory({ silent: true, keepDrafts: true })
     } finally {
       setWorkingKey(null)
     }
@@ -344,6 +572,8 @@ const ReconciliacaoPage = () => {
     setAppliedYear(draftYear)
     setFiltersApplied(true)
     setSelectedKey(null)
+    clearDraftState()
+    void loadHistoryWithSuggestions(draftYear)
   }
 
   const clearFilters = () => {
@@ -352,24 +582,151 @@ const ReconciliacaoPage = () => {
     setFiltersApplied(false)
     setSearch('')
     setSelectedKey(null)
+    clearDraftState()
   }
 
-  const autoCount = allCycles.filter((cycle) => cycle.auto_eligible).length
-  const pendingCount = allCycles.filter(isPendingCycle).length
-  const hasActiveFilters = draftYear !== '' || filtersApplied
+  const hasActiveFilters = filtersApplied || draftYear !== appliedYear
   const showQueue = filtersApplied && !loading
   const showDesktopInspector = Boolean(selected) && isDesktop
   const showMobileInspector = Boolean(selected) && !isDesktop
   const emptyTab = emptyCopyForTab(tab)
   const yearHint = appliedYear || 'Todos'
 
+  const savableSelectedCount = [...selectedRowKeys].filter((key) => draftLinks.has(key)).length
+
+  const bulkSelectTab = tab === 'pending' || tab === 'matched'
+  const showPendingFooter = tab === 'pending' && filtersApplied
+  const showMatchedFooter = tab === 'matched' && filtersApplied
+  const selectedMatchedCount = selectedMatchedForUnlink.length
+  const footerSaveVisible = showPendingFooter && savableSelectedCount > 0
+  const footerUnmatchVisible = showMatchedFooter && selectedMatchedCount > 0
+  const footerActionsVisible = footerSaveVisible || footerUnmatchVisible
+  const footerVisible = footerActionsVisible || showBackToTop
+
+  const scrollToTop = () => {
+    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const renderCycleRow = (cycle: InvoiceMatchCycle, index: number) => {
+    const meta = statusMeta(cycle.status)
+    const selectedRow = selectedKey === cycle.key
+    const draft = draftLinks.get(cycle.key)
+    const pendingRow = isPendingCycle(cycle)
+    const matchedRow = isMatchedCycle(cycle)
+    const rowChecked = selectedRowKeys.has(cycle.key)
+    const linkNotFound = suggestNotFoundKeys.has(cycle.key) && pendingRow && !draft
+    return (
+      <tr
+        key={cycle.key}
+        className={`${listPageTableRowHoverCls} cursor-pointer ${
+          selectedRow
+            ? 'table-row-selected bg-[color-mix(in_srgb,var(--color-1)_7%,transparent)]'
+            : rowChecked && bulkSelectTab
+              ? 'bg-[color-mix(in_srgb,var(--color-1)_6%,transparent)]'
+              : draft
+                ? 'bg-[color-mix(in_srgb,var(--color-save)_8%,transparent)]'
+                : linkNotFound
+                  ? 'bg-[color-mix(in_srgb,var(--color-warning)_12%,transparent)]'
+                  : ''
+        }`}
+        onClick={() => setSelectedKey(selectedRow ? null : cycle.key)}
+      >
+        {bulkSelectTab ? (
+          <ListTableCheckboxCell
+            checked={rowChecked}
+            disabled={tab === 'pending' ? !pendingRow : !matchedRow}
+            onToggle={() => toggleRowSelect(cycle.key)}
+            title={
+              tab === 'pending' && !pendingRow
+                ? 'Somente ciclos pendentes'
+                : tab === 'matched' && !matchedRow
+                  ? 'Somente ciclos vinculados'
+                  : undefined
+            }
+          />
+        ) : (
+          <ListTableIndexCell index={index + 1} />
+        )}
+        {bulkSelectTab ? <ListTableIndexCell index={index + 1} /> : null}
+        <ListTableSpacerCell />
+        <td className={`${listPageTableTdCls} whitespace-nowrap tabular-nums text-gray-700 dark:text-gray-200`}>
+          {formatCycleMonthColumn(cycle.year_month)}
+        </td>
+        <td className={`${listPageTableTdCls} whitespace-nowrap tabular-nums text-gray-700 dark:text-gray-200`}>
+          {formatInvoiceDueDates(cycle)}
+        </td>
+        <td className={listPageTableTdCls}>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className={`text-sm font-semibold ${selectedRow ? 'text-[var(--color-1)]' : 'text-gray-800 dark:text-gray-100'}`}>
+              {cycle.name}
+            </span>
+            {cycle.invoice_group_id != null && (
+              <Badge
+                variant={badgeVariantForColumnRole('classificationPrimary')}
+                tone="brand4"
+                label="Grupo"
+                title="Fatura conjunta"
+              />
+            )}
+          </div>
+          {cycle.cards.length > 0 ? (
+            <p className="mt-0.5 text-xs text-gray-500">
+              {cycle.cards
+                .map((card) => `${card.name}${card.active === false ? ' (inativo)' : ''}`)
+                .join(' · ')}
+            </p>
+          ) : null}
+        </td>
+        <td className={`${listPageTableTdCls} font-semibold tabular-nums text-gray-800 dark:text-gray-100`}>
+          {formatCurrency(cycle.amount_to_pay)}
+        </td>
+        <td className={listPageTableTdCls}>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Badge
+              variant={badgeVariantForColumnRole('statusPrimary')}
+              tone={meta.tone}
+              label={meta.label}
+            />
+            {draft ? (
+              <Badge variant="count" tone="brand3" label="A salvar" title="Vínculo preparado — use Salvar no rodapé" />
+            ) : null}
+            {linkNotFound ? (
+              <Badge
+                variant={badgeVariantForColumnRole('statusPrimary')}
+                tone="warning"
+                label={cycle.multiple_debits ? 'Ambíguo no extrato' : 'Sem match automático'}
+                title="Nenhum débito único encontrado — abra o ciclo e concilie manualmente"
+              />
+            ) : null}
+          </div>
+        </td>
+        <td className={listPageTableTdCls}>
+          {draft ? (
+            <span className="text-gray-800 dark:text-gray-100">
+              {formatDate(draft.candidate.date)} · {draft.candidate.description || '—'}
+            </span>
+          ) : cycle.status === 'unlinked' ? (
+            <span className="text-gray-400">—</span>
+          ) : cycle.match ? (
+            <span>
+              {formatDate(cycle.match.date)} · {cycle.match.description || '—'}
+            </span>
+          ) : (
+            <span className="text-gray-400">—</span>
+          )}
+        </td>
+      </tr>
+    )
+  }
+
   const pickPanel = selected ? (
     <InvoiceReconcilePickPanel
       inline
       cycle={selected}
+      stagedCandidate={selectedDraft?.candidate ?? null}
       busy={workingKey === selected.key}
       onClose={closeInspector}
-      onConfirm={(id) => confirmMatch(selected, id)}
+      onConfirm={(_id, candidate) => stageDraftLink(selected, candidate, 'manual')}
       onUnmatch={() => unmatch(selected)}
       onSkip={() => skipMatch(selected)}
     />
@@ -381,7 +738,7 @@ const ReconciliacaoPage = () => {
     <CadastroListPageEmptyCard
       icon={<Filter size={32} className="text-gray-400" />}
       title="Nenhum filtro aplicado"
-      description="Selecione o ano (ou Todos) e clique em Aplicar para ver a fila de ciclos."
+      description="Selecione o ano (ou Todos) e clique em Aplicar para carregar ciclos e sugerir vínculos no extrato."
     />
   ) : allCycles.length === 0 ? (
     <CadastroListPageEmptyCard
@@ -408,96 +765,30 @@ const ReconciliacaoPage = () => {
       description={emptyTab.description}
     />
   ) : (
-    <div className="flex flex-col gap-6">
-      {monthGroups.map((group) => (
-        <section key={group.yearMonth}>
-          <div className="mb-2 flex items-baseline justify-between gap-3 px-1">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{group.title}</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              {group.cycles.length} {group.cycles.length === 1 ? 'ciclo' : 'ciclos'}
-              <span className="mx-1.5 text-gray-300 dark:text-gray-600">·</span>
-              <span className="font-semibold tabular-nums text-gray-700 dark:text-gray-200">
-                {formatCurrency(group.total)}
-              </span>
-            </p>
-          </div>
-          <ListPageTable
-            colsRest={<ListTableSpacerCol />}
-            head={
-              <tr>
-                <ListTableIndexHeader />
-                <ListTableSpacerHeader />
-                <ListTableStaticHeader label="Ciclo" className="w-[36%]" />
-                <ListTableStaticHeader label="Líquido" className="w-[14%]" />
-                <ListTableStaticHeader label="Status" className="w-[16%]" />
-                <ListTableStaticHeader label="Extrato vinculado" />
-              </tr>
-            }
-          >
-            {group.cycles.map((cycle, index) => {
-              const meta = statusMeta(cycle.status)
-              const selectedRow = selectedKey === cycle.key
-              return (
-                <tr
-                  key={cycle.key}
-                  className={`${listPageTableRowHoverCls} cursor-pointer ${
-                    selectedRow
-                      ? 'table-row-selected bg-[color-mix(in_srgb,var(--color-1)_7%,transparent)]'
-                      : ''
-                  }`}
-                  onClick={() => setSelectedKey(selectedRow ? null : cycle.key)}
-                >
-                  <ListTableIndexCell index={index + 1} />
-                  <ListTableSpacerCell />
-                  <td className={listPageTableTdCls}>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className={`text-sm font-semibold ${selectedRow ? 'text-[var(--color-1)]' : 'text-gray-800 dark:text-gray-100'}`}>
-                        {cycle.name}
-                      </span>
-                      {cycle.invoice_group_id != null && (
-                        <Badge
-                          variant={badgeVariantForColumnRole('classificationPrimary')}
-                          tone="brand4"
-                          label="Grupo"
-                          title="Fatura conjunta"
-                        />
-                      )}
-                    </div>
-                    {cycle.cards.length > 0 ? (
-                      <p className="mt-0.5 text-xs text-gray-500">
-                        {cycle.cards
-                          .map((card) => `${card.name}${card.active === false ? ' (inativo)' : ''}`)
-                          .join(' · ')}
-                      </p>
-                    ) : null}
-                  </td>
-                  <td className={`${listPageTableTdCls} font-semibold tabular-nums text-gray-800 dark:text-gray-100`}>
-                    {formatCurrency(cycle.amount_to_pay)}
-                  </td>
-                  <td className={listPageTableTdCls}>
-                    <Badge
-                      variant={badgeVariantForColumnRole('statusPrimary')}
-                      tone={meta.tone}
-                      label={meta.label}
-                    />
-                  </td>
-                  <td className={listPageTableTdCls}>
-                    {cycle.status === 'unlinked' ? (
-                      <span className="text-gray-400">—</span>
-                    ) : cycle.match ? (
-                      <span>
-                        {formatDate(cycle.match.date)} · {cycle.match.description || '—'}
-                      </span>
-                    ) : (
-                      <span className="text-gray-400">—</span>
-                    )}
-                  </td>
-                </tr>
-              )
-            })}
-          </ListPageTable>
-        </section>
-      ))}
+    <div className={listPageTableSectionCls}>
+      <ListPageTable
+        leadingMode={bulkSelectTab ? 'bulk' : 'index-only'}
+        colsRest={<ListTableSpacerCol />}
+        head={
+          <tr>
+            {bulkSelectTab ? (
+              <ListTableCheckboxHeader state={rowSelectAllState} onToggle={toggleRowSelectAll} />
+            ) : (
+              <ListTableIndexHeader />
+            )}
+            {bulkSelectTab ? <ListTableIndexHeader /> : null}
+            <ListTableSpacerHeader />
+            <ListTableStaticHeader label="Mês" className="w-[5.5rem]" />
+            <ListTableStaticHeader label="Data fatura" className="w-[7rem]" />
+            <ListTableStaticHeader label="Ciclo" className="min-w-[10rem]" />
+            <ListTableStaticHeader label="Líquido" className="w-[7rem]" />
+            <ListTableStaticHeader label="Status" className="w-[11rem]" />
+            <ListTableStaticHeader label="Extrato vinculado" />
+          </tr>
+        }
+      >
+        {sortedRows.map((cycle, index) => renderCycleRow(cycle, index))}
+      </ListPageTable>
     </div>
   )
 
@@ -512,26 +803,14 @@ const ReconciliacaoPage = () => {
             <CadastroListPageHero
               icon={<Link2 className="h-8 w-8" />}
               title="Reconciliação de Faturas"
-              subtitle="Vínculos entre o ciclo da fatura (grupo ou cartão) e o débito no extrato"
-              actions={
-                <button
-                  type="button"
-                  onClick={runAuto}
-                  disabled={pendingCount === 0 || workingKey !== null || loading}
-                  className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-                  style={{ backgroundColor: 'var(--color-1)', color: 'var(--on-color-1)' }}
-                >
-                  {workingKey === 'auto' ? <Loader2 size={18} className="animate-spin" /> : <Wand2 size={18} />}
-                  Vincular automaticamente{autoCount > 0 ? ` (${autoCount})` : ''}
-                </button>
-              }
+              subtitle="Aplique o filtro para carregar ciclos e sugestões do extrato — revise e salve no rodapé"
             />
           }
           tabs={
             <CadastroListPageFilterCard
               hasActiveFilters={hasActiveFilters}
               onClearFilters={clearFilters}
-              onApply={applyFilters}
+              onApply={() => void applyFilters()}
               applying={loading}
               resultHint={filtersApplied ? yearHint : undefined}
             >
@@ -551,8 +830,15 @@ const ReconciliacaoPage = () => {
             </CadastroListPageFilterCard>
           }
         >
-          <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden -mx-6 -mb-4 -mt-3 lg:-mx-8">
-            <PageScrollRoot className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden scroll-slim bg-gray-50 px-6 pb-20 pt-3 dark:bg-gray-900 lg:px-8">
+          <div
+            className={`flex min-h-0 min-w-0 flex-1 overflow-hidden -mx-6 -mt-3 lg:-mx-8 ${
+              footerVisible ? 'pb-16 -mb-4' : '-mb-4'
+            }`}
+          >
+            <PageScrollRoot
+              ref={scrollContainerRef}
+              className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden scroll-slim bg-gray-50 px-6 pb-4 pt-3 dark:bg-gray-900 lg:px-8"
+            >
               {showQueue && allCycles.length > 0 ? (
                 <CadastroListPageTabs
                   tabs={[
@@ -577,7 +863,7 @@ const ReconciliacaoPage = () => {
             </PageScrollRoot>
 
             {showDesktopInspector ? (
-              <aside className="flex h-full w-[420px] shrink-0 flex-col overflow-hidden border-l border-gray-200 bg-slate-100 p-3 dark:border-gray-700 dark:bg-gray-950">
+              <aside className="flex min-h-0 w-[420px] shrink-0 flex-col overflow-hidden border-l border-gray-200 bg-slate-100 p-3 pb-0 dark:border-gray-700 dark:bg-gray-950">
                 <div className="min-h-0 flex-1 overflow-hidden rounded-2xl bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_4px_24px_rgba(0,0,0,0.10)] dark:bg-gray-800 dark:shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_4px_24px_rgba(0,0,0,0.45)]">
                   {pickPanel}
                 </div>
@@ -604,6 +890,76 @@ const ReconciliacaoPage = () => {
           <CadastroModalFooter onClose={closeInspector} hideSave closeLabel="Fechar" />
         </CadastroModalShell>
       ) : null}
+
+      {footerVisible ? (
+        <FloatingFooterBar>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            {footerSaveVisible ? (
+              <span className="font-medium text-color-primary">
+                {savableSelectedCount}{' '}
+                {savableSelectedCount === 1 ? 'vínculo pronto para salvar' : 'vínculos prontos para salvar'}
+              </span>
+            ) : footerUnmatchVisible ? (
+              <span className="font-medium text-color-primary">
+                {selectedMatchedCount}{' '}
+                {selectedMatchedCount === 1 ? 'ciclo selecionado' : 'ciclos selecionados'}
+              </span>
+            ) : (
+              <span />
+            )}
+            <div className="flex flex-wrap items-center gap-2">
+              {footerSaveVisible ? (
+                <button
+                  type="button"
+                  onClick={() => void saveSelectedDrafts()}
+                  disabled={workingKey !== null}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
+                  style={{ background: 'var(--color-save)', color: 'var(--on-color-save)' }}
+                >
+                  {workingKey === 'save-drafts' ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                  Salvar vínculos ({savableSelectedCount})
+                </button>
+              ) : null}
+              {footerUnmatchVisible ? (
+                <button
+                  type="button"
+                  onClick={() => setShowUnmatchConfirm(true)}
+                  disabled={workingKey !== null}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
+                  style={{ backgroundColor: 'var(--color-danger, #dc2626)', color: '#fff' }}
+                >
+                  {workingKey === 'unmatch-bulk' ? <Loader2 size={14} className="animate-spin" /> : <Unlink size={14} />}
+                  Desvincular ({selectedMatchedCount})
+                </button>
+              ) : null}
+              {showBackToTop ? (
+                <button
+                  type="button"
+                  onClick={scrollToTop}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-color-primary px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90"
+                  title="Voltar ao topo"
+                >
+                  <ArrowUp size={14} />
+                  Voltar ao Topo
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </FloatingFooterBar>
+      ) : null}
+
+      <ConfirmDialog
+        isOpen={showUnmatchConfirm}
+        onClose={() => setShowUnmatchConfirm(false)}
+        onConfirm={() => void unmatchSelected()}
+        title="Desvincular ciclos selecionados"
+        message={`Desfazer ${selectedMatchedCount} ${
+          selectedMatchedCount === 1 ? 'vínculo' : 'vínculos'
+        } com o extrato? Os ciclos voltam para Pendentes.`}
+        confirmText="Desvincular"
+        cancelText="Cancelar"
+        type="danger"
+      />
 
       {toast.show && (
         <Toast

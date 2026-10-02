@@ -24,7 +24,7 @@ interface BalanceItem {
   card_number?: string  // Número do cartão (últimos 4 dígitos)
   card_active?: boolean  // Se o cartão está ativo
   card_type?: string  // Tipo do cartão: "crédito" ou "benefício"
-  card_closing_day?: number  // Dia de fechamento do cartão (1-31)
+  card_due_day?: number  // Dia de vencimento do cartão (1-31)
   current_installment?: number | null
   total_installments?: number | null
 }
@@ -332,8 +332,8 @@ const BalanceDetailsModal = ({
       const [cardName] = cardKey.split('|')
       const cardNumber = items[0]?.card_number || ''
       const cardActive = items[0]?.card_active ?? true  // Default true se não informado
-      const cardClosingDay = items[0]?.card_closing_day  // Dia de fechamento do cartão
-      return { cardName, cardNumber, cardActive, cardClosingDay, items }
+      const cardDueDay = items[0]?.card_due_day  // Dia de vencimento do cartão
+      return { cardName, cardNumber, cardActive, cardDueDay, items }
     })
     .sort((a, b) => {
       // Ordena cartões por número (últimos 4 dígitos)
@@ -423,7 +423,7 @@ const BalanceDetailsModal = ({
           {isCreditCard ? (
             // Renderiza tabelas separadas por cartão
             <div className="space-y-6">
-              {sortedCardGroups.map(({ cardName, cardNumber, cardActive, cardClosingDay, items }) => {
+              {sortedCardGroups.map(({ cardName, cardNumber, cardActive, cardDueDay, items }) => {
                 // Calcula totais mantendo o sinal (negativo ou positivo)
                 const cardTotal = items.reduce((sum, item) => sum + Number(item.amount), 0)
                 const cardMyTotal = items.reduce((sum, item) => {
@@ -443,9 +443,9 @@ const BalanceDetailsModal = ({
                     bodyClassName="p-0"
                     trailing={
                       <div className="flex items-center gap-2">
-                        {cardClosingDay && items[0]?.year_month && (() => {
+                        {cardDueDay && items[0]?.year_month && (() => {
                           const [year, month] = items[0].year_month.split('-')
-                          const closingDate = new Date(parseInt(year), parseInt(month) - 1, cardClosingDay, 23, 59, 59)
+                          const closingDate = new Date(parseInt(year), parseInt(month) - 1, cardDueDay, 23, 59, 59)
                           const formattedDate = closingDate.toLocaleString('pt-BR', {
                             day: '2-digit',
                             month: '2-digit',

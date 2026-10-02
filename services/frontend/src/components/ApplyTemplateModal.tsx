@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react'
 import { GripVertical, AlertTriangle, ArrowDownCircle, ArrowUpCircle, FileText, Lock } from 'lucide-react'
 import axios from 'axios'
-import { formatSharedAccountDisplay } from '../utils/accountFormatter'
+import { sharingPartnerLabel, sharingPercentForKind } from '../utils/accountFormatter'
 import { useAlert } from '../hooks/useAlert'
 import type { ExpenseTemplate, ApplyTemplateRequest } from '../types/expenseTemplate'
 import { dateToLocalString } from '../utils/dateUtils'
 import { validateAccountPeriodDate } from '../services/accountPeriodClosuresApi'
+import { DateField } from './date'
+import OwnershipPercentField from './OwnershipPercentField'
+import { maskPercentInput, finalizePercentInput } from '../utils/percentInput'
 import {
   CadastroModalShell,
   CadastroModalHeader,
@@ -544,10 +547,9 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
 
                     {/* Data */}
                     <div>
-                      <input
-                        type="date"
+                      <DateField
                         value={item.date}
-                        onChange={(e) => updateItem(index, 'date', e.target.value)}
+                        onChange={(value) => updateItem(index, 'date', value)}
                         className={cadastroFieldCls}
                       />
                     </div>
@@ -621,10 +623,16 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
 
                           if (sharingId) {
                             const sharing = sharings.find(s => s.id === sharingId)
+                            const subtag = subtags.find(s => s.id === updated[index].subtag_id)
                             updated[index] = {
                               ...updated[index],
                               expense_sharing_id: sharingId,
-                              ownership_percentage: sharing ? sharing.my_contribution_percentage.toString() : '100.00'
+                              ownership_percentage: sharing
+                                ? sharingPercentForKind(
+                                    sharing,
+                                    subtag?.type === 'receita' ? 'revenue' : 'expense'
+                                  ).toString()
+                                : '100.00'
                             }
                           } else {
                             updated[index] = {
@@ -641,53 +649,28 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
                         <option value="">Sem</option>
                         {sharings.map(sharing => (
                           <option key={sharing.id} value={sharing.id}>
-                            {formatSharedAccountDisplay(sharing.shared_account, sharing.my_contribution_percentage)}
+                            {sharingPartnerLabel(sharing)}
                           </option>
                         ))}
                       </select>
                     </div>
 
-                    {/* Minha Contribuição (%) */}
                     <div>
-                      <div className="relative">
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={item.ownership_percentage}
-                          onChange={(e) => {
-                            const value = e.target.value
-                            if (value === '') {
-                              updateItem(index, 'ownership_percentage', '')
-                              return
-                            }
-                            const sanitized = value.replace(',', '.')
-                            if (/^\d{0,3}(\.\d{0,2})?$/.test(sanitized)) {
-                              const numValue = parseFloat(sanitized)
-                              if (!isNaN(numValue) && numValue <= 100) {
-                                updateItem(index, 'ownership_percentage', sanitized)
-                              } else if (sanitized.endsWith('.') || sanitized.match(/^\d+\.$/)) {
-                                updateItem(index, 'ownership_percentage', sanitized)
-                              }
-                            }
-                          }}
-                          onBlur={(e) => {
-                            const value = e.target.value
-                            if (value) {
-                              const numValue = parseFloat(value)
-                              if (!isNaN(numValue)) {
-                                updateItem(index, 'ownership_percentage', numValue.toFixed(2))
-                              }
-                            } else {
-                              updateItem(index, 'ownership_percentage', '100.00')
-                            }
-                          }}
-                          className={`${cadastroFieldCls} pr-6 text-right`}
-                          placeholder="100"
-                        />
-                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 text-sm">
-                          %
-                        </span>
-                      </div>
+                      <OwnershipPercentField
+                        compact
+                        context="transaction"
+                        value={item.ownership_percentage}
+                        onChange={(raw) => updateItem(index, 'ownership_percentage', maskPercentInput(raw))}
+                        onBlur={() => {
+                          const v = finalizePercentInput(item.ownership_percentage)
+                          updateItem(
+                            index,
+                            'ownership_percentage',
+                            v ? parseFloat(v).toFixed(2) : '100.00',
+                          )
+                        }}
+                        placeholder="100"
+                      />
                     </div>
                   </div>
                 </div>

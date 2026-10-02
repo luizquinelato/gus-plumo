@@ -92,7 +92,7 @@ function addSharingColumns(record: any, exp: ExpenseExportData, includeSharing: 
   return {
     ...record,
     'Conta Parceira': hasSharing ? exp.shared_partner_name : '',
-    'Minha Contribuição (%)': hasSharing && exp.ownership_percentage != null ? Number(exp.ownership_percentage) : ''
+    'Parte na sua conta (%)': hasSharing && exp.ownership_percentage != null ? Number(exp.ownership_percentage) : ''
   }
 }
 
@@ -571,7 +571,7 @@ export interface ExportSeparadoResult {
 
 /**
  * Exporta dados filtrados para 3 arquivos Excel separados (um por tipo)
- * Ideal para reimportação posterior
+ * Análise externa ou backup (não use para reimportar no Plumo)
  */
 export function exportToExcelSeparado(expenses: ExpenseExportData[], options: ExportOptions = {}): ExportSeparadoResult {
   // Separa por fonte

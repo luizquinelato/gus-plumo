@@ -18,6 +18,17 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 from ..converters import CartaoConverter, inspect_invoice_pdf
+from ..utils.account_import_password import (
+    account_default_import_file_password,
+    load_account_for_user,
+)
+from ..utils.pdf_password import (
+    PdfPasswordInvalid,
+    PdfPasswordRequired,
+    pdf_still_needs_user_password,
+    resolve_pdf_password_at_index,
+)
+from ..utils.invoice_import_diagnostics import explain_empty_cartao_import_batch
 from ..utils import MappingHelper
 from ..services.fatura_service import FaturaService
 from ..etl import ExtratoETL
@@ -33,6 +44,13 @@ router = APIRouter(prefix="/api/import", tags=["import"])
 CONVERSION_TXT_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "logs", "pdf_conversion")
 
 
+def _account_default_pdf_password(db: Session, current_user: dict) -> Optional[str]:
+    tenant_id = current_user.get("tenant_id")
+    account_id = current_user.get("account_id")
+    account = load_account_for_user(db, tenant_id, account_id)
+    return account_default_import_file_password(account)
+
+
 class DetectInvoiceFileResult(BaseModel):
     filename: str
     status: str
@@ -46,6 +64,23 @@ class DetectInvoiceFileResult(BaseModel):
 
 class DetectInvoiceResponse(BaseModel):
     results: List[DetectInvoiceFileResult]
+
+
+class PdfPasswordCheckResult(BaseModel):
+    filename: str
+    requires_password: bool
+
+
+class PdfPasswordCheckResponse(BaseModel):
+    results: List[PdfPasswordCheckResult]
+
+
+def _pdf_user_message(exc: Exception) -> str:
+    if isinstance(exc, PdfPasswordRequired):
+        return "PDF protegido por senha"
+    if isinstance(exc, PdfPasswordInvalid):
+        return "Senha do PDF incorreta"
+    return str(exc)
 
 
 def _registered_credit_card_numbers(db: Session, tenant_id: int) -> set:
@@ -203,8 +238,9 @@ async def import_extrato(
 
         # Pega o DataFrame transformado
         df_transformed = result.get("dataframe")
+        ignored_rows = result.get("ignored_rows") or []
 
-        if df_transformed is None or df_transformed.empty:
+        if df_transformed is None or (df_transformed.empty and not ignored_rows):
             raise HTTPException(status_code=400, detail="Nenhum dado foi processado")
 
         # Converte enable_tracing de string para boolean
@@ -213,12 +249,22 @@ async def import_extrato(
         # Lista de nomes de arquivos originais para o log de debug
         original_filenames = [f.filename for f in files]
 
-        # Usa a mesma função de insert/update do excel_import_router
-        # detect_conflicts=True permite detectar mudanças de tag/subtag e valor
-        save_result = save_extrato_records(
-            df_transformed, db, tenant_id=tenant_id, account_id=account_id, user_id=user_id,
-            detect_conflicts=True, enable_tracing=tracing_enabled, original_filenames=original_filenames
-        )
+        save_result = {
+            "created": 0,
+            "duplicates": 0,
+            "skipped": 0,
+            "unmapped": 0,
+            "unmapped_records": [],
+            "conflicts": [],
+            "conflicts_count": 0,
+        }
+        if df_transformed is not None and not df_transformed.empty:
+            # Usa a mesma função de insert/update do excel_import_router
+            # detect_conflicts=True permite detectar mudanças de tag/subtag e valor
+            save_result = save_extrato_records(
+                df_transformed, db, tenant_id=tenant_id, account_id=account_id, user_id=user_id,
+                detect_conflicts=True, enable_tracing=tracing_enabled, original_filenames=original_filenames
+            )
 
         # Fecha conexão psycopg2
         psycopg2_conn.close()
@@ -233,11 +279,15 @@ async def import_extrato(
             "arquivos_processados": result["arquivos_processados"],
             "linhas_salvas": save_result["created"],
             "linhas_atualizadas": save_result["duplicates"],
+            "registros_atualizados_detalhe": save_result.get("updated_records", []),
             "linhas_com_erro": save_result["skipped"],
+            "linhas_ignoradas_detalhe": save_result.get("skippedRows", []),
             "linhas_nao_mapeadas": save_result.get("unmapped", 0),
             "registros_nao_mapeados": save_result.get("unmapped_records", []),
             "conflicts": save_result.get("conflicts", []),
             "conflicts_count": save_result.get("conflicts_count", 0),
+            "linhas_ignoradas_politica": ignored_rows,
+            "linhas_ignoradas_politica_count": len(ignored_rows),
             "debug_data": save_result.get("debug_data")  # Dados de debug para salvar após resolução
         }
 
@@ -270,20 +320,64 @@ async def download_conversion_txt(
     )
 
 
+@router.post("/pdf/check-passwords", response_model=PdfPasswordCheckResponse)
+async def check_pdf_passwords(
+    files: List[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    """Indica quais PDFs exigem senha do usuário para leitura."""
+    if not files:
+        raise HTTPException(status_code=400, detail="Nenhum arquivo fornecido")
+
+    default_password = _account_default_pdf_password(db, current_user)
+    temp_dir = tempfile.mkdtemp()
+    results: List[PdfPasswordCheckResult] = []
+
+    try:
+        for file in files:
+            filename = file.filename or "arquivo.pdf"
+            if not filename.lower().endswith(".pdf"):
+                results.append(PdfPasswordCheckResult(filename=filename, requires_password=False))
+                continue
+
+            safe_name = os.path.basename(filename)
+            temp_path = os.path.join(temp_dir, safe_name)
+            with open(temp_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+
+            try:
+                requires = pdf_still_needs_user_password(
+                    temp_path, default_password
+                )
+            except Exception as ex:
+                logger.warning("Falha ao verificar senha do PDF %s: %s", filename, ex)
+                requires = False
+
+            results.append(PdfPasswordCheckResult(filename=filename, requires_password=requires))
+
+        return PdfPasswordCheckResponse(results=results)
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 @router.post("/cartao/detect", response_model=DetectInvoiceResponse)
 async def detect_cartao_pdfs(
     files: List[UploadFile] = File(...),
+    passwords: List[str] = Form([]),
+    db: Session = Depends(get_db),
     current_user: dict = Depends(require_account),
 ):
     """Identifica se o PDF é fatura BTG ou Mercado Pago e extrai ano/mês quando possível."""
     if not files:
         raise HTTPException(status_code=400, detail="Nenhum arquivo fornecido")
 
+    default_password = _account_default_pdf_password(db, current_user)
     temp_dir = tempfile.mkdtemp()
     results: List[DetectInvoiceFileResult] = []
 
     try:
-        for file in files:
+        for index, file in enumerate(files):
             filename = file.filename or "arquivo.pdf"
             if not filename.lower().endswith(".pdf"):
                 results.append(
@@ -300,8 +394,11 @@ async def detect_cartao_pdfs(
             with open(temp_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
 
+            pdf_password = resolve_pdf_password_at_index(
+                passwords, index, default_password
+            )
             try:
-                inspected = inspect_invoice_pdf(temp_path)
+                inspected = inspect_invoice_pdf(temp_path, pdf_password, source_filename=filename)
                 issuer = inspected.get("issuer") or "unknown"
                 results.append(
                     DetectInvoiceFileResult(
@@ -312,6 +409,14 @@ async def detect_cartao_pdfs(
                         year=inspected.get("year"),
                         month=inspected.get("month"),
                         card_last4=inspected.get("card_last4"),
+                    )
+                )
+            except (PdfPasswordRequired, PdfPasswordInvalid) as ex:
+                results.append(
+                    DetectInvoiceFileResult(
+                        filename=filename,
+                        status="error",
+                        message=_pdf_user_message(ex),
                     )
                 )
             except Exception as ex:
@@ -334,6 +439,7 @@ async def import_cartao(
     files: List[UploadFile] = File(...),
     years: List[str] = Form(...),
     months: List[str] = Form(...),
+    passwords: List[str] = Form([]),
     save_conversion_txt: Optional[str] = Form("false"),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_account)
@@ -382,6 +488,7 @@ async def import_cartao(
         file_paths = []
         file_years = []
         file_months = []
+        file_passwords: List[Optional[str]] = []
 
         for i, file in enumerate(files):
             # Adiciona ano e mês ao nome do arquivo: "2017_09_Fatura Dez.pdf"
@@ -401,6 +508,11 @@ async def import_cartao(
         tenant_id = current_user.get("tenant_id")
         user_id = current_user.get("user_id") or current_user.get("id")
         account_id = current_user.get("account_id")
+        default_password = _account_default_pdf_password(db, current_user)
+        file_passwords = [
+            resolve_pdf_password_at_index(passwords, i, default_password)
+            for i in range(len(file_paths))
+        ]
 
         # Cria conexão psycopg2 para o MappingHelper
         psycopg2_conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
@@ -413,7 +525,8 @@ async def import_cartao(
             save_individually=False,
             save_temp_files=keep_conversion_txt,
             years=file_years,
-            months=file_months
+            months=file_months,
+            passwords=file_passwords,
         )
 
         conversion_txt_files = []
@@ -428,7 +541,11 @@ async def import_cartao(
             if combined_df.attrs.get("mp_empty_invoice"):
                 last4 = combined_df.attrs.get("mp_card_last4")
                 if not last4 and file_paths:
-                    last4 = inspect_invoice_pdf(file_paths[0]).get("card_last4")
+                    last4 = inspect_invoice_pdf(
+                        file_paths[0],
+                        file_passwords[0] if file_passwords else None,
+                        source_filename=files[0].filename if files else None,
+                    ).get("card_last4")
                 registered = _registered_credit_card_numbers(db, tenant_id)
                 if last4 and MappingHelper.normalize_card_number(last4) not in registered:
                     raise _card_not_registered_error(last4)
@@ -457,7 +574,17 @@ async def import_cartao(
                         "A extração de texto da fonte do arquivo veio corrompida."
                     ),
                 )
-            raise HTTPException(status_code=400, detail="Nenhum dado foi processado dos arquivos")
+            detail_msg = explain_empty_cartao_import_batch(
+                file_paths,
+                [f.filename or os.path.basename(p) for f, p in zip(files, file_paths)],
+                file_passwords,
+                file_years,
+                file_months,
+                mapping_helper,
+                output_dir,
+            )
+            logger.warning("Importação cartão sem dados: %s", detail_msg.replace("\n", " | "))
+            raise HTTPException(status_code=400, detail=detail_msg)
 
         # Salva faturas no banco de dados
         account_id = current_user.get("account_id")

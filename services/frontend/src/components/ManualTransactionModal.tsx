@@ -1,10 +1,8 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
-import DatePicker from 'react-datepicker'
-import 'react-datepicker/dist/react-datepicker.css'
-import '../styles/datepicker-custom.css'
-import { DollarSign, Tag, Users, FileText, AlertTriangle, Lock } from 'lucide-react'
+import { DollarSign, Tag, Users, FileText, AlertTriangle, Lock, Landmark, Gift } from 'lucide-react'
 import Toast from './Toast'
+import { DateField } from './date'
 import {
   CadastroModalShell,
   CadastroModalHeader,
@@ -19,8 +17,11 @@ import {
   cadastroAccentControlCls,
 } from './CadastroFormLayout'
 import { useAlert } from '../hooks/useAlert'
-import { dateToLocalString, dateToLocalTimestamp } from '../utils/dateUtils'
+import { dateToLocalString, dateToLocalTimestamp, parseLocalDateTime } from '../utils/dateUtils'
 import { validateAccountPeriodDate } from '../services/accountPeriodClosuresApi'
+import { sharingPartnerLabel, sharingPercentForKind } from '../utils/accountFormatter'
+import OwnershipPercentField from './OwnershipPercentField'
+import { maskPercentInput } from '../utils/percentInput'
 
 interface ClosedPeriodValidation {
   is_closed: boolean
@@ -73,18 +74,34 @@ interface SharedPartner {
   account_id: number
   shared_account_id: number
   my_contribution_percentage: number
+  revenue_contribution_percentage?: number
   description: string | null
   active: boolean
   shared_account: Account | null
+}
+
+export type ManualLaunchDestination = 'extrato' | 'beneficio'
+
+interface BenefitCardOption {
+  id: number
+  name: string
+  number: string
 }
 
 interface ManualTransactionModalProps {
   isOpen: boolean
   onClose: () => void
   onSuccess: () => void
+  /** Destino inicial ao abrir o modal (relatório de extrato). */
+  defaultDestination?: ManualLaunchDestination
 }
 
-const ManualTransactionModal = ({ isOpen, onClose, onSuccess }: ManualTransactionModalProps) => {
+const ManualTransactionModal = ({
+  isOpen,
+  onClose,
+  onSuccess,
+  defaultDestination = 'extrato',
+}: ManualTransactionModalProps) => {
   // Alert hook
   const { showError } = useAlert()
 
@@ -106,6 +123,9 @@ const ManualTransactionModal = ({ isOpen, onClose, onSuccess }: ManualTransactio
   const [subtags, setSubtags] = useState<Subtag[]>([])
   const [partners, setPartners] = useState<SharedPartner[]>([])
   const [accountId, setAccountId] = useState<number | null>(null)
+  const [benefitCards, setBenefitCards] = useState<BenefitCardOption[]>([])
+  const [launchDestination, setLaunchDestination] = useState<ManualLaunchDestination>(defaultDestination)
+  const [creditCardId, setCreditCardId] = useState<number>(0)
 
   // Estados do formulário
   const [selectedDate, setSelectedDate] = useState<Date>(new Date())
@@ -130,10 +150,11 @@ const ManualTransactionModal = ({ isOpen, onClose, onSuccess }: ManualTransactio
   // Carregar dados ao abrir modal
   useEffect(() => {
     if (isOpen) {
+      setLaunchDestination(defaultDestination)
       loadData()
-      resetForm()
+      resetForm(defaultDestination)
     }
-  }, [isOpen])
+  }, [isOpen, defaultDestination])
 
   // Atualizar subtags quando tag ou valor mudar
   useEffect(() => {
@@ -177,11 +198,12 @@ const ManualTransactionModal = ({ isOpen, onClose, onSuccess }: ManualTransactio
 
   const loadData = async () => {
     try {
-      const [verifyRes, tagsRes, subtagsRes, partnersRes] = await Promise.all([
+      const [verifyRes, tagsRes, subtagsRes, partnersRes, cartoesRes] = await Promise.all([
         axios.get('/api/auth/verify'),
         axios.get('/api/expenses/tags'),
         axios.get('/api/expenses/subtags'),
-        axios.get('/api/expense-sharing/')
+        axios.get('/api/expense-sharing/'),
+        axios.get('/api/cartoes/'),
       ])
 
       // Obter account_id do JWT token
@@ -196,13 +218,18 @@ const ManualTransactionModal = ({ isOpen, onClose, onSuccess }: ManualTransactio
       setTags(tagsRes.data)
       setSubtags(subtagsRes.data)
       setPartners(partnersRes.data)
+      const cards = (cartoesRes.data as { id: number; name: string; number: string; type?: string; active?: boolean }[])
+        .filter((c) => c.type === 'beneficios' && c.active !== false)
+      setBenefitCards(cards)
     } catch (error) {
       console.error('Erro ao carregar dados:', error)
       showError('Erro', 'Erro ao carregar dados do formulário')
     }
   }
 
-  const resetForm = () => {
+  const resetForm = (destination: ManualLaunchDestination = defaultDestination) => {
+    setLaunchDestination(destination)
+    setCreditCardId(0)
     setSelectedDate(new Date())
     setFormData({
       description: '',
@@ -259,23 +286,6 @@ const ManualTransactionModal = ({ isOpen, onClose, onSuccess }: ManualTransactio
     }
   }
 
-  const handleOwnershipPercentageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value
-
-    // Permite: números positivos, um ponto decimal, e no máximo 2 casas decimais
-    const regex = /^\d{0,3}(\.\d{0,2})?$/
-
-    if (value === '' || regex.test(value)) {
-      // Se o valor for maior que 100, limita a 100
-      const numValue = parseFloat(value)
-      if (!isNaN(numValue) && numValue > 100) {
-        setFormData({ ...formData, ownership_percentage: '100.00' })
-      } else {
-        setFormData({ ...formData, ownership_percentage: value })
-      }
-    }
-  }
-
   const handleOwnershipPercentageBlur = () => {
     if (formData.ownership_percentage) {
       const numValue = parseFloat(formData.ownership_percentage)
@@ -293,36 +303,7 @@ const ManualTransactionModal = ({ isOpen, onClose, onSuccess }: ManualTransactio
     }
   }
 
-  const getPartnerLabel = (partner: SharedPartner): string => {
-    if (!partner.shared_account) {
-      return `Conta #${partner.shared_account_id}`
-    }
-
-    const parts: string[] = []
-
-    // Nome da conta
-    if (partner.shared_account.name?.trim()) {
-      parts.push(partner.shared_account.name.trim())
-    }
-
-    // Banco
-    if (partner.shared_account.bank?.name?.trim()) {
-      parts.push(partner.shared_account.bank.name.trim())
-    }
-
-    // Agência
-    if (partner.shared_account.agency) {
-      parts.push(`Ag: ${partner.shared_account.agency}`)
-    }
-
-    // Número da conta
-    if (partner.shared_account.account_number?.trim()) {
-      parts.push(`Cc: ${partner.shared_account.account_number.trim()}`)
-    }
-
-    // Se não tem nenhuma informação, mostra o ID
-    return parts.length > 0 ? parts.join(' • ') : `Conta #${partner.shared_account_id}`
-  }
+  const getPartnerLabel = (partner: SharedPartner): string => sharingPartnerLabel(partner)
 
   // Validar se a data/hora está em um período fechado
   const validateDateAgainstClosures = async (date: Date, sharingId: number): Promise<ClosedPeriodValidation | null> => {
@@ -396,6 +377,11 @@ const ManualTransactionModal = ({ isOpen, onClose, onSuccess }: ManualTransactio
       return
     }
 
+    if (launchDestination === 'beneficio' && creditCardId <= 0) {
+      showToast('Selecione o cartão de benefícios', 'error')
+      return
+    }
+
     // Validação de período fechado da conta (extrato)
     const accountValidation = await validateAccountPeriodDate(dateToLocalString(selectedDate))
     if (accountValidation?.is_closed) {
@@ -432,25 +418,33 @@ const ManualTransactionModal = ({ isOpen, onClose, onSuccess }: ManualTransactio
 
       const transactionDate = dateOverride || selectedDate
       const amount = parseFloat(formData.amount)
-      const payload = {
-        account_id: accountId,
-        date: dateToLocalTimestamp(transactionDate),  // ✅ Usa timezone local (GMT-3) ao invés de UTC
+      const commonPayload = {
+        date: dateToLocalTimestamp(transactionDate),
         description: formData.description.trim(),
         amount: amount,
-        subtag_id: formData.subtag_id === 0 ? null : formData.subtag_id,  // null se não selecionado
+        subtag_id: formData.subtag_id === 0 ? null : formData.subtag_id,
         expense_sharing_id: formData.adjustment_type === 'compartilhado' ? formData.expense_sharing_id : null,
         ownership_percentage: parseFloat(formData.ownership_percentage),
         adjustment_notes: formData.adjustment_notes.trim() || null,
-        create_mapping: formData.create_mapping
+        create_mapping: formData.create_mapping,
       }
 
-      const response = await axios.post('/api/expenses/bank-statements/manual', payload)
+      const response =
+        launchDestination === 'beneficio'
+          ? await axios.post('/api/expenses/benefit-card-statements/manual', {
+              ...commonPayload,
+              credit_card_id: creditCardId,
+            })
+          : await axios.post('/api/expenses/bank-statements/manual', {
+              ...commonPayload,
+              account_id: accountId,
+            })
 
       // Atualiza os dados na tela principal
       onSuccess()
 
       // Limpa o formulário para um possível novo lançamento
-      resetForm()
+      resetForm(launchDestination)
 
       // Mostra mensagem de sucesso em toast
       showToast(response.data.message || 'Lançamento criado com sucesso!', 'success')
@@ -484,21 +478,79 @@ const ManualTransactionModal = ({ isOpen, onClose, onSuccess }: ManualTransactio
         />
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col" id="manual-transaction-form">
           <CadastroModalBody>
+            <CadastroFormSection title="Destino" icon={<Landmark size={14} />}>
+              <CadastroModalFieldsGrid>
+                <CadastroModalFieldsRow>
+                  <div className="flex flex-wrap gap-4">
+                    <label className={cadastroOptionLabelCls}>
+                      <input
+                        type="radio"
+                        value="extrato"
+                        checked={launchDestination === 'extrato'}
+                        onChange={() => {
+                          setLaunchDestination('extrato')
+                          setCreditCardId(0)
+                        }}
+                        disabled={isLoading}
+                        className={cadastroAccentControlCls}
+                      />
+                      <Landmark size={14} className="text-[var(--color-1)]" aria-hidden />
+                      Extrato bancário
+                    </label>
+                    <label className={cadastroOptionLabelCls}>
+                      <input
+                        type="radio"
+                        value="beneficio"
+                        checked={launchDestination === 'beneficio'}
+                        onChange={() => setLaunchDestination('beneficio')}
+                        disabled={isLoading || benefitCards.length === 0}
+                        className={cadastroAccentControlCls}
+                      />
+                      <Gift size={14} className="text-[var(--color-3)]" aria-hidden />
+                      Cartão de benefícios
+                    </label>
+                  </div>
+                  {benefitCards.length === 0 ? (
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Cadastre um cartão de benefícios para lançar nesta origem.
+                    </p>
+                  ) : null}
+                </CadastroModalFieldsRow>
+                {launchDestination === 'beneficio' ? (
+                  <CadastroModalFieldsRow>
+                    <label className="block min-w-0">
+                      <CadastroFieldLabel required>Cartão de benefícios</CadastroFieldLabel>
+                      <select
+                        value={creditCardId || 0}
+                        onChange={(e) => setCreditCardId(Number(e.target.value))}
+                        disabled={isLoading}
+                        className={`${cadastroFieldCls} mt-0.5 disabled:opacity-50`}
+                        required
+                      >
+                        <option value={0}>Selecione o cartão...</option>
+                        {benefitCards.map((card) => (
+                          <option key={card.id} value={card.id}>
+                            {card.name} •••• {card.number}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </CadastroModalFieldsRow>
+                ) : null}
+              </CadastroModalFieldsGrid>
+            </CadastroFormSection>
+
             <CadastroFormSection title="Identificação" icon={<FileText size={14} />}>
               <CadastroModalFieldsGrid>
                 <CadastroModalFieldsRow cols={2}>
                   <label className="block min-w-0">
                     <CadastroFieldLabel required>Data e Hora</CadastroFieldLabel>
-                    <DatePicker
-                      selected={selectedDate}
-                      onChange={(date: Date | null) => setSelectedDate(date || new Date())}
-                      showTimeSelect
-                      timeFormat="HH:mm"
-                      timeIntervals={15}
-                      dateFormat="dd/MM/yyyy HH:mm"
+                    <DateField
+                      withTime
+                      value={dateToLocalTimestamp(selectedDate)}
+                      onChange={(value) => setSelectedDate(parseLocalDateTime(value) ?? new Date())}
                       disabled={isLoading}
                       className={`${cadastroFieldCls} mt-0.5`}
-                      required
                     />
                   </label>
                   <label className="block min-w-0">
@@ -667,7 +719,12 @@ const ManualTransactionModal = ({ isOpen, onClose, onSuccess }: ManualTransactio
                           setFormData({
                             ...formData,
                             expense_sharing_id: sharingId,
-                            ownership_percentage: selectedSharing ? selectedSharing.my_contribution_percentage.toString() : '100.00'
+                            ownership_percentage: selectedSharing
+                              ? sharingPercentForKind(
+                                  selectedSharing,
+                                  Number(formData.amount) >= 0 ? 'revenue' : 'expense'
+                                ).toString()
+                              : '100.00'
                           })
                         }}
                         disabled={isLoading}
@@ -682,19 +739,15 @@ const ManualTransactionModal = ({ isOpen, onClose, onSuccess }: ManualTransactio
                         ))}
                       </select>
                     </label>
-                    <label className="block min-w-0">
-                      <CadastroFieldLabel>Minha Contribuição (%)</CadastroFieldLabel>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={formData.ownership_percentage}
-                        onChange={handleOwnershipPercentageChange}
-                        onBlur={handleOwnershipPercentageBlur}
-                        disabled={isLoading}
-                        placeholder="0.00"
-                        className={`${cadastroFieldCls} mt-0.5 disabled:opacity-50`}
-                      />
-                    </label>
+                    <OwnershipPercentField
+                      context="transaction"
+                      value={formData.ownership_percentage}
+                      onChange={(raw) =>
+                        setFormData({ ...formData, ownership_percentage: maskPercentInput(raw) })
+                      }
+                      onBlur={handleOwnershipPercentageBlur}
+                      disabled={isLoading}
+                    />
                   </CadastroModalFieldsRow>
                 ) : null}
               </CadastroModalFieldsGrid>

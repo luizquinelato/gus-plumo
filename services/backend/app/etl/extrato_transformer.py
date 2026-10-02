@@ -3,11 +3,19 @@
 ExtratoTransformer - Camada TRANSFORM do ETL
 Responsável por aplicar todas as transformações nos dados brutos.
 """
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 import pandas as pd
 from ..utils.mapping_helper import MappingHelper
 from ..utils.datetime_helper import DatetimeHelper
+
+# Transações do extrato bruto que não devem ser importadas (comparação case-insensitive).
+IGNORED_RAW_TRANSACTIONS = frozenset({"saque negado"})
+
+
+def is_ignored_extrato_transaction(transacao: Any) -> bool:
+    label = str(transacao or "").strip().casefold()
+    return label in IGNORED_RAW_TRANSACTIONS
 
 
 class ExtratoTransformer:
@@ -31,7 +39,9 @@ class ExtratoTransformer:
         """
         self.mapping_helper = mapping_helper or MappingHelper()
     
-    def transform(self, raw_records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def transform(
+        self, raw_records: List[Dict[str, Any]]
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         """
         Transforma dados brutos em dados processados.
         
@@ -39,7 +49,7 @@ class ExtratoTransformer:
             raw_records: Lista de registros brutos do extrator
             
         Returns:
-            Lista de registros transformados:
+            Tupla (registros transformados, linhas ignoradas por política de importação):
             [
                 {
                     "ano": int,
@@ -59,9 +69,13 @@ class ExtratoTransformer:
         print(f"🔄 [TRANSFORMER] Transformando {len(raw_records)} registros...")
         
         transformed_records = []
+        ignored_records: List[Dict[str, Any]] = []
         
         for idx, raw_record in enumerate(raw_records, 1):
             try:
+                if is_ignored_extrato_transaction(raw_record.get("transacao")):
+                    ignored_records.append(self._build_ignored_row_summary(raw_record))
+                    continue
                 transformed = self._transform_single_record(raw_record)
                 transformed_records.append(transformed)
                 
@@ -73,8 +87,36 @@ class ExtratoTransformer:
                 print(f"      Registro: {raw_record}")
                 continue
         
+        if ignored_records:
+            print(f"⏭️ [TRANSFORMER] Ignorados (política): {len(ignored_records)} registros")
         print(f"✅ [TRANSFORMER] Total transformado: {len(transformed_records)} registros")
-        return transformed_records
+        return transformed_records, ignored_records
+
+    def _build_ignored_row_summary(self, raw_record: Dict[str, Any]) -> Dict[str, Any]:
+        """Resumo para exibir no relatório de importação (campos do arquivo bruto)."""
+        data_hora_raw = raw_record.get("data_hora")
+        data_label = ""
+        try:
+            if isinstance(data_hora_raw, datetime):
+                data_label = data_hora_raw.strftime("%d/%m/%Y %H:%M")
+            else:
+                data_label = self._convert_date(data_hora_raw).strftime("%d/%m/%Y %H:%M")
+        except Exception:
+            data_label = str(data_hora_raw or "")
+
+        valor_raw = raw_record.get("valor")
+        try:
+            valor = float(valor_raw) if valor_raw is not None and valor_raw != "" else 0.0
+        except (TypeError, ValueError):
+            valor = 0.0
+
+        return {
+            "data": data_label,
+            "transacao": str(raw_record.get("transacao") or "").strip(),
+            "descricao": str(raw_record.get("descricao") or "").strip(),
+            "valor": valor,
+            "motivo": "Saque negado",
+        }
     
     def _transform_single_record(self, raw_record: Dict[str, Any]) -> Dict[str, Any]:
         """

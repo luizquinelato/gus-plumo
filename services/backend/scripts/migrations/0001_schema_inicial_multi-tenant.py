@@ -275,6 +275,7 @@ def apply(connection):
                 id SERIAL PRIMARY KEY,
                 shared_account_id INTEGER NOT NULL,
                 my_contribution_percentage DECIMAL(5,2) NOT NULL DEFAULT 50.00,
+                revenue_contribution_percentage DECIMAL(5,2) NOT NULL DEFAULT 50.00,
                 description TEXT,
                 account_id INTEGER NOT NULL,
                 tenant_id INTEGER NOT NULL,
@@ -287,7 +288,8 @@ def apply(connection):
                 FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE,
                 FOREIGN KEY (shared_account_id) REFERENCES accounts(id) ON DELETE CASCADE,
                 UNIQUE(account_id, shared_account_id),
-                CHECK (my_contribution_percentage >= 0 AND my_contribution_percentage <= 100)
+                CHECK (my_contribution_percentage >= 0 AND my_contribution_percentage <= 100),
+                CHECK (revenue_contribution_percentage >= 0 AND revenue_contribution_percentage <= 100)
             );
         """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_expense_sharing_account ON expense_sharing_settings(account_id);")
@@ -297,7 +299,8 @@ def apply(connection):
         cursor.execute("COMMENT ON TABLE expense_sharing_settings IS 'Configurações de compartilhamento de despesas entre contas. Cada configuração é única por par de contas (account_id + shared_account_id).';")
         cursor.execute("COMMENT ON COLUMN expense_sharing_settings.account_id IS 'Conta que está configurando o compartilhamento (conta logada)';")
         cursor.execute("COMMENT ON COLUMN expense_sharing_settings.shared_account_id IS 'Conta com quem compartilha despesas';")
-        cursor.execute("COMMENT ON COLUMN expense_sharing_settings.my_contribution_percentage IS 'Percentual que esta conta (account_id) paga (0-100%). 0%=outra conta paga tudo, 50%=meio a meio, 100%=eu pago tudo';")
+        cursor.execute("COMMENT ON COLUMN expense_sharing_settings.my_contribution_percentage IS 'Percentual desta conta em DESPESAS (0-100%). 0%=outra conta paga tudo, 50%=meio a meio, 100%=eu pago tudo';")
+        cursor.execute("COMMENT ON COLUMN expense_sharing_settings.revenue_contribution_percentage IS 'Percentual desta conta em RECEITAS (0-100%). Mesma semântica do % de despesa, aplicado a entradas.';")
 
         # 10. Tabela notifications (notificações in-app)
         cursor.execute("""
@@ -394,15 +397,18 @@ def apply(connection):
                 created_at TIMESTAMP DEFAULT NOW(),
                 last_updated_at TIMESTAMP DEFAULT NOW(),
                 active BOOLEAN NOT NULL DEFAULT TRUE,
+                due_day INTEGER NOT NULL DEFAULT 14,
                 FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
                 FOREIGN KEY (created_by) REFERENCES users(id),
                 FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE,
-                CONSTRAINT unique_invoice_group_per_account UNIQUE (tenant_id, account_id, name)
+                CONSTRAINT unique_invoice_group_per_account UNIQUE (tenant_id, account_id, name),
+                CHECK (due_day >= 1 AND due_day <= 30)
             );
         """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_invoice_groups_tenant ON credit_card_invoice_groups(tenant_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_invoice_groups_account ON credit_card_invoice_groups(account_id);")
         cursor.execute("COMMENT ON TABLE credit_card_invoice_groups IS 'Agrupa cartões de crédito que são cobrados na mesma fatura/boleta.';")
+        cursor.execute("COMMENT ON COLUMN credit_card_invoice_groups.due_day IS 'Dia de vencimento da fatura conjunta; cartões do grupo herdam este valor.';")
 
         # 15. Tabela credit_cards (cartões de crédito)
         # NOTA: ownership_type é DERIVADO automaticamente:
@@ -415,10 +421,11 @@ def apply(connection):
                 description VARCHAR(255),
                 number VARCHAR(4) NOT NULL,
                 type VARCHAR(20) NOT NULL DEFAULT 'credito',
-                closing_day INTEGER NOT NULL DEFAULT 14,
+                due_day INTEGER NOT NULL DEFAULT 14,
                 expense_sharing_id INTEGER,
+                expense_ownership_percentage DECIMAL(5,2),
+                revenue_ownership_percentage DECIMAL(5,2),
                 account_id INTEGER,
-                is_account_card BOOLEAN,
                 invoice_group_id INTEGER,
                 tenant_id INTEGER NOT NULL,
                 created_by INTEGER NOT NULL,
@@ -432,7 +439,9 @@ def apply(connection):
                 FOREIGN KEY (invoice_group_id) REFERENCES credit_card_invoice_groups(id) ON DELETE SET NULL,
                 CONSTRAINT unique_card_per_tenant UNIQUE (tenant_id, name, number),
                 CHECK (type IN ('credito', 'beneficios')),
-                CHECK (closing_day >= 1 AND closing_day <= 30)
+                CHECK (due_day >= 1 AND due_day <= 30),
+                CHECK (expense_ownership_percentage IS NULL OR (expense_ownership_percentage >= 0 AND expense_ownership_percentage <= 100)),
+                CHECK (revenue_ownership_percentage IS NULL OR (revenue_ownership_percentage >= 0 AND revenue_ownership_percentage <= 100))
             );
         """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_credit_cards_tenant ON credit_cards(tenant_id);")
@@ -443,9 +452,10 @@ def apply(connection):
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_credit_cards_type ON credit_cards(type);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_credit_cards_expense_sharing ON credit_cards(expense_sharing_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_credit_cards_invoice_group ON credit_cards(invoice_group_id);")
-        cursor.execute("COMMENT ON COLUMN credit_cards.closing_day IS 'Dia de fechamento da fatura (1-30). Período da fatura: (closing_day+1) do mês anterior até closing_day do mês atual.';")
+        cursor.execute("COMMENT ON COLUMN credit_cards.due_day IS 'Dia de vencimento da fatura (1-30). Período da fatura: (due_day+1) do mês anterior até due_day do mês atual.';")
         cursor.execute("COMMENT ON COLUMN credit_cards.expense_sharing_id IS 'FK para expense_sharing_settings. Faturas herdam essa configuração mas podem sobrescrever. Se não nulo, cartão é compartilhado.';")
-        cursor.execute("COMMENT ON COLUMN credit_cards.is_account_card IS 'true = cartão real da conta (Saúde Financeira); false/NULL = cartão de terceiro gerenciado.';")
+        cursor.execute("COMMENT ON COLUMN credit_cards.expense_ownership_percentage IS 'Override do % de despesa neste cartão. NULL = default 100% sem sharing; 0 = gerenciado.';")
+        cursor.execute("COMMENT ON COLUMN credit_cards.revenue_ownership_percentage IS 'Override do % de receita neste cartão. NULL = default 100% sem sharing; 0 = gerenciado (sem impacto na conta).';")
         cursor.execute("COMMENT ON COLUMN credit_cards.invoice_group_id IS 'Grupo de fatura conjunta. NULL = cartão cobrado sozinho.';")
 
         # 16. Tabela credit_card_invoices (faturas de cartão de crédito)
@@ -643,6 +653,7 @@ def apply(connection):
                 -- Grupo 3: Compartilhamento de despesas
                 expense_sharing_id INTEGER,
                 my_contribution_percentage DECIMAL(5,2),
+                revenue_contribution_percentage DECIMAL(5,2),
                 -- Grupo 4: AccountBaseEntity
                 account_id INTEGER NOT NULL,
                 tenant_id INTEGER NOT NULL,
@@ -655,7 +666,8 @@ def apply(connection):
                 FOREIGN KEY (subtag_id) REFERENCES subtags(id) ON DELETE CASCADE,
                 FOREIGN KEY (expense_sharing_id) REFERENCES expense_sharing_settings(id) ON DELETE RESTRICT,
                 CONSTRAINT check_mapping_type CHECK (mapping_type IN ('exact', 'pattern', 'regex')),
-                CONSTRAINT check_contribution_percentage CHECK (my_contribution_percentage IS NULL OR (my_contribution_percentage >= 0 AND my_contribution_percentage <= 100))
+                CONSTRAINT check_contribution_percentage CHECK (my_contribution_percentage IS NULL OR (my_contribution_percentage >= 0 AND my_contribution_percentage <= 100)),
+                CONSTRAINT check_revenue_contribution_percentage CHECK (revenue_contribution_percentage IS NULL OR (revenue_contribution_percentage >= 0 AND revenue_contribution_percentage <= 100))
             );
         """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_mappings_account ON transaction_mappings(account_id);")
@@ -675,7 +687,8 @@ def apply(connection):
         cursor.execute("COMMENT ON COLUMN transaction_mappings.is_sensitive IS 'Se TRUE, mapped_description é criptografado no banco e ofuscado na interface (ex: apps de namoro, sites adultos)';")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_mappings_expense_sharing ON transaction_mappings(expense_sharing_id);")
         cursor.execute("COMMENT ON COLUMN transaction_mappings.expense_sharing_id IS 'FK para expense_sharing_settings. Define configuração de compartilhamento padrão para despesas com esta descrição.';")
-        cursor.execute("COMMENT ON COLUMN transaction_mappings.my_contribution_percentage IS 'Percentual de contribuição específico para este mapeamento (0-100). Se NULL, usa o valor de expense_sharing_settings. Sobrescreve o valor padrão durante importação.';")
+        cursor.execute("COMMENT ON COLUMN transaction_mappings.my_contribution_percentage IS 'Override do % de DESPESA neste mapeamento (0-100). Se NULL, usa cartão/config.';")
+        cursor.execute("COMMENT ON COLUMN transaction_mappings.revenue_contribution_percentage IS 'Override do % de RECEITA neste mapeamento (0-100). Se NULL, usa cartão/config.';")
         cursor.execute("COMMENT ON TABLE transaction_mappings IS 'Mapeamentos de transações para categorização automática. Suporta exact match, pattern matching e regex. Todas as buscas são case-insensitive.';")
 
         # 15. Tabela expense_templates (templates de lançamentos)

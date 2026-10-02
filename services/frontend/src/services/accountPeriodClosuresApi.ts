@@ -48,8 +48,13 @@ export async function bulkCloseAccountPeriods(payload: {
   return response.data
 }
 
-export async function reopenAccountPeriod(closureId: number): Promise<AccountPeriodMonth> {
-  const response = await axios.delete<AccountPeriodMonth>(`${BASE_URL}/${closureId}`)
+export async function reopenAccountPeriod(
+  closureId: number,
+  options?: { deleteAdjustment?: boolean },
+): Promise<AccountPeriodMonth> {
+  const response = await axios.delete<AccountPeriodMonth>(`${BASE_URL}/${closureId}`, {
+    params: { delete_adjustment: options?.deleteAdjustment !== false },
+  })
   return response.data
 }
 

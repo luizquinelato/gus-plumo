@@ -15,8 +15,10 @@ export interface InvoiceMatchCycle {
   group_name?: string | null
   card_names?: string[]
   card_ids: number[]
-  cards: Array<{ id: number; name: string; number: string; active?: boolean }>
+  cards: Array<{ id: number; name: string; number: string; active?: boolean; due_day?: number }>
   year_month: string
+  invoice_due_date?: string | null
+  invoice_due_dates?: string[]
   net_amount: number
   amount_to_pay: number
   line_count: number
@@ -52,6 +54,23 @@ export interface InvoiceMatchHistory {
     unlinked?: number
     auto_eligible: number
   }
+}
+
+export interface InvoiceAutoMatchSuggestion {
+  key: string
+  year_month: string
+  invoice_group_id: number | null
+  credit_card_id: number | null
+  name: string
+  amount_to_pay: number
+  candidate: InvoiceMatchCandidate
+}
+
+export interface InvoiceSuggestHistoryResponse {
+  suggestion_count: number
+  suggestions: InvoiceAutoMatchSuggestion[]
+  skipped_multiple_count: number
+  preview: InvoiceMatchHistory
 }
 
 export function flattenReconcileCycles(history: InvoiceMatchHistory | null): InvoiceMatchCycle[] {

@@ -96,9 +96,35 @@ def apply(connection):
         cursor.close()
 
 
+def rollback(connection):
+    cursor = connection.cursor()
+    try:
+        print("🔄 Revertendo Migration 0016...")
+        cursor.execute("DROP INDEX IF EXISTS idx_account_period_closures_tenant;")
+        cursor.execute("DROP INDEX IF EXISTS idx_account_period_closures_account;")
+        cursor.execute("DROP TABLE IF EXISTS account_period_closures CASCADE;")
+        connection.commit()
+        print("✅ Migration 0016 revertida com sucesso!")
+    except Exception as e:
+        connection.rollback()
+        print(f"❌ Erro ao reverter migration 0016: {e}")
+        raise
+    finally:
+        cursor.close()
+
+
 if __name__ == '__main__':
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Migration 0016: Fechamentos mensais da conta')
+    parser.add_argument('--rollback', action='store_true', help='Reverte a migration')
+    args = parser.parse_args()
+
     conn = get_database_connection()
     try:
-        apply(conn)
+        if args.rollback:
+            rollback(conn)
+        else:
+            apply(conn)
     finally:
         conn.close()

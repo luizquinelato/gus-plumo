@@ -1,8 +1,24 @@
 import type { CSSProperties, ReactNode } from 'react'
+import BulkSelectCheckbox from './BulkSelectCheckbox'
+import type { HeaderCheckState } from './BulkSelectCheckbox'
 
+/**
+ * Larguras fixas das colunas líderes (checkbox + `#`).
+ * Usar SEMPRE estes valores — em `<table>`, card-list e tree-list —
+ * para que checkbox e `#` fiquem na mesma posição em todas as páginas.
+ * CSS: `index.css` (`.list-page-table-*-col`) + `ListTableLeadingColgroup` no `ListPageTable`.
+ */
+export const LIST_TABLE_CHECKBOX_COL_PX = 40
 export const LIST_TABLE_INDEX_COL_PX = 40
+export const LIST_TABLE_DRAG_COL_PX = 36
 export const LIST_TABLE_LEADING_ROW_PX = 48
 export const LIST_TABLE_SPACER_COL_PX = 4
+
+export const listPageTableCheckboxColCls = 'list-page-table-checkbox-col'
+export const listPageTableCheckboxThCls =
+  'list-page-table-checkbox-col box-border shrink-0 p-0 align-middle text-center'
+export const listPageTableCheckboxTdCls =
+  'list-page-table-checkbox-col box-border shrink-0 p-0 align-middle text-center'
 
 export const listPageTableIndexColCls = 'list-page-table-index-col'
 export const listPageTableIndexThCls =
@@ -12,10 +28,22 @@ export const listPageTableIndexTdCls =
 export const listPageTableSpacerThCls = 'list-page-table-spacer w-1 p-0'
 export const listPageTableSpacerTdCls = 'list-page-table-spacer w-1 p-0'
 
+const checkboxColStyle: CSSProperties = {
+  width: LIST_TABLE_CHECKBOX_COL_PX,
+  minWidth: LIST_TABLE_CHECKBOX_COL_PX,
+  maxWidth: LIST_TABLE_CHECKBOX_COL_PX,
+}
+
 const indexColStyle: CSSProperties = {
   width: LIST_TABLE_INDEX_COL_PX,
   minWidth: LIST_TABLE_INDEX_COL_PX,
   maxWidth: LIST_TABLE_INDEX_COL_PX,
+}
+
+const dragColStyle: CSSProperties = {
+  width: LIST_TABLE_DRAG_COL_PX,
+  minWidth: LIST_TABLE_DRAG_COL_PX,
+  maxWidth: LIST_TABLE_DRAG_COL_PX,
 }
 
 const spacerColStyle: CSSProperties = {
@@ -25,6 +53,11 @@ const spacerColStyle: CSSProperties = {
 }
 
 const leadingInnerCls = 'flex items-center justify-center'
+const checkboxLeadingInnerStyle: CSSProperties = {
+  width: LIST_TABLE_CHECKBOX_COL_PX,
+  height: LIST_TABLE_LEADING_ROW_PX,
+}
+
 const leadingInnerStyle: CSSProperties = {
   width: LIST_TABLE_INDEX_COL_PX,
   height: LIST_TABLE_LEADING_ROW_PX,
@@ -38,9 +71,54 @@ function LeadingCellWrap({ children, style }: { children: ReactNode; style: CSSP
   )
 }
 
-export type ListTableLeadingMode = 'index-only'
+export type ListTableLeadingMode = 'index-only' | 'bulk' | 'bulk-index-first' | 'bulk-checkbox-only'
 
-export function ListTableLeadingCols() {
+export function ListTableDragCol() {
+  return <col className="list-page-table-drag-col" style={dragColStyle} width={LIST_TABLE_DRAG_COL_PX} />
+}
+
+export function ListTableLeadingCols({ mode = 'index-only' }: { mode?: ListTableLeadingMode }) {
+  if (mode === 'bulk-checkbox-only') {
+    return (
+      <col
+        className={listPageTableCheckboxColCls}
+        style={checkboxColStyle}
+        width={LIST_TABLE_CHECKBOX_COL_PX}
+      />
+    )
+  }
+  if (mode === 'bulk') {
+    return (
+      <>
+        <col
+          className={listPageTableCheckboxColCls}
+          style={checkboxColStyle}
+          width={LIST_TABLE_CHECKBOX_COL_PX}
+        />
+        <col
+          className={listPageTableIndexColCls}
+          style={indexColStyle}
+          width={LIST_TABLE_INDEX_COL_PX}
+        />
+      </>
+    )
+  }
+  if (mode === 'bulk-index-first') {
+    return (
+      <>
+        <col
+          className={listPageTableIndexColCls}
+          style={indexColStyle}
+          width={LIST_TABLE_INDEX_COL_PX}
+        />
+        <col
+          className={listPageTableCheckboxColCls}
+          style={checkboxColStyle}
+          width={LIST_TABLE_CHECKBOX_COL_PX}
+        />
+      </>
+    )
+  }
   return (
     <col
       className={listPageTableIndexColCls}
@@ -50,16 +128,32 @@ export function ListTableLeadingCols() {
   )
 }
 
-export function ListTableLeadingColgroup() {
+export function ListTableLeadingColgroup({ mode = 'index-only' }: { mode?: ListTableLeadingMode }) {
   return (
     <colgroup>
-      <ListTableLeadingCols />
+      <ListTableLeadingCols mode={mode} />
     </colgroup>
   )
 }
 
 export function ListTableSpacerCol() {
   return <col className="list-page-table-spacer" style={spacerColStyle} />
+}
+
+export function ListTableDragHeader() {
+  return (
+    <th className="list-page-table-drag-col box-border p-0 align-middle" style={dragColStyle} aria-label="Reordenar" />
+  )
+}
+
+export function ListTableDragCell({ children }: { children: ReactNode }) {
+  return (
+    <td className="list-page-table-drag-col box-border p-0 align-middle" style={dragColStyle}>
+      <LeadingCellWrap style={{ width: LIST_TABLE_DRAG_COL_PX, height: LIST_TABLE_LEADING_ROW_PX }}>
+        {children}
+      </LeadingCellWrap>
+    </td>
+  )
 }
 
 export function ListTableSpacerHeader() {
@@ -82,6 +176,68 @@ export function ListTableIndexCell({ index }: { index: number | string }) {
   return (
     <td className={listPageTableIndexTdCls} style={indexColStyle}>
       <LeadingCellWrap style={leadingInnerStyle}>{index}</LeadingCellWrap>
+    </td>
+  )
+}
+
+export function ListTableCheckboxHeader({
+  state,
+  onToggle,
+  reserveOnly = false,
+}: {
+  state?: HeaderCheckState
+  onToggle?: () => void
+  reserveOnly?: boolean
+}) {
+  return (
+    <th className={listPageTableCheckboxThCls} style={checkboxColStyle}>
+      {reserveOnly ? (
+        <LeadingCellWrap style={checkboxLeadingInnerStyle} aria-hidden />
+      ) : (
+        <LeadingCellWrap style={checkboxLeadingInnerStyle}>
+          <BulkSelectCheckbox state={state!} onClick={onToggle!} />
+        </LeadingCellWrap>
+      )}
+    </th>
+  )
+}
+
+export function ListTableCheckboxCell({
+  checked,
+  state,
+  onToggle,
+  stopPropagation = true,
+  reserveOnly = false,
+  disabled = false,
+  title,
+}: {
+  checked?: boolean
+  state?: HeaderCheckState
+  onToggle?: () => void
+  stopPropagation?: boolean
+  reserveOnly?: boolean
+  disabled?: boolean
+  title?: string
+}) {
+  return (
+    <td
+      className={listPageTableCheckboxTdCls}
+      style={checkboxColStyle}
+      onClick={stopPropagation ? (e) => e.stopPropagation() : undefined}
+    >
+      {reserveOnly ? (
+        <LeadingCellWrap style={checkboxLeadingInnerStyle} aria-hidden />
+      ) : (
+        <LeadingCellWrap style={checkboxLeadingInnerStyle}>
+          <BulkSelectCheckbox
+            state={state}
+            checked={checked}
+            onClick={onToggle!}
+            disabled={disabled}
+            title={title}
+          />
+        </LeadingCellWrap>
+      )}
     </td>
   )
 }

@@ -4,7 +4,7 @@ import { AlertTriangle, Ban, CheckCircle2, Link2, Loader2, Search, Unlink, X } f
 import Badge from './Badge'
 import { badgeVariantForColumnRole } from '../utils/badgeSurfaces'
 import { cadastroAccentControlCls, cadastroFieldCls, CadastroFieldLabel } from './CadastroFormLayout'
-import BrazilianDatePicker from './BrazilianDatePicker'
+import { DateField } from './date'
 import { dateToLocalString, parseLocalDate } from '../utils/dateUtils'
 import type { InvoiceMatchCandidate, InvoiceMatchCycle } from '../types/invoiceReconcile'
 
@@ -57,6 +57,7 @@ export function InvoiceReconcilePickPanel({
   cycle,
   busy,
   inline,
+  stagedCandidate,
   onClose,
   onConfirm,
   onUnmatch,
@@ -65,8 +66,10 @@ export function InvoiceReconcilePickPanel({
   cycle: InvoiceMatchCycle
   busy?: boolean
   inline?: boolean
+  /** Vínculo preparado (busca automática ou rascunho) — exibe candidato já selecionado. */
+  stagedCandidate?: InvoiceMatchCandidate | null
   onClose?: () => void
-  onConfirm: (bankStatementId: number) => void
+  onConfirm: (bankStatementId: number, candidate: InvoiceMatchCandidate) => void
   onUnmatch: () => void
   onSkip?: () => void
 }) {
@@ -88,20 +91,19 @@ export function InvoiceReconcilePickPanel({
     const invoiceCents = String(centsOf(cycle.amount_to_pay))
     setMinAmountCents(invoiceCents)
     setMaxAmountCents(invoiceCents)
-    setSearched(false)
     setSearchError(null)
-    setSearchCandidates([])
     setTruncated(false)
-    const autoId = cycle.auto_candidate ? Number(cycle.auto_candidate.bank_statement_id) : undefined
-    if (autoId && Number.isFinite(autoId)) {
-      setSelectedId(autoId)
-    } else if (cycle.candidates.length === 1) {
-      const onlyId = Number(cycle.candidates[0].bank_statement_id)
-      setSelectedId(Number.isFinite(onlyId) ? onlyId : undefined)
+    if (stagedCandidate) {
+      setSearchCandidates([stagedCandidate])
+      setSearched(true)
+      const id = Number(stagedCandidate.bank_statement_id)
+      setSelectedId(Number.isFinite(id) ? id : undefined)
     } else {
+      setSearchCandidates([])
+      setSearched(false)
       setSelectedId(undefined)
     }
-  }, [cycle.key])
+  }, [cycle.key, stagedCandidate?.bank_statement_id])
 
   const runSearch = async () => {
     const minAmount = amountFromCents(minAmountCents)
@@ -147,8 +149,12 @@ export function InvoiceReconcilePickPanel({
     }
   }
 
-  const visibleCandidates = searched ? searchCandidates : cycle.candidates
+  const visibleCandidates = searched ? searchCandidates : []
   const invoiceCents = centsOf(cycle.amount_to_pay)
+
+  const selectedCandidate = visibleCandidates.find(
+    (item) => Number(item.bank_statement_id) === selectedId,
+  )
 
   return (
     <aside className={`flex h-full min-h-0 w-full flex-col overflow-hidden bg-white dark:bg-gray-800 ${
@@ -231,7 +237,8 @@ export function InvoiceReconcilePickPanel({
               </div>
             ) : (
               <p className="mb-3 text-xs text-gray-500">
-                Primeiro buscamos débitos com o valor exato. Se o pagamento foi a menor, pesquise por período e faixa de valor.
+                Período e valores já vêm preenchidos com base na fatura. Clique em{' '}
+                <span className="font-medium">Pesquisar extrato</span> para listar débitos e escolher o lançamento.
               </p>
             )}
 
@@ -239,7 +246,7 @@ export function InvoiceReconcilePickPanel({
               <div className="grid grid-cols-2 gap-2">
                 <div className="flex min-w-0 flex-col gap-1">
                   <CadastroFieldLabel>Início</CadastroFieldLabel>
-                  <BrazilianDatePicker
+                  <DateField
                     value={startDate}
                     onChange={setStartDate}
                     maxDate={parseLocalDate(endDate) ?? undefined}
@@ -248,7 +255,7 @@ export function InvoiceReconcilePickPanel({
                 </div>
                 <div className="flex min-w-0 flex-col gap-1">
                   <CadastroFieldLabel>Fim</CadastroFieldLabel>
-                  <BrazilianDatePicker
+                  <DateField
                     value={endDate}
                     onChange={setEndDate}
                     minDate={parseLocalDate(startDate) ?? undefined}
@@ -324,17 +331,17 @@ export function InvoiceReconcilePickPanel({
               </p>
             ) : null}
 
-            {!searched && cycle.candidates.length === 0 ? (
+            {!searched ? (
               <p className="flex items-start gap-1.5 text-xs text-gray-500">
-                <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-                Nenhum débito com o valor exato na janela. Use a busca acima para pagamentos a menor.
+                <Search size={14} className="mt-0.5 shrink-0" />
+                Nenhum resultado ainda — use a busca acima.
               </p>
             ) : visibleCandidates.length === 0 ? (
               <p className="text-xs text-gray-500">Nenhum lançamento neste filtro.</p>
             ) : (
               <div className="space-y-2">
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-                  {searched ? 'Resultados da busca' : 'Valor exato'}
+                  Resultados da busca
                 </p>
                 {truncated ? (
                   <p className="text-[11px] text-gray-400">Mostrando os 200 primeiros. Ajuste o período ou o valor.</p>
@@ -407,13 +414,13 @@ export function InvoiceReconcilePickPanel({
           <div className="flex items-stretch gap-2">
             <button
               type="button"
-              disabled={!selectedId || busy}
-              onClick={() => selectedId && onConfirm(selectedId)}
+              disabled={!selectedId || !selectedCandidate || busy}
+              onClick={() => selectedId && selectedCandidate && onConfirm(selectedId, selectedCandidate)}
               className="inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
               style={{ backgroundColor: 'var(--crud-create)', color: 'var(--on-crud-create)' }}
             >
               {busy ? <Loader2 size={14} className="animate-spin" /> : <Link2 size={14} />}
-              Vincular
+              Preparar vínculo
             </button>
             {onSkip ? (
               <button

@@ -1,10 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 import { Upload, FileSpreadsheet, AlertCircle, CheckCircle, Trash2, Landmark, CreditCard, FileText, Loader2, ClipboardCheck, Download, GripVertical, Gift, AlertTriangle, Briefcase } from 'lucide-react'
 import { detectFileType, DetectedFileInfo, StatementIssuer, isPdfFileName, isSupportedImportFileName } from '../utils/fileTypeDetector'
+import { applyBenefitCardMatchToConfigs } from '../utils/benefitCardFileMatch'
+import { formatImportApiError } from '../utils/importErrorUtils'
 import { useEscapeKey } from '../hooks/useEscapeKey'
 import * as XLSX from 'xlsx'
 import ConflictReviewModal from './ConflictReviewModal'
+import PdfImportPasswordModal from './PdfImportPasswordModal'
 import { ImportConflict, ConflictResolution } from '../types/importConflict'
 import {
   CadastroModalShell,
@@ -16,18 +19,62 @@ import {
   cadastroOptionLabelCls,
   cadastroAccentControlCls,
 } from './CadastroFormLayout'
+import { ListPageTable } from './ListPageTable'
+import {
+  cadastroRowIconDangerCls,
+  listPageTableRowHoverCls,
+  listPageTableTdCls,
+} from './CadastroListPageLayout'
+import {
+  ListTableDragCell,
+  ListTableDragHeader,
+  ListTableIndexCell,
+  ListTableIndexHeader,
+  ListTableSpacerCell,
+  ListTableSpacerCol,
+  ListTableSpacerHeader,
+  ListTableStaticHeader,
+} from './ListTableSelectColumns'
 
+const importResultTableRowCls = `${listPageTableRowHoverCls} [&>td]:border-b [&>td]:border-gray-200 dark:[&>td]:border-gray-700`
+
+const fileListTableRowCls = (isDragging: boolean, isDragOver: boolean) => {
+  if (isDragging) return `${importResultTableRowCls} opacity-50`
+  if (isDragOver) return `${importResultTableRowCls} bg-blue-50 dark:bg-blue-900/20 table-row-selected`
+  return importResultTableRowCls
+}
+
+/** Select compacto na tabela de importação (sem `w-full` do cadastroFieldCls). */
+const importConfigSelectCls =
+  'box-border shrink-0 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs leading-tight text-gray-800 outline-none focus:border-[var(--color-1)] disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 [color-scheme:light] dark:[color-scheme:dark]'
+
+/** Ano (4 dígitos) + mês por extenso (ex.: Setembro) na mesma linha. */
+const importYearMonthRowCls = 'mx-auto flex w-[12.5rem] max-w-full justify-center gap-1.5'
+const importYearSelectCls = `${importConfigSelectCls} w-[4.25rem]`
+const importMonthSelectCls = `${importConfigSelectCls} w-[7.75rem]`
+const importConfigFieldWideCls = `${importConfigSelectCls} w-[12.5rem] max-w-full truncate`
+
+
+export type UnifiedImportModalCloseInfo = {
+  /** Dados podem ter mudado (import concluído com sucesso) — pai pode atualizar em background. */
+  dataChanged?: boolean
+}
 
 interface UnifiedImportModalProps {
   isOpen: boolean
-  onClose: () => void
+  onClose: (info?: UnifiedImportModalCloseInfo) => void
 }
 
 interface FileConfig extends DetectedFileInfo {
   year?: string
   month?: string
   credit_card_id?: number
-  forceRetag?: boolean  // Controle individual de forçar re-tageamento
+  /** Senha de abertura do PDF (não persistida). */
+  pdfPassword?: string
+}
+
+function appendPdfPasswords(formData: FormData, configs: FileConfig[]) {
+  configs.forEach((config) => formData.append('passwords', config.pdfPassword ?? ''))
 }
 
 interface PayrollClassifyResult {
@@ -106,6 +153,9 @@ interface ImportResult {
   emptyInvoice?: boolean
   message?: string
   skippedRows?: any[]  // Dados completos das linhas ignoradas
+  updatedRows?: Array<Record<string, string | number>>  // DE-PARA dos atualizados (extrato)
+  policyIgnoredRows?: Array<{ data: string; transacao: string; descricao: string; valor: number; motivo?: string }>
+  policyIgnoredCount?: number
   conflicts_count?: number  // Número de conflitos detectados neste arquivo
   conversionTxtUrl?: string
   conversionTxtFilename?: string
@@ -118,14 +168,13 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
   const [results, setResults] = useState<ImportResult[]>([])
   const [error, setError] = useState<string | null>(null)
 
-  // Para PDFs
-  const [globalYear, setGlobalYear] = useState('')
-
   // Contador de registros não mapeados
   const [totalUnmapped, setTotalUnmapped] = useState(0)
 
   // Cartões de benefícios
   const [benefitCards, setBenefitCards] = useState<Array<{id: number, name: string, number: string}>>([])
+  const benefitCardsRef = useRef(benefitCards)
+  benefitCardsRef.current = benefitCards
 
   // Estados para drag and drop
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
@@ -144,9 +193,13 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
   // Armazena dados de debug para salvar no final (após resolução/descarte de conflitos)
   const [importDebugData, setImportDebugData] = useState<Record<string, unknown> | null>(null)
 
+  const [showPdfPasswordModal, setShowPdfPasswordModal] = useState(false)
+  const [pdfPasswordQueue, setPdfPasswordQueue] = useState<FileConfig[]>([])
+  const [pendingBaseConfigs, setPendingBaseConfigs] = useState<FileConfig[]>([])
+
   // Hook para fechar modal com ESC (apenas se não estiver processando)
   useEscapeKey(() => {
-    if (!isProcessing && !isDetecting) {
+    if (!isProcessing && !isDetecting && !showPdfPasswordModal) {
       handleClose()
     }
   }, isOpen)
@@ -154,7 +207,13 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
   // Hook para Enter/Space quando mostrar resultados
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.key === 'Enter' || e.key === ' ') && results.length > 0 && !isProcessing && !isDetecting) {
+      if (
+        !showPdfPasswordModal &&
+        (e.key === 'Enter' || e.key === ' ') &&
+        results.length > 0 &&
+        !isProcessing &&
+        !isDetecting
+      ) {
         e.preventDefault()
         handleClose()
       }
@@ -164,7 +223,7 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
       window.addEventListener('keydown', handleKeyDown)
       return () => window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [isOpen, results.length, isProcessing, isDetecting])
+  }, [isOpen, results.length, isProcessing, isDetecting, showPdfPasswordModal])
 
   // Buscar cartões de benefícios ao abrir o modal
   useEffect(() => {
@@ -178,6 +237,17 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
         .catch(err => console.error('Erro ao buscar cartões de benefícios:', err))
     }
   }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen || benefitCards.length === 0) return
+    setFileConfigs((prev) => {
+      const next = applyBenefitCardMatchToConfigs(prev, benefitCards)
+      const unchanged = next.every(
+        (config, index) => config.credit_card_id === prev[index]?.credit_card_id,
+      )
+      return unchanged ? prev : next
+    })
+  }, [isOpen, benefitCards])
 
   const currentYear = new Date().getFullYear()
   const years = Array.from(new Set([
@@ -199,10 +269,17 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
     { value: '12', label: 'Dezembro' }
   ]
 
+  const extratoBtgBadge = {
+    text: 'BTG - Extrato',
+    title: 'Extrato BTG Pactual (arquivo original)',
+    className:
+      'bg-[#C5D4EF] text-[#001E62] border border-[#001E62]/25 dark:bg-[#163875] dark:text-[#E8EEF7] dark:border-[#4A7BC8]/45',
+  }
+
   const issuerBadge = (issuer?: StatementIssuer, label?: string) => {
     if (issuer === 'btg') {
       return {
-        text: 'BTG',
+        text: 'BTG - Cartão',
         title: 'Fatura BTG Pactual',
         className: 'bg-[#001E62] text-white dark:bg-[#0B3A8F] dark:text-white',
       }
@@ -222,6 +299,121 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
   }
 
   if (!isOpen) return null
+
+  const finishPdfDetection = async (detectedConfigs: FileConfig[]) => {
+    const pdfConfigs = detectedConfigs.filter((config) => isPdfFileName(config.file.name))
+    if (pdfConfigs.length > 0) {
+      let classifiedResults: PayrollClassifyResult[] = []
+      try {
+        const payrollForm = new FormData()
+        pdfConfigs.forEach((config) => payrollForm.append('files', config.file))
+        appendPdfPasswords(payrollForm, pdfConfigs)
+        const classified = await axios.post<{ results: PayrollClassifyResult[] }>(
+          '/api/payroll/classify-pdfs',
+          payrollForm,
+          { headers: { 'Content-Type': 'multipart/form-data' } },
+        )
+        classifiedResults = classified.data.results || []
+      } catch (err) {
+        console.error('Erro ao classificar PDFs de folha:', err)
+      }
+
+      const remainingPdfs: FileConfig[] = []
+      pdfConfigs.forEach((config, index) => {
+        const classified =
+          classifiedResults.find((result) => result.filename === config.file.name) ||
+          classifiedResults[index]
+        if (classified?.status === 'ok' && (classified.doc_type === 'payslip' || classified.doc_type === 'income_report')) {
+          config.detectedType = classified.doc_type === 'payslip' ? 'holerite' : 'informe'
+          config.importSource = 'folha'
+          config.needsYearMonth = false
+          config.confidence = 'high'
+          config.payrollPreview = payrollPreviewFromClassify(classified)
+          config.detectionError = undefined
+          return
+        }
+        remainingPdfs.push(config)
+      })
+
+      if (remainingPdfs.length > 0) {
+        try {
+          const formData = new FormData()
+          remainingPdfs.forEach((config) => formData.append('files', config.file))
+          appendPdfPasswords(formData, remainingPdfs)
+          const response = await axios.post<{
+            results: Array<{
+              filename: string
+              status: string
+              issuer?: StatementIssuer
+              issuer_label?: string
+              year?: string
+              month?: string
+              card_last4?: string
+              message?: string
+            }>
+          }>('/api/import/cartao/detect', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          })
+
+          const detectResults = response.data.results || []
+          const detectByName = new Map(detectResults.map((result) => [result.filename, result]))
+          remainingPdfs.forEach((config, index) => {
+            const detected = detectByName.get(config.file.name) || detectResults[index]
+            if (!detected || detected.status !== 'ok') {
+              config.detectedType = 'pdf_unknown'
+              config.importSource = 'folha'
+              config.needsYearMonth = false
+              config.detectionError =
+                detected?.message || 'PDF não reconhecido como fatura, holerite ou informe'
+              return
+            }
+            config.detectedType = 'fatura_bruta'
+            config.importSource = 'fatura'
+            config.needsYearMonth = true
+            config.confidence = 'high'
+            config.statementIssuer = detected.issuer || 'unknown'
+            config.issuerLabel = detected.issuer_label
+            config.cardLast4 = detected.card_last4 || undefined
+            if (detected.year) config.year = String(detected.year)
+            if (detected.month) config.month = String(detected.month).padStart(2, '0')
+          })
+        } catch (err) {
+          console.error('Erro ao identificar emissor da fatura PDF:', err)
+          remainingPdfs.forEach((config) => {
+            config.detectedType = 'pdf_unknown'
+            config.importSource = 'folha'
+            config.needsYearMonth = false
+            config.detectionError = 'Não foi possível identificar o PDF'
+          })
+        }
+      }
+    }
+
+    detectedConfigs.sort((a, b) => a.file.name.localeCompare(b.file.name))
+    setFileConfigs(applyBenefitCardMatchToConfigs(detectedConfigs, benefitCardsRef.current))
+    setResults([])
+  }
+
+  const handlePdfPasswordCancel = () => {
+    setShowPdfPasswordModal(false)
+    setPdfPasswordQueue([])
+    setPendingBaseConfigs([])
+  }
+
+  const handlePdfPasswordConfirm = (passwordsByFilename: Record<string, string>) => {
+    const updated = pendingBaseConfigs.map((config) => {
+      const pwd = passwordsByFilename[config.file.name]
+      if (pwd) return { ...config, pdfPassword: pwd }
+      return config
+    })
+    setShowPdfPasswordModal(false)
+    setPdfPasswordQueue([])
+    setPendingBaseConfigs([])
+    setIsDetecting(true)
+    void finishPdfDetection(updated)
+      .catch(() => setError('Erro ao processar arquivos'))
+      .finally(() => setIsDetecting(false))
+  }
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
@@ -259,105 +451,35 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
         return
       }
 
-      const pdfConfigs = detectedConfigs.filter(config => isPdfFileName(config.file.name))
+      const pdfConfigs = detectedConfigs.filter((config) => isPdfFileName(config.file.name))
       if (pdfConfigs.length > 0) {
-        let classifiedResults: PayrollClassifyResult[] = []
         try {
-          const payrollForm = new FormData()
-          pdfConfigs.forEach(config => payrollForm.append('files', config.file))
-          const classified = await axios.post<{ results: PayrollClassifyResult[] }>(
-            '/api/payroll/classify-pdfs',
-            payrollForm,
-            { headers: { 'Content-Type': 'multipart/form-data' } },
+          const checkForm = new FormData()
+          pdfConfigs.forEach((config) => checkForm.append('files', config.file))
+          const checkResponse = await axios.post<{
+            results: Array<{ filename: string; requires_password: boolean }>
+          }>('/api/import/pdf/check-passwords', checkForm, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          })
+          const lockedNames = new Set(
+            (checkResponse.data.results || [])
+              .filter((row) => row.requires_password)
+              .map((row) => row.filename),
           )
-          classifiedResults = classified.data.results || []
-        } catch (err) {
-          console.error('Erro ao classificar PDFs de folha:', err)
-        }
-
-        const remainingPdfs: FileConfig[] = []
-        pdfConfigs.forEach((config, index) => {
-          const classified =
-            classifiedResults.find(result => result.filename === config.file.name) ||
-            classifiedResults[index]
-          if (classified?.status === 'ok' && (classified.doc_type === 'payslip' || classified.doc_type === 'income_report')) {
-            config.detectedType = classified.doc_type === 'payslip' ? 'holerite' : 'informe'
-            config.importSource = 'folha'
-            config.needsYearMonth = false
-            config.confidence = 'high'
-            config.payrollPreview = payrollPreviewFromClassify(classified)
-            config.detectionError = undefined
+          if (lockedNames.size > 0) {
+            setPendingBaseConfigs(detectedConfigs)
+            setPdfPasswordQueue(pdfConfigs.filter((c) => lockedNames.has(c.file.name)))
+            setShowPdfPasswordModal(true)
+            setIsDetecting(false)
+            e.target.value = ''
             return
           }
-          remainingPdfs.push(config)
-        })
-
-        if (remainingPdfs.length > 0) {
-          try {
-            const formData = new FormData()
-            remainingPdfs.forEach(config => formData.append('files', config.file))
-            const response = await axios.post<{
-              results: Array<{
-                filename: string
-                status: string
-                issuer?: StatementIssuer
-                issuer_label?: string
-                year?: string
-                month?: string
-                card_last4?: string
-                message?: string
-              }>
-            }>('/api/import/cartao/detect', formData, {
-              headers: { 'Content-Type': 'multipart/form-data' }
-            })
-
-            const detectResults = response.data.results || []
-            const detectByName = new Map(
-              detectResults.map(result => [result.filename, result])
-            )
-            remainingPdfs.forEach((config, index) => {
-              const detected = detectByName.get(config.file.name) || detectResults[index]
-              if (!detected || detected.status !== 'ok') {
-                config.detectedType = 'pdf_unknown'
-                config.importSource = 'folha'
-                config.needsYearMonth = false
-                config.detectionError = detected?.message || 'PDF não reconhecido como fatura, holerite ou informe'
-                return
-              }
-              config.detectedType = 'fatura_bruta'
-              config.importSource = 'fatura'
-              config.needsYearMonth = true
-              config.confidence = 'high'
-              config.statementIssuer = detected.issuer || 'unknown'
-              config.issuerLabel = detected.issuer_label
-              config.cardLast4 = detected.card_last4 || undefined
-              if (detected.year) config.year = String(detected.year)
-              if (detected.month) config.month = String(detected.month).padStart(2, '0')
-            })
-          } catch (err) {
-            console.error('Erro ao identificar emissor da fatura PDF:', err)
-            remainingPdfs.forEach(config => {
-              config.detectedType = 'pdf_unknown'
-              config.importSource = 'folha'
-              config.needsYearMonth = false
-              config.detectionError = 'Não foi possível identificar o PDF'
-            })
-          }
+        } catch (err) {
+          console.error('Erro ao verificar senha dos PDFs:', err)
         }
       }
 
-      // Ordenar alfabeticamente por nome do arquivo
-      detectedConfigs.sort((a, b) => a.file.name.localeCompare(b.file.name))
-
-      // Inicializa forceRetag: true para arquivos Excel processados
-      const configsWithRetag = detectedConfigs.map(config => ({
-        ...config,
-        forceRetag: (config.detectedType === 'extrato_processado' || config.detectedType === 'fatura_processada' || config.detectedType === 'beneficio_xlsx') ? true : undefined
-      }))
-
-      // LIMPA BUFFER: Remove arquivos antigos e adiciona apenas os novos
-      setFileConfigs(configsWithRetag)
-      setResults([])
+      await finishPdfDetection(detectedConfigs)
     } catch (err) {
       setError('Erro ao processar arquivos')
     } finally {
@@ -366,31 +488,6 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
 
     // Reseta o input
     e.target.value = ''
-  }
-
-  const handleTypeChange = (index: number, newSource: 'extrato' | 'fatura') => {
-    const updated = [...fileConfigs]
-    const config = updated[index]
-    if (isPdfFileName(config.file.name) || isPayrollType(config.detectedType) || config.detectedType === 'pdf_unknown') {
-      return
-    }
-
-    // Atualiza o tipo baseado na fonte
-    if (newSource === 'extrato') {
-      updated[index] = {
-        ...config,
-        importSource: 'extrato',
-        detectedType: config.isRaw ? 'extrato_bruto' : 'extrato_processado'
-      }
-    } else {
-      updated[index] = {
-        ...config,
-        importSource: 'fatura',
-        detectedType: config.isRaw ? 'fatura_bruta' : 'fatura_processada'
-      }
-    }
-
-    setFileConfigs(updated)
   }
 
   const handleRemoveFile = (index: number) => {
@@ -465,6 +562,15 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
       return
     }
 
+    const blockedExports = fileConfigs.filter(config => config.detectedType === 'export_nao_suportado')
+    if (blockedExports.length > 0) {
+      setError(
+        blockedExports.find((config) => config.detectionError)?.detectionError
+          ?? 'Remova planilhas exportadas do Plumo — use apenas arquivos originais do banco',
+      )
+      return
+    }
+
     // Valida se PDFs de fatura têm ano/mês
     const pdfsWithoutYearMonth = fileConfigs.filter(
       config => config.needsYearMonth && (!config.year || !config.month)
@@ -498,7 +604,8 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
       if (payrollConfigs.length > 0) {
         try {
           const formData = new FormData()
-          payrollConfigs.forEach(config => formData.append('files', config.file))
+          payrollConfigs.forEach((config) => formData.append('files', config.file))
+          appendPdfPasswords(formData, payrollConfigs)
           const response = await axios.post<{ results: PayrollImportFileResult[] }>(
             '/api/payroll/import-pdfs',
             formData,
@@ -533,7 +640,7 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
               success: false,
               created: 0,
               skipped: 0,
-              errors: [err.response?.data?.detail || 'Erro ao importar holerites e informes'],
+              errors: formatImportApiError(err.response?.data?.detail ?? 'Erro ao importar holerites e informes'),
             })
           })
         }
@@ -577,7 +684,11 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
               created: response.data.linhas_salvas || 0,
               skipped: response.data.linhas_com_erro || 0,
               duplicates: response.data.linhas_atualizadas || 0,
+              updatedRows: response.data.registros_atualizados_detalhe || [],
+              skippedRows: response.data.linhas_ignoradas_detalhe || [],
               errors: [],
+              policyIgnoredRows: response.data.linhas_ignoradas_politica || [],
+              policyIgnoredCount: response.data.linhas_ignoradas_politica_count || 0,
               // Inclui conflitos detectados (tag/subtag ou valor diferente)
               conflicts: response.data.conflicts || [],
               conflicts_count: response.data.conflicts_count || 0
@@ -600,6 +711,7 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
             formData.append('files', config.file)
             formData.append('years', config.year!)
             formData.append('months', config.month!)
+            formData.append('passwords', config.pdfPassword ?? '')
             formData.append('save_conversion_txt', saveConversionTxt ? 'true' : 'false')
             // Não envia account_id - os cartões são identificados automaticamente do PDF
 
@@ -668,64 +780,8 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
             }
           }
 
-          // 3b. Excel de Benefícios (processado) → /api/benefit-card-statements/importar-xlsx
-          // NOTA: Não precisa selecionar cartão - identificado pelo arquivo (coluna "Cartão")
-          else if (config.detectedType === 'beneficio_xlsx') {
-            const formData = new FormData()
-            formData.append('file', config.file)
-            // account_id vem automaticamente do JWT (não precisa enviar)
-            // credit_card_id é identificado automaticamente pela coluna "Cartão" no arquivo
-            // Usa forceRetag individual do arquivo (padrão = true se não definido)
-            formData.append('force_retag', (config.forceRetag ?? true).toString())
-
-            const response = await axios.post(
-              '/api/benefit-card-statements/importar-xlsx',
-              formData,
-              { headers: { 'Content-Type': 'multipart/form-data' } }
-            )
-
-            result = {
-              fileName: config.file.name,
-              success: true,
-              created: response.data.registros_importados || 0,
-              skipped: 0,
-              // XLSX retorna registros_atualizados, CSV retorna registros_duplicados
-              duplicates: response.data.registros_duplicados || response.data.registros_atualizados || 0,
-              errors: [],
-              // Inclui conflitos detectados (tag/subtag ou valor diferente)
-              conflicts: response.data?.conflicts || [],
-              conflicts_count: response.data?.conflicts_count || 0
-            }
-
-            // Conta registros não mapeados de benefícios
-            if (response.data.unmapped > 0) {
-              totalUnmappedCount += response.data.unmapped
-            }
-          }
-
-          // 4. Excel Processado (Extrato ou Fatura) → /api/excel-import/upload
-          else if (config.detectedType === 'extrato_processado' || config.detectedType === 'fatura_processada') {
-            const formData = new FormData()
-            formData.append('file', config.file)
-            formData.append('import_type', config.importSource)
-            // Usa forceRetag individual do arquivo (padrão = true se não definido)
-            formData.append('force_retag', (config.forceRetag ?? true).toString())
-
-            // account_id vem automaticamente do JWT (não precisa enviar)
-
-            const response = await axios.post('/api/excel-import/upload', formData, {
-              headers: { 'Content-Type': 'multipart/form-data' }
-            })
-
-            result = {
-              fileName: config.file.name,
-              ...response.data
-            }
-
-            // Conta registros não mapeados
-            if (response.data.unmapped) {
-              totalUnmappedCount += response.data.unmapped
-            }
+          else if (config.detectedType === 'export_nao_suportado') {
+            throw new Error(config.detectionError || 'Planilha exportada não suportada')
           } else {
             throw new Error('Tipo de arquivo não suportado para importação')
           }
@@ -737,7 +793,7 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
             success: false,
             created: 0,
             skipped: 0,
-            errors: [err.response?.data?.detail || 'Erro ao processar arquivo']
+            errors: formatImportApiError(err.response?.data?.detail)
           })
         }
       }
@@ -777,8 +833,10 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
         resolutions,
         debug_data: importDebugData  // Será null se tracing não estava ativo
       })
-      // Marca quantos conflitos foram resolvidos (aceitos)
-      setResolvedConflicts(conflicts.length)
+      const appliedCount = resolutions.filter(
+        (r) => r.accept_tag_change || r.accept_amount_change,
+      ).length
+      setResolvedConflicts(appliedCount)
       setDiscardedConflicts(0)  // Limpa descartados pois foram resolvidos
       setConflicts([])
       setShowConflictModal(false)
@@ -815,10 +873,12 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
 
   const handleClose = () => {
     if (!isProcessing) {
+      const dataChanged =
+        results.length > 0 &&
+        results.some((r) => r.success && (r.created > 0 || (r.skipped ?? 0) > 0 || (r.duplicates ?? 0) > 0))
       setFileConfigs([])
       setResults([])
       setError(null)
-      setGlobalYear('')
       setConflicts([])
       setShowConflictModal(false)
       setDiscardedConflicts(0)
@@ -826,8 +886,22 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
       setEnableTracing(false)  // Reseta checkbox de tracing
       setSaveConversionTxt(false)  // Reseta checkbox de TXT de conversão PDF
       setImportDebugData(null)  // Limpa dados de debug
-      onClose()
+      setShowPdfPasswordModal(false)
+      setPdfPasswordQueue([])
+      setPendingBaseConfigs([])
+      onClose(dataChanged ? { dataChanged: true } : undefined)
     }
+  }
+
+  const downloadPolicyIgnoredRecords = (result: ImportResult) => {
+    if (!result.policyIgnoredRows || result.policyIgnoredRows.length === 0) {
+      return
+    }
+    const ws = XLSX.utils.json_to_sheet(result.policyIgnoredRows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Ignorados')
+    const originalName = result.fileName.replace(/\.(xlsx|xls)$/i, '')
+    XLSX.writeFile(wb, `${originalName}_saque_negado_ignorados.xlsx`)
   }
 
   const downloadSkippedRecords = (result: ImportResult) => {
@@ -848,6 +922,18 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
 
     // Download
     XLSX.writeFile(wb, fileName)
+  }
+
+  const downloadUpdatedRecords = (result: ImportResult) => {
+    if (!result.updatedRows || result.updatedRows.length === 0) {
+      return
+    }
+
+    const ws = XLSX.utils.json_to_sheet(result.updatedRows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'DE-PARA')
+    const originalName = result.fileName.replace(/\.(xlsx|xls)$/i, '')
+    XLSX.writeFile(wb, `${originalName}_ATUALIZADOS_DE-PARA.xlsx`)
   }
 
   const downloadConversionTxt = async (result: ImportResult) => {
@@ -878,10 +964,21 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
   const hasPayrollFiles = fileConfigs.some(config => isPayrollType(config.detectedType) || config.detectedType === 'pdf_unknown')
   const hasUnrecognized = fileConfigs.some(config => config.detectedType === 'pdf_unknown')
   const hasConfigColumn = hasPDFs || hasPayrollFiles || fileConfigs.some(f => f.detectedType === 'beneficio_csv')
+  const showSelectedFilesTable = fileConfigs.length > 0 && results.length === 0
+
+  const importErrorBanner = error ? (
+    <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
+      <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-600 dark:text-red-400" />
+      <div className="flex-1">
+        <p className="text-sm font-medium text-red-800 dark:text-red-200">Erro</p>
+        <p className="mt-1 text-sm text-red-700 dark:text-red-300">{error}</p>
+      </div>
+    </div>
+  ) : null
 
   return (
     <>
-      <CadastroModalShell maxWidth="max-w-6xl" onBackdropClick={handleClose}>
+      <CadastroModalShell maxWidth="max-w-6xl">
         <CadastroModalHeader
           isEdit={false}
           title="Importar Arquivos"
@@ -889,155 +986,69 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
           onClose={handleClose}
           icon={<Upload size={18} />}
         />
-        <CadastroModalBody
-          chrome={
-            <>
-              <CadastroFormSection title="Selecionar Arquivos" icon={<Upload size={14} />}>
-                <div className="rounded-lg border-2 border-dashed border-gray-300 p-6 text-center dark:border-gray-600">
-                  <input
-                    type="file"
-                    accept=".xlsx,.xls,.pdf,.csv,application/pdf"
-                    onChange={handleFileSelect}
-                    disabled={isProcessing || isDetecting}
-                    className="hidden"
-                    id="unified-file-input"
-                    multiple
-                  />
-                  <label
-                    htmlFor="unified-file-input"
-                    className={`cursor-pointer ${isProcessing || isDetecting ? 'cursor-not-allowed opacity-50' : ''}`}
-                  >
-                    {isDetecting ? (
-                      <Loader2 className="mx-auto mb-3 h-12 w-12 animate-spin text-[var(--color-1)]" />
-                    ) : (
-                      <Upload className="mx-auto mb-3 h-12 w-12 text-gray-400" />
-                    )}
-                    <p className="mb-1 text-sm text-gray-600 dark:text-gray-400">
-                      {isDetecting ? 'Detectando tipos de arquivo...' : 'Clique para selecionar ou arraste os arquivos'}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      PDF (fatura, holerite ou informe), Excel (.xlsx, .xls), CSV — múltiplos arquivos
-                    </p>
-                  </label>
-                </div>
-              </CadastroFormSection>
-              {error ? (
-                <div className="mb-2 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
-                  <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-600 dark:text-red-400" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-red-800 dark:text-red-200">Erro</p>
-                    <p className="mt-1 text-sm text-red-700 dark:text-red-300">{error}</p>
-                  </div>
-                </div>
-              ) : null}
-            </>
-          }
-        >
-          {/* Lista de Arquivos Selecionados */}
-          {fileConfigs.length > 0 && results.length === 0 && (
+        <CadastroModalBody>
+          <CadastroFormSection title="Selecionar Arquivos" icon={<Upload size={14} />}>
+            <div className="rounded-lg border-2 border-dashed border-gray-300 p-6 text-center dark:border-gray-600">
+              <input
+                type="file"
+                accept=".xlsx,.xls,.pdf,.csv,application/pdf"
+                onChange={handleFileSelect}
+                disabled={isProcessing || isDetecting}
+                className="hidden"
+                id="unified-file-input"
+                multiple
+              />
+              <label
+                htmlFor="unified-file-input"
+                className={`cursor-pointer ${isProcessing || isDetecting ? 'cursor-not-allowed opacity-50' : ''}`}
+              >
+                {isDetecting ? (
+                  <Loader2 className="mx-auto mb-3 h-12 w-12 animate-spin text-[var(--color-1)]" />
+                ) : (
+                  <Upload className="mx-auto mb-3 h-12 w-12 text-gray-400" />
+                )}
+                <p className="mb-1 text-sm text-gray-600 dark:text-gray-400">
+                  {isDetecting ? 'Detectando tipos de arquivo...' : 'Clique para selecionar ou arraste os arquivos'}
+                </p>
+                <p className="text-xs text-gray-500">
+                  PDF (fatura, holerite ou informe), Excel (.xlsx, .xls), CSV — múltiplos arquivos
+                </p>
+              </label>
+            </div>
+            {error && !showSelectedFilesTable ? importErrorBanner : null}
+          </CadastroFormSection>
+
+          {showSelectedFilesTable ? (
             <CadastroFormSection title={`Arquivos Selecionados (${fileConfigs.length})`} icon={<FileSpreadsheet size={14} />}>
-
-              {/* Toggle Global: Forçar Re-tageamento (apenas para Excel processado) */}
-              {fileConfigs.some(f => f.detectedType === 'extrato_processado' || f.detectedType === 'fatura_processada' || f.detectedType === 'beneficio_xlsx') && (
-                <div className="mb-3 p-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
-                  <label className={cadastroOptionLabelCls} title="Marcar/Desmarcar todos os arquivos processados para forçar re-tageamento">
-                    <input
-                      type="checkbox"
-                      checked={fileConfigs.filter(f => f.detectedType === 'extrato_processado' || f.detectedType === 'fatura_processada' || f.detectedType === 'beneficio_xlsx').every(f => f.forceRetag)}
-                      onChange={(e) => {
-                        setFileConfigs(prev => prev.map(config =>
-                          (config.detectedType === 'extrato_processado' || config.detectedType === 'fatura_processada' || config.detectedType === 'beneficio_xlsx')
-                            ? { ...config, forceRetag: e.target.checked }
-                            : config
-                        ))
-                      }}
-                      disabled={isProcessing}
-                      className={`${cadastroAccentControlCls} h-4 w-4 flex-shrink-0 rounded border-gray-300`}
-                    />
-                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                      Todos: Forçar re-tageamento (ignorar tags do arquivo)
-                    </span>
-                  </label>
-                  <p className="text-xs text-amber-700 dark:text-amber-300 mt-1 ml-6">
-                    Use os checkboxes na tabela para controle individual por arquivo
-                  </p>
-                </div>
-              )}
-
-              {/* Configuração Global: Ano para PDFs */}
-              {hasPDFs && (
-                <div className="mb-3">
-                  {/* Card: Ano para PDFs */}
-                  <div className="p-2.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs font-semibold text-gray-900 dark:text-white whitespace-nowrap">
-                        PDFs:
-                      </span>
-                      <select
-                        value={globalYear}
-                        onChange={(e) => setGlobalYear(e.target.value)}
-                        className={`${cadastroFieldCls} w-auto min-w-[5rem]`}
-                      >
-                        <option value="">Ano</option>
-                        {years.map(year => (
-                          <option key={year} value={year}>{year}</option>
-                        ))}
-                      </select>
-                      <button
-                        onClick={() => {
-                          setFileConfigs(prev => prev.map(config =>
-                            config.needsYearMonth
-                              ? { ...config, year: globalYear }
-                              : config
-                          ))
-                        }}
-                        disabled={!globalYear || isProcessing}
-                        style={{ backgroundColor: !globalYear || isProcessing ? undefined : 'var(--crud-create)' }}
-                        className="px-2.5 py-1.5 disabled:bg-gray-400 text-white text-xs font-medium rounded hover:brightness-110 transition-all flex items-center gap-1.5 whitespace-nowrap"
-                        title="Aplicar este ano a todos os PDFs"
-                      >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                        </svg>
-                        Aplicar Ano
-                      </button>
-                    </div>
-                    <label className={`${cadastroOptionLabelCls} mt-2.5 select-none`}>
-                      <input
-                        type="checkbox"
-                        checked={saveConversionTxt}
-                        onChange={(e) => setSaveConversionTxt(e.target.checked)}
-                        disabled={isProcessing || isDetecting}
-                        className={`${cadastroAccentControlCls} h-3.5 w-3.5 rounded border-gray-300 disabled:opacity-50`}
-                      />
-                      <span className="text-xs text-gray-700 dark:text-gray-300">
-                        Salvar TXT da conversão do PDF (debug)
-                      </span>
-                    </label>
-                  </div>
-                </div>
-              )}
-
-              {/* Tabela de Arquivos */}
-              <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-x-auto">
-                <table className="w-full text-sm table-fixed">
-                  <thead className="sticky top-0 z-10 bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-                    <tr>
-                      <th className="px-2 py-2 text-center text-xs font-semibold text-gray-700 dark:text-gray-300 w-[40px]"></th>
-                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 dark:text-gray-300">Arquivo</th>
-                      <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700 dark:text-gray-300 w-[140px]">Tipo</th>
-                      <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700 dark:text-gray-300 w-[130px]">Importar</th>
-                      {/* Coluna Re-tag: só aparece se há Excel processado */}
-                      {fileConfigs.some(f => f.detectedType === 'extrato_processado' || f.detectedType === 'fatura_processada' || f.detectedType === 'beneficio_xlsx') && (
-                        <th className="px-2 py-2 text-center text-xs font-semibold text-gray-700 dark:text-gray-300 w-[60px]" title="Forçar re-tageamento (ignorar tags do arquivo)">Re-tag</th>
-                      )}
-                      {(hasConfigColumn) && (
-                        <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700 dark:text-gray-300 w-[160px]">Config</th>
-                      )}
-                      <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700 dark:text-gray-300 w-[60px]">Ação</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+              <ListPageTable
+                framed
+                leadingPrefixCol
+                minWidth={hasConfigColumn ? 836 : 656}
+                colsRest={
+                  <>
+                    <ListTableSpacerCol />
+                    <col />
+                    <col style={{ width: 140, minWidth: 140 }} />
+                    <col style={{ width: 100, minWidth: 100 }} />
+                    {hasConfigColumn ? <col style={{ width: 220, minWidth: 220 }} /> : null}
+                    <col style={{ width: 72, minWidth: 72 }} />
+                  </>
+                }
+                head={
+                  <tr>
+                    <ListTableDragHeader />
+                    <ListTableIndexHeader />
+                    <ListTableSpacerHeader />
+                    <ListTableStaticHeader label="Arquivo" />
+                    <ListTableStaticHeader label="Tipo" className="w-[140px] text-center" />
+                    <ListTableStaticHeader label="Importar" className="w-[100px] text-center" />
+                    {hasConfigColumn ? (
+                      <ListTableStaticHeader label="Config" className="w-[220px] text-center" />
+                    ) : null}
+                    <ListTableStaticHeader label="Ação" className="w-[72px] text-center" />
+                  </tr>
+                }
+              >
                     {fileConfigs.map((config, index) => {
                       const isPDF = isPdfFileName(config.file.name)
                       const icon = isPDF ? FileText : FileSpreadsheet
@@ -1055,36 +1066,29 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
                           onDragLeave={handleDragLeave}
                           onDrop={(e) => handleDrop(e, index)}
                           onDragEnd={handleDragEnd}
-                          className={`border-b border-gray-200 dark:border-gray-700 transition-all ${
-                            isDragging
-                              ? 'opacity-50 bg-gray-100 dark:bg-gray-700'
-                              : isDragOver
-                              ? 'bg-blue-50 dark:bg-blue-900/20 border-t-2 border-t-blue-500'
-                              : 'hover:bg-gray-50 dark:hover:bg-gray-800/50'
-                          }`}
+                          className={fileListTableRowCls(isDragging, isDragOver)}
                         >
-                          {/* Drag Handle */}
-                          <td className="px-2 py-2 text-center">
+                          <ListTableDragCell>
                             <div
-                              className={`cursor-grab active:cursor-grabbing ${isProcessing ? 'opacity-30 cursor-not-allowed' : ''}`}
+                              className={isProcessing ? 'cursor-not-allowed opacity-30' : 'cursor-grab active:cursor-grabbing'}
                               title="Arrastar para reordenar"
                             >
-                              <GripVertical className="w-4 h-4 text-gray-400 dark:text-gray-500 mx-auto" />
+                              <GripVertical className="h-4 w-4 text-gray-400 dark:text-gray-500" />
                             </div>
-                          </td>
+                          </ListTableDragCell>
+                          <ListTableIndexCell index={index + 1} />
+                          <ListTableSpacerCell />
 
-                          {/* Nome do Arquivo */}
-                          <td className="px-3 py-2">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <Icon className="w-4 h-4 text-gray-600 dark:text-gray-400 flex-shrink-0" />
-                              <span className="text-gray-900 dark:text-white truncate block text-xs" title={config.file.name}>
+                          <td className={listPageTableTdCls}>
+                            <div className="flex min-w-0 items-center gap-2">
+                              <Icon className="h-4 w-4 shrink-0 text-gray-600 dark:text-gray-400" />
+                              <span className="truncate text-sm text-gray-900 dark:text-white" title={config.file.name}>
                                 {config.file.name}
                               </span>
                             </div>
                           </td>
 
-                          {/* Tipo Detectado */}
-                          <td className="px-3 py-2 text-center">
+                          <td className={`${listPageTableTdCls} text-center`}>
                             {config.detectedType === 'holerite' ? (
                               <span
                                 className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-xs font-medium min-w-[100px]"
@@ -1103,6 +1107,13 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
                               <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-xs font-medium min-w-[100px] bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">
                                 Não reconhecido
                               </span>
+                            ) : config.detectedType === 'export_nao_suportado' ? (
+                              <span
+                                className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-xs font-medium min-w-[100px] bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                                title={config.detectionError}
+                              >
+                                Export Plumo
+                              </span>
                             ) : config.detectedType === 'fatura_bruta' ? (
                               <span
                                 className={`inline-flex items-center justify-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium min-w-[100px] ${badge.className}`}
@@ -1113,19 +1124,28 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
                               >
                                 {badge.text}
                               </span>
+                            ) : config.detectedType === 'extrato_bruto' ? (
+                              <span
+                                className={`inline-flex items-center justify-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium min-w-[100px] ${extratoBtgBadge.className}`}
+                                title={extratoBtgBadge.title}
+                              >
+                                {extratoBtgBadge.text}
+                              </span>
+                            ) : config.detectedType === 'beneficio_csv' ? (
+                              <span
+                                className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-xs font-medium min-w-[100px]"
+                                style={{ background: 'var(--color-3)', color: 'var(--on-color-3)' }}
+                              >
+                                Benefício CSV
+                              </span>
                             ) : (
-                              <span className={`inline-flex items-center justify-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium min-w-[100px] ${
-                                config.isRaw
-                                  ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
-                                  : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
-                              }`}>
-                                {config.isRaw ? '📄 Bruto' : '✅ Processado'}
+                              <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-xs font-medium min-w-[100px] bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                                —
                               </span>
                             )}
                           </td>
 
-                          {/* Importar Como (ícones) */}
-                          <td className="px-3 py-2">
+                          <td className={`${listPageTableTdCls} text-center`}>
                             <div className="flex justify-center">
                               {isPayrollType(config.detectedType) ? (
                                 <Briefcase
@@ -1141,95 +1161,41 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
                                   className="cursor-default"
                                   title="PDF não reconhecido"
                                 />
-                              ) : config.detectedType === 'beneficio_csv' || config.detectedType === 'beneficio_xlsx' ? (
-                                // Benefícios (CSV bruto ou XLSX processado) = ícone Gift
+                              ) : config.detectedType === 'export_nao_suportado' ? (
+                                <AlertTriangle
+                                  size={22}
+                                  style={{ color: 'var(--color-danger)' }}
+                                  className="cursor-default"
+                                  title={config.detectionError || 'Export não suportado'}
+                                />
+                              ) : config.detectedType === 'beneficio_csv' ? (
                                 <Gift
                                   size={22}
                                   style={{ color: 'var(--color-3)' }}
                                   className="cursor-default"
                                   title="Benefício"
                                 />
-                              ) : config.detectedType === 'fatura_bruta' || config.detectedType === 'fatura_processada' ? (
-                                // PDF ou Fatura Processada = ícone CreditCard
+                              ) : config.detectedType === 'fatura_bruta' ? (
                                 <CreditCard
                                   size={22}
                                   style={{ color: 'var(--color-2)' }}
                                   className="cursor-default"
                                   title={badge.title}
                                 />
-                              ) : config.detectedType === 'extrato_bruto' || config.detectedType === 'extrato_processado' ? (
-                                // XLSX Extrato = ícone Landmark
+                              ) : config.detectedType === 'extrato_bruto' ? (
                                 <Landmark
                                   size={22}
                                   style={{ color: 'var(--color-1)' }}
                                   className="cursor-default"
                                   title="Extrato Bancário"
                                 />
-                              ) : (
-                                // Outros casos = pode escolher (botões com ícones)
-                                <div className="flex gap-2">
-                                  <button
-                                    onClick={() => handleTypeChange(index, 'extrato')}
-                                    disabled={isProcessing}
-                                    className={`p-1.5 rounded-lg transition-all ${
-                                      config.importSource === 'extrato'
-                                        ? 'bg-[var(--color-1)]/20 ring-2 ring-[var(--color-1)]'
-                                        : 'hover:bg-gray-200 dark:hover:bg-gray-600'
-                                    } disabled:opacity-50`}
-                                    title="Extrato Bancário"
-                                  >
-                                    <Landmark
-                                      size={20}
-                                      style={{ color: config.importSource === 'extrato' ? 'var(--color-1)' : 'var(--gray-400)' }}
-                                      className={config.importSource === 'extrato' ? '' : 'opacity-50'}
-                                    />
-                                  </button>
-                                  <button
-                                    onClick={() => handleTypeChange(index, 'fatura')}
-                                    disabled={isProcessing}
-                                    className={`p-1.5 rounded-lg transition-all ${
-                                      config.importSource === 'fatura'
-                                        ? 'bg-[var(--color-2)]/20 ring-2 ring-[var(--color-2)]'
-                                        : 'hover:bg-gray-200 dark:hover:bg-gray-600'
-                                    } disabled:opacity-50`}
-                                    title="Fatura de Cartão"
-                                  >
-                                    <CreditCard
-                                      size={20}
-                                      style={{ color: config.importSource === 'fatura' ? 'var(--color-2)' : 'var(--gray-400)' }}
-                                      className={config.importSource === 'fatura' ? '' : 'opacity-50'}
-                                    />
-                                  </button>
-                                </div>
-                              )}
+                              ) : null}
                             </div>
                           </td>
 
-                          {/* Re-tag checkbox (apenas para Excel processado) */}
-                          {fileConfigs.some(f => f.detectedType === 'extrato_processado' || f.detectedType === 'fatura_processada' || f.detectedType === 'beneficio_xlsx') && (
-                            <td className="px-2 py-2 text-center">
-                              {(config.detectedType === 'extrato_processado' || config.detectedType === 'fatura_processada' || config.detectedType === 'beneficio_xlsx') ? (
-                                <input
-                                  type="checkbox"
-                                  checked={config.forceRetag ?? true}
-                                  onChange={(e) => {
-                                    setFileConfigs(prev => prev.map((c, i) =>
-                                      i === index ? { ...c, forceRetag: e.target.checked } : c
-                                    ))
-                                  }}
-                                  disabled={isProcessing}
-                                  className={`${cadastroAccentControlCls} h-4 w-4 cursor-pointer rounded border-gray-300`}
-                                  title={config.forceRetag ? 'Forçar re-tageamento (usar mapeamentos)' : 'Manter tags do arquivo'}
-                                />
-                              ) : (
-                                <span className="text-xs text-gray-400">-</span>
-                              )}
-                            </td>
-                          )}
-
                           {/* Configuração (Ano/Mês para PDFs, Cartão para Benefícios) */}
                           {hasConfigColumn && (
-                            <td className="px-3 py-2">
+                            <td className={`${listPageTableTdCls} text-center`}>
                               {isPayrollType(config.detectedType) ? (
                                 <p className="truncate text-xs text-gray-600 dark:text-gray-300" title={config.payrollPreview}>
                                   {config.payrollPreview || '—'}
@@ -1238,41 +1204,48 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
                                 <p className="truncate text-xs text-red-600 dark:text-red-400" title={config.detectionError}>
                                   {config.detectionError || 'PDF não reconhecido'}
                                 </p>
+                              ) : config.detectedType === 'export_nao_suportado' ? (
+                                <p className="truncate text-xs text-red-600 dark:text-red-400" title={config.detectionError}>
+                                  {config.detectionError}
+                                </p>
                               ) : config.needsYearMonth ? (
                                 // PDFs: Ano/Mês
-                                <div className="flex gap-1 justify-center">
+                                <div className={importYearMonthRowCls}>
                                   <select
                                     value={config.year || ''}
                                     onChange={(e) => handleYearMonthChange(index, 'year', e.target.value)}
                                     disabled={isProcessing}
-                                    className={`${cadastroFieldCls} w-16 px-1.5 py-0.5 text-xs disabled:opacity-50`}
+                                    className={importYearSelectCls}
                                   >
                                     <option value="">Ano</option>
-                                    {years.map(year => (
-                                      <option key={year} value={year}>{year}</option>
+                                    {years.map((year) => (
+                                      <option key={year} value={year}>
+                                        {year}
+                                      </option>
                                     ))}
                                   </select>
                                   <select
                                     value={config.month || ''}
                                     onChange={(e) => handleYearMonthChange(index, 'month', e.target.value)}
                                     disabled={isProcessing}
-                                    className={`${cadastroFieldCls} w-14 px-1.5 py-0.5 text-xs disabled:opacity-50`}
+                                    className={importMonthSelectCls}
                                   >
                                     <option value="">Mês</option>
-                                    {months.map(month => (
-                                      <option key={month.value} value={month.value}>{month.value}</option>
+                                    {months.map((month) => (
+                                      <option key={month.value} value={month.value}>
+                                        {month.label}
+                                      </option>
                                     ))}
                                   </select>
                                 </div>
                               ) : config.detectedType === 'beneficio_csv' ? (
                                 // CSVs de Benefícios: Cartão (mesma largura que Ano + gap + Mês)
-                                <div className="flex gap-1 justify-center">
+                                <div className="flex justify-center">
                                   <select
                                     value={config.credit_card_id || ''}
                                     onChange={(e) => handleCardChange(index, parseInt(e.target.value))}
                                     disabled={isProcessing}
-                                    className={`${cadastroFieldCls} px-1.5 py-0.5 text-xs disabled:opacity-50`}
-                                    style={{ width: 'calc(4rem + 0.25rem + 3.5rem)' }}
+                                    className={importConfigFieldWideCls}
                                   >
                                     <option value="">Selecione...</option>
                                     {benefitCards.map(card => (
@@ -1291,24 +1264,24 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
                             </td>
                           )}
 
-                          {/* Remover */}
-                          <td className="px-3 py-2 text-center">
+                          <td className={`${listPageTableTdCls} text-center`}>
                             <button
+                              type="button"
                               onClick={() => handleRemoveFile(index)}
                               disabled={isProcessing}
-                              className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50 p-0.5"
+                              className={cadastroRowIconDangerCls}
+                              title="Remover arquivo"
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <Trash2 className="h-4 w-4" />
                             </button>
                           </td>
                         </tr>
                       )
                     })}
-                  </tbody>
-                </table>
-              </div>
+              </ListPageTable>
+              {error ? <div className="mt-4">{importErrorBanner}</div> : null}
             </CadastroFormSection>
-          )}
+          ) : null}
 
           {/* Resultados - só exibe quando não há conflitos pendentes */}
           {results.length > 0 && conflicts.length === 0 && (
@@ -1324,11 +1297,11 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
               }
             >
 
-              <div className="space-y-3">
+              <div className="space-y-5">
                 {results.map((result, index) => (
                   <div
                     key={index}
-                    className={`p-4 rounded-lg border ${
+                    className={`space-y-4 p-4 rounded-lg border ${
                       result.success
                         ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
                         : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
@@ -1408,6 +1381,17 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
                                 <span className="flex items-center gap-1">
                                   <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
                                   {result.duplicates} atualizado(s)
+                                  {(result.updatedRows?.length ?? 0) > 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => downloadUpdatedRecords(result)}
+                                      className="ml-2 px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded flex items-center gap-1 transition-colors"
+                                      title="Baixar DE-PARA dos registros atualizados"
+                                    >
+                                      <Download className="w-3 h-3" />
+                                      Baixar
+                                    </button>
+                                  )}
                                 </span>
                               )}
                               {resolvedConflicts > 0 && (result.conflicts_count ?? 0) > 0 && (
@@ -1436,15 +1420,83 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
                                   </button>
                                 </span>
                               )}
+                              {(result.policyIgnoredCount ?? 0) > 0 && (
+                                <span className="flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                  {result.policyIgnoredCount} &quot;Saque negado&quot; ignorado(s)
+                                  <button
+                                    type="button"
+                                    onClick={() => downloadPolicyIgnoredRecords(result)}
+                                    className="ml-2 px-2 py-0.5 bg-amber-600 hover:bg-amber-700 text-white text-xs rounded flex items-center gap-1 transition-colors"
+                                    title="Baixar linhas ignoradas (Saque negado)"
+                                  >
+                                    <Download className="w-3 h-3" />
+                                    Baixar
+                                  </button>
+                                </span>
+                              )}
                             </div>
                           )
                         ) : (
-                          <div className="space-y-1">
+                          <div className="space-y-1.5 rounded-md border border-red-200 bg-white/60 p-3 dark:border-red-900/50 dark:bg-red-950/20">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-red-700 dark:text-red-300">
+                              Falha na importação
+                            </p>
                             {result.errors.map((error, i) => (
-                              <p key={i} className="text-xs text-red-600 dark:text-red-400">
-                                • {error}
+                              <p
+                                key={i}
+                                className={`text-sm leading-snug text-red-800 dark:text-red-200 ${
+                                  error.startsWith('Motivo:') || error.startsWith('Dica:')
+                                    ? 'font-medium'
+                                    : ''
+                                }`}
+                              >
+                                {error.startsWith('•') ? error : `• ${error}`}
                               </p>
                             ))}
+                          </div>
+                        )}
+                        {(result.policyIgnoredCount ?? 0) > 0 && result.policyIgnoredRows && (
+                          <div className="pt-1">
+                            <p className="mb-2 text-xs font-medium text-gray-700 dark:text-gray-300">
+                              Linhas ignoradas (Saque negado)
+                            </p>
+                            <ListPageTable
+                              framed
+                              colsRest={<ListTableSpacerCol />}
+                              head={
+                                <tr>
+                                  <ListTableIndexHeader />
+                                  <ListTableSpacerHeader />
+                                  <ListTableStaticHeader label="Data" className="w-[22%]" />
+                                  <ListTableStaticHeader label="Transação" className="w-[22%]" />
+                                  <ListTableStaticHeader label="Descrição" />
+                                  <ListTableStaticHeader label="Valor" className="w-[18%] text-right" />
+                                </tr>
+                              }
+                            >
+                              {result.policyIgnoredRows.slice(0, 8).map((row, rowIndex) => (
+                                <tr key={rowIndex} className={importResultTableRowCls}>
+                                  <ListTableIndexCell index={rowIndex + 1} />
+                                  <ListTableSpacerCell />
+                                  <td className={`${listPageTableTdCls} whitespace-nowrap text-xs`}>{row.data}</td>
+                                  <td className={`${listPageTableTdCls} whitespace-nowrap text-xs`}>{row.transacao}</td>
+                                  <td className={`${listPageTableTdCls} max-w-0 truncate text-xs`} title={row.descricao}>
+                                    {row.descricao}
+                                  </td>
+                                  <td className={`${listPageTableTdCls} text-right whitespace-nowrap text-xs tabular-nums`}>
+                                    {typeof row.valor === 'number'
+                                      ? row.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                                      : row.valor}
+                                  </td>
+                                </tr>
+                              ))}
+                            </ListPageTable>
+                            {result.policyIgnoredRows.length > 8 && (
+                              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                                + {result.policyIgnoredRows.length - 8} linha(s) — use Baixar para ver todas.
+                              </p>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1455,7 +1507,7 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
 
               {/* Aviso de Curadoria */}
               {totalUnmapped > 0 && (
-                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                <div className="mt-6 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
                   <div className="flex items-start gap-3">
                     <div className="p-2 bg-blue-100 dark:bg-blue-800/50 rounded-lg flex-shrink-0">
                       <ClipboardCheck className="w-5 h-5 text-blue-600 dark:text-blue-400" />
@@ -1494,16 +1546,30 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
           leading={
             results.length === 0 && fileConfigs.length > 0 ? (
               <div className="space-y-1">
-                <label className={`${cadastroOptionLabelCls} text-xs text-gray-600 dark:text-gray-400`}>
-                  <input
-                    type="checkbox"
-                    checked={enableTracing}
-                    onChange={(e) => setEnableTracing(e.target.checked)}
-                    disabled={isProcessing || isDetecting}
-                    className={`${cadastroAccentControlCls} h-3.5 w-3.5 rounded border-gray-300 disabled:opacity-50`}
-                  />
-                  Gerar log de debug (JSON com detalhes de cada linha)
-                </label>
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                  <label className={`${cadastroOptionLabelCls} text-xs text-gray-600 dark:text-gray-400`}>
+                    <input
+                      type="checkbox"
+                      checked={enableTracing}
+                      onChange={(e) => setEnableTracing(e.target.checked)}
+                      disabled={isProcessing || isDetecting}
+                      className={`${cadastroAccentControlCls} h-3.5 w-3.5 rounded border-gray-300 disabled:opacity-50`}
+                    />
+                    Gerar log de debug (JSON com detalhes de cada linha)
+                  </label>
+                  {hasPDFs ? (
+                    <label className={`${cadastroOptionLabelCls} text-xs text-gray-600 dark:text-gray-400`}>
+                      <input
+                        type="checkbox"
+                        checked={saveConversionTxt}
+                        onChange={(e) => setSaveConversionTxt(e.target.checked)}
+                        disabled={isProcessing || isDetecting}
+                        className={`${cadastroAccentControlCls} h-3.5 w-3.5 rounded border-gray-300 disabled:opacity-50`}
+                      />
+                      Salvar TXT da conversão do PDF (debug)
+                    </label>
+                  ) : null}
+                </div>
                 {hasUnrecognized ? (
                   <p className="text-xs text-red-600 dark:text-red-400">
                     Remova os PDFs não reconhecidos para habilitar a importação.
@@ -1525,6 +1591,13 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
         onClose={handleDiscardConflicts}
         conflicts={conflicts}
         onResolve={handleResolveConflicts}
+      />
+
+      <PdfImportPasswordModal
+        isOpen={showPdfPasswordModal}
+        files={pdfPasswordQueue.map((c) => ({ filename: c.file.name }))}
+        onCancel={handlePdfPasswordCancel}
+        onConfirm={handlePdfPasswordConfirm}
       />
     </>
   )

@@ -84,6 +84,15 @@ async def auto_match_history(
     return match_service.auto_match_history(db, tenant_id, account_id, user_id)
 
 
+@router.post("/suggest-history")
+async def suggest_auto_history(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    tenant_id, account_id, _user_id = _scope(current_user)
+    return match_service.suggest_auto_history(db, tenant_id, account_id)
+
+
 @router.get("/search-statements")
 async def search_statements(
     start_date: date = Query(...),
@@ -99,6 +108,21 @@ async def search_statements(
             db, tenant_id, account_id, start_date, end_date, min_amount, max_amount,
         )
     except ValueError as exc:
+        raise _http_from_service(exc)
+
+
+@router.get("/by-bank-statement/{bank_statement_id}")
+async def get_invoice_detail_for_bank_statement(
+    bank_statement_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    tenant_id, account_id, _user_id = _scope(current_user)
+    try:
+        return match_service.invoice_detail_for_bank_statement(
+            db, tenant_id, account_id, bank_statement_id,
+        )
+    except LookupError as exc:
         raise _http_from_service(exc)
 
 

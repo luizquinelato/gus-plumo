@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from collections import defaultdict
 
 from app.database import get_db
-from app.models.unified_models import BankStatement, CreditCardInvoice, Cartao
+from app.models.unified_models import BankStatement, CreditCardInvoice, Cartao, BenefitCardStatement
 from app.dependencies.auth import get_current_user
 from app.utils.card_helper import CardHelper
 
@@ -84,9 +84,35 @@ class RemainingInstallmentsSummary(BaseModel):
 
 
 class HomeDashboardResponse(BaseModel):
-    months: List[MonthSummary]  # Mês atual (extrato)
-    invoice_months: List[InvoiceMonthSummary]  # Mês atual (faturas)
-    remaining_installments: RemainingInstallmentsSummary
+    """Sumário executivo da Home (extrato, cartão, benefícios)."""
+    period_label: str
+    year_month: str
+    bank: "ExecutiveFlowBlock"
+    benefit: "ExecutiveFlowBlock"
+    credit_card: "CreditCardExecutiveBlock"
+
+
+class ExecutiveFlowBlock(BaseModel):
+    """Fluxo do período (extrato ou benefício)."""
+    period_label: str
+    year_month: str
+    current_balance: Decimal | None = None  # Home extrato: saldo em conta (= opening + entradas - saídas)
+    opening_balance: Decimal | None = None  # Soma do extrato até o último dia do mês anterior
+    entries: Decimal
+    exits: Decimal
+    net: Decimal
+    entries_count: int
+    exits_count: int
+    last_transaction_date: str | None = None
+
+
+class CreditCardExecutiveBlock(BaseModel):
+    last_invoice_year_month: str | None = None
+    last_invoice_label: str | None = None
+    last_invoice_total: Decimal
+    last_invoice_count: int
+    average_invoice_total: Decimal
+    average_sample_months: int
 
 
 class InvoiceDetailItem(BaseModel):
@@ -415,19 +441,67 @@ async def get_monthly_dashboard(
     )
 
 
+MONTH_NAMES = {
+    1: "Jan", 2: "Fev", 3: "Mar", 4: "Abr", 5: "Mai", 6: "Jun",
+    7: "Jul", 8: "Ago", 9: "Set", 10: "Out", 11: "Nov", 12: "Dez",
+}
+
+
+def _month_label(year: int, month: int) -> str:
+    return f"{MONTH_NAMES[month]}/{year}"
+
+
+def _flow_from_amount_rows(
+    db: Session,
+    model,
+    tenant_id: int,
+    account_id: int,
+    target_year: int,
+    target_month: int,
+    amount_column,
+    date_column,
+) -> tuple[Decimal, Decimal, int, int, str | None]:
+    """Entradas, saídas (positivo), contagens e última data no mês calendário."""
+    row = db.query(
+        func.coalesce(func.sum(case((amount_column < 0, amount_column), else_=Decimal(0))), 0).label('expenses_raw'),
+        func.coalesce(func.sum(case((amount_column > 0, amount_column), else_=Decimal(0))), 0).label('revenue'),
+        func.count(case((amount_column < 0, 1))).label('expenses_count'),
+        func.count(case((amount_column > 0, 1))).label('revenue_count'),
+    ).filter(
+        model.tenant_id == tenant_id,
+        model.account_id == account_id,
+        extract('year', date_column) == target_year,
+        extract('month', date_column) == target_month,
+    ).first()
+
+    exits = abs(row.expenses_raw) if row and row.expenses_raw else Decimal(0)
+    entries = row.revenue if row and row.revenue else Decimal(0)
+    exits_count = row.expenses_count if row else 0
+    entries_count = row.revenue_count if row else 0
+
+    last_tx = db.query(date_column).filter(
+        model.tenant_id == tenant_id,
+        model.account_id == account_id,
+        extract('year', date_column) == target_year,
+        extract('month', date_column) == target_month,
+    ).order_by(desc(date_column)).first()
+
+    last_date = None
+    if last_tx is not None:
+        dt = last_tx[0] if isinstance(last_tx, tuple) else last_tx
+        if hasattr(dt, 'strftime'):
+            last_date = dt.strftime("%Y-%m-%d")
+
+    return entries, exits, entries_count, exits_count, last_date
+
+
 @router.get("/home", response_model=HomeDashboardResponse)
 async def get_home_dashboard(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Retorna dados para a HomePage (mês atual):
-    - Saldo, despesas e receitas do mês corrente
-    - Faturas dos cartões ativos no mês corrente
-    - Saldo parcelado restante
-
-    Returns:
-        HomeDashboardResponse com months, invoice_months e remaining_installments
+    Sumário executivo da Home: extrato bancário, última fatura de crédito e benefícios.
     """
     tenant_id = current_user.get("tenant_id", 1)
     account_id = current_user.get("account_id")
@@ -436,120 +510,134 @@ async def get_home_dashboard(
         raise HTTPException(status_code=400, detail="account_id não encontrado no token")
 
     now = datetime.now()
-
-    # Mapeamento de mês para nome em português abreviado
-    month_names = {
-        1: "Jan", 2: "Fev", 3: "Mar", 4: "Abr", 5: "Mai", 6: "Jun",
-        7: "Jul", 8: "Ago", 9: "Set", 10: "Out", 11: "Nov", 12: "Dez"
-    }
-
-    # ==================== MÊS ATUAL ====================
     target_year = now.year
     target_month = now.month
     year_month = f"{target_year}-{str(target_month).zfill(2)}"
-    month_label = f"{month_names[target_month]}/{target_year}"
+    period_label = _month_label(target_year, target_month)
+    month_start = datetime(target_year, target_month, 1)
 
-    months_data = []
-
-    bank_data = db.query(
-        func.coalesce(func.sum(
-            case(
-                (BankStatement.amount < 0, BankStatement.amount),
-                else_=Decimal(0)
-            )
-        ), 0).label('expenses'),
-        func.coalesce(func.sum(
-            case(
-                (BankStatement.amount > 0, BankStatement.amount),
-                else_=Decimal(0)
-            )
-        ), 0).label('revenue'),
-        func.count(case((BankStatement.amount < 0, 1))).label('expenses_count'),
-        func.count(case((BankStatement.amount > 0, 1))).label('revenue_count')
+    # --- Extrato bancário: saldo em conta = saldo mês anterior + entradas - saídas ---
+    opening_row = db.query(
+        func.coalesce(func.sum(BankStatement.amount), 0).label('balance')
     ).filter(
         BankStatement.tenant_id == tenant_id,
         BankStatement.account_id == account_id,
-        extract('year', BankStatement.date) == target_year,
-        extract('month', BankStatement.date) == target_month
+        BankStatement.date < month_start,
     ).first()
+    opening_balance = opening_row.balance if opening_row and opening_row.balance else Decimal(0)
 
-    expenses = abs(bank_data.expenses) if bank_data else Decimal(0)
-    revenue = bank_data.revenue if bank_data else Decimal(0)
-    balance = revenue - expenses
+    b_entries, b_exits, b_ec, b_xc, b_last = _flow_from_amount_rows(
+        db,
+        BankStatement,
+        tenant_id,
+        account_id,
+        target_year,
+        target_month,
+        BankStatement.amount,
+        BankStatement.date,
+    )
+    month_flow = b_entries - b_exits
+    account_balance = opening_balance + month_flow
 
-    months_data.append(MonthSummary(
+    bank_block = ExecutiveFlowBlock(
+        period_label=period_label,
         year_month=year_month,
-        month_label=month_label,
-        balance=balance,
-        total_expenses=expenses,
-        total_revenue=revenue,
-        expenses_count=bank_data.expenses_count if bank_data else 0,
-        revenue_count=bank_data.revenue_count if bank_data else 0
-    ))
+        current_balance=account_balance,
+        opening_balance=opening_balance,
+        entries=b_entries,
+        exits=b_exits,
+        net=account_balance,
+        entries_count=b_ec,
+        exits_count=b_xc,
+        last_transaction_date=b_last,
+    )
 
-    # ==================== FATURAS DO MÊS ATUAL ====================
-    invoice_months_data = []
+    # --- Benefícios: fluxo do mês (sem saldo de conta) ---
+    ben_entries, ben_exits, ben_ec, ben_xc, ben_last = _flow_from_amount_rows(
+        db,
+        BenefitCardStatement,
+        tenant_id,
+        account_id,
+        target_year,
+        target_month,
+        BenefitCardStatement.amount,
+        BenefitCardStatement.date,
+    )
+    benefit_block = ExecutiveFlowBlock(
+        period_label=period_label,
+        year_month=year_month,
+        entries=ben_entries,
+        exits=ben_exits,
+        net=ben_entries - ben_exits,
+        entries_count=ben_ec,
+        exits_count=ben_xc,
+        last_transaction_date=ben_last,
+    )
 
-    invoices_data = db.query(
-        CreditCardInvoice.credit_card_id,
-        Cartao.number.label('card_number'),
-        Cartao.name.label('card_name'),
-        Cartao.type.label('card_type'),
-        func.sum(CreditCardInvoice.amount).label('total'),
-        func.count(CreditCardInvoice.id).label('count')
+    # --- Cartão de crédito: última fatura fechada + média mensal ---
+    credit_type_filter = (Cartao.type == 'credito') | (Cartao.type.is_(None))
+    last_ym_row = db.query(func.max(CreditCardInvoice.year_month)).join(
+        Cartao, CreditCardInvoice.credit_card_id == Cartao.id
+    ).filter(
+        CreditCardInvoice.tenant_id == tenant_id,
+        Cartao.account_id == account_id,
+        Cartao.active == True,
+        credit_type_filter,
+    ).scalar()
+
+    last_invoice_total = Decimal(0)
+    last_invoice_count = 0
+    last_invoice_label = None
+
+    if last_ym_row:
+        last_invoice_label = _month_label_from_year_month(last_ym_row)
+        inv_agg = db.query(
+            func.coalesce(func.sum(CreditCardInvoice.amount), 0).label('total'),
+            func.count(CreditCardInvoice.id).label('count'),
+        ).join(Cartao, CreditCardInvoice.credit_card_id == Cartao.id).filter(
+            CreditCardInvoice.tenant_id == tenant_id,
+            Cartao.account_id == account_id,
+            CreditCardInvoice.year_month == last_ym_row,
+            Cartao.active == True,
+            credit_type_filter,
+        ).first()
+        if inv_agg:
+            last_invoice_total = inv_agg.total or Decimal(0)
+            last_invoice_count = inv_agg.count or 0
+
+    monthly_totals = db.query(
+        func.sum(CreditCardInvoice.amount).label('total')
     ).join(
         Cartao, CreditCardInvoice.credit_card_id == Cartao.id
     ).filter(
         CreditCardInvoice.tenant_id == tenant_id,
         Cartao.account_id == account_id,
-        CreditCardInvoice.year_month == year_month,
-        Cartao.active == True
-    ).group_by(
-        CreditCardInvoice.credit_card_id,
-        Cartao.number,
-        Cartao.name,
-        Cartao.type
-    ).order_by(
-        Cartao.number
-    ).all()
+        Cartao.active == True,
+        credit_type_filter,
+    ).group_by(CreditCardInvoice.year_month).all()
 
-    month_total = Decimal(0)
-    month_count = 0
-    cards_breakdown = []
+    sample_months = len(monthly_totals)
+    if sample_months:
+        average_invoice = sum(abs(m.total or Decimal(0)) for m in monthly_totals) / sample_months
+    else:
+        average_invoice = Decimal(0)
 
-    for inv in invoices_data:
-        month_total += inv.total
-        month_count += inv.count
-        cards_breakdown.append(CardMonthData(
-            card_id=inv.credit_card_id,
-            card_number=inv.card_number,
-            card_name=inv.card_name,
-            card_type=inv.card_type or 'credito',
-            total=inv.total,
-            count=inv.count
-        ))
-
-    invoice_months_data.append(InvoiceMonthSummary(
-        year_month=year_month,
-        month_label=month_label,
-        total=month_total,
-        count=month_count,
-        cards=cards_breakdown
-    ))
-
-    remaining_installments = _calculate_remaining_installments(db, tenant_id, account_id)
-
-    return HomeDashboardResponse(
-        months=months_data,
-        invoice_months=invoice_months_data,
-        remaining_installments=remaining_installments,
+    credit_block = CreditCardExecutiveBlock(
+        last_invoice_year_month=last_ym_row,
+        last_invoice_label=last_invoice_label,
+        last_invoice_total=last_invoice_total,
+        last_invoice_count=last_invoice_count,
+        average_invoice_total=Decimal(str(round(average_invoice, 2))),
+        average_sample_months=sample_months,
     )
 
-
-MONTH_NAMES = {
-    1: "Jan", 2: "Fev", 3: "Mar", 4: "Abr", 5: "Mai", 6: "Jun",
-    7: "Jul", 8: "Ago", 9: "Set", 10: "Out", 11: "Nov", 12: "Dez"
-}
+    return HomeDashboardResponse(
+        period_label=period_label,
+        year_month=year_month,
+        bank=bank_block,
+        benefit=benefit_block,
+        credit_card=credit_block,
+    )
 
 
 def _month_label_from_year_month(year_month: str) -> str:

@@ -5,6 +5,7 @@ import {
   CadastroListPageBody,
   CadastroListPageHero,
   CadastroListPageShell,
+  cadastroRowIconBtnCls,
 } from '../components/CadastroListPageLayout'
 import {
   CadastroFieldLabel,
@@ -20,7 +21,7 @@ import FloatingFooterBar from '../components/FloatingFooterBar'
 import SharedAccountDisplay from '../components/SharedAccountDisplay'
 import LoadingSpinner from '../components/LoadingSpinner'
 import { Layers, Search, X, ChevronDown, ChevronRight, Landmark, CreditCard, Gift, Filter, Calendar, Info, TrendingUp, TrendingDown, Minus, BarChart3, ArrowUp } from 'lucide-react'
-import BrazilianDatePicker from '../components/BrazilianDatePicker'
+import { DateField } from '../components/date'
 import { dateToLocalString, parseLocalDate } from '../utils/dateUtils'
 import { formatCurrency } from '../utils/currency'
 import { MultiSelectDropdown, SourceMultiSelectDropdown } from '../components/MultiSelectDropdown'
@@ -389,7 +390,7 @@ const GrupoPage = () => {
                     <Calendar size={12} className="inline mr-1 text-color-primary" />
                     Data Início
                   </label>
-                  <BrazilianDatePicker
+                  <DateField
                     value={startDate ? dateToLocalString(startDate) : ''}
                     onChange={(value) => setStartDate(value ? parseLocalDate(value) : null)}
                     maxDate={endDate ?? undefined}
@@ -403,7 +404,7 @@ const GrupoPage = () => {
                     <Calendar size={12} className="inline mr-1 text-color-primary" />
                     Data Fim
                   </label>
-                  <BrazilianDatePicker
+                  <DateField
                     value={endDate ? dateToLocalString(endDate) : ''}
                     onChange={(value) => setEndDate(value ? parseLocalDate(value) : null)}
                     minDate={startDate ?? undefined}
@@ -552,12 +553,13 @@ const GrupoPage = () => {
 
                           {/* Botão Info */}
                           <button
+                            type="button"
                             onClick={(e) => {
                               e.stopPropagation()
                               const stats = calculateGroupStats(group)
                               setGroupStatsModal({ isOpen: true, stats })
                             }}
-                            className="p-1.5 ml-2 text-gray-400 hover:text-color-primary hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all"
+                            className={`${cadastroRowIconBtnCls} ml-2`}
                             title="Ver estatísticas do grupo"
                           >
                             <Info size={18} />

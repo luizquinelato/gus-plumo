@@ -16,6 +16,16 @@ from app.database import get_db
 from app.dependencies.auth import require_account
 from app.models.base_entity import now_utc
 from app.models.payroll_models import IncomeReport, IncomeReportLine, PayrollLineType, Payslip, PayslipLine
+from app.utils.account_import_password import (
+    account_default_import_file_password,
+    load_account_for_user,
+)
+from app.utils.pdf_password import (
+    PdfPasswordInvalid,
+    PdfPasswordRequired,
+    resolve_pdf_password_at_index,
+)
+
 from app.services.payroll_pdf_service import (
     ADVANCE_LINE_CODE,
     FINAL_ADVANCE_DEDUCTION_LINE_CODE,
@@ -32,6 +42,13 @@ from app.services.payroll_pdf_service import (
 )
 
 router = APIRouter(prefix="/api/payroll", tags=["payroll"])
+
+
+def _account_default_pdf_password(db: Session, current_user: dict) -> Optional[str]:
+    tenant_id = current_user.get("tenant_id")
+    account_id = current_user.get("account_id")
+    account = load_account_for_user(db, tenant_id, account_id)
+    return account_default_import_file_password(account)
 
 
 class ImportFileResult(BaseModel):
@@ -77,6 +94,14 @@ class ClassifyFileResult(BaseModel):
 
 class ClassifyPayrollResponse(BaseModel):
     results: List[ClassifyFileResult]
+
+
+def _pdf_user_message(exc: Exception) -> str:
+    if isinstance(exc, PdfPasswordRequired):
+        return "PDF protegido por senha"
+    if isinstance(exc, PdfPasswordInvalid):
+        return "Senha do PDF incorreta"
+    return str(exc)
 
 
 class ImportPayrollResponse(BaseModel):
@@ -564,16 +589,19 @@ class IncomeReportDetailResponse(IncomeReportResponse):
 @router.post("/classify-pdfs", response_model=ClassifyPayrollResponse)
 async def classify_payroll_pdfs(
     files: List[UploadFile] = File(...),
+    passwords: List[str] = Form([]),
+    db: Session = Depends(get_db),
     current_user: dict = Depends(require_account),
 ):
     if not files:
         raise HTTPException(status_code=400, detail="Nenhum arquivo fornecido")
 
+    default_password = _account_default_pdf_password(db, current_user)
     temp_dir = tempfile.mkdtemp()
     results: List[ClassifyFileResult] = []
 
     try:
-        for file in files:
+        for index, file in enumerate(files):
             filename = file.filename or "arquivo.pdf"
             if not filename.lower().endswith(".pdf"):
                 results.append(
@@ -590,8 +618,11 @@ async def classify_payroll_pdfs(
             with open(temp_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
 
+            pdf_password = resolve_pdf_password_at_index(
+                passwords, index, default_password
+            )
             try:
-                raw_text = extract_pdf_text(temp_path)
+                raw_text = extract_pdf_text(temp_path, pdf_password)
                 doc_type = classify_payroll_pdf(raw_text)
 
                 if doc_type == "payslip":
@@ -626,6 +657,14 @@ async def classify_payroll_pdfs(
                             report_year=parsed.get("report_year"),
                         )
                     )
+            except (PdfPasswordRequired, PdfPasswordInvalid) as ex:
+                results.append(
+                    ClassifyFileResult(
+                        filename=filename,
+                        status="error",
+                        message=_pdf_user_message(ex),
+                    )
+                )
             except Exception as ex:
                 results.append(
                     ClassifyFileResult(
@@ -644,6 +683,7 @@ async def classify_payroll_pdfs(
 async def import_payroll_pdfs(
     files: List[UploadFile] = File(...),
     doc_types: Optional[str] = Form(None),
+    passwords: List[str] = Form([]),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_account),
 ):
@@ -666,6 +706,7 @@ async def import_payroll_pdfs(
         except Exception:
             raise HTTPException(status_code=400, detail="doc_types inválido")
 
+    default_password = _account_default_pdf_password(db, current_user)
     temp_dir = tempfile.mkdtemp()
     results: List[ImportFileResult] = []
     imported_payslips = 0
@@ -726,8 +767,11 @@ async def import_payroll_pdfs(
             with open(temp_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
 
+            pdf_password = resolve_pdf_password_at_index(
+                passwords, index, default_password
+            )
             try:
-                raw_text = extract_pdf_text(temp_path)
+                raw_text = extract_pdf_text(temp_path, pdf_password)
                 forced_type = override_types[index] if index < len(override_types) else None
                 doc_type = forced_type or classify_payroll_pdf(raw_text)
 

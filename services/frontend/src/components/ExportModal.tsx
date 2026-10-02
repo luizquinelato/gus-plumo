@@ -131,7 +131,7 @@ export default function ExportModal({ isOpen, onClose, expenses, onSuccess, onEr
                 <span>
                   <span className="block text-sm font-medium">Incluir compartilhamento</span>
                   <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
-                    Adiciona colunas: Conta Parceira, Minha Contribuição (%)
+                    Adiciona colunas: Conta Parceira, Parte na sua conta (%)
                     {sharedCount > 0 ? ` · ${sharedCount} com compartilhamento` : ''}
                   </span>
                 </span>

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import date
 from typing import Any, Dict, List, Literal, NamedTuple, Optional
 
-from PyPDF2 import PdfReader
+from ..utils.pdf_password import extract_pdf_text as _extract_pdf_text
 
 from ..utils.mapping_helper import MappingHelper
 
@@ -116,12 +117,8 @@ _MP_EMPTY_INVOICE_RE = re.compile(
 _MP_GARBLED_CURRENCY_RE = re.compile(r"Valor em \$(?!R)", re.IGNORECASE)
 
 
-def extract_pdf_text(file_path: str) -> str:
-    reader = PdfReader(file_path)
-    parts: List[str] = []
-    for page in reader.pages:
-        parts.append(page.extract_text() or "")
-    return "\n".join(parts)
+def extract_pdf_text(file_path: str, password: Optional[str] = None) -> str:
+    return _extract_pdf_text(file_path, password)
 
 
 def _normalize_pdf_text(text: str) -> str:
@@ -190,6 +187,147 @@ def _format_month(month_num: Optional[int]) -> Optional[str]:
     return f"{month_num:02d}"
 
 
+def invoice_period_from_filename(filename: Optional[str]) -> tuple[Optional[str], Optional[str]]:
+    """Ano/mês somente a partir do nome do arquivo (importação)."""
+    if not filename:
+        return None, None
+    base = filename.replace("\\", "/").split("/")[-1]
+    m = re.match(r"^(20\d{2})-(\d{2})-\d{2}", base)
+    if m:
+        return m.group(1), m.group(2)
+    m = re.search(r"(20\d{2})[-_](\d{1,2})", base)
+    if m:
+        return m.group(1), m.group(2).zfill(2)
+    # Ex.: Fatura Abr_24.pdf, Fatura Dez_23.pdf
+    m = re.search(
+        rf"Fatura[\s_]+({MONTH_ABBR_PATTERN})[\s_]+(\d{{2}})(?:\.pdf)?$",
+        base,
+        re.IGNORECASE,
+    )
+    if m:
+        month_num = MONTH_ABBR_TO_NUM.get(m.group(1).lower()[:3])
+        yy = int(m.group(2))
+        year = str(2000 + yy) if yy <= 99 else str(yy)
+        if month_num:
+            return year, f"{month_num:02d}"
+    # Ex.: Fatura Abr.pdf (ano omitido no nome — fatura do ano corrente)
+    m = re.search(
+        rf"Fatura[\s_]+({MONTH_ABBR_PATTERN})(?:\.pdf)?$",
+        base,
+        re.IGNORECASE,
+    )
+    if m:
+        month_num = MONTH_ABBR_TO_NUM.get(m.group(1).lower()[:3])
+        if month_num:
+            return None, f"{month_num:02d}"
+    return None, None
+
+
+def apply_btg_current_year_if_month_only(
+    issuer: Optional[str],
+    year: Optional[str],
+    month: Optional[str],
+) -> Optional[str]:
+    """BTG: nome só com mês (Jan, Abr…) → assume ano corrente."""
+    if issuer == "btg" and month and not year:
+        return str(date.today().year)
+    return year
+
+
+def btg_invoice_period_from_document_start(
+    text: str,
+    *,
+    max_chars: int = 5000,
+) -> tuple[Optional[str], Optional[str]]:
+    """Cabeçalho BTG: '… | fatura de Abril de 2026 | cartão final …'."""
+    snippet = _normalize_pdf_text(text)[:max_chars]
+    match = re.search(
+        rf"fatura de\s+({MONTH_NAMES_PATTERN})\s+de\s+(20\d{{2}})",
+        snippet,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None, None
+    return match.group(2), _format_month(_month_num_from_name(match.group(1)))
+
+
+def _invoice_period_from_short_month_filename(
+    filename: Optional[str],
+) -> tuple[Optional[str], Optional[str]]:
+    """Ex.: Jun_25.pdf, Abr_26.pdf (fallback quando o PDF não traz período)."""
+    if not filename:
+        return None, None
+    base = filename.replace("\\", "/").split("/")[-1]
+    match = re.match(
+        rf"^({MONTH_ABBR_PATTERN})[\s_](\d{{2}})\.pdf$",
+        base,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None, None
+    month_num = MONTH_ABBR_TO_NUM.get(match.group(1).lower()[:3])
+    yy = int(match.group(2))
+    year = str(2000 + yy) if yy <= 99 else str(yy)
+    if month_num:
+        return year, f"{month_num:02d}"
+    return None, None
+
+
+def _parent_folder_year(filename: Optional[str]) -> Optional[str]:
+    if not filename:
+        return None
+    for part in reversed(filename.replace("\\", "/").split("/")[:-1]):
+        if re.fullmatch(r"20\d{2}", part):
+            return part
+    return None
+
+
+def resolve_mercadopago_import_period(
+    text: str,
+    filename: Optional[str],
+) -> tuple[Optional[str], Optional[str]]:
+    """
+    Mercado Pago — ordem: conteúdo do PDF → nome curto (Mês_AA) → pasta (2025/) → padrão Fatura.
+    """
+    meta = extract_invoice_metadata(text, "mercadopago")
+    year = meta.get("year")
+    month = meta.get("month")
+    if year and month:
+        return year, month
+
+    short_year, short_month = _invoice_period_from_short_month_filename(filename)
+    year = year or short_year
+    month = month or short_month
+
+    file_year, file_month = invoice_period_from_filename(filename)
+    year = year or file_year
+    month = month or file_month
+
+    if month and not year:
+        year = _parent_folder_year(filename) or str(date.today().year)
+
+    return year, month
+
+
+def resolve_btg_import_period(
+    text: str,
+    filename: Optional[str],
+) -> tuple[Optional[str], Optional[str]]:
+    """
+    BTG — ordem: nome do arquivo → ano corrente (só mês no nome) → cabeçalho do PDF.
+    """
+    year, month = invoice_period_from_filename(filename)
+    year = apply_btg_current_year_if_month_only("btg", year, month)
+    if year and month:
+        return year, month
+
+    doc_year, doc_month = btg_invoice_period_from_document_start(text)
+    year = year or doc_year
+    month = month or doc_month
+    year = apply_btg_current_year_if_month_only("btg", year, month)
+    return year, month
+
+
 def _extract_btg_period(normalized: str) -> tuple[Optional[str], Optional[str], Optional[str]]:
     """Ano/mês e final do cartão a partir do cabeçalho BTG/EQI."""
     year: Optional[str] = None
@@ -197,6 +335,16 @@ def _extract_btg_period(normalized: str) -> tuple[Optional[str], Optional[str], 
 
     named_year = re.search(
         rf"fatura de\s+({MONTH_NAMES_PATTERN})\s+de\s+(20\d{{2}})",
+        normalized,
+        re.IGNORECASE,
+    )
+    btg_fatura_de = re.search(
+        rf"fatura de\s+({MONTH_NAMES_PATTERN})\b",
+        normalized,
+        re.IGNORECASE,
+    )
+    btg_header_month = re.search(
+        rf"\bde\s+({MONTH_NAMES_PATTERN})\s+no valor\b",
         normalized,
         re.IGNORECASE,
     )
@@ -230,6 +378,10 @@ def _extract_btg_period(normalized: str) -> tuple[Optional[str], Optional[str], 
     if named_year:
         month = _format_month(_month_num_from_name(named_year.group(1)))
         year = named_year.group(2)
+    elif btg_fatura_de:
+        month = _format_month(_month_num_from_name(btg_fatura_de.group(1)))
+    elif btg_header_month:
+        month = _format_month(_month_num_from_name(btg_header_month.group(1)))
     elif named_only:
         month = _format_month(_month_num_from_name(named_only.group(1)))
     elif eqi:
@@ -324,28 +476,46 @@ def extract_invoice_metadata(text: str, issuer: InvoiceIssuer) -> Dict[str, Opti
     }
 
 
-def inspect_invoice_pdf(file_path: str) -> Dict[str, Optional[str]]:
-    text = extract_pdf_text(file_path)
+def inspect_invoice_pdf(
+    file_path: str,
+    password: Optional[str] = None,
+    source_filename: Optional[str] = None,
+) -> Dict[str, Optional[str]]:
+    text = extract_pdf_text(file_path, password)
     issuer = detect_invoice_issuer(text)
     metadata = extract_invoice_metadata(text, issuer)
     if issuer == "unknown":
-        btg_year, btg_month, btg_card = _extract_btg_period(_normalize_pdf_text(text))
-        if btg_year and btg_month:
+        _btg_year, btg_month, btg_card = _extract_btg_period(_normalize_pdf_text(text))
+        if btg_month:
             issuer = "btg"
             metadata = {
-                "year": btg_year,
-                "month": btg_month,
+                "year": None,
+                "month": None,
                 "card_last4": btg_card,
                 "issuer_label": ISSUER_LABELS["btg"],
             }
+
+    if issuer == "btg":
+        year, month = resolve_btg_import_period(text, source_filename or file_path)
+    elif issuer == "mercadopago":
+        year, month = resolve_mercadopago_import_period(text, source_filename or file_path)
+    else:
+        year, month = invoice_period_from_filename(source_filename or file_path)
+
     logger.info(
         "Fatura PDF identificada: issuer=%s year=%s month=%s card=%s",
         issuer,
-        metadata.get("year"),
-        metadata.get("month"),
+        year,
+        month,
         metadata.get("card_last4"),
     )
-    return {"issuer": issuer, **metadata}
+    return {
+        "issuer": issuer,
+        "year": year,
+        "month": month,
+        "card_last4": metadata.get("card_last4"),
+        "issuer_label": metadata.get("issuer_label"),
+    }
 
 
 def _parse_brl_amount(value_str: str) -> float:
@@ -489,7 +659,7 @@ def _ocr_items_to_lines(result, y_tol: float = 16) -> List[str]:
     return lines
 
 
-def extract_mp_ocr_text(file_path: str) -> str:
+def extract_mp_ocr_text(file_path: str, password: Optional[str] = None) -> str:
     """Reconstrói o texto da fatura Mercado Pago via OCR quando o ToUnicode está quebrado."""
     try:
         import pymupdf
@@ -504,6 +674,10 @@ def extract_mp_ocr_text(file_path: str) -> str:
         return ""
 
     doc = pymupdf.open(file_path)
+    if doc.needs_pass:
+        if not password or not doc.authenticate(password):
+            doc.close()
+            return ""
     parts: List[str] = []
     try:
         for page in doc:
@@ -560,6 +734,7 @@ def parse_mercadopago_invoice(
     month: str,
     mapping: Optional[MappingHelper] = None,
     pdf_path: Optional[str] = None,
+    pdf_password: Optional[str] = None,
 ) -> MercadoPagoParseResult:
     """
     Extrai lançamentos da fatura Mercado Pago.
@@ -586,7 +761,7 @@ def parse_mercadopago_invoice(
     original_text = text
     looks_garbled_pdf = _mp_text_looks_garbled(text)
     if looks_garbled_pdf and pdf_path:
-        ocr_text = extract_mp_ocr_text(pdf_path)
+        ocr_text = extract_mp_ocr_text(pdf_path, pdf_password)
         if ocr_text.strip():
             logger.info("Fatura Mercado Pago: texto reconstruído via OCR (%s chars)", len(ocr_text))
             text = ocr_text

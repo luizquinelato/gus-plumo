@@ -25,7 +25,9 @@ import {
 } from '../../components/CadastroFormLayout'
 import SharedAccountDisplay from '../../components/SharedAccountDisplay'
 import { getIconComponent } from '../../utils/iconMapper'
-import { formatAccountDisplay } from '../../utils/accountFormatter'
+import { formatAccountDisplay, sharingPartnerLabel, sharingPercentForKind } from '../../utils/accountFormatter'
+import OwnershipPercentField from '../../components/OwnershipPercentField'
+import { maskPercentInput } from '../../utils/percentInput'
 
 interface Tag {
   id: number
@@ -51,6 +53,7 @@ interface ExpenseSharing {
   account_id: number
   shared_account_id: number
   my_contribution_percentage: number
+  revenue_contribution_percentage?: number
   description: string | null
   active: boolean
   shared_account?: {
@@ -69,32 +72,7 @@ interface ExpenseSharing {
 }
 
 // Função para exibir label do parceiro no formato padrão
-const getPartnerLabel = (partner: ExpenseSharing): string => {
-  const parts: string[] = []
-
-  // Nome da conta compartilhada
-  const accountName = partner.shared_account?.name || partner.shared_account?.description
-  if (accountName) {
-    parts.push(accountName)
-  }
-
-  // Banco
-  if (partner.shared_account?.bank?.name) {
-    parts.push(partner.shared_account.bank.name)
-  }
-
-  // Agência
-  if (partner.shared_account?.agency) {
-    parts.push(`Ag: ${partner.shared_account.agency}`)
-  }
-
-  // Número da conta
-  if (partner.shared_account?.account_number) {
-    parts.push(`Conta: ${partner.shared_account.account_number}`)
-  }
-
-  return parts.length > 0 ? parts.join(' • ') : 'Sem informações'
-}
+const getPartnerLabel = (partner: ExpenseSharing): string => sharingPartnerLabel(partner)
 
 interface TransactionMapping {
   id: number
@@ -112,6 +90,7 @@ interface TransactionMapping {
   shared_partner_agency: string | null
   shared_partner_account_number: string | null
   my_contribution_percentage: number | null
+  revenue_contribution_percentage: number | null
   mapping_type: string  // 'exact', 'pattern', 'regex'
   pattern: string | null
   regex_pattern: string | null
@@ -174,6 +153,7 @@ const TransactionMappingsTab = () => {
     subtag_id: 0,
     shared_partner_id: 0,
     my_contribution_percentage: 50 as number | null,
+    revenue_contribution_percentage: 50 as number | null,
     apply_tag_subtag: true,  // Tag e Subtag juntos
     skip_sharing: true       // true = ignorar/manter atual, false = alterar
   })
@@ -201,6 +181,7 @@ const TransactionMappingsTab = () => {
     subtag_id: 0,
     shared_partner_id: 0,
     my_contribution_percentage: null as number | null,
+    revenue_contribution_percentage: null as number | null,
     mapping_type: 'exact' as 'exact' | 'pattern' | 'regex',
     pattern: '',
     regex_pattern: '',
@@ -221,6 +202,7 @@ const TransactionMappingsTab = () => {
       subtag_id: 0,
       shared_partner_id: 0,
       my_contribution_percentage: null,
+      revenue_contribution_percentage: null,
       mapping_type: 'exact',
       pattern: '',
       regex_pattern: '',
@@ -247,6 +229,7 @@ const TransactionMappingsTab = () => {
       formData.subtag_id !== originalFormData.subtag_id ||
       formData.shared_partner_id !== originalFormData.shared_partner_id ||
       formData.my_contribution_percentage !== originalFormData.my_contribution_percentage ||
+      formData.revenue_contribution_percentage !== originalFormData.revenue_contribution_percentage ||
       formData.mapping_type !== originalFormData.mapping_type ||
       formData.pattern !== originalFormData.pattern ||
       formData.regex_pattern !== originalFormData.regex_pattern ||
@@ -398,6 +381,7 @@ const TransactionMappingsTab = () => {
         subtag_id: formData.subtag_id,
         expense_sharing_id: formData.shared_partner_id || null,
         my_contribution_percentage: formData.my_contribution_percentage,
+        revenue_contribution_percentage: formData.revenue_contribution_percentage,
         mapping_type: formData.mapping_type,
         pattern: formData.mapping_type === 'pattern' ? formData.pattern.trim() || null : null,
         regex_pattern: formData.mapping_type === 'regex' ? formData.regex_pattern.trim() || null : null,
@@ -437,6 +421,7 @@ const TransactionMappingsTab = () => {
       subtag_id: mapping.subtag_id,
       shared_partner_id: mapping.shared_partner_id || 0,
       my_contribution_percentage: mapping.my_contribution_percentage ?? null,
+      revenue_contribution_percentage: mapping.revenue_contribution_percentage ?? null,
       mapping_type: mappingType,
       pattern: mapping.pattern || '',
       regex_pattern: mapping.regex_pattern || '',
@@ -649,6 +634,7 @@ const TransactionMappingsTab = () => {
         subtag_id: formData.subtag_id,
         expense_sharing_id: formData.shared_partner_id || null,
         my_contribution_percentage: formData.my_contribution_percentage,
+        revenue_contribution_percentage: formData.revenue_contribution_percentage,
         mapping_type: formData.mapping_type,
         pattern: formData.mapping_type === 'pattern' ? formData.pattern.trim() || null : null,
         regex_pattern: formData.mapping_type === 'regex' ? formData.regex_pattern.trim() || null : null,
@@ -902,6 +888,7 @@ const TransactionMappingsTab = () => {
       if (!batchEditData.skip_sharing) {
         payload.expense_sharing_id = batchEditData.shared_partner_id || 0  // 0 = remover compartilhamento
         payload.my_contribution_percentage = batchEditData.my_contribution_percentage
+        payload.revenue_contribution_percentage = batchEditData.revenue_contribution_percentage
       }
 
       const response = await axios.patch('/api/expenses/mappings/bulk-update', payload)
@@ -1355,7 +1342,11 @@ const TransactionMappingsTab = () => {
                             agency: mapping.shared_partner_agency,
                             account_number: mapping.shared_partner_account_number
                           }}
-                          ownershipPercentage={mapping.my_contribution_percentage}
+                          ownershipPercentage={
+                            mapping.subtag_type === 'receita'
+                              ? (mapping.revenue_contribution_percentage ?? mapping.my_contribution_percentage)
+                              : mapping.my_contribution_percentage
+                          }
                         />
                       ) : (
                         <span className="text-gray-400 dark:text-gray-500 italic">-</span>
@@ -1774,14 +1765,16 @@ const TransactionMappingsTab = () => {
                               setFormData(prev => ({
                                 ...prev,
                                 shared_partner_id: selectedId,
-                                my_contribution_percentage: selectedSharing.my_contribution_percentage
+                                my_contribution_percentage: sharingPercentForKind(selectedSharing, 'expense'),
+                                revenue_contribution_percentage: sharingPercentForKind(selectedSharing, 'revenue'),
                               }))
                             }
                           } else {
                             setFormData(prev => ({
                               ...prev,
                               shared_partner_id: 0,
-                              my_contribution_percentage: null
+                              my_contribution_percentage: null,
+                              revenue_contribution_percentage: null,
                             }))
                           }
                         }}
@@ -1798,33 +1791,60 @@ const TransactionMappingsTab = () => {
                         Para despesas compartilhadas com parceiro
                       </p>
                     </label>
-                    <label className="block min-w-0">
-                      <CadastroFieldLabel>Minha Contribuição (%)</CadastroFieldLabel>
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.01"
-                        value={formData.my_contribution_percentage ?? ''}
-                        onChange={(e) => {
-                          const value = e.target.value === '' ? null : Number(e.target.value)
-                          if (value !== null && (value < 0 || value > 100)) {
-                            return
-                          }
-                          setFormData({ ...formData, my_contribution_percentage: value })
-                        }}
-                        disabled={formData.shared_partner_id === 0}
-                        className={`${cadastroFieldCls} mt-0.5 ${
-                          formData.shared_partner_id === 0
-                            ? 'cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'
-                            : ''
-                        }`}
-                        placeholder={formData.shared_partner_id > 0 ? '50.00' : '-'}
-                      />
-                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        {formData.shared_partner_id > 0 ? 'Percentual específico para este mapeamento' : 'Selecione um compartilhamento primeiro'}
-                      </p>
-                    </label>
+                    <OwnershipPercentField
+                      context="mappingExpense"
+                      value={
+                        formData.my_contribution_percentage != null
+                          ? String(formData.my_contribution_percentage)
+                          : ''
+                      }
+                      onChange={(raw) => {
+                        const masked = maskPercentInput(raw)
+                        if (masked === '') {
+                          setFormData({ ...formData, my_contribution_percentage: null })
+                          return
+                        }
+                        const n = parseFloat(masked)
+                        if (!Number.isNaN(n) && n >= 0 && n <= 100) {
+                          setFormData({ ...formData, my_contribution_percentage: n })
+                        }
+                      }}
+                      disabled={formData.shared_partner_id === 0}
+                      showProprioBadge={formData.shared_partner_id > 0}
+                      hint={
+                        formData.shared_partner_id > 0
+                          ? 'Override de despesa neste mapeamento. Vazio usa cartão ou config de compartilhamento.'
+                          : 'Selecione um compartilhamento primeiro.'
+                      }
+                    />
+                  </CadastroModalFieldsRow>
+                  <CadastroModalFieldsRow>
+                    <OwnershipPercentField
+                      context="mappingRevenue"
+                      value={
+                        formData.revenue_contribution_percentage != null
+                          ? String(formData.revenue_contribution_percentage)
+                          : ''
+                      }
+                      onChange={(raw) => {
+                        const masked = maskPercentInput(raw)
+                        if (masked === '') {
+                          setFormData({ ...formData, revenue_contribution_percentage: null })
+                          return
+                        }
+                        const n = parseFloat(masked)
+                        if (!Number.isNaN(n) && n >= 0 && n <= 100) {
+                          setFormData({ ...formData, revenue_contribution_percentage: n })
+                        }
+                      }}
+                      disabled={formData.shared_partner_id === 0}
+                      showProprioBadge={formData.shared_partner_id > 0}
+                      hint={
+                        formData.shared_partner_id > 0
+                          ? 'Override de receita neste mapeamento. Vazio usa cartão ou config de compartilhamento.'
+                          : 'Selecione um compartilhamento primeiro.'
+                      }
+                    />
                   </CadastroModalFieldsRow>
                   <CadastroModalFieldsRow>
                     <label className={`${cadastroOptionLabelCls} items-start ${
@@ -2016,77 +2036,52 @@ const TransactionMappingsTab = () => {
             icon={<Zap size={18} />}
           />
           <CadastroModalBody>
-            <CadastroFormSection title="Opções" icon={<Zap size={14} />}>
-              <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Mapeamento:</p>
-                <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                  {remapMapping.original_description || remapMapping.pattern || remapMapping.regex_pattern || 'N/A'}
-                </p>
-                <div className="flex items-center gap-4 mt-2 text-xs text-gray-500 dark:text-gray-400">
-                  <span className="flex items-center gap-1">
-                    <Tag size={12} />
-                    {remapMapping.tag_name || 'Sem tag'}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Tags size={12} />
-                    {remapMapping.subtag_name || 'Sem subtag'}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Users size={12} />
-                    {remapMapping.shared_partner_name || 'Sem compartilhamento'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Opções */}
+            <CadastroFormSection
+              title="O que será aplicado"
+              hint="Nas transações que corresponderem a este mapeamento."
+              icon={<Zap size={14} />}
+            >
               <div className="space-y-3">
-                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Opções de aplicação:
-                </p>
-
-                {/* Subtag sempre vai ser aplicada (obrigatória no mapeamento) */}
-                <div className="flex items-start gap-3 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
-                  <CheckSquare size={18} className="text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium text-green-700 dark:text-green-300">
-                      Tag/Subtag: {remapMapping.tag_name} → {remapMapping.subtag_name}
-                    </p>
-                    <p className="text-xs text-green-600 dark:text-green-400">
-                      Sempre será aplicada (obrigatória no mapeamento)
-                    </p>
-                  </div>
-                </div>
-
-                {/* Compartilhamento - checkbox para sobrescrever ou ignorar */}
-                <div className="flex items-start gap-3 p-3 rounded-lg border transition-colors bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800">
-                  <button
-                    onClick={() => setRemapOptions(prev => ({
-                      ...prev,
-                      overwrite_sharing: !prev.overwrite_sharing
-                    }))}
-                    className="mt-0.5 flex-shrink-0"
-                  >
-                    {remapOptions.overwrite_sharing ? (
-                      <CheckSquare size={18} className="text-amber-600 dark:text-amber-400" />
-                    ) : (
-                      <Square size={18} className="text-amber-600 dark:text-amber-400" />
-                    )}
-                  </button>
-                  <div>
-                    <p className="text-sm font-medium text-amber-700 dark:text-amber-300">
-                      {remapOptions.overwrite_sharing
-                        ? `⚠ Sobrescrever compartilhamento ${remapMapping.shared_partner_id ? `(${remapMapping.shared_partner_name})` : '(remover existente)'}`
-                        : '✓ Ignorar (manter compartilhamento existente nas transações)'
-                      }
-                    </p>
-                    <p className="text-xs text-amber-600 dark:text-amber-400">
-                      {remapMapping.shared_partner_id
-                        ? `Mapeamento define: ${remapMapping.shared_partner_name} (${remapMapping.my_contribution_percentage || 100}%)`
-                        : 'Mapeamento não possui compartilhamento definido'
-                      }
-                    </p>
-                  </div>
-                </div>
+              <p className="truncate text-sm font-medium text-gray-800 dark:text-gray-100">
+                {remapMapping.original_description || remapMapping.pattern || remapMapping.regex_pattern || 'N/A'}
+              </p>
+              <label className={`${cadastroOptionLabelCls} items-start`}>
+                <input
+                  type="checkbox"
+                  checked
+                  disabled
+                  className={`${cadastroAccentControlCls} mt-0.5 h-4 w-4 rounded border-gray-300`}
+                />
+                <span>
+                  <span className="block text-sm font-medium text-gray-800 dark:text-gray-100">
+                    Aplicar tag e subtag
+                  </span>
+                  <span className="mt-0.5 block text-xs leading-snug text-gray-500 dark:text-gray-400">
+                    Sempre executado. As transações recebem {remapMapping.tag_name || 'a tag'} → {remapMapping.subtag_name || 'a subtag'}.
+                  </span>
+                </span>
+              </label>
+              <label className={`${cadastroOptionLabelCls} items-start`}>
+                <input
+                  type="checkbox"
+                  checked={remapOptions.overwrite_sharing}
+                  onChange={(event) => setRemapOptions((prev) => ({
+                    ...prev,
+                    overwrite_sharing: event.target.checked,
+                  }))}
+                  className={`${cadastroAccentControlCls} mt-0.5 h-4 w-4 rounded border-gray-300`}
+                />
+                <span>
+                  <span className="block text-sm font-medium text-gray-800 dark:text-gray-100">
+                    Sobrescrever compartilhamento
+                  </span>
+                  <span className="mt-0.5 block text-xs leading-snug text-gray-500 dark:text-gray-400">
+                    {remapMapping.shared_partner_id
+                      ? `Aplica ${remapMapping.shared_partner_name} (${remapMapping.my_contribution_percentage ?? 100}%) nas transações que já tiverem outro compartilhamento. Desmarcado, o valor atual é mantido.`
+                      : 'Remove o compartilhamento das transações que já tiverem um. Desmarcado, o valor atual é mantido.'}
+                  </span>
+                </span>
+              </label>
               </div>
             </CadastroFormSection>
           </CadastroModalBody>
@@ -2110,46 +2105,47 @@ const TransactionMappingsTab = () => {
             icon={<Zap size={18} />}
           />
           <CadastroModalBody>
-            <CadastroFormSection title="Opções de aplicação" icon={<Zap size={14} />}>
+            <CadastroFormSection
+              title="O que será aplicado"
+              hint="Nas transações que corresponderem aos mapeamentos selecionados."
+              icon={<Zap size={14} />}
+            >
               <div className="space-y-3">
-                <div className="flex items-start gap-3 rounded-lg border border-green-200 bg-green-50 p-3 dark:border-green-800 dark:bg-green-900/20">
-                  <CheckSquare size={18} className="mt-0.5 flex-shrink-0 text-green-600 dark:text-green-400" />
-                  <div>
-                    <p className="text-sm font-medium text-green-700 dark:text-green-300">
-                      Tag e Subtag: Sempre aplicadas
-                    </p>
-                    <p className="text-xs text-green-600 dark:text-green-400">
-                      Obrigatórias em todos os mapeamentos
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-900/20">
-                  <button
-                    type="button"
-                    onClick={() => setBatchRemapOptions(prev => ({
-                      ...prev,
-                      overwrite_sharing: !prev.overwrite_sharing
-                    }))}
-                    className="mt-0.5 flex-shrink-0"
-                  >
-                    {batchRemapOptions.overwrite_sharing ? (
-                      <CheckSquare size={18} className="text-amber-600 dark:text-amber-400" />
-                    ) : (
-                      <Square size={18} className="text-amber-600 dark:text-amber-400" />
-                    )}
-                  </button>
-                  <div>
-                    <p className="text-sm font-medium text-amber-700 dark:text-amber-300">
-                      {batchRemapOptions.overwrite_sharing
-                        ? '⚠ Sobrescrever (remover compartilhamento existente)'
-                        : '✓ Ignorar (manter compartilhamento existente)'
-                      }
-                    </p>
-                    <p className="text-xs text-amber-600 dark:text-amber-400">
-                      Para mapeamentos sem compartilhamento definido
-                    </p>
-                  </div>
-                </div>
+              <label className={`${cadastroOptionLabelCls} items-start`}>
+                <input
+                  type="checkbox"
+                  checked
+                  disabled
+                  className={`${cadastroAccentControlCls} mt-0.5 h-4 w-4 rounded border-gray-300`}
+                />
+                <span>
+                  <span className="block text-sm font-medium text-gray-800 dark:text-gray-100">
+                    Aplicar tag e subtag
+                  </span>
+                  <span className="mt-0.5 block text-xs leading-snug text-gray-500 dark:text-gray-400">
+                    Sempre executado. Cada mapeamento aplica a própria tag e subtag.
+                  </span>
+                </span>
+              </label>
+              <label className={`${cadastroOptionLabelCls} items-start`}>
+                <input
+                  type="checkbox"
+                  checked={batchRemapOptions.overwrite_sharing}
+                  onChange={(event) => setBatchRemapOptions((prev) => ({
+                    ...prev,
+                    overwrite_sharing: event.target.checked,
+                  }))}
+                  className={`${cadastroAccentControlCls} mt-0.5 h-4 w-4 rounded border-gray-300`}
+                />
+                <span>
+                  <span className="block text-sm font-medium text-gray-800 dark:text-gray-100">
+                    Sobrescrever compartilhamento
+                  </span>
+                  <span className="mt-0.5 block text-xs leading-snug text-gray-500 dark:text-gray-400">
+                    Aplica o compartilhamento do mapeamento (ou remove, se ele não tiver um) nas transações que já tiverem outro. Desmarcado, o valor atual é mantido.
+                  </span>
+                </span>
+              </label>
               </div>
             </CadastroFormSection>
           </CadastroModalBody>
@@ -2245,14 +2241,16 @@ const TransactionMappingsTab = () => {
                               setBatchEditData(prev => ({
                                 ...prev,
                                 shared_partner_id: selectedId,
-                                my_contribution_percentage: selectedSharing.my_contribution_percentage
+                                my_contribution_percentage: sharingPercentForKind(selectedSharing, 'expense'),
+                                revenue_contribution_percentage: sharingPercentForKind(selectedSharing, 'revenue'),
                               }))
                             }
                           } else {
                             setBatchEditData(prev => ({
                               ...prev,
                               shared_partner_id: 0,
-                              my_contribution_percentage: 50
+                              my_contribution_percentage: 50,
+                              revenue_contribution_percentage: 50,
                             }))
                           }
                         }}
@@ -2266,20 +2264,37 @@ const TransactionMappingsTab = () => {
                         ))}
                       </select>
                       {batchEditData.shared_partner_id > 0 && (
-                        <div className="flex items-center gap-2">
-                          <CadastroFieldLabel>Minha contribuição</CadastroFieldLabel>
-                          <input
-                            type="number"
-                            min={0}
-                            max={100}
-                            value={batchEditData.my_contribution_percentage ?? 50}
-                            onChange={(e) => {
-                              const val = Math.min(100, Math.max(0, Number(e.target.value) || 0))
-                              setBatchEditData(prev => ({ ...prev, my_contribution_percentage: val }))
-                            }}
-                            className={`${cadastroFieldCls} w-20 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
-                          />
-                          <span className="text-sm text-gray-500">%</span>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <div className="flex items-center gap-2">
+                            <CadastroFieldLabel>Despesa</CadastroFieldLabel>
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              value={batchEditData.my_contribution_percentage ?? 50}
+                              onChange={(e) => {
+                                const val = Math.min(100, Math.max(0, Number(e.target.value) || 0))
+                                setBatchEditData(prev => ({ ...prev, my_contribution_percentage: val }))
+                              }}
+                              className={`${cadastroFieldCls} w-20 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+                            />
+                            <span className="text-sm text-gray-500">%</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <CadastroFieldLabel>Receita</CadastroFieldLabel>
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              value={batchEditData.revenue_contribution_percentage ?? 50}
+                              onChange={(e) => {
+                                const val = Math.min(100, Math.max(0, Number(e.target.value) || 0))
+                                setBatchEditData(prev => ({ ...prev, revenue_contribution_percentage: val }))
+                              }}
+                              className={`${cadastroFieldCls} w-20 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+                            />
+                            <span className="text-sm text-gray-500">%</span>
+                          </div>
                         </div>
                       )}
                     </div>

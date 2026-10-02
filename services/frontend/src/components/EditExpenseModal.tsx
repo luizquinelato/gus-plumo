@@ -1,10 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
-import DatePicker from 'react-datepicker'
-import 'react-datepicker/dist/react-datepicker.css'
-import '../styles/datepicker-custom.css'
 import { Users, Edit2, Tag as TagIcon, Calendar } from 'lucide-react'
 import Toast from './Toast'
+import { DateField } from './date'
 import {
   CadastroModalShell,
   CadastroModalHeader,
@@ -19,8 +17,11 @@ import {
   cadastroAccentControlCls,
 } from './CadastroFormLayout'
 import { useEscapeKey } from '../hooks/useEscapeKey'
-import { dateToLocalString, dateToLocalTimestamp } from '../utils/dateUtils'
+import { dateToLocalString, dateToLocalTimestamp, parseLocalDateTime } from '../utils/dateUtils'
 import { validateAccountPeriodDate } from '../services/accountPeriodClosuresApi'
+import { sharingPartnerLabel, sharingPercentForKind } from '../utils/accountFormatter'
+import OwnershipPercentField from './OwnershipPercentField'
+import { maskPercentInput, finalizePercentInput } from '../utils/percentInput'
 
 interface ToastState {
   show: boolean
@@ -72,6 +73,7 @@ interface Partner {
   account_id: number
   shared_account_id: number
   my_contribution_percentage: number
+  revenue_contribution_percentage?: number
   description: string | null
   active: boolean
   shared_account: Account | null
@@ -92,13 +94,34 @@ interface EditExpenseModalProps {
     card_number: string | null
     ownership_percentage: number | null
     shared_partner_id: number | null
+    current_installment?: number | null
+    total_installments?: number | null
   } | null
   onSuccess: () => void
   /** Modo simplificado: exibe apenas tag/subtag e compartilhamento */
   limitedMode?: boolean
+  /** Faturas: edita valor, data, descrição e parcelas (cartão fixo) */
+  invoiceItemMode?: boolean
 }
 
-const EditExpenseModal = ({ isOpen, onClose, expense, onSuccess, limitedMode = false }: EditExpenseModalProps) => {
+function parseAmountInput(raw: string): number {
+  const normalized = raw.trim().replace(',', '.')
+  if (normalized === '' || normalized === '-' || normalized === '.' || normalized === '-.') {
+    return NaN
+  }
+  return parseFloat(normalized)
+}
+
+const EditExpenseModal = ({
+  isOpen,
+  onClose,
+  expense,
+  onSuccess,
+  limitedMode = false,
+  invoiceItemMode = false,
+}: EditExpenseModalProps) => {
+  const showCoreFields = !limitedMode || invoiceItemMode
+  const lockCoreFields = limitedMode && !invoiceItemMode
   const [tags, setTags] = useState<Tag[]>([])
   const [subtags, setSubtags] = useState<Subtag[]>([])
   const [cards, setCards] = useState<Card[]>([])
@@ -166,7 +189,9 @@ const EditExpenseModal = ({ isOpen, onClose, expense, onSuccess, limitedMode = f
     card_number: '',
     adjustment_type: 'proprio' as 'proprio' | 'compartilhado',
     shared_partner_id: null as number | null,
-    ownership_percentage: '100.00'
+    ownership_percentage: '100.00',
+    current_installment: '',
+    total_installments: '',
   })
 
   // Carrega dados quando o modal abre
@@ -226,7 +251,11 @@ const EditExpenseModal = ({ isOpen, onClose, expense, onSuccess, limitedMode = f
         card_number: expense.card_number || '',
         adjustment_type: adjustmentType,
         shared_partner_id: expense.shared_partner_id || null,
-        ownership_percentage: expense.ownership_percentage?.toString() || '100.00'
+        ownership_percentage: expense.ownership_percentage?.toString() || '100.00',
+        current_installment:
+          expense.current_installment != null ? String(expense.current_installment) : '',
+        total_installments:
+          expense.total_installments != null ? String(expense.total_installments) : '',
       })
 
       // Marcar como inicializado após carregar todos os dados
@@ -285,43 +314,16 @@ const EditExpenseModal = ({ isOpen, onClose, expense, onSuccess, limitedMode = f
     }
   }
 
-  const getPartnerLabel = (partner: Partner): string => {
-    const parts: string[] = []
-
-    // Nome da conta compartilhada
-    const accountName = partner.shared_account?.name || partner.shared_account?.description
-    if (accountName) {
-      parts.push(accountName)
-    }
-
-    // Banco
-    if (partner.shared_account?.bank?.name) {
-      parts.push(partner.shared_account.bank.name)
-    }
-
-    // Agência
-    if (partner.shared_account?.agency) {
-      parts.push(`Ag: ${partner.shared_account.agency}`)
-    }
-
-    // Número da conta
-    if (partner.shared_account?.account_number) {
-      parts.push(`Conta: ${partner.shared_account.account_number}`)
-    }
-
-    return parts.length > 0 ? parts.join(' • ') : 'Sem informações'
-  }
+  const getPartnerLabel = (partner: Partner): string => sharingPartnerLabel(partner)
 
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
 
     // Permite: números, sinal negativo no início, e um ponto decimal
-    const regex = /^-?\d*\.?\d*$/
+    const regex = /^-?\d*[.,]?\d*$/
 
     if (value === '' || regex.test(value)) {
-      // Validação adicional: limita a 8 dígitos antes do ponto decimal
-      // DECIMAL(10, 2) permite no máximo 99.999.999,99
-      const numValue = parseFloat(value)
+      const numValue = parseAmountInput(value)
       if (!isNaN(numValue) && Math.abs(numValue) > 99999999.99) {
         return // Não atualiza se exceder o limite
       }
@@ -330,31 +332,9 @@ const EditExpenseModal = ({ isOpen, onClose, expense, onSuccess, limitedMode = f
   }
 
   const handleAmountBlur = () => {
-    const amount = parseFloat(formData.amount)
+    const amount = parseAmountInput(formData.amount)
     if (!isNaN(amount)) {
       setFormData({ ...formData, amount: amount.toFixed(2) })
-    }
-  }
-
-  const handleOwnershipPercentageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value
-
-    // Permite: números positivos e um ponto decimal
-    const regex = /^\d*\.?\d*$/
-
-    if (value === '' || regex.test(value)) {
-      setFormData({ ...formData, ownership_percentage: value })
-    }
-  }
-
-  const handleOwnershipPercentageBlur = () => {
-    if (formData.ownership_percentage) {
-      const numValue = parseFloat(formData.ownership_percentage)
-      if (!isNaN(numValue)) {
-        // Limita entre 0 e 100
-        const clampedValue = Math.min(Math.max(numValue, 0), 100)
-        setFormData({ ...formData, ownership_percentage: clampedValue.toFixed(2) })
-      }
     }
   }
 
@@ -371,10 +351,37 @@ const EditExpenseModal = ({ isOpen, onClose, expense, onSuccess, limitedMode = f
     }
 
     // Validação de valor (apenas no modo completo)
-    const amount = parseFloat(formData.amount)
-    if (!limitedMode && (isNaN(amount) || amount === 0)) {
+    const amount = parseAmountInput(formData.amount)
+    if (showCoreFields && (isNaN(amount) || amount === 0)) {
       showToast('Digite um valor válido (diferente de zero)', 'error')
       return
+    }
+
+    let currentInstallment: number | null = null
+    let totalInstallments: number | null = null
+    if (invoiceItemMode && expense.source === 'card') {
+      const curRaw = formData.current_installment.trim()
+      const totRaw = formData.total_installments.trim()
+      const hasCur = curRaw.length > 0
+      const hasTot = totRaw.length > 0
+      if (hasCur !== hasTot) {
+        showToast('Informe parcela atual e total, ou deixe ambos vazios', 'error')
+        return
+      }
+      if (hasCur && hasTot) {
+        currentInstallment = parseInt(curRaw, 10)
+        totalInstallments = parseInt(totRaw, 10)
+        if (
+          isNaN(currentInstallment) ||
+          isNaN(totalInstallments) ||
+          currentInstallment < 1 ||
+          totalInstallments < 1 ||
+          currentInstallment > totalInstallments
+        ) {
+          showToast('Parcelas inválidas', 'error')
+          return
+        }
+      }
     }
 
     // Validação de porcentagem
@@ -386,7 +393,7 @@ const EditExpenseModal = ({ isOpen, onClose, expense, onSuccess, limitedMode = f
 
     if (expense.source === 'bank') {
       const datesToCheck = [expense.date.slice(0, 10)]
-      if (!limitedMode) {
+      if (showCoreFields) {
         datesToCheck.push(dateToLocalString(selectedDate))
       }
       for (const dateValue of [...new Set(datesToCheck)]) {
@@ -409,18 +416,21 @@ const EditExpenseModal = ({ isOpen, onClose, expense, onSuccess, limitedMode = f
         : `/api/expenses/credit-card-invoices/${expense.id}`
 
       // No modo limitado, preserva os valores originais de descrição, amount e data
-      const payload: any = {
-        description: limitedMode ? expense.description : formData.description,
-        amount: limitedMode ? expense.amount : amount,
-        date: limitedMode ? expense.date : dateToLocalTimestamp(selectedDate),
+      const payload: Record<string, unknown> = {
+        description: lockCoreFields ? expense.description : formData.description.trim(),
+        amount: lockCoreFields ? expense.amount : amount,
+        date: lockCoreFields ? expense.date : dateToLocalTimestamp(selectedDate),
         subtag_id: formData.subtag_id || null,
         shared_partner_id: formData.shared_partner_id,
-        ownership_percentage: formData.shared_partner_id ? parseFloat(formData.ownership_percentage) : null
+        ownership_percentage: formData.shared_partner_id ? parseFloat(formData.ownership_percentage) : null,
       }
 
-      // Adiciona card_number apenas para faturas de cartão
       if (expense.source === 'card') {
-        payload.card_number = limitedMode ? expense.card_number : formData.card_number
+        payload.card_number = invoiceItemMode || lockCoreFields ? expense.card_number : formData.card_number
+        if (invoiceItemMode) {
+          payload.current_installment = currentInstallment
+          payload.total_installments = totalInstallments
+        }
       }
 
       await axios.put(endpoint, payload)
@@ -465,22 +475,31 @@ const EditExpenseModal = ({ isOpen, onClose, expense, onSuccess, limitedMode = f
         />
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col" id="edit-expense-form">
           <CadastroModalBody>
-            {!limitedMode && (
+            {showCoreFields && (
               <CadastroFormSection title="Identificação" icon={<Calendar size={14} />}>
                 <CadastroModalFieldsGrid>
                   <CadastroModalFieldsRow cols={2}>
                     <label className="block min-w-0">
-                      <CadastroFieldLabel required>Data e Hora</CadastroFieldLabel>
-                      <DatePicker
-                        selected={selectedDate}
-                        onChange={(date: Date | null) => setSelectedDate(date || new Date())}
-                        showTimeSelect
-                        timeFormat="HH:mm"
-                        timeIntervals={15}
-                        dateFormat="dd/MM/yyyy HH:mm"
+                      <CadastroFieldLabel required>
+                        {invoiceItemMode ? 'Data da compra' : 'Data e Hora'}
+                      </CadastroFieldLabel>
+                      <DateField
+                        withTime={!invoiceItemMode}
+                        value={
+                          invoiceItemMode
+                            ? dateToLocalString(selectedDate)
+                            : dateToLocalTimestamp(selectedDate)
+                        }
+                        onChange={(value) => {
+                          if (invoiceItemMode) {
+                            const parsed = parseLocalDateTime(`${value}T12:00:00`)
+                            if (parsed) setSelectedDate(parsed)
+                          } else {
+                            setSelectedDate(parseLocalDateTime(value) ?? new Date())
+                          }
+                        }}
                         disabled={isLoading}
                         className={`${cadastroFieldCls} mt-0.5`}
-                        required
                       />
                     </label>
                     <label className="block min-w-0">
@@ -514,7 +533,9 @@ const EditExpenseModal = ({ isOpen, onClose, expense, onSuccess, limitedMode = f
                         />
                       </div>
                       <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        Use valores negativos para despesas e positivos para receitas
+                        {invoiceItemMode
+                          ? 'Negativo = débito na fatura · Positivo = crédito/estorno'
+                          : 'Use valores negativos para despesas e positivos para receitas'}
                       </p>
                     </label>
                   </CadastroModalFieldsRow>
@@ -532,7 +553,39 @@ const EditExpenseModal = ({ isOpen, onClose, expense, onSuccess, limitedMode = f
                       />
                     </label>
                   </CadastroModalFieldsRow>
-                  {expense?.source === 'card' ? (
+                  {expense?.source === 'card' && invoiceItemMode ? (
+                    <CadastroModalFieldsRow cols={2}>
+                      <label className="block min-w-0">
+                        <CadastroFieldLabel>Parcela atual</CadastroFieldLabel>
+                        <input
+                          type="number"
+                          min={1}
+                          value={formData.current_installment}
+                          onChange={(e) =>
+                            setFormData({ ...formData, current_installment: e.target.value })
+                          }
+                          disabled={isLoading}
+                          placeholder="Opcional"
+                          className={`${cadastroFieldCls} mt-0.5 disabled:opacity-50`}
+                        />
+                      </label>
+                      <label className="block min-w-0">
+                        <CadastroFieldLabel>Total parcelas</CadastroFieldLabel>
+                        <input
+                          type="number"
+                          min={1}
+                          value={formData.total_installments}
+                          onChange={(e) =>
+                            setFormData({ ...formData, total_installments: e.target.value })
+                          }
+                          disabled={isLoading}
+                          placeholder="Opcional"
+                          className={`${cadastroFieldCls} mt-0.5 disabled:opacity-50`}
+                        />
+                      </label>
+                    </CadastroModalFieldsRow>
+                  ) : null}
+                  {expense?.source === 'card' && !invoiceItemMode ? (
                     <CadastroModalFieldsRow>
                       <label className="block min-w-0">
                         <CadastroFieldLabel required>Cartão</CadastroFieldLabel>
@@ -665,7 +718,12 @@ const EditExpenseModal = ({ isOpen, onClose, expense, onSuccess, limitedMode = f
                           setFormData({
                             ...formData,
                             shared_partner_id: partnerId,
-                            ownership_percentage: selectedPartner ? selectedPartner.my_contribution_percentage.toString() : '100.00'
+                            ownership_percentage: selectedPartner
+                              ? sharingPercentForKind(
+                                  selectedPartner,
+                                  Number(formData.amount) >= 0 ? 'revenue' : 'expense'
+                                ).toString()
+                              : '100.00'
                           })
                         }}
                         disabled={isLoading}
@@ -680,19 +738,24 @@ const EditExpenseModal = ({ isOpen, onClose, expense, onSuccess, limitedMode = f
                         ))}
                       </select>
                     </label>
-                    <label className="block min-w-0">
-                      <CadastroFieldLabel>Minha Contribuição (%)</CadastroFieldLabel>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={formData.ownership_percentage}
-                        onChange={handleOwnershipPercentageChange}
-                        onBlur={handleOwnershipPercentageBlur}
-                        disabled={isLoading}
-                        placeholder="0.00"
-                        className={`${cadastroFieldCls} mt-0.5 disabled:opacity-50`}
-                      />
-                    </label>
+                    <OwnershipPercentField
+                      context="transaction"
+                      value={formData.ownership_percentage}
+                      onChange={(raw) =>
+                        setFormData({ ...formData, ownership_percentage: maskPercentInput(raw) })
+                      }
+                      onBlur={() => {
+                        const finalized = finalizePercentInput(formData.ownership_percentage)
+                        if (finalized) {
+                          const numValue = parseFloat(finalized)
+                          if (!isNaN(numValue)) {
+                            const clamped = Math.min(Math.max(numValue, 0), 100)
+                            setFormData({ ...formData, ownership_percentage: clamped.toFixed(2) })
+                          }
+                        }
+                      }}
+                      disabled={isLoading}
+                    />
                   </CadastroModalFieldsRow>
                 ) : null}
               </CadastroModalFieldsGrid>

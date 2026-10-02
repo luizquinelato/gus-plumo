@@ -29,10 +29,10 @@ import {
 } from '../components/CadastroFormLayout'
 import { ListPageTable } from '../components/ListPageTable'
 import {
-  LIST_TABLE_INDEX_COL_PX,
+  ListTableCheckboxCell,
+  ListTableCheckboxHeader,
   ListTableIndexCell,
   ListTableIndexHeader,
-  ListTableLeadingCols,
   ListTableSpacerCell,
   ListTableSpacerCol,
   ListTableSpacerHeader,
@@ -46,7 +46,13 @@ import FloatingFooterBar from '../components/FloatingFooterBar'
 import { useConfirm } from '../hooks/useConfirm'
 import { useEscapeKey } from '../hooks/useEscapeKey'
 import { formatCurrency } from '../utils/currency'
-import { formatDateBR } from '../utils/dateUtils'
+import { formatDateBR, formatDateTimeBR, parseLocalDateTime } from '../utils/dateUtils'
+import SortableDateHeader from '../components/SortableDateHeader'
+import {
+  sortRowsByDate,
+  toggleDateSortDirection,
+  type DateSortDirection,
+} from '../utils/tableDateSort'
 import { badgeVariantForColumnRole } from '../utils/badgeSurfaces'
 import {
   bulkCloseAccountPeriods,
@@ -61,7 +67,9 @@ import type {
   AccountPeriodItem,
   AccountPeriodItemSource,
   AccountPeriodMonth,
+  AccountPeriodSharedClosure,
   AccountPeriodSharedPartner,
+  AccountPeriodSplit,
   AccountPeriodStatus,
   AccountPeriodYearResponse,
 } from '../types/accountPeriodClosure'
@@ -140,7 +148,7 @@ const statusLabel: Record<AccountPeriodStatus, string> = {
   pending_shared: 'Aguardando quitação',
   current: 'Mês corrente',
   future: 'Futuro',
-  no_data: 'Sem extrato',
+  no_data: 'Sem extrato/benefício',
 }
 
 const statusTone = (status: AccountPeriodStatus): 'success' | 'info' | 'warning' | 'neutral' => {
@@ -251,8 +259,11 @@ function CaixaTotals({ item }: { item: AccountPeriodMonth }) {
   )
 }
 
-function SplitBreakdownTable({ item }: { item: AccountPeriodMonth }) {
-  const split = splitOf(item)
+function FlowSplitTable({
+  split,
+}: {
+  split: { account: AccountPeriodSplit; shared: AccountPeriodSplit }
+}) {
   const rows = [
     { label: 'Entradas', account: split.account.entries, shared: split.shared.entries, invert: false },
     { label: 'Saídas', account: split.account.exits, shared: split.shared.exits, invert: true },
@@ -294,7 +305,7 @@ function SplitBreakdownTable({ item }: { item: AccountPeriodMonth }) {
         </tbody>
         <tfoot className={closureTableFootCls}>
           <tr>
-            <td className="px-3 py-2.5 font-semibold text-gray-800 dark:text-gray-100">Total</td>
+            <td className="px-3 py-2.5 font-semibold text-gray-800 dark:text-gray-100">Resultado</td>
             <td className="px-3 py-2.5 text-right font-semibold tabular-nums" style={moneyStyle(resultAccount)}>
               {formatCurrency(resultAccount)}
             </td>
@@ -306,6 +317,10 @@ function SplitBreakdownTable({ item }: { item: AccountPeriodMonth }) {
       </table>
     </div>
   )
+}
+
+function SplitBreakdownTable({ item }: { item: AccountPeriodMonth }) {
+  return <FlowSplitTable split={splitOf(item)} />
 }
 
 function mergeSharedByAccount(months: AccountPeriodMonth[]): AccountPeriodSharedPartner[] {
@@ -412,9 +427,10 @@ function comparePeriodItems(left: AccountPeriodItem, right: AccountPeriodItem) {
 }
 
 const isCashItem = (item: AccountPeriodItem) =>
-  item.source !== 'card' && item.source !== 'settlement'
+  item.source !== 'card' && item.source !== 'benefit' && item.source !== 'settlement'
 
 type ItemColumnTotals = {
+  valor: number
   caixa: number
   account: number
   shared: number
@@ -427,6 +443,7 @@ type ItemColumnTotals = {
 }
 
 const emptyColumnTotals = (): ItemColumnTotals => ({
+  valor: 0,
   caixa: 0,
   account: 0,
   shared: 0,
@@ -452,9 +469,10 @@ function addSignedFlow(totals: ItemColumnTotals, field: 'caixa' | 'account' | 's
   }
 }
 
-function itemColumnAmounts(row: AccountPeriodItem): { caixa: number; account: number; shared: number } {
+function itemColumnAmounts(row: AccountPeriodItem): { valor: number; caixa: number; account: number; shared: number } {
   const amount = Number(row.amount)
   return {
+    valor: amount,
     caixa: isCashItem(row) ? amount : 0,
     account: Number(row.amount_account ?? (isCashItem(row) ? amount : 0)),
     shared: Number(row.amount_shared ?? 0),
@@ -465,6 +483,7 @@ function sumItemColumns(rows: AccountPeriodItem[]): ItemColumnTotals {
   return rows.reduce(
     (acc, row) => {
       const cols = itemColumnAmounts(row)
+      acc.valor += cols.valor
       addSignedFlow(acc, 'caixa', cols.caixa)
       addSignedFlow(acc, 'account', cols.account)
       addSignedFlow(acc, 'shared', cols.shared)
@@ -492,7 +511,190 @@ function splitItemsByFlow(items: AccountPeriodItem[]) {
   return { receitas, despesas }
 }
 
-function PeriodItemsFlowTable({ items }: { items: AccountPeriodItem[] }) {
+function itemOccurredAt(item: AccountPeriodItem): Date | null {
+  const raw = item.occurred_at || item.date
+  if (!raw) return null
+  return parseLocalDateTime(raw)
+}
+
+function findSharedClosure(
+  group: PeriodItemGroup | null,
+  closures: AccountPeriodSharedClosure[],
+): AccountPeriodSharedClosure | null {
+  if (!group || group.kind !== 'shared' || closures.length === 0) return null
+  const partnerId = group.partner?.shared_partner_id
+  if (partnerId != null) {
+    const byPartner = closures.find((row) => row.shared_partner_id === partnerId)
+    if (byPartner) return byPartner
+  }
+  const sharingIds = new Set(
+    group.items
+      .map((item) => item.expense_sharing_id)
+      .filter((id): id is number => id != null),
+  )
+  return closures.find((row) => (
+    row.expense_sharing_id != null && sharingIds.has(row.expense_sharing_id)
+  )) ?? null
+}
+
+function splitDespesasBySharedCutoff(
+  despesas: AccountPeriodItem[],
+  cutoff: Date | null,
+) {
+  if (!cutoff) return { after: [] as AccountPeriodItem[], inPeriod: despesas }
+  const after: AccountPeriodItem[] = []
+  const inPeriod: AccountPeriodItem[] = []
+  for (const item of despesas) {
+    const when = itemOccurredAt(item)
+    if (when && when.getTime() > cutoff.getTime()) after.push(item)
+    else inPeriod.push(item)
+  }
+  return { after, inPeriod }
+}
+
+const SOURCE_ORDER: AccountPeriodItemSource[] = ['bank', 'card', 'benefit', 'settlement']
+
+function itemSourceKey(item: AccountPeriodItem): AccountPeriodItemSource {
+  return item.source === 'card' || item.source === 'benefit' || item.source === 'settlement'
+    ? item.source
+    : 'bank'
+}
+
+function groupItemsBySource(items: AccountPeriodItem[]) {
+  return SOURCE_ORDER
+    .map((source) => ({ source, items: items.filter((item) => itemSourceKey(item) === source) }))
+    .filter((entry) => entry.items.length > 0)
+}
+
+function SourceLabel({ source }: { source: AccountPeriodItemSource }) {
+  const meta = SOURCE_META[source]
+  const Icon = meta.Icon
+  return (
+    <span className="inline-flex items-center gap-2">
+      <Icon size={14} style={{ color: meta.color }} />
+      {meta.groupLabel}
+    </span>
+  )
+}
+
+function flowCells(entries: number, exits: number, cellCls: string) {
+  const result = entries - exits
+  return (
+    <>
+      <td className={cellCls} style={moneyStyle(entries)}>{formatCurrency(entries)}</td>
+      <td className={cellCls} style={moneyStyle(exits, true)}>{formatCurrency(exits)}</td>
+      <td className={cellCls} style={moneyStyle(result)}>{formatCurrency(result)}</td>
+    </>
+  )
+}
+
+function GroupSourceSummaryTable({ group }: { group: PeriodItemGroup }) {
+  const ownView = group.kind === 'own'
+  const rows = groupItemsBySource(group.items).map((entry) => ({
+    source: entry.source,
+    totals: sumItemColumns(entry.items),
+  }))
+  const bodyCellCls = `${closureTableTdCls} text-right font-semibold tabular-nums`
+  const footCellCls = 'px-3 py-2.5 text-right font-semibold tabular-nums'
+  const flowHeaders = ['Entradas', 'Saídas', 'Resultado']
+  const groupThCls = 'px-3 py-2 text-center text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300'
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className={closureTableHeadCls}>
+          {ownView ? (
+            <tr>
+              <th className={closureTableThLeftCls}>Tipo</th>
+              {flowHeaders.map((label) => <th key={label} className={closureTableThRightCls}>{label}</th>)}
+            </tr>
+          ) : (
+            <>
+              <tr>
+                <th rowSpan={2} className={`${closureTableThLeftCls} align-bottom`}>Tipo</th>
+                <th colSpan={3} className={groupThCls}>
+                  <span className="inline-flex items-center gap-1"><Landmark size={12} />Conta</span>
+                </th>
+                <th colSpan={3} className={groupThCls}>
+                  <span className="inline-flex items-center gap-1"><Users size={12} />Compartilhado</span>
+                </th>
+              </tr>
+              <tr>
+                {[...flowHeaders, ...flowHeaders].map((label, index) => (
+                  <th key={`${label}-${index}`} className={closureTableThRightCls}>{label}</th>
+                ))}
+              </tr>
+            </>
+          )}
+        </thead>
+        <tbody>
+          {rows.map(({ source, totals }) => (
+            <tr key={source}>
+              <td className={`${closureTableTdCls} font-medium text-gray-700 dark:text-gray-200`}>
+                <SourceLabel source={source} />
+              </td>
+              {flowCells(totals.accountEntries, totals.accountExits, bodyCellCls)}
+              {!ownView && flowCells(totals.sharedEntries, totals.sharedExits, bodyCellCls)}
+            </tr>
+          ))}
+        </tbody>
+        <tfoot className={closureTableFootCls}>
+          <tr>
+            <td className="px-3 py-2.5 font-semibold text-gray-800 dark:text-gray-100">Total</td>
+            {flowCells(group.totals.accountEntries, group.totals.accountExits, footCellCls)}
+            {!ownView && flowCells(group.totals.sharedEntries, group.totals.sharedExits, footCellCls)}
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  )
+}
+
+function PeriodItemsBySource({
+  items,
+  ownView = false,
+}: {
+  items: AccountPeriodItem[]
+  ownView?: boolean
+}) {
+  if (items.length === 0) {
+    return <p className="px-3 py-4 text-center text-sm text-gray-500">Nenhum lançamento.</p>
+  }
+  return (
+    <div className="divide-y-2 divide-gray-200 dark:divide-gray-700">
+      {groupItemsBySource(items).map((entry) => (
+        <div key={entry.source}>
+          <div className="flex items-center justify-between gap-2 bg-gray-50 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-gray-700 dark:bg-gray-800/40 dark:text-gray-200">
+            <SourceLabel source={entry.source} />
+            <span className="font-medium normal-case tracking-normal text-gray-500 dark:text-gray-400">
+              {entry.items.length} lançamento{entry.items.length === 1 ? '' : 's'}
+            </span>
+          </div>
+          <PeriodItemsFlowTable items={entry.items} ownView={ownView} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function PeriodItemsFlowTable({
+  items,
+  ownView = false,
+}: {
+  items: AccountPeriodItem[]
+  ownView?: boolean
+}) {
+  const [dateSort, setDateSort] = useState<DateSortDirection>('desc')
+  const sortedItems = useMemo(
+    () =>
+      sortRowsByDate(
+        items,
+        (row) => row.date,
+        dateSort,
+        (left, right) =>
+          String(left.id).localeCompare(String(right.id), undefined, { numeric: true }),
+      ),
+    [items, dateSort],
+  )
   const totals = sumItemColumns(items)
   return (
     <ListPageTable
@@ -505,8 +707,8 @@ function PeriodItemsFlowTable({ items }: { items: AccountPeriodItem[] }) {
           <col style={{ width: 110, minWidth: 110 }} />
           <col />
           <col style={{ width: 128, minWidth: 128 }} />
-          <col style={{ width: 128, minWidth: 128 }} />
-          <col style={{ width: 148, minWidth: 148 }} />
+          {!ownView && <col style={{ width: 128, minWidth: 128 }} />}
+          {!ownView && <col style={{ width: 148, minWidth: 148 }} />}
         </>
       }
       head={
@@ -515,23 +717,20 @@ function PeriodItemsFlowTable({ items }: { items: AccountPeriodItem[] }) {
           <ListTableSpacerHeader />
           <ListTableStaticHeader label="Fonte" />
           <ListTableStaticHeader label="Emp." className="text-center" />
-          <ListTableStaticHeader label="Data" />
+          <SortableDateHeader
+            sortDirection={dateSort}
+            onToggle={() => setDateSort((prev) => toggleDateSortDirection(prev))}
+            className="px-3 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300"
+          />
           <ListTableStaticHeader label="Descrição" />
-          <ListTableStaticHeader label="Caixa" className="text-right" />
-          <ListTableStaticHeader label="Conta" className="text-right" />
-          <ListTableStaticHeader label="Compartilhado" className="text-right" />
+          <ListTableStaticHeader label="Valor" className="text-right" />
+          {!ownView && <ListTableStaticHeader label="Conta" className="text-right" />}
+          {!ownView && <ListTableStaticHeader label="Compartilhado" className="text-right" />}
         </tr>
       }
     >
-      {items.length === 0 ? (
-        <tr>
-          <td colSpan={9} className={`${listPageTableTdCls} py-4 text-center text-sm text-gray-500`}>
-            Nenhum lançamento.
-          </td>
-        </tr>
-      ) : items.map((row, index) => {
+      {sortedItems.map((row, index) => {
         const cols = itemColumnAmounts(row)
-        const caixaAmount = isCashItem(row) ? Number(row.amount) : null
         return (
           <tr key={`${row.source ?? 'bank'}-${row.id}`} className={`${listPageTableRowHoverCls} [&>td]:border-b [&>td]:border-gray-200 dark:[&>td]:border-gray-700`}>
             <ListTableIndexCell index={index + 1} />
@@ -554,24 +753,44 @@ function PeriodItemsFlowTable({ items }: { items: AccountPeriodItem[] }) {
                 ) : null}
               </span>
             </td>
-            <td
-              className={`${listPageTableTdCls} text-right font-semibold tabular-nums`}
-              style={caixaAmount == null ? undefined : moneyStyle(caixaAmount)}
-            >
-              {caixaAmount == null ? <span className="text-gray-400">—</span> : formatCurrency(caixaAmount)}
-            </td>
-            <td
-              className={`${listPageTableTdCls} text-right font-semibold tabular-nums`}
-              style={moneyStyle(cols.account)}
-            >
-              {cols.account === 0 ? <span className="text-gray-400">—</span> : formatCurrency(cols.account)}
-            </td>
-            <td
-              className={`${listPageTableTdCls} text-right font-semibold tabular-nums`}
-              style={moneyStyle(cols.shared)}
-            >
-              {cols.shared === 0 ? <span className="text-gray-400">—</span> : formatCurrency(cols.shared)}
-            </td>
+            {ownView ? (
+              cols.account === cols.valor ? (
+                <td
+                  className={`${listPageTableTdCls} text-right font-semibold tabular-nums`}
+                  style={moneyStyle(cols.valor)}
+                >
+                  {cols.valor === 0 ? <span className="text-gray-400">—</span> : formatCurrency(cols.valor)}
+                </td>
+              ) : (
+                <td
+                  className={`${listPageTableTdCls} text-right tabular-nums text-gray-400 line-through`}
+                  title="Não entra no resultado da conta (substituído pelos itens do cartão)"
+                >
+                  {formatCurrency(cols.valor)}
+                </td>
+              )
+            ) : (
+              <>
+                <td
+                  className={`${listPageTableTdCls} text-right font-semibold tabular-nums`}
+                  style={moneyStyle(cols.valor)}
+                >
+                  {cols.valor === 0 ? <span className="text-gray-400">—</span> : formatCurrency(cols.valor)}
+                </td>
+                <td
+                  className={`${listPageTableTdCls} text-right font-semibold tabular-nums`}
+                  style={moneyStyle(cols.account)}
+                >
+                  {cols.account === 0 ? <span className="text-gray-400">—</span> : formatCurrency(cols.account)}
+                </td>
+                <td
+                  className={`${listPageTableTdCls} text-right font-semibold tabular-nums`}
+                  style={moneyStyle(cols.shared)}
+                >
+                  {cols.shared === 0 ? <span className="text-gray-400">—</span> : formatCurrency(cols.shared)}
+                </td>
+              </>
+            )}
           </tr>
         )
       })}
@@ -581,27 +800,36 @@ function PeriodItemsFlowTable({ items }: { items: AccountPeriodItem[] }) {
         <td className={`${listPageTableTdCls} font-semibold text-gray-800 dark:text-gray-100`} colSpan={4}>
           Total
         </td>
-        <td className={`${listPageTableTdCls} text-right font-semibold tabular-nums`} style={moneyStyle(totals.caixa)}>
-          {formatCurrency(totals.caixa)}
-        </td>
-        <td className={`${listPageTableTdCls} text-right font-semibold tabular-nums`} style={moneyStyle(totals.account)}>
-          {formatCurrency(totals.account)}
-        </td>
-        <td className={`${listPageTableTdCls} text-right font-semibold tabular-nums`} style={moneyStyle(totals.shared)}>
-          {formatCurrency(totals.shared)}
-        </td>
+        {ownView ? (
+          <td className={`${listPageTableTdCls} text-right font-semibold tabular-nums`} style={moneyStyle(totals.account)}>
+            {formatCurrency(totals.account)}
+          </td>
+        ) : (
+          <>
+            <td className={`${listPageTableTdCls} text-right font-semibold tabular-nums`} style={moneyStyle(totals.valor)}>
+              {formatCurrency(totals.valor)}
+            </td>
+            <td className={`${listPageTableTdCls} text-right font-semibold tabular-nums`} style={moneyStyle(totals.account)}>
+              {formatCurrency(totals.account)}
+            </td>
+            <td className={`${listPageTableTdCls} text-right font-semibold tabular-nums`} style={moneyStyle(totals.shared)}>
+              {formatCurrency(totals.shared)}
+            </td>
+          </>
+        )}
       </tr>
     </ListPageTable>
   )
 }
 
+/** Compartilhado com 100% para a conta (0% parceiro) equivale a próprio. */
 function isSharedItem(item: AccountPeriodItem) {
-  return Boolean(
-    item.shared_partner_id
-    || item.shared_partner_name
-    || item.expense_sharing_id
-    || Number(item.amount_shared ?? 0) !== 0,
-  )
+  if (item.source === 'settlement') return true
+  if (Number(item.amount_shared ?? 0) !== 0) return true
+  const hasSharingRef = Boolean(item.shared_partner_id || item.shared_partner_name || item.expense_sharing_id)
+  if (!hasSharingRef) return false
+  const minePct = item.ownership_percentage == null ? 100 : Number(item.ownership_percentage)
+  return minePct < 100
 }
 
 function itemGroupKey(item: AccountPeriodItem) {
@@ -679,7 +907,7 @@ function groupPeriodItems(
       (left.partner?.shared_partner_name || '').localeCompare(right.partner?.shared_partner_name || '', 'pt-BR'),
     )
   const own = buckets.get('own')
-  return own ? [...shared, own] : shared
+  return own ? [own, ...shared] : shared
 }
 
 function OpenSharedNotice({
@@ -741,6 +969,18 @@ function UnmatchedCardWarning({ items }: { items: AccountPeriodItem[] }) {
 }
 
 function AllocationMiniTable({ rows }: { rows: AccountPeriodItem[] }) {
+  const [dateSort, setDateSort] = useState<DateSortDirection>('desc')
+  const sortedRows = useMemo(
+    () =>
+      sortRowsByDate(
+        rows,
+        (row) => row.date,
+        dateSort,
+        (left, right) =>
+          String(left.id).localeCompare(String(right.id), undefined, { numeric: true }),
+      ),
+    [rows, dateSort],
+  )
   const accountTotal = rows.reduce((sum, row) => sum + Number(row.amount_account ?? 0), 0)
   const sharedTotal = rows.reduce((sum, row) => sum + Number(row.amount_shared ?? 0), 0)
   return (
@@ -748,14 +988,18 @@ function AllocationMiniTable({ rows }: { rows: AccountPeriodItem[] }) {
       <table className="w-full text-sm">
         <thead className={closureTableHeadCls}>
           <tr>
-            <th className={closureTableThLeftCls}>Data</th>
+            <SortableDateHeader
+              sortDirection={dateSort}
+              onToggle={() => setDateSort((prev) => toggleDateSortDirection(prev))}
+              className={closureTableThLeftCls}
+            />
             <th className={closureTableThLeftCls}>Descrição</th>
             <th className={closureTableThRightCls}>Conta</th>
             <th className={closureTableThRightCls}>Comp.</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => {
+          {sortedRows.map((row) => {
             const accountAmount = Number(row.amount_account ?? 0)
             const sharedAmount = Number(row.amount_shared ?? 0)
             return (
@@ -792,18 +1036,16 @@ const SOURCE_META: Record<AccountPeriodItemSource, {
   Icon: typeof Landmark
   color: string
   label: string
+  groupLabel: string
 }> = {
-  bank: { Icon: Landmark, color: 'var(--color-1)', label: 'Extrato Bancário' },
-  card: { Icon: CreditCard, color: 'var(--color-2)', label: 'Fatura de Cartão' },
-  benefit: { Icon: Gift, color: 'var(--color-3)', label: 'Benefício' },
-  settlement: { Icon: Scale, color: 'var(--color-4)', label: 'Acerto compartilhado' },
+  bank: { Icon: Landmark, color: 'var(--color-1)', label: 'Extrato Bancário', groupLabel: 'Conta corrente' },
+  card: { Icon: CreditCard, color: 'var(--color-2)', label: 'Fatura de Cartão', groupLabel: 'Cartão de crédito' },
+  benefit: { Icon: Gift, color: 'var(--color-3)', label: 'Benefício', groupLabel: 'Cartão benefício' },
+  settlement: { Icon: Scale, color: 'var(--color-4)', label: 'Acerto compartilhado', groupLabel: 'Acerto compartilhado' },
 }
 
 const ItemSourceSymbols = ({ item }: { item: AccountPeriodItem }) => {
-  const source: AccountPeriodItemSource =
-    item.source === 'card' || item.source === 'benefit' || item.source === 'settlement'
-      ? item.source
-      : 'bank'
+  const source = itemSourceKey(item)
   const meta = SOURCE_META[source]
   const Icon = meta.Icon
   return (
@@ -839,36 +1081,102 @@ const sortMonths = (items: AccountPeriodMonth[]) =>
 const sortMonthsDesc = (items: AccountPeriodMonth[]) =>
   [...items].sort((left, right) => right.year - left.year || right.month - left.month)
 
-const selectionError = (
+const yearMonthLabel = (yearMonth: string) => {
+  const month = Number(yearMonth.slice(5, 7))
+  const year = yearMonth.slice(0, 4)
+  return `${MONTH_LABELS[month - 1]} ${year}`
+}
+
+const advanceYearMonth = (year: number, month: number) =>
+  month === 12 ? { year: year + 1, month: 1 } : { year, month: month + 1 }
+
+type BulkSelectionResolve =
+  | { kind: 'invalid'; message: string }
+  | { kind: 'full'; months: AccountPeriodMonth[] }
+  | { kind: 'partial'; months: AccountPeriodMonth[]; skipped: AccountPeriodMonth[] }
+
+/** Maior sequência consecutiva a partir do próximo mês fechável. */
+const resolveCloseBulkSelection = (
   selected: AccountPeriodMonth[],
   nextCloseable: string | null,
-) => {
-  if (selected.length === 0) return 'Selecione pelo menos um mês'
-  const sorted = sortMonths(selected)
-  if (sorted.some((item) => item.status === 'current')) {
-    return 'Não é possível fechar o mês corrente'
+): BulkSelectionResolve => {
+  if (selected.length === 0) {
+    return { kind: 'invalid', message: 'Selecione pelo menos um mês' }
   }
-  if (!nextCloseable) return 'Não há mês disponível para fechar'
-  if (monthKey(sorted[0]) !== nextCloseable) {
-    const month = Number(nextCloseable.slice(5, 7))
-    const year = nextCloseable.slice(0, 4)
-    return `A seleção precisa começar em ${MONTH_LABELS[month - 1]} ${year}`
+  if (selected.some((item) => item.status === 'current')) {
+    return { kind: 'invalid', message: 'Não é possível fechar o mês corrente' }
   }
-  for (let index = 1; index < sorted.length; index += 1) {
-    const prev = sorted[index - 1]
-    const expectedMonth = prev.month === 12 ? 1 : prev.month + 1
-    const expectedYear = prev.month === 12 ? prev.year + 1 : prev.year
-    if (sorted[index].year !== expectedYear || sorted[index].month !== expectedMonth) {
-      return 'Os meses precisam ser consecutivos, a partir do próximo mês a fechar'
+  if (!nextCloseable) {
+    return { kind: 'invalid', message: 'Não há mês disponível para fechar' }
+  }
+
+  const selectedByKey = new Map(selected.map((item) => [monthKey(item), item]))
+  const run: AccountPeriodMonth[] = []
+  let cursor = nextCloseable
+  while (selectedByKey.has(cursor)) {
+    const item = selectedByKey.get(cursor)!
+    run.push(item)
+    cursor = monthKey(advanceYearMonth(item.year, item.month))
+  }
+
+  if (run.length === 0) {
+    return {
+      kind: 'invalid',
+      message: `A seleção precisa incluir ${yearMonthLabel(nextCloseable)}, o próximo mês a fechar`,
     }
   }
-  return null
+
+  const runKeys = new Set(run.map((item) => monthKey(item)))
+  const skipped = sortMonths(selected.filter((item) => !runKeys.has(monthKey(item))))
+  if (skipped.length === 0) return { kind: 'full', months: run }
+  return { kind: 'partial', months: run, skipped }
+}
+
+/** Maior sequência consecutiva terminando no último mês fechado (reabertura do recente ao antigo). */
+const resolveReopenBulkSelection = (
+  selected: AccountPeriodMonth[],
+  lastClosedYearMonth: string | null,
+): BulkSelectionResolve => {
+  if (selected.length === 0) {
+    return { kind: 'invalid', message: 'Selecione pelo menos um mês' }
+  }
+  if (!lastClosedYearMonth) {
+    return { kind: 'invalid', message: 'Não há mês fechado para reabrir' }
+  }
+
+  const selectedByKey = new Map(selected.map((item) => [monthKey(item), item]))
+  const runNewestFirst: AccountPeriodMonth[] = []
+  let cursor = lastClosedYearMonth
+  while (selectedByKey.has(cursor)) {
+    const item = selectedByKey.get(cursor)!
+    if (!item.id) {
+      return {
+        kind: 'invalid',
+        message: 'Um ou mais meses selecionados não possuem fechamento registrado',
+      }
+    }
+    runNewestFirst.push(item)
+    cursor = monthKey(previousPeriod(item.year, item.month))
+  }
+
+  if (runNewestFirst.length === 0) {
+    return {
+      kind: 'invalid',
+      message: `A seleção precisa incluir o último mês fechado (${yearMonthLabel(lastClosedYearMonth)})`,
+    }
+  }
+
+  const run = sortMonths(runNewestFirst)
+  const runKeys = new Set(run.map((item) => monthKey(item)))
+  const skipped = sortMonths(selected.filter((item) => !runKeys.has(monthKey(item))))
+  if (skipped.length === 0) return { kind: 'full', months: run }
+  return { kind: 'partial', months: run, skipped }
 }
 
 const AccountClosuresPage = () => {
   const location = useLocation()
   const navigate = useNavigate()
-  const { showConfirm, ConfirmComponent, isConfirmOpen } = useConfirm()
+  const { ConfirmComponent, isConfirmOpen } = useConfirm()
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const activeTab: ClosureTab = location.pathname.endsWith('/fechados') ? 'closed' : 'open'
 
@@ -894,6 +1202,13 @@ const AccountClosuresPage = () => {
   const [itemsLoading, setItemsLoading] = useState(false)
   const [itemsError, setItemsError] = useState<string | null>(null)
   const [itemsViewTab, setItemsViewTab] = useState('geral')
+  const [reopenModalMonths, setReopenModalMonths] = useState<AccountPeriodMonth[] | null>(null)
+  const [reopenDeleteAdjustments, setReopenDeleteAdjustments] = useState(true)
+  const [partialBulkPrompt, setPartialBulkPrompt] = useState<{
+    action: 'close' | 'reopen'
+    included: AccountPeriodMonth[]
+    excluded: AccountPeriodMonth[]
+  } | null>(null)
 
   const yearOptions = useMemo(() => {
     const years = filterOptions?.years?.length
@@ -926,6 +1241,31 @@ const AccountClosuresPage = () => {
     [openMonths, selectedKeys],
   )
 
+  const selectedClosedMonths = useMemo(
+    () => closedMonths.filter((item) => selectedKeys.has(monthKey(item))),
+    [closedMonths, selectedKeys],
+  )
+
+  const reopenableChain = useMemo(() => {
+    const lastClosed = series?.last_closed_year_month ?? filterOptions?.last_closed_year_month
+    if (!lastClosed) return [] as AccountPeriodMonth[]
+    const byKey = new Map(closedMonths.map((item) => [monthKey(item), item]))
+    const chain: AccountPeriodMonth[] = []
+    let cursor = lastClosed
+    while (byKey.has(cursor)) {
+      const item = byKey.get(cursor)!
+      chain.push(item)
+      const prev = previousPeriod(item.year, item.month)
+      cursor = monthKey(prev)
+    }
+    return chain
+  }, [closedMonths, series?.last_closed_year_month, filterOptions?.last_closed_year_month])
+
+  const selectableClosedMonths = useMemo(
+    () => reopenableChain.filter((item) => item.id),
+    [reopenableChain],
+  )
+
   const selectAllState = useMemo(() => {
     if (selectableMonths.length === 0) return 'none' as const
     const selectedCount = selectableMonths.filter((item) => selectedKeys.has(monthKey(item))).length
@@ -933,6 +1273,14 @@ const AccountClosuresPage = () => {
     if (selectedCount === selectableMonths.length) return 'all' as const
     return 'partial' as const
   }, [selectableMonths, selectedKeys])
+
+  const closedSelectAllState = useMemo(() => {
+    if (selectableClosedMonths.length === 0) return 'none' as const
+    const selectedCount = selectableClosedMonths.filter((item) => selectedKeys.has(monthKey(item))).length
+    if (selectedCount === 0) return 'none' as const
+    if (selectedCount === selectableClosedMonths.length) return 'all' as const
+    return 'partial' as const
+  }, [selectableClosedMonths, selectedKeys])
 
   const loadOptions = useCallback(async () => {
     setFiltersLoading(true)
@@ -1009,7 +1357,11 @@ const AccountClosuresPage = () => {
     : 'Nenhum mês fechado ainda'
 
   const toggleSelect = (key: string) => {
-    if (openMonths.some((item) => monthKey(item) === key && item.status === 'current')) return
+    if (activeTab === 'open') {
+      if (openMonths.some((item) => monthKey(item) === key && item.status === 'current')) return
+    } else if (!closedMonths.some((item) => monthKey(item) === key && item.id)) {
+      return
+    }
     setSelectedKeys((prev) => {
       const next = new Set(prev)
       if (next.has(key)) next.delete(key)
@@ -1019,6 +1371,14 @@ const AccountClosuresPage = () => {
   }
 
   const toggleSelectAll = () => {
+    if (activeTab === 'closed') {
+      if (closedSelectAllState === 'all') {
+        setSelectedKeys(new Set())
+        return
+      }
+      setSelectedKeys(new Set(selectableClosedMonths.map((item) => monthKey(item))))
+      return
+    }
     if (selectAllState === 'all') {
       setSelectedKeys(new Set())
       return
@@ -1031,13 +1391,7 @@ const AccountClosuresPage = () => {
     scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  const openCloseModal = (months: AccountPeriodMonth[]) => {
-    const ordered = sortMonths(months)
-    const invalid = selectionError(ordered, series?.next_closeable_year_month ?? null)
-    if (invalid) {
-      setToast({ show: true, message: invalid, type: 'error' })
-      return
-    }
+  const startCloseModal = (ordered: AccountPeriodMonth[]) => {
     const first = ordered[0]
     if (ordered.length === 1 && !first.can_close) {
       const previous = previousPeriod(first.year, first.month)
@@ -1069,6 +1423,19 @@ const AccountClosuresPage = () => {
         setModalLoading(false)
       }
     })()
+  }
+
+  const openCloseModal = (months: AccountPeriodMonth[]) => {
+    const resolved = resolveCloseBulkSelection(months, series?.next_closeable_year_month ?? null)
+    if (resolved.kind === 'invalid') {
+      setToast({ show: true, message: resolved.message, type: 'error' })
+      return
+    }
+    if (resolved.kind === 'partial') {
+      setPartialBulkPrompt({ action: 'close', included: resolved.months, excluded: resolved.skipped })
+      return
+    }
+    startCloseModal(resolved.months)
   }
 
   const closeModal = () => {
@@ -1103,9 +1470,6 @@ const AccountClosuresPage = () => {
       setItemsLoading(false)
     }
   }
-
-  useEscapeKey(closeItemsModal, itemsMonth != null && !isConfirmOpen)
-  useEscapeKey(closeModal, modalMonths != null && itemsMonth == null && !isConfirmOpen)
 
   const handleConfirmClose = async () => {
     if (!modalMonths?.length) return
@@ -1153,19 +1517,57 @@ const AccountClosuresPage = () => {
     }
   }
 
-  const handleReopen = async (item: AccountPeriodMonth) => {
-    if (!item.id || !item.can_reopen) return
-    const confirmed = await showConfirm({
-      title: `Reabrir ${monthTitle(item)}?`,
-      message: 'O snapshot será descartado e o lançamento de ajuste deste fechamento também será removido do extrato.',
-      confirmText: 'Reabrir',
-      type: 'danger',
-    })
-    if (!confirmed) return
+  const startReopenModal = (ordered: AccountPeriodMonth[]) => {
+    setReopenDeleteAdjustments(true)
+    setReopenModalMonths(ordered)
+  }
+
+  const openReopenModal = (months: AccountPeriodMonth[]) => {
+    const resolved = resolveReopenBulkSelection(months, lastClosedYearMonth ?? null)
+    if (resolved.kind === 'invalid') {
+      setToast({ show: true, message: resolved.message, type: 'error' })
+      return
+    }
+    if (resolved.kind === 'partial') {
+      setPartialBulkPrompt({ action: 'reopen', included: resolved.months, excluded: resolved.skipped })
+      return
+    }
+    startReopenModal(resolved.months)
+  }
+
+  const cancelPartialBulkPrompt = () => {
+    setPartialBulkPrompt(null)
+  }
+
+  const confirmPartialBulkPrompt = () => {
+    if (!partialBulkPrompt) return
+    const { action, included } = partialBulkPrompt
+    setPartialBulkPrompt(null)
+    if (action === 'close') startCloseModal(included)
+    else startReopenModal(included)
+  }
+
+  const closeReopenModal = () => {
+    if (saving) return
+    setReopenModalMonths(null)
+    setReopenDeleteAdjustments(true)
+  }
+
+  const confirmReopen = async () => {
+    if (!reopenModalMonths?.length) return
+    const ordered = sortMonthsDesc(reopenModalMonths)
     setSaving(true)
     try {
-      await reopenAccountPeriod(item.id)
-      setToast({ show: true, message: `${monthTitle(item)} foi reaberto.`, type: 'success' })
+      for (const item of ordered) {
+        if (!item.id) continue
+        await reopenAccountPeriod(item.id, { deleteAdjustment: reopenDeleteAdjustments })
+      }
+      const label = reopenModalMonths.length === 1
+        ? monthTitle(reopenModalMonths[0])
+        : `${reopenModalMonths.length} meses`
+      setToast({ show: true, message: `${label} reaberto(s).`, type: 'success' })
+      setReopenModalMonths(null)
+      setSelectedKeys(new Set())
       await reloadApplied()
     } catch (err) {
       setToast({
@@ -1173,18 +1575,38 @@ const AccountClosuresPage = () => {
         message: apiErrorMessage(err, 'Não foi possível reabrir o período.'),
         type: 'error',
       })
+      await reloadApplied()
     } finally {
       setSaving(false)
     }
   }
 
-  const newestModalMonth = modalMonths?.length ? modalMonths[modalMonths.length - 1] : null
+  const handleReopen = (item: AccountPeriodMonth) => {
+    if (!item.id || !item.can_reopen) return
+    openReopenModal([item])
+  }
+
+  useEscapeKey(closeItemsModal, itemsMonth != null && !isConfirmOpen)
+  useEscapeKey(closeModal, modalMonths != null && itemsMonth == null && !isConfirmOpen)
+  useEscapeKey(
+    closeReopenModal,
+    reopenModalMonths != null && modalMonths == null && itemsMonth == null && !isConfirmOpen,
+  )
+  useEscapeKey(
+    cancelPartialBulkPrompt,
+    partialBulkPrompt != null && modalMonths == null && reopenModalMonths == null && itemsMonth == null && !isConfirmOpen,
+  )
+
+  const newestModalMonth = modalMonths?.length ? sortMonths(modalMonths).at(-1) ?? null : null
   const bulkSplitTotal = modalMonths && modalMonths.length > 1 ? sumSplits(modalMonths) : null
   const adjustmentValue = amountFromCents(adjustmentCents, adjustmentNegative)
   const projectedClosing = newestModalMonth
     ? Number(newestModalMonth.closing_balance) + adjustmentValue
     : 0
   const footerVisible = selectedKeys.size > 0 || showBackToTop
+  const reopenModalHasAdjustments = reopenModalMonths?.some(
+    (item) => item.adjustment_amount != null && Number(item.adjustment_amount) !== 0,
+  )
 
   const moneyCell = (value: number, invert = false) => (
     <span className="font-semibold tabular-nums" style={moneyStyle(value, invert)}>
@@ -1200,7 +1622,12 @@ const AccountClosuresPage = () => {
 
   const openingSource = itemsPreview ?? itemsMonth
   const items = useMemo(
-    () => [...(itemsPreview?.items ?? []), ...(itemsPreview?.card_items ?? []), ...(itemsPreview?.shared_settlements ?? [])]
+    () => [
+      ...(itemsPreview?.items ?? []),
+      ...(itemsPreview?.card_items ?? []),
+      ...(itemsPreview?.benefit_items ?? []),
+      ...(itemsPreview?.shared_settlements ?? []),
+    ]
       .sort(comparePeriodItems),
     [itemsPreview],
   )
@@ -1212,9 +1639,24 @@ const AccountClosuresPage = () => {
     ? null
     : itemGroups.find((group) => group.key === itemsViewTab) ?? null
   const activeItemFlows = splitItemsByFlow(activeItemGroup?.items ?? [])
-  const itemsTotal = openingSource
-    ? Number(openingSource.entries) - Number(openingSource.exits)
-    : 0
+  const activeSharedClosure = findSharedClosure(
+    activeItemGroup,
+    openingSource?.shared_closures ?? [],
+  )
+  const sharedCutoff = activeSharedClosure?.closing_date
+    ? parseLocalDateTime(activeSharedClosure.closing_date)
+    : null
+  const activeDespesasSplit = splitDespesasBySharedCutoff(activeItemFlows.despesas, sharedCutoff)
+  const showAfterDespesas = Boolean(
+    sharedCutoff && activeSharedClosure && activeDespesasSplit.after.length > 0,
+  )
+  const itemsHeaderSubtitle = (() => {
+    if (!itemsPreview) return 'Extrato do período'
+    if (activeSharedClosure?.period_start_date && activeSharedClosure.closing_date) {
+      return `${items.length} lançamento${items.length === 1 ? '' : 's'} · ${formatDateTimeBR(activeSharedClosure.period_start_date)} a ${formatDateTimeBR(activeSharedClosure.closing_date)}`
+    }
+    return `${items.length} lançamento${items.length === 1 ? '' : 's'} · caixa do extrato`
+  })()
   const previousOpeningPeriod = itemsMonth
     ? previousPeriod(itemsMonth.year, itemsMonth.month)
     : null
@@ -1323,6 +1765,28 @@ const AccountClosuresPage = () => {
                   </div>
                 )}
 
+                {activeTab === 'closed' && selectableClosedMonths.length > 0 && (
+                  <div className="mb-4 flex items-center justify-between gap-3 px-1">
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={toggleSelectAll}
+                        className="rounded p-1 transition-colors hover:bg-gray-200 dark:hover:bg-gray-600"
+                        title={closedSelectAllState === 'all' ? 'Limpar seleção' : 'Selecionar todos reabíveis'}
+                      >
+                        {closedSelectAllState === 'none' && <Square size={18} className="text-gray-400" />}
+                        {closedSelectAllState === 'partial' && <MinusSquare size={18} className="text-[var(--color-1)]" />}
+                        {closedSelectAllState === 'all' && <CheckSquare size={18} className="text-[var(--color-1)]" />}
+                      </button>
+                      <span className="text-sm text-gray-600 dark:text-gray-400">
+                        Selecionar sequência até {yearMonthLabel(lastClosedYearMonth ?? '')} (
+                        {selectableClosedMonths.length}{' '}
+                        {selectableClosedMonths.length === 1 ? 'mês' : 'meses'})
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 {visibleMonths.length === 0 ? (
                   <p className="py-8 text-center text-sm text-gray-500">
                     {activeTab === 'open'
@@ -1331,10 +1795,12 @@ const AccountClosuresPage = () => {
                   </p>
                 ) : (
                   <ListPageTable
+                    leadingMode={
+                      activeTab === 'open' || selectableClosedMonths.length > 0 ? 'bulk' : 'index-only'
+                    }
                     colsRest={
                       <>
                         <ListTableSpacerCol />
-                        {activeTab === 'open' ? <ListTableLeadingCols /> : null}
                         <col style={{ width: 76, minWidth: 76, maxWidth: 76 }} />
                         <col style={{ width: 48, minWidth: 48, maxWidth: 48 }} />
                         <col style={{ width: 120, minWidth: 120, maxWidth: 140 }} />
@@ -1342,24 +1808,19 @@ const AccountClosuresPage = () => {
                     }
                     head={
                       <tr>
-                        {activeTab === 'open' ? (
-                          <th className="w-10 px-0 py-3 text-center" style={{ width: LIST_TABLE_INDEX_COL_PX }}>
-                            <input
-                              type="checkbox"
-                              className={cadastroAccentControlCls}
-                              checked={selectAllState === 'all'}
-                              ref={(element) => {
-                                if (element) element.indeterminate = selectAllState === 'partial'
-                              }}
-                              onChange={toggleSelectAll}
-                              aria-label="Selecionar todos"
-                            />
-                          </th>
-                        ) : (
+                        {activeTab === 'open' || selectableClosedMonths.length > 0 ? (
+                          <ListTableCheckboxHeader
+                            state={activeTab === 'closed' ? closedSelectAllState : selectAllState}
+                            onToggle={toggleSelectAll}
+                          />
+                        ) : null}
+                        {activeTab === 'open' || selectableClosedMonths.length > 0 ? null : (
                           <ListTableIndexHeader />
                         )}
+                        {activeTab === 'open' || selectableClosedMonths.length > 0 ? (
+                          <ListTableIndexHeader />
+                        ) : null}
                         <ListTableSpacerHeader />
-                        {activeTab === 'open' ? <ListTableIndexHeader /> : null}
                         <ListTableStaticHeader label="Ano" />
                         <ListTableStaticHeader label="Nº" />
                         <ListTableStaticHeader label="Mês" />
@@ -1380,29 +1841,34 @@ const AccountClosuresPage = () => {
                       const selected = selectedKeys.has(key)
                       return (
                         <tr key={key} className={listPageTableRowHoverCls}>
-                          {activeTab === 'open' ? (
-                            <td className="px-0 py-3 text-center" style={{ width: LIST_TABLE_INDEX_COL_PX }}>
-                              <input
-                                type="checkbox"
-                                className={cadastroAccentControlCls}
-                                checked={selected}
-                                disabled={item.status === 'current'}
-                                onChange={() => toggleSelect(key)}
-                                aria-label={`Selecionar ${monthTitle(item)}`}
-                                title={
-                                  item.status === 'current'
+                          {activeTab === 'open' || selectableClosedMonths.length > 0 ? (
+                            <ListTableCheckboxCell
+                              checked={selected}
+                              disabled={
+                                activeTab === 'open'
+                                  ? item.status === 'current'
+                                  : !item.id
+                              }
+                              onToggle={() => toggleSelect(key)}
+                              title={
+                                activeTab === 'open'
+                                  ? item.status === 'current'
                                     ? (item.block_reason || 'Não é possível fechar o mês corrente')
                                     : item.has_open_shared_closure
                                       ? (item.open_shared_notice || 'Há fechamento compartilhado em aberto. Pagamentos entram pela data real.')
                                       : undefined
-                                }
-                              />
-                            </td>
+                                  : !item.id
+                                    ? 'Fechamento indisponível'
+                                    : undefined
+                              }
+                            />
                           ) : (
                             <ListTableIndexCell index={index + 1} />
                           )}
+                          {activeTab === 'open' || selectableClosedMonths.length > 0 ? (
+                            <ListTableIndexCell index={index + 1} />
+                          ) : null}
                           <ListTableSpacerCell />
-                          {activeTab === 'open' ? <ListTableIndexCell index={index + 1} /> : null}
                           <td className={`${listPageTableTdCls} whitespace-nowrap tabular-nums text-gray-800 dark:text-gray-100`}>
                             {item.year}
                           </td>
@@ -1565,7 +2031,50 @@ const AccountClosuresPage = () => {
         </FloatingFooterBar>
       )}
 
-      {showBackToTop && (activeTab !== 'open' || selectedKeys.size === 0) && (
+      {activeTab === 'closed' && selectedKeys.size > 0 && (
+        <FloatingFooterBar>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <span className="font-medium text-color-primary">
+                {selectedKeys.size} {selectedKeys.size === 1 ? 'mês selecionado' : 'meses selecionados'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedKeys(new Set())}
+                className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                <X size={14} />
+                Limpar
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => openReopenModal(selectedClosedMonths)}
+                disabled={saving}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
+                style={{ backgroundColor: 'var(--crud-delete)' }}
+              >
+                <Unlock size={14} />
+                Reabrir selecionados
+              </button>
+              {showBackToTop && (
+                <button
+                  type="button"
+                  onClick={scrollToTop}
+                  className="flex items-center gap-1.5 rounded-lg bg-color-primary px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90"
+                  title="Voltar ao topo"
+                >
+                  <ArrowUp size={14} />
+                  Topo
+                </button>
+              )}
+            </div>
+          </div>
+        </FloatingFooterBar>
+      )}
+
+      {showBackToTop && selectedKeys.size === 0 && (
         <FloatingFooterBar>
           <div className="flex items-center justify-end">
             <button
@@ -1755,6 +2264,29 @@ const AccountClosuresPage = () => {
                 })}
               </CadastroFormSection>
             ) : null}
+            {modalMonths.some((item) => (item.benefit_items ?? []).length > 0) ? (
+              <CadastroFormSection
+                title="Cartão de benefício"
+                hint="Lançamentos do mês do item entram na repartição Conta / Compartilhado. O caixa do extrato não muda."
+                icon={<Gift size={14} />}
+                bodyClassName="p-0"
+              >
+                {modalMonths.map((item) => {
+                  const rows = item.benefit_items ?? []
+                  if (rows.length === 0) return null
+                  return (
+                    <div key={`benefit-${monthKey(item)}`}>
+                      {modalMonths.length > 1 ? (
+                        <p className="border-b border-gray-200 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:border-gray-700">
+                          {monthTitle(item)}
+                        </p>
+                      ) : null}
+                      <AllocationMiniTable rows={rows} />
+                    </div>
+                  )
+                })}
+              </CadastroFormSection>
+            ) : null}
             <UnmatchedCardWarning
               items={modalMonths.flatMap((item) => item.unmatched_card_payments ?? [])}
             />
@@ -1854,16 +2386,236 @@ const AccountClosuresPage = () => {
         </CadastroModalShell>
       )}
 
+      {partialBulkPrompt && (
+        <CadastroModalShell maxWidth="max-w-lg">
+          <CadastroModalHeader
+            isEdit={false}
+            title="Seleção fora de sequência"
+            subtitle={
+              partialBulkPrompt.action === 'close'
+                ? 'Alguns meses selecionados não formam uma sequência contínua a partir do próximo fechamento.'
+                : 'Alguns meses selecionados não formam uma sequência contínua até o último fechado.'
+            }
+            icon={<AlertTriangle size={18} />}
+            iconStyle={{ backgroundColor: 'var(--color-warning)', color: '#fff' }}
+            onClose={cancelPartialBulkPrompt}
+          />
+          <CadastroModalBody>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              {partialBulkPrompt.action === 'close'
+                ? 'Você pode cancelar ou fechar apenas os meses consecutivos válidos abaixo.'
+                : 'Você pode cancelar ou reabrir apenas os meses consecutivos válidos abaixo (do mais recente ao mais antigo).'}
+            </p>
+            <div className="mt-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                {partialBulkPrompt.action === 'close' ? 'Serão fechados' : 'Serão reabertos'} (
+                {partialBulkPrompt.included.length})
+              </p>
+              <ul className="mt-2 space-y-1 rounded-lg border border-green-200 bg-green-50/80 px-3 py-2 text-sm dark:border-green-900/50 dark:bg-green-950/30">
+                {partialBulkPrompt.included.map((item) => (
+                  <li key={monthKey(item)} className="font-medium text-gray-800 dark:text-gray-100">
+                    {monthTitle(item)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="mt-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Ficam de fora ({partialBulkPrompt.excluded.length})
+              </p>
+              <ul className="mt-2 space-y-1 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-sm dark:border-amber-900/50 dark:bg-amber-950/30">
+                {partialBulkPrompt.excluded.map((item) => (
+                  <li key={monthKey(item)} className="text-gray-700 dark:text-gray-300">
+                    {monthTitle(item)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </CadastroModalBody>
+          <CadastroModalFooter
+            onClose={cancelPartialBulkPrompt}
+            onSave={confirmPartialBulkPrompt}
+            saveLabel={
+              partialBulkPrompt.action === 'close'
+                ? partialBulkPrompt.included.length === 1
+                  ? 'Fechar 1 mês'
+                  : `Fechar ${partialBulkPrompt.included.length} meses`
+                : partialBulkPrompt.included.length === 1
+                  ? 'Reabrir 1 mês'
+                  : `Reabrir ${partialBulkPrompt.included.length} meses`
+            }
+            saveIcon={partialBulkPrompt.action === 'close' ? <Lock size={15} /> : <Unlock size={15} />}
+            saveTone={partialBulkPrompt.action === 'close' ? 'success' : 'danger'}
+          />
+        </CadastroModalShell>
+      )}
+
+      {reopenModalMonths && reopenModalMonths.length > 0 && (
+        <CadastroModalShell maxWidth="max-w-5xl">
+          <CadastroModalHeader
+            isEdit={false}
+            title={
+              reopenModalMonths.length === 1
+                ? `Reabrir ${monthTitle(reopenModalMonths[0])}?`
+                : `Reabrir ${reopenModalMonths.length} meses?`
+            }
+            subtitle="O fechamento será desfeito e os meses voltarão para em aberto."
+            icon={<Unlock size={18} />}
+            iconStyle={{ backgroundColor: 'var(--crud-delete)', color: '#fff' }}
+            onClose={closeReopenModal}
+          />
+          <CadastroModalBody>
+            <CadastroFormSection
+              title="Lançamentos de ajuste"
+              hint={
+                reopenModalMonths.length === 1
+                  ? 'Confirme o que fazer com o lançamento de ajuste deste fechamento, se houver.'
+                  : 'Válido para os meses selecionados que possuem ajuste no extrato (geralmente o último mês de cada lote fechado).'
+              }
+              icon={<Scale size={14} />}
+            >
+              {reopenModalHasAdjustments ? (
+                <div className="space-y-2">
+                  <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                    <input
+                      type="radio"
+                      name="reopen-adjustment"
+                      checked={reopenDeleteAdjustments}
+                      onChange={() => setReopenDeleteAdjustments(true)}
+                      className="mt-1"
+                    />
+                    <span>
+                      <span className="block text-sm font-semibold text-gray-900 dark:text-white">
+                        Excluir ajustes do extrato
+                      </span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        Remove os lançamentos de ajuste criados no fechamento (comportamento anterior).
+                      </span>
+                    </span>
+                  </label>
+                  <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                    <input
+                      type="radio"
+                      name="reopen-adjustment"
+                      checked={!reopenDeleteAdjustments}
+                      onChange={() => setReopenDeleteAdjustments(false)}
+                      className="mt-1"
+                    />
+                    <span>
+                      <span className="block text-sm font-semibold text-gray-900 dark:text-white">
+                        Manter ajustes no extrato
+                      </span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        Reabre o período mas preserva os lançamentos de ajuste já importados.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Nenhum dos meses selecionados possui ajuste lançado no extrato.
+                </p>
+              )}
+            </CadastroFormSection>
+
+            <CadastroFormSection
+              title="Períodos a reabrir"
+              hint={
+                reopenModalMonths.length === 1
+                  ? 'Resumo do fechamento que será desfeito.'
+                  : 'Ordem de execução: do mais recente para o mais antigo.'
+              }
+              icon={<Calendar size={14} />}
+              bodyClassName="p-0"
+              className="mt-4"
+            >
+              <ListPageTable
+                framed={false}
+                colsRest={
+                  <>
+                    <ListTableSpacerCol />
+                    <col style={{ width: 76, minWidth: 76, maxWidth: 76 }} />
+                    <col style={{ width: 48, minWidth: 48, maxWidth: 48 }} />
+                    <col style={{ width: 120, minWidth: 120, maxWidth: 140 }} />
+                    <col style={{ width: 112, minWidth: 112, maxWidth: 128 }} />
+                  </>
+                }
+                head={
+                  <tr>
+                    <ListTableIndexHeader />
+                    <ListTableSpacerHeader />
+                    <ListTableStaticHeader label="Ano" />
+                    <ListTableStaticHeader label="Nº" />
+                    <ListTableStaticHeader label="Mês" />
+                    <ListTableStaticHeader label="Saldo anterior" />
+                    <ListTableStaticHeader label="Entradas" />
+                    <ListTableStaticHeader label="Saídas" />
+                    <ListTableStaticHeader label="Resultado" />
+                    <ListTableStaticHeader label="Ajuste" />
+                  </tr>
+                }
+              >
+                {sortMonthsDesc(reopenModalMonths).map((item, index) => (
+                  <tr key={monthKey(item)} className={listPageTableRowHoverCls}>
+                    <ListTableIndexCell index={index + 1} />
+                    <ListTableSpacerCell />
+                    <td className={`${listPageTableTdCls} whitespace-nowrap tabular-nums text-gray-800 dark:text-gray-100`}>
+                      {item.year}
+                    </td>
+                    <td className={`${listPageTableTdCls} tabular-nums text-gray-500 dark:text-gray-400`}>
+                      {String(item.month).padStart(2, '0')}
+                    </td>
+                    <td className={`${listPageTableTdCls} font-semibold text-gray-900 dark:text-white`}>
+                      {MONTH_LABELS[item.month - 1]}
+                    </td>
+                    <td className={listPageTableTdCls}>{openingCell(item)}</td>
+                    <td className={`${listPageTableTdCls} align-top`}>
+                      <FlowSplitLines
+                        total={item.entries}
+                        account={splitOf(item).account.entries}
+                        shared={splitOf(item).shared.entries}
+                        compact
+                      />
+                    </td>
+                    <td className={`${listPageTableTdCls} align-top`}>
+                      <FlowSplitLines
+                        total={item.exits}
+                        account={splitOf(item).account.exits}
+                        shared={splitOf(item).shared.exits}
+                        invert
+                        compact
+                      />
+                    </td>
+                    <td className={listPageTableTdCls}>{moneyCell(item.closing_balance)}</td>
+                    <td className={listPageTableTdCls}>
+                      {item.adjustment_amount != null && Number(item.adjustment_amount) !== 0
+                        ? moneyCell(item.adjustment_amount)
+                        : <span className="text-gray-400">—</span>}
+                    </td>
+                  </tr>
+                ))}
+              </ListPageTable>
+            </CadastroFormSection>
+          </CadastroModalBody>
+          <CadastroModalFooter
+            onClose={closeReopenModal}
+            onSave={() => void confirmReopen()}
+            saving={saving}
+            saveLabel={
+              reopenModalMonths.length === 1 ? 'Reabrir período' : `Reabrir ${reopenModalMonths.length} meses`
+            }
+            saveIcon={<Unlock size={15} />}
+            saveTone="danger"
+          />
+        </CadastroModalShell>
+      )}
+
       {itemsMonth && (
         <CadastroModalShell maxWidth="max-w-[95vw] xl:max-w-[90rem]">
           <CadastroModalHeader
             isEdit={false}
             title={`Lançamentos de ${monthTitle(itemsMonth)}`}
-            subtitle={
-              itemsPreview
-                ? `${items.length} lançamento${items.length === 1 ? '' : 's'} · caixa do extrato`
-                : 'Extrato do período'
-            }
+            subtitle={itemsHeaderSubtitle}
             icon={<Eye size={18} />}
             iconStyle={{ backgroundColor: 'var(--color-1)', color: 'var(--on-color-1)' }}
             onClose={closeItemsModal}
@@ -1954,35 +2706,47 @@ const AccountClosuresPage = () => {
                 {activeItemGroup ? (
                   <>
                     <CadastroFormSection
+                      title={`Resultado · ${groupAccountLabel(activeItemGroup)}`}
+                      hint={activeItemGroup.kind === 'own'
+                        ? 'Mesma base da aba Geral: entradas, saídas e resultado da conta, por tipo de lançamento.'
+                        : 'Mesma base da aba Geral: entradas, saídas e resultado da parte pessoal e da compartilhada, por tipo de lançamento.'}
+                      icon={<Scale size={14} />}
+                      bodyClassName="p-0"
+                    >
+                      <GroupSourceSummaryTable group={activeItemGroup} />
+                    </CadastroFormSection>
+                    <CadastroFormSection
                       title="Receitas"
                       icon={<ArrowUpCircle size={14} />}
                       bodyClassName="p-0"
                     >
-                      <PeriodItemsFlowTable items={activeItemFlows.receitas} />
+                      <PeriodItemsBySource items={activeItemFlows.receitas} ownView={activeItemGroup.kind === 'own'} />
                     </CadastroFormSection>
+                    {showAfterDespesas ? (
+                      <CadastroFormSection
+                        title="Despesas · Depois do período compartilhado"
+                        hint={`Após ${formatDateTimeBR(activeSharedClosure?.closing_date || '')} · neste mês`}
+                        icon={<ArrowDownCircle size={14} />}
+                        bodyClassName="p-0"
+                      >
+                        <PeriodItemsBySource items={activeDespesasSplit.after} ownView={activeItemGroup.kind === 'own'} />
+                      </CadastroFormSection>
+                    ) : null}
                     <CadastroFormSection
-                      title="Despesas"
+                      title={showAfterDespesas ? 'Despesas · No período compartilhado' : 'Despesas'}
+                      hint={
+                        showAfterDespesas && activeSharedClosure?.period_start_date && activeSharedClosure.closing_date
+                          ? `${formatDateTimeBR(activeSharedClosure.period_start_date)} a ${formatDateTimeBR(activeSharedClosure.closing_date)}`
+                          : undefined
+                      }
                       icon={<ArrowDownCircle size={14} />}
                       bodyClassName="p-0"
                     >
-                      <PeriodItemsFlowTable items={activeItemFlows.despesas} />
+                      <PeriodItemsBySource
+                        items={showAfterDespesas ? activeDespesasSplit.inPeriod : activeItemFlows.despesas}
+                        ownView={activeItemGroup.kind === 'own'}
+                      />
                     </CadastroFormSection>
-                    <div className={`${closureTableFootCls} flex flex-wrap items-center justify-between gap-3 px-3 py-2.5`}>
-                      <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">
-                        Resultado · {groupAccountLabel(activeItemGroup)}
-                      </span>
-                      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm font-semibold tabular-nums">
-                        <span style={moneyStyle(activeItemGroup.totals.caixa)}>
-                          Caixa {formatCurrency(activeItemGroup.totals.caixa)}
-                        </span>
-                        <span style={moneyStyle(activeItemGroup.totals.account)}>
-                          Conta {formatCurrency(activeItemGroup.totals.account)}
-                        </span>
-                        <span style={moneyStyle(activeItemGroup.totals.shared)}>
-                          Comp. {formatCurrency(activeItemGroup.totals.shared)}
-                        </span>
-                      </div>
-                    </div>
                   </>
                 ) : (
                   <p className="px-3 py-4 text-center text-sm text-gray-500">Nenhum lançamento neste período.</p>
@@ -1994,18 +2758,6 @@ const AccountClosuresPage = () => {
             onClose={closeItemsModal}
             hideSave
             closeLabel="Fechar"
-            leading={
-              !itemsLoading && !itemsError ? (
-                <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">
-                  Caixa {formatCurrency(itemsTotal)}
-                  <span className="ml-3 font-medium text-gray-500">
-                    Conta {formatCurrency(splitOf(openingSource).account.entries - splitOf(openingSource).account.exits)}
-                    {' · '}
-                    Comp. {formatCurrency(splitOf(openingSource).shared.entries - splitOf(openingSource).shared.exits)}
-                  </span>
-                </span>
-              ) : null
-            }
           />
         </CadastroModalShell>
       )}

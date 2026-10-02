@@ -6,6 +6,7 @@ LOAD é feito pela função save_extrato_records() em excel_import_router.py
 """
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
+import os
 import pandas as pd
 
 from .extrato_extractor import ExtratoExtractor
@@ -87,21 +88,42 @@ class ExtratoETL:
             # ========================================
             print("\n🔄 ETAPA 2/2: TRANSFORM (Limpeza e Transformação)")
             print("-" * 80)
-            transformed_records = self.transformer.transform(raw_records)
+            transformed_records, ignored_records = self.transformer.transform(raw_records)
 
-            if not transformed_records:
+            if not transformed_records and not ignored_records:
+                hint = ""
+                joined = " ".join(os.path.basename(p) for p in file_paths).upper()
+                if "DE-PARA" in joined or "ATUALIZADOS" in joined:
+                    hint = (
+                        " O arquivo parece ser o relatório DE-PARA do Plumo, não o extrato "
+                        "original do banco."
+                    )
+                elif len(raw_records) == 0:
+                    hint = (
+                        " Verifique se é o Excel bruto do banco (com cabeçalho "
+                        "Data e hora, Categoria, Transação, Descrição, Valor)."
+                    )
                 return {
                     "success": False,
-                    "error": "Nenhum registro transformado",
+                    "error": f"Nenhum registro transformado.{hint}",
                     "arquivos_processados": len(file_paths),
                     "registros_extraidos": len(raw_records),
-                    "registros_transformados": 0
+                    "registros_transformados": 0,
+                    "ignored_rows": [],
                 }
+
+            if not transformed_records and ignored_records:
+                print(
+                    f"ℹ️ [ETL] Todos os {len(ignored_records)} registros foram ignorados "
+                    f"(política de importação)."
+                )
 
             # Converte para DataFrame
             df = None
-            if return_dataframe:
+            if return_dataframe and transformed_records:
                 df = self.transformer.to_dataframe(transformed_records)
+            elif return_dataframe:
+                df = pd.DataFrame()
 
             # ========================================
             # RESULTADO FINAL
@@ -119,7 +141,9 @@ class ExtratoETL:
                 "success": True,
                 "arquivos_processados": len(file_paths),
                 "registros_extraidos": len(raw_records),
-                "registros_transformados": len(transformed_records)
+                "registros_transformados": len(transformed_records),
+                "ignored_rows": ignored_records,
+                "ignored_count": len(ignored_records),
             }
 
             if return_dataframe and df is not None:

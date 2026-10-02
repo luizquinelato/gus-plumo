@@ -15,6 +15,7 @@ from app.models.unified_models import Tag, Subtag, TransactionMapping, BankState
 from app.models.auth_models import ConfiguracaoSistema, Usuario
 from app.dependencies.auth import get_current_user, require_account
 from app.utils.card_helper import CardHelper
+from app.utils.sharing_percentage import resolve_ownership_percentage
 from app.services.account_period_closure_service import (
     AccountPeriodClosedError,
     ensure_period_open,
@@ -28,6 +29,17 @@ import hashlib
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/expenses", tags=["expenses"])
+
+
+def _mapping_apply_percentage(db: Session, mapping: TransactionMapping, is_receita: bool) -> Decimal:
+    sharing = None
+    if mapping.expense_sharing_id:
+        sharing = db.query(ExpenseSharingSetting).filter(ExpenseSharingSetting.id == mapping.expense_sharing_id).first()
+    return resolve_ownership_percentage(
+        kind='revenue' if is_receita else 'expense',
+        mapping=mapping,
+        sharing=sharing,
+    )
 
 
 def _guard_closed_account_period(db: Session, tenant_id: int, account_id: int | None, *dates) -> None:
@@ -79,6 +91,7 @@ class TransactionMappingResponse(BaseModel):
     shared_partner_agency: str | None = Field(None, serialization_alias='shared_partner_agency')
     shared_partner_account_number: str | None = Field(None, serialization_alias='shared_partner_account_number')
     my_contribution_percentage: float | None = None
+    revenue_contribution_percentage: float | None = None
     mapping_type: str = 'exact'  # 'exact', 'pattern', 'regex'
     pattern: str | None = None
     regex_pattern: str | None = None
@@ -98,6 +111,7 @@ class TransactionMappingCreate(BaseModel):
     subtag_id: int
     expense_sharing_id: int | None = None
     my_contribution_percentage: float | None = None
+    revenue_contribution_percentage: float | None = None
     mapping_type: str = 'exact'  # 'exact', 'pattern', 'regex'
     pattern: str | None = None
     regex_pattern: str | None = None
@@ -110,6 +124,13 @@ class TransactionMappingCreate(BaseModel):
     def validate_percentage(cls, v):
         if v is not None and (v < 0 or v > 100):
             raise ValueError('Percentual deve estar entre 0 e 100')
+        return v
+
+    @field_validator('revenue_contribution_percentage')
+    @classmethod
+    def validate_revenue_percentage(cls, v):
+        if v is not None and (v < 0 or v > 100):
+            raise ValueError('Percentual de receita deve estar entre 0 e 100')
         return v
 
     @field_validator('priority')
@@ -126,6 +147,7 @@ class TransactionMappingUpdate(BaseModel):
     subtag_id: int | None = None
     expense_sharing_id: int | None = None
     my_contribution_percentage: float | None = None
+    revenue_contribution_percentage: float | None = None
     mapping_type: str | None = None
     pattern: str | None = None
     regex_pattern: str | None = None
@@ -140,14 +162,19 @@ class TransactionMappingUpdate(BaseModel):
             raise ValueError('Percentual deve estar entre 0 e 100')
         return v
 
+    @field_validator('revenue_contribution_percentage')
+    @classmethod
+    def validate_revenue_percentage(cls, v):
+        if v is not None and (v < 0 or v > 100):
+            raise ValueError('Percentual de receita deve estar entre 0 e 100')
+        return v
+
     @field_validator('priority')
     @classmethod
     def validate_priority(cls, v):
         if v is not None and (v < 0 or v > 2):
             raise ValueError('Prioridade deve estar entre 0 (Alta) e 2 (Baixa)')
         return v
-
-    apply_to_existing: bool = False  # Flag para aplicar a registros existentes
 
 
 class TagCreate(BaseModel):
@@ -329,6 +356,7 @@ async def list_mappings(
             shared_partner_agency=str(expense_sharing.shared_account.agency) if expense_sharing and expense_sharing.shared_account and expense_sharing.shared_account.agency else None,
             shared_partner_account_number=str(expense_sharing.shared_account.account_number) if expense_sharing and expense_sharing.shared_account and expense_sharing.shared_account.account_number else None,
             my_contribution_percentage=float(mapping.my_contribution_percentage) if mapping.my_contribution_percentage is not None else None,
+            revenue_contribution_percentage=float(mapping.revenue_contribution_percentage) if mapping.revenue_contribution_percentage is not None else None,
             mapping_type=mapping.mapping_type,
             pattern=mapping.pattern,
             regex_pattern=mapping.regex_pattern,
@@ -519,6 +547,7 @@ async def create_mapping(
         subtag_id=mapping_data.subtag_id,
         expense_sharing_id=mapping_data.expense_sharing_id,
         my_contribution_percentage=mapping_data.my_contribution_percentage,
+        revenue_contribution_percentage=mapping_data.revenue_contribution_percentage,
         mapping_type=mapping_data.mapping_type,
         pattern=pattern_normalized,
         regex_pattern=mapping_data.regex_pattern,
@@ -554,9 +583,16 @@ async def create_mapping(
         }
         if new_mapping.expense_sharing_id is not None:
             update_values['expense_sharing_id'] = new_mapping.expense_sharing_id
-        if new_mapping.my_contribution_percentage is not None:
-            from decimal import Decimal
-            update_values['ownership_percentage'] = Decimal(str(new_mapping.my_contribution_percentage))
+        if new_mapping.expense_sharing_id is not None or new_mapping.my_contribution_percentage is not None or new_mapping.revenue_contribution_percentage is not None:
+            from app.utils.sharing_percentage import resolve_ownership_percentage
+            sharing = None
+            if new_mapping.expense_sharing_id:
+                sharing = db.query(ExpenseSharingSetting).filter(ExpenseSharingSetting.id == new_mapping.expense_sharing_id).first()
+            update_values['ownership_percentage'] = resolve_ownership_percentage(
+                kind='revenue' if is_receita else 'expense',
+                mapping=new_mapping,
+                sharing=sharing,
+            )
 
         if mapping_data.mapping_type == 'exact' and new_mapping.original_description:
             # TIPO EXATO: Comparação direta
@@ -661,6 +697,7 @@ async def create_mapping(
         shared_partner_agency=str(expense_sharing.shared_account.agency) if expense_sharing and expense_sharing.shared_account and expense_sharing.shared_account.agency else None,
         shared_partner_account_number=str(expense_sharing.shared_account.account_number) if expense_sharing and expense_sharing.shared_account and expense_sharing.shared_account.account_number else None,
         my_contribution_percentage=float(new_mapping.my_contribution_percentage) if new_mapping.my_contribution_percentage is not None else None,
+        revenue_contribution_percentage=float(new_mapping.revenue_contribution_percentage) if new_mapping.revenue_contribution_percentage is not None else None,
         mapping_type=new_mapping.mapping_type,
         pattern=new_mapping.pattern,
         regex_pattern=new_mapping.regex_pattern,
@@ -733,6 +770,8 @@ async def create_bulk_mappings(
                 mapped_description=mapping_data.mapped_description,
                 subtag_id=mapping_data.subtag_id,
                 expense_sharing_id=mapping_data.expense_sharing_id,
+                my_contribution_percentage=mapping_data.my_contribution_percentage,
+                revenue_contribution_percentage=mapping_data.revenue_contribution_percentage,
                 mapping_type=mapping_data.mapping_type,
                 pattern=mapping_data.pattern,
                 regex_pattern=mapping_data.regex_pattern,
@@ -776,6 +815,7 @@ class BulkMappingUpdateRequest(BaseModel):
     subtag_id: int | None = None  # None = não alterar
     expense_sharing_id: int | None = None  # None = não alterar, 0 = remover compartilhamento
     my_contribution_percentage: float | None = None  # None = não alterar
+    revenue_contribution_percentage: float | None = None
     update_sharing: bool = False  # Flag para indicar se deve atualizar compartilhamento
 
 
@@ -838,9 +878,11 @@ async def bulk_update_mappings(
                 if request.expense_sharing_id == 0:
                     mapping.expense_sharing_id = None
                     mapping.my_contribution_percentage = None
+                    mapping.revenue_contribution_percentage = None
                 else:
                     mapping.expense_sharing_id = request.expense_sharing_id
                     mapping.my_contribution_percentage = request.my_contribution_percentage
+                    mapping.revenue_contribution_percentage = getattr(request, 'revenue_contribution_percentage', None)
 
             updated += 1
         except Exception as e:
@@ -959,6 +1001,8 @@ async def update_mapping(
     # Atualizar percentual de contribuição (permitir None para usar o padrão) - SÓ se enviado no request
     if 'my_contribution_percentage' in fields_set:
         mapping.my_contribution_percentage = mapping_data.my_contribution_percentage
+    if 'revenue_contribution_percentage' in fields_set:
+        mapping.revenue_contribution_percentage = mapping_data.revenue_contribution_percentage
 
     # Atualizar campos de matching (normalizar pattern para lowercase) - SÓ se enviados no request
     if 'mapping_type' in fields_set and mapping_data.mapping_type is not None:
@@ -994,7 +1038,7 @@ async def update_mapping(
         update_values = {
             'subtag_id': mapping.subtag_id,
             'expense_sharing_id': mapping.expense_sharing_id,
-            'ownership_percentage': mapping.my_contribution_percentage if mapping.my_contribution_percentage is not None else 100.00
+            'ownership_percentage': _mapping_apply_percentage(db, mapping, is_receita)
         }
 
         # Função auxiliar para verificar se o registro é do tipo correto
@@ -1130,8 +1174,9 @@ async def update_mapping(
         shared_partner_bank=expense_sharing.shared_account.bank.name if expense_sharing and expense_sharing.shared_account and expense_sharing.shared_account.bank else None,
         shared_partner_agency=str(expense_sharing.shared_account.agency) if expense_sharing and expense_sharing.shared_account and expense_sharing.shared_account.agency else None,
         shared_partner_account_number=str(expense_sharing.shared_account.account_number) if expense_sharing and expense_sharing.shared_account and expense_sharing.shared_account.account_number else None,
-        my_contribution_percentage=float(mapping.my_contribution_percentage) if mapping.my_contribution_percentage is not None else None,
-        mapping_type=mapping.mapping_type,
+            my_contribution_percentage=float(mapping.my_contribution_percentage) if mapping.my_contribution_percentage is not None else None,
+            revenue_contribution_percentage=float(mapping.revenue_contribution_percentage) if mapping.revenue_contribution_percentage is not None else None,
+            mapping_type=mapping.mapping_type,
         pattern=mapping.pattern,
         regex_pattern=mapping.regex_pattern,
         priority=mapping.priority,
@@ -1233,7 +1278,7 @@ async def remap_single_mapping(
     # 2. O usuário NÃO marcou skip_sharing_if_null (ou seja, quer limpar mesmo)
     if mapping.expense_sharing_id is not None or not options.skip_sharing_if_null:
         update_values['expense_sharing_id'] = mapping.expense_sharing_id
-        update_values['ownership_percentage'] = mapping.my_contribution_percentage if mapping.my_contribution_percentage is not None else 100.00
+        update_values['ownership_percentage'] = _mapping_apply_percentage(db, mapping, is_receita)
 
     # Função auxiliar para verificar se o registro é do tipo correto
     def matches_type(amount) -> bool:
@@ -2276,6 +2321,8 @@ class CreditCardInvoiceUpdate(BaseModel):
     card_number: str | None = None
     shared_partner_id: int | None = None
     ownership_percentage: float | None = None
+    current_installment: int | None = Field(default=None, ge=1)
+    total_installments: int | None = Field(default=None, ge=1)
 
 
 @router.put("/credit-card-invoices/{invoice_id}", status_code=200)
@@ -2297,11 +2344,26 @@ async def update_credit_card_invoice(
     if not invoice:
         raise HTTPException(status_code=404, detail="Fatura não encontrada")
 
+    cur_inst = request.current_installment
+    tot_inst = request.total_installments
+    if (cur_inst is None) != (tot_inst is None):
+        raise HTTPException(
+            status_code=400,
+            detail="Informe parcela atual e total de parcelas, ou deixe ambos vazios",
+        )
+    if cur_inst is not None and tot_inst is not None and cur_inst > tot_inst:
+        raise HTTPException(
+            status_code=400,
+            detail="Parcela atual não pode ser maior que o total de parcelas",
+        )
+
     # Atualiza os campos
     invoice.description = request.description
     invoice.amount = request.amount
     invoice.date = request.date
     invoice.subtag_id = request.subtag_id
+    invoice.current_installment = cur_inst
+    invoice.total_installments = tot_inst
     invoice.expense_sharing_id = request.shared_partner_id
     # Se ownership_percentage for None, usa 100.00 (despesa própria)
     invoice.ownership_percentage = request.ownership_percentage if request.ownership_percentage is not None else 100.00
@@ -2739,6 +2801,392 @@ async def create_manual_transaction(
     )
 
 
+def _resolve_invoice_issuer_for_card(db: Session, tenant_id: int, credit_card_id: int) -> str:
+    """Emissor mais frequente nos lançamentos já importados desse cartão."""
+    row = (
+        db.query(CreditCardInvoice.issuer, func.count().label("cnt"))
+        .filter(
+            CreditCardInvoice.tenant_id == tenant_id,
+            CreditCardInvoice.credit_card_id == credit_card_id,
+        )
+        .group_by(CreditCardInvoice.issuer)
+        .order_by(func.count().desc())
+        .first()
+    )
+    if row and row[0] in ("btg", "mercadopago"):
+        return row[0]
+    return "btg"
+
+
+class ManualCreditCardInvoiceCreate(BaseModel):
+    """Schema para acerto manual em fatura de cartão."""
+
+    credit_card_id: int
+    year_month: str = Field(..., pattern=r"^\d{4}-\d{2}$")
+    date: datetime
+    description: str = Field(..., min_length=1)
+    amount: Decimal
+    subtag_id: int | None = None
+    expense_sharing_id: int | None = None
+    ownership_percentage: Decimal = Decimal("100.00")
+    current_installment: int | None = Field(default=None, ge=1)
+    total_installments: int | None = Field(default=None, ge=1)
+    issuer: str | None = None
+    adjustment_notes: str | None = None
+    create_mapping: bool = False
+
+    @field_validator("year_month")
+    @classmethod
+    def validate_year_month(cls, value: str) -> str:
+        year_str, month_str = value.split("-", 1)
+        month = int(month_str)
+        if month < 1 or month > 12:
+            raise ValueError("Mês inválido em year_month")
+        int(year_str)
+        return value
+
+    @field_validator("issuer")
+    @classmethod
+    def validate_issuer(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        from app.converters.fatura_pdf import normalize_invoice_issuer
+
+        normalized = normalize_invoice_issuer(value)
+        if normalized not in ("btg", "mercadopago"):
+            raise ValueError("Emissor inválido")
+        return normalized
+
+
+class ManualCreditCardInvoiceResponse(BaseModel):
+    success: bool
+    invoice_id: int
+    mapping_created: bool
+    message: str
+
+
+@router.post(
+    "/credit-card-invoices/manual",
+    response_model=ManualCreditCardInvoiceResponse,
+    status_code=201,
+)
+async def create_manual_credit_card_invoice(
+    request: ManualCreditCardInvoiceCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    """
+    Cria um lançamento manual na fatura de um cartão (acerto), com os mesmos campos
+    persistidos na importação: valor, tag/subtag, compartilhamento e parcelas.
+    """
+    tenant_id = current_user.get("tenant_id", 1)
+    account_id = current_user.get("account_id")
+    user_id = current_user.get("user_id") or current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Usuário inválido no token")
+
+    cur_inst = request.current_installment
+    tot_inst = request.total_installments
+    if (cur_inst is None) != (tot_inst is None):
+        raise HTTPException(
+            status_code=400,
+            detail="Informe parcela atual e total de parcelas, ou deixe ambos vazios",
+        )
+    if cur_inst is not None and tot_inst is not None and cur_inst > tot_inst:
+        raise HTTPException(
+            status_code=400,
+            detail="Parcela atual não pode ser maior que o total de parcelas",
+        )
+
+    cartao = (
+        db.query(Cartao)
+        .filter(
+            Cartao.id == request.credit_card_id,
+            Cartao.tenant_id == tenant_id,
+            Cartao.account_id == account_id,
+            Cartao.active == True,
+        )
+        .first()
+    )
+    if not cartao:
+        raise HTTPException(status_code=404, detail="Cartão não encontrado")
+    if cartao.type != "credito":
+        raise HTTPException(
+            status_code=400,
+            detail="Acertos manuais de fatura só se aplicam a cartões de crédito",
+        )
+
+    if request.subtag_id:
+        subtag = (
+            db.query(Subtag)
+            .filter(Subtag.id == request.subtag_id, Subtag.tenant_id == tenant_id)
+            .first()
+        )
+        if not subtag:
+            raise HTTPException(status_code=404, detail="Subtag não encontrada")
+        tipo_esperado = "receita" if request.amount >= 0 else "despesa"
+        if subtag.type != tipo_esperado:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Subtag do tipo '{subtag.type}' não pode ser usada para {tipo_esperado}. "
+                    f"Valor: {request.amount}"
+                ),
+            )
+
+    if request.expense_sharing_id:
+        expense_sharing = (
+            db.query(ExpenseSharingSetting)
+            .filter(
+                ExpenseSharingSetting.id == request.expense_sharing_id,
+                ExpenseSharingSetting.tenant_id == tenant_id,
+                ExpenseSharingSetting.active == True,
+            )
+            .first()
+        )
+        if not expense_sharing:
+            raise HTTPException(status_code=404, detail="Compartilhamento não encontrado")
+
+    if request.ownership_percentage < 0 or request.ownership_percentage > 100:
+        raise HTTPException(
+            status_code=400,
+            detail="Percentual de propriedade deve estar entre 0 e 100",
+        )
+
+    description = request.description.strip()
+    if not description:
+        raise HTTPException(status_code=400, detail="Descrição é obrigatória")
+
+    notes = (request.adjustment_notes or "").strip() or "Acerto manual"
+
+    if request.issuer:
+        issuer = request.issuer
+    else:
+        issuer = _resolve_invoice_issuer_for_card(db, tenant_id, cartao.id)
+
+    new_invoice = CreditCardInvoice(
+        tenant_id=tenant_id,
+        created_by=int(user_id),
+        account_id=cartao.account_id or account_id,
+        credit_card_id=cartao.id,
+        year_month=request.year_month,
+        date=request.date,
+        description=description,
+        amount=request.amount,
+        current_installment=cur_inst,
+        total_installments=tot_inst,
+        subtag_id=request.subtag_id,
+        expense_sharing_id=request.expense_sharing_id,
+        ownership_percentage=request.ownership_percentage,
+        adjustment_notes=notes,
+        issuer=issuer,
+    )
+    db.add(new_invoice)
+    db.flush()
+
+    mapping_created = False
+    if request.create_mapping and request.subtag_id and account_id:
+        existing_mapping = (
+            db.query(TransactionMapping)
+            .filter(
+                TransactionMapping.tenant_id == tenant_id,
+                TransactionMapping.account_id == account_id,
+                TransactionMapping.mapping_type == "exact",
+                func.lower(TransactionMapping.original_description) == description.lower(),
+            )
+            .first()
+        )
+        if not existing_mapping:
+            db.add(
+                TransactionMapping(
+                    tenant_id=tenant_id,
+                    account_id=account_id,
+                    created_by=int(user_id),
+                    mapping_type="exact",
+                    original_description=description.lower(),
+                    mapped_description=None,
+                    subtag_id=request.subtag_id,
+                    expense_sharing_id=request.expense_sharing_id,
+                    priority=0,
+                    is_sensitive=False,
+                )
+            )
+            mapping_created = True
+
+    db.commit()
+
+    message = "Lançamento adicionado à fatura com sucesso!"
+    if mapping_created:
+        message += " Mapeamento automático criado."
+
+    return ManualCreditCardInvoiceResponse(
+        success=True,
+        invoice_id=new_invoice.id,
+        mapping_created=mapping_created,
+        message=message,
+    )
+
+
+class ManualBenefitStatementCreate(BaseModel):
+    """Schema para criação de lançamento manual em cartão de benefícios."""
+    credit_card_id: int
+    date: datetime
+    description: str
+    amount: Decimal
+    subtag_id: int | None = None
+    expense_sharing_id: int | None = None
+    ownership_percentage: Decimal = Decimal("100.00")
+    adjustment_notes: str | None = None
+    create_mapping: bool = False
+    payment_method: str | None = "Manual"
+
+
+class ManualBenefitStatementResponse(BaseModel):
+    success: bool
+    statement_id: int
+    mapping_created: bool
+    message: str
+
+
+@router.post(
+    "/benefit-card-statements/manual",
+    response_model=ManualBenefitStatementResponse,
+    status_code=201,
+)
+async def create_manual_benefit_statement(
+    request: ManualBenefitStatementCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    """Cria um lançamento manual em extrato de cartão de benefícios."""
+    tenant_id = current_user.get("tenant_id", 1)
+    account_id = current_user.get("account_id")
+    user_id = current_user.get("user_id") or current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Usuário inválido no token")
+
+    cartao = (
+        db.query(Cartao)
+        .filter(
+            Cartao.id == request.credit_card_id,
+            Cartao.tenant_id == tenant_id,
+            Cartao.account_id == account_id,
+            Cartao.active == True,
+        )
+        .first()
+    )
+    if not cartao:
+        raise HTTPException(status_code=404, detail="Cartão não encontrado")
+    if cartao.type != "beneficios":
+        raise HTTPException(
+            status_code=400,
+            detail="Lançamento manual de benefício exige cartão do tipo 'beneficios'",
+        )
+
+    if request.subtag_id:
+        subtag = (
+            db.query(Subtag)
+            .filter(Subtag.id == request.subtag_id, Subtag.tenant_id == tenant_id)
+            .first()
+        )
+        if not subtag:
+            raise HTTPException(status_code=404, detail="Subtag não encontrada")
+        tipo_esperado = "receita" if request.amount >= 0 else "despesa"
+        if subtag.type != tipo_esperado:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Subtag do tipo '{subtag.type}' não pode ser usada para {tipo_esperado}. "
+                    f"Valor: {request.amount}"
+                ),
+            )
+
+    if request.expense_sharing_id:
+        expense_sharing = (
+            db.query(ExpenseSharingSetting)
+            .filter(
+                ExpenseSharingSetting.id == request.expense_sharing_id,
+                ExpenseSharingSetting.tenant_id == tenant_id,
+                ExpenseSharingSetting.active == True,
+            )
+            .first()
+        )
+        if not expense_sharing:
+            raise HTTPException(status_code=404, detail="Compartilhamento não encontrado")
+
+    if request.ownership_percentage < 0 or request.ownership_percentage > 100:
+        raise HTTPException(
+            status_code=400,
+            detail="Percentual de propriedade deve estar entre 0 e 100",
+        )
+
+    description = request.description.strip()
+    if not description:
+        raise HTTPException(status_code=400, detail="Descrição é obrigatória")
+
+    card_account_id = cartao.account_id or account_id
+    _guard_closed_account_period(db, tenant_id, card_account_id, request.date)
+
+    new_statement = BenefitCardStatement(
+        tenant_id=tenant_id,
+        created_by=int(user_id),
+        credit_card_id=cartao.id,
+        account_id=card_account_id,
+        date=request.date,
+        description=description,
+        amount=request.amount,
+        payment_method=(request.payment_method or "Manual").strip() or "Manual",
+        subtag_id=request.subtag_id,
+        expense_sharing_id=request.expense_sharing_id,
+        ownership_percentage=request.ownership_percentage,
+        adjustment_notes=request.adjustment_notes,
+    )
+    db.add(new_statement)
+    db.flush()
+
+    mapping_created = False
+    if request.create_mapping and request.subtag_id and account_id:
+        existing_mapping = (
+            db.query(TransactionMapping)
+            .filter(
+                TransactionMapping.tenant_id == tenant_id,
+                TransactionMapping.account_id == account_id,
+                TransactionMapping.mapping_type == "exact",
+                func.lower(TransactionMapping.original_description) == description.lower(),
+            )
+            .first()
+        )
+        if not existing_mapping:
+            db.add(
+                TransactionMapping(
+                    tenant_id=tenant_id,
+                    account_id=account_id,
+                    created_by=int(user_id),
+                    mapping_type="exact",
+                    original_description=description.lower(),
+                    mapped_description=None,
+                    subtag_id=request.subtag_id,
+                    expense_sharing_id=request.expense_sharing_id,
+                    priority=0,
+                    is_sensitive=False,
+                )
+            )
+            mapping_created = True
+
+    db.commit()
+
+    message = "Lançamento de benefício criado com sucesso!"
+    if mapping_created:
+        message += " Mapeamento automático criado."
+
+    return ManualBenefitStatementResponse(
+        success=True,
+        statement_id=new_statement.id,
+        mapping_created=mapping_created,
+        message=message,
+    )
+
+
 # ==================== BATCH UPDATE ====================
 
 class BatchUpdateItem(BaseModel):
@@ -2754,6 +3202,7 @@ class BatchUpdateRequest(BaseModel):
     expense_sharing_id: int | None = None  # None = não alterar, 0 = limpar (próprio), >0 = compartilhado
     ownership_percentage: float | None = None
     clear_subtag: bool = False  # Flag explícita para limpar subtag
+    target_credit_card_id: int | None = None  # Lançamentos de fatura: mover para outro cartão no mesmo ciclo
 
 
 class BatchUpdateResponse(BaseModel):
@@ -2778,6 +3227,70 @@ async def batch_update_expenses(
     if not request.items:
         raise HTTPException(status_code=400, detail="Nenhum item para atualizar")
 
+    # Separar itens por fonte (usado também na movimentação entre cartões)
+    bank_ids = [item.id for item in request.items if item.source == 'bank']
+    card_ids = [item.id for item in request.items if item.source == 'card']
+    benefit_ids = [item.id for item in request.items if item.source == 'benefit']
+
+    if request.target_credit_card_id is not None:
+        if bank_ids or benefit_ids or not card_ids:
+            raise HTTPException(
+                status_code=400,
+                detail="Mover cartão só se aplica a lançamentos de fatura de cartão",
+            )
+        if len(card_ids) != len(request.items):
+            raise HTTPException(
+                status_code=400,
+                detail="Todos os itens selecionados devem ser lançamentos de fatura",
+            )
+
+        target_card = db.query(Cartao).filter(
+            Cartao.id == request.target_credit_card_id,
+            Cartao.tenant_id == tenant_id,
+        ).first()
+        if not target_card:
+            raise HTTPException(status_code=404, detail="Cartão de destino não encontrado")
+
+        invoices = db.query(CreditCardInvoice).filter(
+            CreditCardInvoice.id.in_(card_ids),
+            CreditCardInvoice.tenant_id == tenant_id,
+        ).all()
+        if len(invoices) != len(card_ids):
+            raise HTTPException(status_code=404, detail="Um ou mais lançamentos não foram encontrados")
+
+        year_months = {inv.year_month for inv in invoices}
+        if len(year_months) != 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Todos os itens devem pertencer à mesma fatura (mesmo mês)",
+            )
+        year_month = next(iter(year_months))
+
+        target_in_cycle = db.query(CreditCardInvoice.id).filter(
+            CreditCardInvoice.credit_card_id == request.target_credit_card_id,
+            CreditCardInvoice.year_month == year_month,
+            CreditCardInvoice.tenant_id == tenant_id,
+        ).first()
+        if not target_in_cycle:
+            raise HTTPException(
+                status_code=400,
+                detail="O cartão de destino não possui lançamentos nesta fatura",
+            )
+
+        moved = db.query(CreditCardInvoice).filter(
+            CreditCardInvoice.id.in_(card_ids),
+            CreditCardInvoice.tenant_id == tenant_id,
+        ).update(
+            {"credit_card_id": request.target_credit_card_id},
+            synchronize_session=False,
+        )
+        db.commit()
+        return BatchUpdateResponse(
+            success=True,
+            updated_count=moved,
+            message=f"{moved} lançamento(s) movido(s) para o cartão selecionado",
+        )
+
     # Verificar se subtag existe (se fornecida)
     if request.subtag_id is not None:
         subtag = db.query(Subtag).filter(
@@ -2799,11 +3312,6 @@ async def batch_update_expenses(
             raise HTTPException(status_code=404, detail="Parceiro de compartilhamento não encontrado")
 
     updated_count = 0
-
-    # Separar itens por fonte
-    bank_ids = [item.id for item in request.items if item.source == 'bank']
-    card_ids = [item.id for item in request.items if item.source == 'card']
-    benefit_ids = [item.id for item in request.items if item.source == 'benefit']
 
     # Construir campos para atualização
     update_fields = {}

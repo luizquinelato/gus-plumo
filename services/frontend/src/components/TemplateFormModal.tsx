@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react'
 import { Plus, Trash2, GripVertical, ArrowDownCircle, ArrowUpCircle, FileText } from 'lucide-react'
 import axios from 'axios'
 import IconPicker from './IconPicker'
-import { formatSharedAccountDisplay } from '../utils/accountFormatter'
+import { sharingPartnerLabel, sharingPercentForKind } from '../utils/accountFormatter'
 import { useAlert } from '../hooks/useAlert'
 import type { ExpenseTemplate, ExpenseTemplateCreate, ExpenseTemplateUpdate } from '../types/expenseTemplate'
+import OwnershipPercentField from './OwnershipPercentField'
+import { maskPercentInput, finalizePercentInput } from '../utils/percentInput'
 import {
   CadastroModalShell,
   CadastroModalHeader,
@@ -569,43 +571,20 @@ const TemplateFormModal = ({ isOpen, onClose, onSuccess, template, availableIcon
                             </select>
                           </div>
 
-                          {/* % (Ownership Percentage) */}
                           <div>
-                            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                              Minha %
-                            </label>
-                            <input
-                              type="text"
-                              inputMode="decimal"
+                            <OwnershipPercentField
+                              compact
+                              context="transaction"
                               value={item.ownership_percentage}
-                              onChange={(e) => {
-                                const value = e.target.value
-                                if (value === '') {
-                                  updateItem(index, 'ownership_percentage', '')
-                                  return
-                                }
-                                const sanitized = value.replace(',', '.')
-                                if (/^\d{0,3}(\.\d{0,2})?$/.test(sanitized)) {
-                                  const numValue = parseFloat(sanitized)
-                                  if (!isNaN(numValue) && numValue >= 0 && numValue <= 100) {
-                                    updateItem(index, 'ownership_percentage', sanitized)
-                                  } else if (sanitized.endsWith('.') || sanitized.match(/^\d+\.$/)) {
-                                    updateItem(index, 'ownership_percentage', sanitized)
-                                  }
-                                }
+                              onChange={(raw) => updateItem(index, 'ownership_percentage', maskPercentInput(raw))}
+                              onBlur={() => {
+                                const v = finalizePercentInput(item.ownership_percentage)
+                                updateItem(
+                                  index,
+                                  'ownership_percentage',
+                                  v ? parseFloat(v).toFixed(2) : '100.00',
+                                )
                               }}
-                              onBlur={(e) => {
-                                const value = e.target.value
-                                if (value) {
-                                  const numValue = parseFloat(value)
-                                  if (!isNaN(numValue)) {
-                                    updateItem(index, 'ownership_percentage', numValue.toFixed(2))
-                                  }
-                                } else {
-                                  updateItem(index, 'ownership_percentage', '100.00')
-                                }
-                              }}
-                              className={cadastroFieldCls}
                               placeholder="100"
                             />
                           </div>
@@ -626,7 +605,12 @@ const TemplateFormModal = ({ isOpen, onClose, onSuccess, template, availableIcon
                                   updated[index] = {
                                     ...updated[index],
                                     expense_sharing_id: sharingId,
-                                    ownership_percentage: sharing ? sharing.my_contribution_percentage.toString() : '100.00'
+                                    ownership_percentage: sharing
+                                      ? sharingPercentForKind(
+                                          sharing,
+                                          updated[index].type === 'receita' ? 'revenue' : 'expense'
+                                        ).toString()
+                                      : '100.00'
                                   }
                                 } else {
                                   updated[index] = {
@@ -643,7 +627,7 @@ const TemplateFormModal = ({ isOpen, onClose, onSuccess, template, availableIcon
                               <option value="">Sem</option>
                               {sharings.map(sharing => (
                                 <option key={sharing.id} value={sharing.id}>
-                                {formatSharedAccountDisplay(sharing.shared_account, sharing.my_contribution_percentage)}
+                                {sharingPartnerLabel(sharing)}
                               </option>
                             ))}
                           </select>

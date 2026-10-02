@@ -21,7 +21,7 @@ import {
 } from '../components/CadastroFormLayout'
 import LoadingSpinner from '../components/LoadingSpinner'
 import Toast from '../components/Toast'
-import BrazilianDatePicker from '../components/BrazilianDatePicker'
+import { DateField } from '../components/date'
 import { parseLocalDate } from '../utils/dateUtils'
 import { Wallet, Plus, Edit2, Trash2, ChevronDown, ChevronRight, Search, X, Filter, Calendar, TrendingUp, TrendingDown, CheckCircle, Check, Clock, AlertTriangle, Percent, DollarSign, ArrowUp, ArrowDown, Building2, UserX, Link2, Lock, HelpCircle } from 'lucide-react'
 import { useConfirm } from '../hooks/useConfirm'
@@ -1420,7 +1420,7 @@ export default function EmprestimosPage() {
                       </label>
                       <label className={`block min-w-0 ${editingSettled ? 'pointer-events-none opacity-50' : ''}`}>
                         <CadastroFieldLabel required>Data</CadastroFieldLabel>
-                        <BrazilianDatePicker
+                        <DateField
                           value={formLoanDate}
                           onChange={setFormLoanDate}
                           disabled={editingSettled}
@@ -1496,7 +1496,7 @@ export default function EmprestimosPage() {
                     <CadastroModalFieldsRow>
                       <label className={`block min-w-0 ${editingSettled ? 'pointer-events-none opacity-50' : ''}`}>
                         <CadastroFieldLabel>Vencimento</CadastroFieldLabel>
-                        <BrazilianDatePicker
+                        <DateField
                           value={formDueDate}
                           onChange={setFormDueDate}
                           minDate={formLoanDate ? parseLocalDate(formLoanDate) ?? undefined : undefined}
@@ -1617,7 +1617,7 @@ export default function EmprestimosPage() {
                       </label>
                       <label className="block min-w-0">
                         <CadastroFieldLabel required>Data</CadastroFieldLabel>
-                        <BrazilianDatePicker
+                        <DateField
                           value={paymentDate}
                           onChange={setPaymentDate}
                           maxDate={new Date()}

@@ -1,4 +1,4 @@
-import { useState, useEffect, Fragment } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
 import {
@@ -13,8 +13,12 @@ import {
   cadastroRowIconDangerCls,
   listPageTableRowHoverCls,
 } from '../components/CadastroListPageLayout'
-import { ListPageExpandRow, ListPageNestedTable, ListPageTable } from '../components/ListPageTable'
+import FloatingFooterBar from '../components/FloatingFooterBar'
+import BulkSelectCheckbox, { type HeaderCheckState } from '../components/BulkSelectCheckbox'
+import { ListPageExpandRow, ListPageTable } from '../components/ListPageTable'
 import {
+  ListTableCheckboxCell,
+  ListTableCheckboxHeader,
   ListTableIndexCell,
   ListTableIndexHeader,
   ListTableSpacerCell,
@@ -40,9 +44,11 @@ import { badgeVariantForColumnRole } from '../utils/badgeSurfaces'
 import IconPicker from '../components/IconPicker'
 import Toast from '../components/Toast'
 import {
-  Plus, Edit2, Trash2, Tag, ChevronDown, ChevronRight
+  Plus, Edit2, Trash2, Tag, ChevronDown, ChevronRight, ArrowDownCircle, ArrowUpCircle, ArrowUp, X,
+  ChevronsDown, ChevronsUp,
 } from 'lucide-react'
 import { getIconComponent } from '../utils/iconMapper'
+import { selectionHeaderState } from '../utils/listTableSelection'
 import { useConfirm } from '../hooks/useConfirm'
 
 // Interfaces
@@ -77,6 +83,107 @@ interface ToastState {
   type: 'success' | 'error' | 'warning'
 }
 
+const TAG_TABLE_COL_SPAN = 7
+
+function SubtagAreaCard({
+  kind,
+  rows,
+  tagId,
+  selectedSubtagIds,
+  onToggleSubtag,
+  onToggleAllInColumn,
+  columnSelectState,
+  onCreate,
+  onEdit,
+  onDelete,
+}: {
+  kind: 'despesa' | 'receita'
+  rows: SubtagItem[]
+  tagId: number
+  selectedSubtagIds: Set<number>
+  onToggleSubtag: (subtagId: number) => void
+  onToggleAllInColumn: (tagId: number, kind: 'despesa' | 'receita') => void
+  columnSelectState: HeaderCheckState
+  onCreate: (tagId: number, type: 'despesa' | 'receita') => void
+  onEdit: (subtag: SubtagItem) => void
+  onDelete: (id: number) => void
+}) {
+  const title = kind === 'despesa' ? 'Despesas' : 'Receitas'
+  const toneCls =
+    kind === 'despesa' ? 'text-[var(--color-danger)]' : 'text-[var(--color-success)]'
+  const Icon = kind === 'despesa' ? ArrowDownCircle : ArrowUpCircle
+
+  return (
+    <div className="min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-colors hover:border-[color-mix(in_srgb,var(--color-1)_35%,#d1d5db)] dark:border-gray-700 dark:bg-gray-800 dark:hover:border-[color-mix(in_srgb,var(--color-1)_40%,#4b5563)]">
+      <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-4 py-3 dark:border-gray-700">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          {rows.length > 0 && (
+            <BulkSelectCheckbox
+              state={columnSelectState}
+              onClick={() => onToggleAllInColumn(tagId, kind)}
+              title={`Selecionar subtags de ${kind}`}
+            />
+          )}
+          <h4 className={`flex min-w-0 items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider ${toneCls}`}>
+            <Icon size={14} className="shrink-0" />
+            <span className="truncate">{title}</span>
+            <span className="font-normal normal-case text-gray-500 dark:text-gray-400">({rows.length})</span>
+          </h4>
+        </div>
+        <button
+          type="button"
+          onClick={() => onCreate(tagId, kind)}
+          className={cadastroRowIconBtnCls}
+          title={`Nova subtag de ${kind}`}
+        >
+          <Plus size={14} />
+        </button>
+      </div>
+      {rows.length === 0 ? (
+        <p className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">Nenhuma subtag</p>
+      ) : (
+        <ul className="divide-y divide-gray-100 dark:divide-gray-700">
+          {rows.map((subtag) => {
+            const SubIcon = getIconComponent(subtag.icon || 'Tags')
+            return (
+              <li
+                key={subtag.id}
+                className={`group flex items-center gap-2 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700/40 ${
+                  selectedSubtagIds.has(subtag.id) ? 'bg-[color-mix(in_srgb,var(--color-1)_6%,transparent)]' : ''
+                }`}
+                title={subtag.description || undefined}
+              >
+                <BulkSelectCheckbox
+                  checked={selectedSubtagIds.has(subtag.id)}
+                  onClick={() => onToggleSubtag(subtag.id)}
+                />
+                <SubIcon size={14} className={`shrink-0 ${toneCls}`} />
+                <span
+                  className={`min-w-0 flex-1 truncate text-sm font-medium ${
+                    subtag.active
+                      ? 'text-gray-900 dark:text-gray-100'
+                      : 'text-gray-500 dark:text-gray-400'
+                  }`}
+                >
+                  {subtag.name}
+                </span>
+                <div className="flex shrink-0 items-center">
+                  <button type="button" onClick={() => onEdit(subtag)} className={cadastroRowIconBtnCls} title="Editar">
+                    <Edit2 size={13} />
+                  </button>
+                  <button type="button" onClick={() => onDelete(subtag.id)} className={cadastroRowIconDangerCls} title="Excluir">
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 const TagsSubtagsPage = () => {
   const { showConfirm, ConfirmComponent } = useConfirm()
 
@@ -93,6 +200,11 @@ const TagsSubtagsPage = () => {
 
   // Estados de expansão
   const [expandedTags, setExpandedTags] = useState<Set<number>>(new Set())
+  const [selectedTagIds, setSelectedTagIds] = useState<Set<number>>(() => new Set())
+  const [selectedSubtagIds, setSelectedSubtagIds] = useState<Set<number>>(() => new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [showBackToTop, setShowBackToTop] = useState(false)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   
   // Estados de modais
   const [showTagModal, setShowTagModal] = useState(false)
@@ -124,6 +236,24 @@ const TagsSubtagsPage = () => {
   useEffect(() => {
     loadAllData()
   }, [])
+
+  const scrollToTop = useCallback(() => {
+    setShowBackToTop(false)
+    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [])
+
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    const handleScroll = () => {
+      setShowBackToTop(container.scrollTop > 300)
+    }
+
+    handleScroll()
+    container.addEventListener('scroll', handleScroll)
+    return () => container.removeEventListener('scroll', handleScroll)
+  }, [isLoading, hierarchicalData.length, searchTerm])
 
   const loadAllData = async () => {
     try {
@@ -198,15 +328,6 @@ const TagsSubtagsPage = () => {
       newExpanded.add(tagId)
     }
     setExpandedTags(newExpanded)
-  }
-
-  const expandAll = () => {
-    const allTagIds = hierarchicalData.map(h => h.tag.id)
-    setExpandedTags(new Set(allTagIds))
-  }
-
-  const collapseAll = () => {
-    setExpandedTags(new Set())
   }
 
   // Funções CRUD para Tags
@@ -322,10 +443,10 @@ const TagsSubtagsPage = () => {
   }
 
   // Funções CRUD para Subtags
-  const handleCreateSubtag = (tagId: number) => {
+  const handleCreateSubtag = (tagId: number, type: 'despesa' | 'receita' = 'despesa') => {
     setEditingSubtag(null)
     setContextTagId(tagId)
-    setSubtagFormData({ tag_id: tagId, name: '', description: '', type: 'despesa', icon: 'Tags' })
+    setSubtagFormData({ tag_id: tagId, name: '', description: '', type, icon: 'Tags' })
     setShowSubtagModal(true)
   }
 
@@ -420,46 +541,216 @@ const TagsSubtagsPage = () => {
     return tagMatch || subtagMatch
   })
 
+  const expandAllTags = useCallback(() => {
+    setExpandedTags(new Set(filteredData.map((item) => item.tag.id)))
+  }, [filteredData])
+
+  const collapseAllTags = useCallback(() => {
+    setExpandedTags(new Set())
+  }, [])
+
+  const allVisibleTagsExpanded = useMemo(
+    () =>
+      filteredData.length > 0 &&
+      filteredData.every((item) => expandedTags.has(item.tag.id)),
+    [filteredData, expandedTags],
+  )
+
+  const toggleExpandAllTags = useCallback(() => {
+    if (allVisibleTagsExpanded) collapseAllTags()
+    else expandAllTags()
+  }, [allVisibleTagsExpanded, collapseAllTags, expandAllTags])
+
+  const visibleTagIds = useMemo(() => filteredData.map((item) => item.tag.id), [filteredData])
+  const visibleSubtagIds = useMemo(
+    () => filteredData.flatMap((item) => item.subtags.map((st) => st.id)),
+    [filteredData],
+  )
+  const visibleBulkKeys = useMemo(
+    () => [...visibleTagIds, ...visibleSubtagIds],
+    [visibleTagIds, visibleSubtagIds],
+  )
+
+  const globalHeaderState = useMemo((): HeaderCheckState => {
+    let selectedCount = 0
+    for (const tagId of visibleTagIds) {
+      if (selectedTagIds.has(tagId)) selectedCount += 1
+    }
+    for (const subtagId of visibleSubtagIds) {
+      if (selectedSubtagIds.has(subtagId)) selectedCount += 1
+    }
+    if (selectedCount === 0) return 'none'
+    if (selectedCount === visibleBulkKeys.length) return 'all'
+    return 'partial'
+  }, [visibleTagIds, visibleSubtagIds, visibleBulkKeys.length, selectedTagIds, selectedSubtagIds])
+
+  const bulkSelectionCount = useMemo(() => {
+    let count = selectedTagIds.size
+    for (const item of hierarchicalData) {
+      if (selectedTagIds.has(item.tag.id)) continue
+      for (const st of item.subtags) {
+        if (selectedSubtagIds.has(st.id)) count += 1
+      }
+    }
+    return count
+  }, [hierarchicalData, selectedTagIds, selectedSubtagIds])
+
+  const toggleGlobalSelection = useCallback(() => {
+    const anySelected =
+      visibleTagIds.some((id) => selectedTagIds.has(id)) ||
+      visibleSubtagIds.some((id) => selectedSubtagIds.has(id))
+    setSelectedTagIds((prev) => {
+      const next = new Set(prev)
+      if (anySelected) visibleTagIds.forEach((id) => next.delete(id))
+      else visibleTagIds.forEach((id) => next.add(id))
+      return next
+    })
+    setSelectedSubtagIds((prev) => {
+      const next = new Set(prev)
+      if (anySelected) visibleSubtagIds.forEach((id) => next.delete(id))
+      else visibleSubtagIds.forEach((id) => next.add(id))
+      return next
+    })
+  }, [visibleTagIds, visibleSubtagIds, selectedTagIds, selectedSubtagIds])
+
+  const toggleTagSelection = useCallback((tagId: number) => {
+    setSelectedTagIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(tagId)) next.delete(tagId)
+      else next.add(tagId)
+      return next
+    })
+  }, [])
+
+  const toggleSubtagSelection = useCallback((subtagId: number) => {
+    setSelectedSubtagIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(subtagId)) next.delete(subtagId)
+      else next.add(subtagId)
+      return next
+    })
+  }, [])
+
+  const toggleAllSubtagsForTag = useCallback(
+    (tagId: number) => {
+      const item = hierarchicalData.find((row) => row.tag.id === tagId)
+      if (!item) return
+      const ids = item.subtags.map((st) => st.id)
+      const state = selectionHeaderState(ids, selectedSubtagIds)
+      setSelectedSubtagIds((prev) => {
+        const next = new Set(prev)
+        if (state === 'all') ids.forEach((id) => next.delete(id))
+        else ids.forEach((id) => next.add(id))
+        return next
+      })
+    },
+    [hierarchicalData, selectedSubtagIds],
+  )
+
+  const toggleSubtagsInColumn = useCallback(
+    (tagId: number, kind: 'despesa' | 'receita') => {
+      const item = hierarchicalData.find((row) => row.tag.id === tagId)
+      if (!item) return
+      const ids = item.subtags.filter((st) => st.type === kind).map((st) => st.id)
+      const state = selectionHeaderState(ids, selectedSubtagIds)
+      setSelectedSubtagIds((prev) => {
+        const next = new Set(prev)
+        if (state === 'all') ids.forEach((id) => next.delete(id))
+        else ids.forEach((id) => next.add(id))
+        return next
+      })
+    },
+    [hierarchicalData, selectedSubtagIds],
+  )
+
+  const clearBulkSelection = useCallback(() => {
+    setSelectedTagIds(new Set())
+    setSelectedSubtagIds(new Set())
+  }, [])
+
+  const handleBulkDelete = async () => {
+    const tagIds = [...selectedTagIds]
+    const subtagIds = [...selectedSubtagIds].filter((subtagId) => {
+      const row = hierarchicalData.find((item) => item.subtags.some((st) => st.id === subtagId))
+      return row ? !selectedTagIds.has(row.tag.id) : true
+    })
+    if (tagIds.length === 0 && subtagIds.length === 0) return
+
+    const parts: string[] = []
+    if (tagIds.length > 0) {
+      parts.push(`${tagIds.length} tag${tagIds.length === 1 ? '' : 's'} (e subtags vinculadas)`)
+    }
+    if (subtagIds.length > 0) {
+      parts.push(`${subtagIds.length} subtag${subtagIds.length === 1 ? '' : 's'}`)
+    }
+
+    showConfirm(
+      'Excluir seleção',
+      `Excluir ${parts.join(' e ')}?\n\nRegistros associados serão migrados para "Pendente" quando aplicável.`,
+      async () => {
+        setBulkDeleting(true)
+        try {
+          for (const tagId of tagIds) {
+            await axios.delete(`/api/expenses/tags/${tagId}/force`)
+          }
+          for (const subtagId of subtagIds) {
+            await axios.delete(`/api/expenses/subtags/${subtagId}/force`)
+          }
+          clearBulkSelection()
+          await loadAllData()
+          showToast('Seleção excluída com sucesso.', 'success')
+        } catch (error: unknown) {
+          console.error('Erro na exclusão em massa:', error)
+          const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+          showToast(typeof detail === 'string' ? detail : 'Não foi possível excluir a seleção.', 'error')
+        } finally {
+          setBulkDeleting(false)
+        }
+      },
+      'Excluir',
+      'Cancelar',
+    )
+  }
+
   return (
     <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900">
       <Sidebar />
 
       <CadastroListPageShell>
         <CadastroListPageBody
+          scrollRef={scrollContainerRef}
           header={
             <CadastroListPageHero
               icon={<Tag className="w-8 h-8" />}
               title="Tags e Subtags"
               subtitle="Gerencie suas tags e subtags de categorização"
-              actions={
-                <>
-                  <button
-                    type="button"
-                    onClick={expandAll}
-                    className="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
-                  >
-                    Expandir Tudo
-                  </button>
-                  <button
-                    type="button"
-                    onClick={collapseAll}
-                    className="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
-                  >
-                    Recolher Tudo
-                  </button>
-                  <CadastroListCreateButton label="Nova Tag" onClick={handleCreateTag} />
-                </>
-              }
+              actions={<CadastroListCreateButton label="Nova Tag" onClick={handleCreateTag} />}
             />
           }
           tabs={
             hierarchicalData.length > 0 ? (
-              <div className="w-full max-w-md">
-                <CadastroListPageSearchField
-                  value={searchTerm}
-                  onChange={setSearchTerm}
-                  placeholder="Buscar tags ou subtags…"
-                />
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={toggleExpandAllTags}
+                  disabled={filteredData.length === 0}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                  title={
+                    allVisibleTagsExpanded
+                      ? 'Recolher subtags de todas as tags visíveis'
+                      : 'Expandir subtags de todas as tags visíveis'
+                  }
+                >
+                  {allVisibleTagsExpanded ? <ChevronsUp size={16} /> : <ChevronsDown size={16} />}
+                  {allVisibleTagsExpanded ? 'Recolher todas' : 'Expandir todas'}
+                </button>
+                <div className="min-w-0 flex-1">
+                  <CadastroListPageSearchField
+                    value={searchTerm}
+                    onChange={setSearchTerm}
+                    placeholder="Buscar tags ou subtags…"
+                  />
+                </div>
               </div>
             ) : undefined
           }
@@ -481,15 +772,25 @@ const TagsSubtagsPage = () => {
             />
           ) : (
             <ListPageTable
-              colsRest={<ListTableSpacerCol />}
+              leadingMode="bulk"
+              colsRest={
+                <>
+                  <ListTableSpacerCol />
+                  <col />
+                  <col />
+                  <col style={{ width: 112, minWidth: 100 }} />
+                  <col style={{ width: 96, minWidth: 96 }} />
+                </>
+              }
               head={
                 <tr>
+                  <ListTableCheckboxHeader state={globalHeaderState} onToggle={toggleGlobalSelection} />
                   <ListTableIndexHeader />
                   <ListTableSpacerHeader />
-                  <ListTableStaticHeader label="Tag" className="w-[28%]" />
-                  <ListTableStaticHeader label="Descrição" className="w-[36%]" />
-                  <ListTableStaticHeader label="Subtags" className="w-[12%]" />
-                  <ListTableStaticHeader label="Ações" className="w-[14%]" />
+                  <ListTableStaticHeader label="Tag" />
+                  <ListTableStaticHeader label="Descrição" />
+                  <ListTableStaticHeader label="Subtags" />
+                  <ListTableStaticHeader label="Ações" />
                 </tr>
               }
             >
@@ -498,19 +799,27 @@ const TagsSubtagsPage = () => {
                 const isExpanded = expandedTags.has(item.tag.id)
                 const despesas = item.subtags.filter((st) => st.type === 'despesa')
                 const receitas = item.subtags.filter((st) => st.type === 'receita')
+                const tagSelected = selectedTagIds.has(item.tag.id)
+                const tagSubtagIds = item.subtags.map((st) => st.id)
+                const tagSubtagsState = selectionHeaderState(tagSubtagIds, selectedSubtagIds)
+                const rowSelected =
+                  tagSelected || tagSubtagsState !== 'none'
+
                 return (
                   <Fragment key={item.tag.id}>
                     <tr
                       className={`${listPageTableRowHoverCls} ${
-                        isExpanded
-                          ? 'bg-[color-mix(in_srgb,var(--color-1)_4%,transparent)] [&>td]:border-b-0'
-                          : ''
-                      }`}
+                        isExpanded ? 'bg-[color-mix(in_srgb,var(--color-1)_4%,transparent)] [&>td]:border-b-0' : ''
+                      } ${rowSelected && !isExpanded ? 'table-row-selected bg-[color-mix(in_srgb,var(--color-1)_7%,transparent)]' : ''}`}
                     >
+                      <ListTableCheckboxCell
+                        checked={tagSelected}
+                        onToggle={() => toggleTagSelection(item.tag.id)}
+                      />
                       <ListTableIndexCell index={index + 1} />
                       <ListTableSpacerCell />
                       <td className="cursor-pointer px-3 py-3" onClick={() => toggleTag(item.tag.id)}>
-                        <div className="flex items-center gap-2">
+                        <div className="flex min-w-0 items-center gap-2">
                           <button
                             type="button"
                             onClick={(e) => {
@@ -518,44 +827,48 @@ const TagsSubtagsPage = () => {
                               toggleTag(item.tag.id)
                             }}
                             className={cadastroRowIconBtnCls}
-                            title={isExpanded ? 'Recolher' : 'Expandir'}
+                            title={isExpanded ? 'Recolher' : 'Expandir subtags'}
+                            aria-expanded={isExpanded}
                           >
                             {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                           </button>
-                          <IconComponent
-                            size={16}
-                            className="shrink-0"
-                            style={{ color: isExpanded ? 'var(--color-1)' : undefined }}
-                          />
+                          <IconComponent size={16} className="shrink-0" style={{ color: 'var(--color-1)' }} />
                           <span
-                            className={`text-sm font-semibold ${
-                              isExpanded ? 'text-[var(--color-1)]' : 'text-gray-800 dark:text-gray-100'
+                            className={`truncate text-sm font-semibold ${
+                              isExpanded
+                                ? 'text-[var(--color-1)]'
+                                : item.tag.active
+                                  ? 'text-gray-800 dark:text-gray-100'
+                                  : 'text-gray-500 dark:text-gray-400'
                             }`}
                           >
                             {item.tag.name}
                           </span>
                         </div>
                       </td>
-                      <td className="truncate px-3 py-3 text-sm text-gray-500 dark:text-gray-400">
+                      <td
+                        className="cursor-pointer truncate px-3 py-3 text-sm text-gray-600 dark:text-gray-300"
+                        onClick={() => toggleTag(item.tag.id)}
+                        title={item.tag.description || undefined}
+                      >
                         {item.tag.description || '—'}
                       </td>
-                      <td className="px-3 py-3">
-                        <Badge
-                          variant={badgeVariantForColumnRole('metricGhost')}
-                          tone="brand3"
-                          label={item.subtagsCount}
-                        />
+                      <td className="cursor-pointer px-3 py-3" onClick={() => toggleTag(item.tag.id)}>
+                        <div className="flex flex-wrap items-center gap-1">
+                          <Badge
+                            variant={badgeVariantForColumnRole('classificationPrimary')}
+                            tone="danger"
+                            label={String(despesas.length)}
+                          />
+                          <Badge
+                            variant={badgeVariantForColumnRole('classificationSecondary')}
+                            tone="success"
+                            label={String(receitas.length)}
+                          />
+                        </div>
                       </td>
                       <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => handleCreateSubtag(item.tag.id)}
-                            className={cadastroRowIconBtnCls}
-                            title="Nova subtag"
-                          >
-                            <Plus size={15} />
-                          </button>
+                        <div className="flex items-center gap-0.5">
                           <button
                             type="button"
                             onClick={() => handleEditTag(item.tag)}
@@ -576,88 +889,50 @@ const TagsSubtagsPage = () => {
                       </td>
                     </tr>
                     {isExpanded && (
-                      <ListPageExpandRow colSpan={6}>
-                        {item.subtags.length === 0 ? (
-                          <p className="text-sm text-gray-500">Nenhuma subtag cadastrada</p>
-                        ) : (
-                          <ListPageNestedTable
-                            head={
-                              <tr>
-                                <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">#</th>
-                                <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">Subtag</th>
-                                <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">Tipo</th>
-                                <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">Descrição</th>
-                                <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">Ações</th>
-                              </tr>
-                            }
-                          >
-                            {([
-                              ['Despesas', despesas, 'danger'] as const,
-                              ['Receitas', receitas, 'success'] as const,
-                            ]).flatMap(([groupLabel, rows, tone]) =>
-                              rows.length === 0
-                                ? []
-                                : [
-                                    <tr key={`${item.tag.id}-${groupLabel}`}>
-                                      <td
-                                        colSpan={5}
-                                        className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500"
-                                      >
-                                        {groupLabel} ({rows.length})
-                                      </td>
-                                    </tr>,
-                                    ...rows.map((subtag, subIndex) => {
-                                      const SubIcon = getIconComponent(subtag.icon || 'Tags')
-                                      return (
-                                        <tr key={subtag.id} className={listPageTableRowHoverCls}>
-                                          <td className="px-3 py-2 font-mono text-[11px] text-gray-400">
-                                            {subIndex + 1}
-                                          </td>
-                                          <td className="px-3 py-2">
-                                            <div className="flex items-center gap-2">
-                                              <SubIcon size={14} className="shrink-0 text-gray-500" />
-                                              <span className="text-sm font-medium text-gray-800 dark:text-gray-100">
-                                                {subtag.name}
-                                              </span>
-                                            </div>
-                                          </td>
-                                          <td className="px-3 py-2">
-                                            <Badge
-                                              variant={badgeVariantForColumnRole('classificationPrimary')}
-                                              tone={tone}
-                                              label={subtag.type === 'despesa' ? 'Despesa' : 'Receita'}
-                                            />
-                                          </td>
-                                          <td className="truncate px-3 py-2 text-sm text-gray-500">
-                                            {subtag.description || '—'}
-                                          </td>
-                                          <td className="px-3 py-2">
-                                            <div className="flex items-center gap-1">
-                                              <button
-                                                type="button"
-                                                onClick={() => handleEditSubtag(subtag)}
-                                                className={cadastroRowIconBtnCls}
-                                                title="Editar subtag"
-                                              >
-                                                <Edit2 size={14} />
-                                              </button>
-                                              <button
-                                                type="button"
-                                                onClick={() => handleDeleteSubtag(subtag.id)}
-                                                className={cadastroRowIconDangerCls}
-                                                title="Excluir subtag"
-                                              >
-                                                <Trash2 size={14} />
-                                              </button>
-                                            </div>
-                                          </td>
-                                        </tr>
-                                      )
-                                    }),
-                                  ],
-                            )}
-                          </ListPageNestedTable>
+                      <ListPageExpandRow colSpan={TAG_TABLE_COL_SPAN}>
+                        {item.subtags.length > 0 && (
+                          <div className="mb-3 flex items-center gap-2">
+                            <BulkSelectCheckbox
+                              state={tagSubtagsState}
+                              onClick={() => toggleAllSubtagsForTag(item.tag.id)}
+                            />
+                            <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                              Selecionar todas as subtags desta tag
+                            </span>
+                          </div>
                         )}
+                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                          <SubtagAreaCard
+                            kind="despesa"
+                            rows={despesas}
+                            tagId={item.tag.id}
+                            selectedSubtagIds={selectedSubtagIds}
+                            onToggleSubtag={toggleSubtagSelection}
+                            onToggleAllInColumn={toggleSubtagsInColumn}
+                            columnSelectState={selectionHeaderState(
+                              despesas.map((st) => st.id),
+                              selectedSubtagIds,
+                            )}
+                            onCreate={handleCreateSubtag}
+                            onEdit={handleEditSubtag}
+                            onDelete={handleDeleteSubtag}
+                          />
+                          <SubtagAreaCard
+                            kind="receita"
+                            rows={receitas}
+                            tagId={item.tag.id}
+                            selectedSubtagIds={selectedSubtagIds}
+                            onToggleSubtag={toggleSubtagSelection}
+                            onToggleAllInColumn={toggleSubtagsInColumn}
+                            columnSelectState={selectionHeaderState(
+                              receitas.map((st) => st.id),
+                              selectedSubtagIds,
+                            )}
+                            onCreate={handleCreateSubtag}
+                            onEdit={handleEditSubtag}
+                            onDelete={handleDeleteSubtag}
+                          />
+                        </div>
                       </ListPageExpandRow>
                     )}
                   </Fragment>
@@ -667,6 +942,67 @@ const TagsSubtagsPage = () => {
           )}
         </CadastroListPageBody>
       </CadastroListPageShell>
+
+      {bulkSelectionCount > 0 && (
+        <FloatingFooterBar>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <span className="font-medium text-color-primary">
+                {bulkSelectionCount}{' '}
+                {bulkSelectionCount === 1 ? 'item selecionado' : 'itens selecionados'}
+              </span>
+              <button
+                type="button"
+                onClick={clearBulkSelection}
+                disabled={bulkDeleting}
+                className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 disabled:opacity-50 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                <X size={14} />
+                Limpar
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void handleBulkDelete()}
+                disabled={bulkDeleting}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
+                style={{ backgroundColor: 'var(--crud-delete)' }}
+              >
+                <Trash2 size={14} />
+                {bulkDeleting ? 'Excluindo…' : 'Excluir'}
+              </button>
+              {showBackToTop && (
+                <button
+                  type="button"
+                  onClick={scrollToTop}
+                  className="flex items-center gap-1.5 rounded-lg bg-color-primary px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90"
+                  title="Voltar ao topo"
+                >
+                  <ArrowUp size={14} />
+                  Topo
+                </button>
+              )}
+            </div>
+          </div>
+        </FloatingFooterBar>
+      )}
+
+      {showBackToTop && bulkSelectionCount === 0 && (
+        <FloatingFooterBar>
+          <div className="flex items-center justify-end">
+            <button
+              type="button"
+              onClick={scrollToTop}
+              className="flex items-center gap-1.5 rounded-lg bg-color-primary px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90"
+              title="Voltar ao topo"
+            >
+              <ArrowUp size={14} />
+              Voltar ao Topo
+            </button>
+          </div>
+        </FloatingFooterBar>
+      )}
 
       {/* Modal de Tag */}
       {showTagModal && (

@@ -59,6 +59,9 @@ class Account(Base, BaseEntity):
     bank_id = Column(Integer, ForeignKey('banks.id', ondelete='RESTRICT'), nullable=True, name="bank_id")
     agency = Column(Integer, nullable=True, name="agency")
     account_number = Column(BigInteger, nullable=True, name="account_number")
+    import_file_password_encrypted = Column(
+        Text, nullable=True, name="import_file_password_encrypted"
+    )
 
     # 2. Campos do BaseEntity (herdados: id, tenant_id, created_by, created_at, last_updated_at)
 
@@ -76,6 +79,10 @@ class Account(Base, BaseEntity):
     tags = relationship("Tag", back_populates="account")
     subtags = relationship("Subtag", back_populates="account")
     transaction_mappings = relationship("TransactionMapping", back_populates="account")
+
+    @property
+    def has_default_import_file_password(self) -> bool:
+        return bool(self.import_file_password_encrypted)
 
 
 class ExpenseSharingSetting(Base, AccountBaseEntity):
@@ -98,6 +105,7 @@ class ExpenseSharingSetting(Base, AccountBaseEntity):
     # Campos específicos (na ordem: id, shared_account_id, my_contribution_percentage, description, account_id, tenant_id, created_by, created_at, last_updated_at, active)
     shared_account_id = Column(Integer, ForeignKey('accounts.id', ondelete='CASCADE'), nullable=False, name="shared_account_id", index=True)
     my_contribution_percentage = Column(Numeric(5, 2), nullable=False, default=Decimal("50.00"), name="my_contribution_percentage")
+    revenue_contribution_percentage = Column(Numeric(5, 2), nullable=False, default=Decimal("50.00"), name="revenue_contribution_percentage")
     description = Column(Text, nullable=True, name="description")
 
     # Campos herdados de AccountBaseEntity: id, tenant_id, account_id, created_by, created_at, last_updated_at
@@ -183,7 +191,7 @@ class Cartao(Base, BaseEntity):
     __tablename__ = 'credit_cards'
     __table_args__ = (
         CheckConstraint("type IN ('credito', 'beneficios')", name='chk_credit_cards_type'),
-        CheckConstraint("closing_day >= 1 AND closing_day <= 30", name='chk_credit_cards_closing_day'),
+        CheckConstraint("due_day >= 1 AND due_day <= 30", name='chk_credit_cards_due_day'),
         {'quote': False}
     )
 
@@ -192,11 +200,11 @@ class Cartao(Base, BaseEntity):
     description = Column(String(255), nullable=True, name="description")
     number = Column(String(4), nullable=False, name="number")
     type = Column(String(20), nullable=False, default='credito', name="type")
-    closing_day = Column(Integer, nullable=False, default=14, name="closing_day")
+    due_day = Column(Integer, nullable=False, default=14, name="due_day")
     account_id = Column(Integer, ForeignKey('accounts.id', ondelete='CASCADE'), nullable=True, name="account_id", index=True)
     expense_sharing_id = Column(Integer, ForeignKey('expense_sharing_settings.id'), nullable=True, name="expense_sharing_id")
-    # true = cartão real da conta (entra na Saúde); false/NULL = terceiro gerenciado
-    is_account_card = Column(Boolean, nullable=True, name="is_account_card")
+    expense_ownership_percentage = Column(Numeric(5, 2), nullable=True, name="expense_ownership_percentage")
+    revenue_ownership_percentage = Column(Numeric(5, 2), nullable=True, name="revenue_ownership_percentage")
     invoice_group_id = Column(Integer, ForeignKey('credit_card_invoice_groups.id', ondelete='SET NULL'), nullable=True, name="invoice_group_id", index=True)
 
     # 2. Campos do BaseEntity (herdados: id, tenant_id, created_by, created_at, last_updated_at)
@@ -214,15 +222,22 @@ class Cartao(Base, BaseEntity):
     @property
     def ownership_type(self) -> str:
         """
-        Deriva o ownership_type baseado no expense_sharing_id.
+        Deriva o tipo de participação do cartão (sem is_account_card).
 
-        Returns:
-            str: 'compartilhado' se tem configuração de compartilhamento (expense_sharing_id não nulo),
-                 'proprio' se não tem configuração
+        compartilhado: expense_sharing_id definido
+        gerenciado: 0% de despesa sem compartilhamento
+        proprio: caso contrário (tipicamente 100%)
         """
         if self.expense_sharing_id is not None:
-            return 'compartilhado'
-        return 'proprio'
+            return "compartilhado"
+        from app.utils.sharing_percentage import resolve_ownership_percentage
+
+        expense_pct = resolve_ownership_percentage(
+            kind="expense", sharing=None, card=self
+        )
+        if expense_pct == 0:
+            return "gerenciado"
+        return "proprio"
 
 
 class CreditCardInvoiceGroup(Base, BaseEntity):
@@ -230,12 +245,14 @@ class CreditCardInvoiceGroup(Base, BaseEntity):
     __tablename__ = 'credit_card_invoice_groups'
     __table_args__ = (
         UniqueConstraint('tenant_id', 'account_id', 'name', name='unique_invoice_group_per_account'),
+        CheckConstraint("due_day >= 1 AND due_day <= 30", name='chk_invoice_groups_due_day'),
         {'quote': False}
     )
 
     name = Column(String(100), nullable=False, name="name")
     account_id = Column(Integer, ForeignKey('accounts.id', ondelete='CASCADE'), nullable=False, name="account_id", index=True)
     active = Column(Boolean, nullable=False, default=True, name="active")
+    due_day = Column(Integer, nullable=False, default=14, name="due_day")
 
     account = relationship("Account", back_populates="invoice_groups")
     credit_cards = relationship("Cartao", back_populates="invoice_group")
@@ -447,6 +464,7 @@ class TransactionMapping(Base, AccountBaseEntity):
     subtag_id = Column(Integer, ForeignKey('subtags.id', ondelete='CASCADE'), nullable=False, name="subtag_id", index=True)
     expense_sharing_id = Column(Integer, ForeignKey('expense_sharing_settings.id'), nullable=True, name="expense_sharing_id")
     my_contribution_percentage = Column(Numeric(5, 2), nullable=True, name="my_contribution_percentage")
+    revenue_contribution_percentage = Column(Numeric(5, 2), nullable=True, name="revenue_contribution_percentage")
     mapping_type = Column(String(20), nullable=False, default='exact', name="mapping_type")
     pattern = Column(String(255), nullable=True, name="pattern")
     regex_pattern = Column(String(255), nullable=True, name="regex_pattern")

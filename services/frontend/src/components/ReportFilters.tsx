@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import BrazilianDatePicker from './BrazilianDatePicker'
+import { DateField } from './date'
 import { Filter } from 'lucide-react'
 import { dateToLocalString, parseLocalDate } from '../utils/dateUtils'
 
@@ -156,7 +156,7 @@ const ReportFilters: React.FC<ReportFiltersProps> = ({
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Data Inicial
                 </label>
-                <BrazilianDatePicker
+                <DateField
                   value={startDate ? dateToLocalString(startDate) : ''}
                   onChange={(value) => setStartDate(value ? parseLocalDate(value) : null)}
                   maxDate={endDate ?? undefined}
@@ -171,7 +171,7 @@ const ReportFilters: React.FC<ReportFiltersProps> = ({
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Data Final
                 </label>
-                <BrazilianDatePicker
+                <DateField
                   value={endDate ? dateToLocalString(endDate) : ''}
                   onChange={(value) => setEndDate(value ? parseLocalDate(value) : null)}
                   minDate={startDate ?? undefined}

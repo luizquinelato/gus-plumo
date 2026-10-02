@@ -16,6 +16,7 @@ from app.models.unified_models import (
     CreditCardInvoiceGroup,
     InvoicePaymentMatch,
     Subtag,
+    Tag,
 )
 
 YEAR_MONTH_LEN = 7
@@ -61,6 +62,16 @@ def _parse_year_month(year_month: str) -> tuple[int, int]:
     if month < 1 or month > 12:
         raise ValueError("year_month deve estar no formato YYYY-MM")
     return year, month
+
+
+def _invoice_due_date_for(year_month: str, due_day: int) -> str:
+    """Data de vencimento da fatura (due_day no mês year_month)."""
+    import calendar
+
+    year, month = _parse_year_month(year_month)
+    last_day = calendar.monthrange(year, month)[1]
+    day = min(max(int(due_day or 14), 1), last_day)
+    return f"{year:04d}-{month:02d}-{day:02d}"
 
 
 def _iso_date(value: Any) -> Optional[str]:
@@ -143,6 +154,7 @@ def _serialize_cycle_cards(cards: list[Cartao]) -> list[dict[str, Any]]:
             "name": card.name,
             "number": card.number,
             "active": bool(card.active),
+            "due_day": int(card.due_day or 14),
         }
         for card in cards
     ]
@@ -427,6 +439,11 @@ def _preview_month_cycles(
             if auto_eligible and auto_candidate:
                 newly_reserved.add(int(auto_candidate["bank_statement_id"]))
 
+        due_days = sorted({int(card.due_day or 14) for card in cycle["cards"]})
+        due_dates = [_invoice_due_date_for(year_month, day) for day in due_days]
+        invoice_due_date = due_dates[0] if due_dates else None
+        invoice_due_dates = due_dates
+
         items.append({
             "key": f"{year_month}:{_cycle_key(cycle['invoice_group_id'], cycle['credit_card_id'])}",
             "invoice_group_id": cycle["invoice_group_id"],
@@ -437,6 +454,8 @@ def _preview_month_cycles(
             "card_ids": card_ids,
             "cards": _serialize_cycle_cards(cycle["cards"]),
             "year_month": year_month,
+            "invoice_due_date": invoice_due_date,
+            "invoice_due_dates": invoice_due_dates,
             "net_amount": float(net_amount),
             "amount_to_pay": float(amount_to_pay),
             "line_count": line_count,
@@ -565,6 +584,164 @@ def list_matches(
         })
         results.append(payload)
     return results
+
+
+def _resolve_cycle_card_ids(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    invoice_group_id: Optional[int],
+    credit_card_id: Optional[int],
+) -> list[int]:
+    if invoice_group_id is not None:
+        rows = (
+            db.query(Cartao.id)
+            .filter(
+                Cartao.tenant_id == tenant_id,
+                Cartao.account_id == account_id,
+                Cartao.invoice_group_id == invoice_group_id,
+                Cartao.type == "credito",
+            )
+            .all()
+        )
+        return [int(row[0]) for row in rows]
+    if credit_card_id is not None:
+        return [int(credit_card_id)]
+    return []
+
+
+def _match_display_name(match: InvoicePaymentMatch) -> str:
+    if match.invoice_group:
+        return match.invoice_group.name
+    if match.credit_card:
+        return f"{match.credit_card.name} •••• {match.credit_card.number}"
+    return "Fatura de cartão"
+
+
+def linked_invoice_summaries_by_statement_ids(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    bank_statement_ids: Iterable[int],
+) -> dict[int, dict[str, Any]]:
+    ids = [int(x) for x in bank_statement_ids if x is not None]
+    if not ids or account_id is None:
+        return {}
+    matches = (
+        db.query(InvoicePaymentMatch)
+        .options(
+            joinedload(InvoicePaymentMatch.invoice_group),
+            joinedload(InvoicePaymentMatch.credit_card),
+        )
+        .filter(
+            InvoicePaymentMatch.tenant_id == tenant_id,
+            InvoicePaymentMatch.account_id == account_id,
+            InvoicePaymentMatch.bank_statement_id.in_(ids),
+            InvoicePaymentMatch.match_method.in_(("auto", "manual")),
+            InvoicePaymentMatch.bank_statement_id.isnot(None),
+        )
+        .all()
+    )
+    result: dict[int, dict[str, Any]] = {}
+    for match in matches:
+        statement_id = int(match.bank_statement_id)
+        result[statement_id] = {
+            "match_id": int(match.id),
+            "year_month": match.year_month,
+            "display_name": _match_display_name(match),
+        }
+    return result
+
+
+def invoice_detail_for_bank_statement(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    bank_statement_id: int,
+) -> dict[str, Any]:
+    match = (
+        db.query(InvoicePaymentMatch)
+        .options(
+            joinedload(InvoicePaymentMatch.bank_statement),
+            joinedload(InvoicePaymentMatch.invoice_group),
+            joinedload(InvoicePaymentMatch.credit_card),
+        )
+        .filter(
+            InvoicePaymentMatch.tenant_id == tenant_id,
+            InvoicePaymentMatch.account_id == account_id,
+            InvoicePaymentMatch.bank_statement_id == bank_statement_id,
+            InvoicePaymentMatch.match_method.in_(("auto", "manual")),
+        )
+        .first()
+    )
+    if not match or _is_unlinked_match(match):
+        raise LookupError("Nenhuma fatura vinculada a este lançamento")
+
+    statement = match.bank_statement
+    card_ids = _resolve_cycle_card_ids(
+        db,
+        tenant_id,
+        account_id,
+        match.invoice_group_id,
+        match.credit_card_id,
+    )
+    if not card_ids:
+        raise LookupError("Cartões do ciclo não encontrados")
+
+    rows = (
+        db.query(
+            CreditCardInvoice.id,
+            CreditCardInvoice.date,
+            CreditCardInvoice.description,
+            CreditCardInvoice.amount,
+            CreditCardInvoice.current_installment,
+            CreditCardInvoice.total_installments,
+            Cartao.name.label("card_name"),
+            Cartao.number.label("card_number"),
+            Subtag.name.label("subtag_name"),
+            Tag.name.label("tag_name"),
+        )
+        .join(Cartao, CreditCardInvoice.credit_card_id == Cartao.id)
+        .outerjoin(Subtag, CreditCardInvoice.subtag_id == Subtag.id)
+        .outerjoin(Tag, Subtag.tag_id == Tag.id)
+        .filter(
+            CreditCardInvoice.tenant_id == tenant_id,
+            CreditCardInvoice.year_month == match.year_month,
+            CreditCardInvoice.credit_card_id.in_(card_ids),
+        )
+        .order_by(CreditCardInvoice.date.asc(), CreditCardInvoice.id.asc())
+        .all()
+    )
+
+    items: list[dict[str, Any]] = []
+    items_total = Decimal("0")
+    for row in rows:
+        amount = Decimal(str(row.amount or 0))
+        items_total += amount
+        items.append({
+            "id": int(row.id),
+            "date": row.date.isoformat() if hasattr(row.date, "isoformat") else str(row.date),
+            "description": row.description,
+            "amount": float(amount),
+            "card_name": row.card_name,
+            "card_number": row.card_number,
+            "subtag_name": row.subtag_name,
+            "tag_name": row.tag_name,
+            "current_installment": row.current_installment,
+            "total_installments": row.total_installments,
+        })
+
+    bank_amount = float(statement.amount) if statement else None
+    return {
+        "match_id": int(match.id),
+        "year_month": match.year_month,
+        "display_name": _match_display_name(match),
+        "bank_statement_id": bank_statement_id,
+        "bank_statement_amount": bank_amount,
+        "bank_statement_description": statement.description if statement else None,
+        "items_total": float(items_total),
+        "items": items,
+    }
 
 
 def apply_match(
@@ -829,6 +1006,65 @@ def auto_match(
         "applied": applied,
         "skipped": skipped,
         "skipped_multiple_count": _count_multiple_debits(preview_data.get("cycles") or []),
+        "preview": preview_data,
+    }
+
+
+def suggest_auto_history(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+) -> dict[str, Any]:
+    """Calcula vínculos automáticos possíveis sem gravar (mesma reserva de débitos que auto_match)."""
+    cards = _load_credit_cards(db, tenant_id, account_id)
+    months = _invoice_year_months(db, tenant_id, [card.id for card in cards])
+    cycles = _build_cycles(cards)
+    virtual_reserved = set(_used_bank_statement_ids(db, tenant_id, account_id))
+    suggestions: list[dict[str, Any]] = []
+
+    for year_month in months:
+        seen: set[str] = set()
+        while True:
+            items, _newly = _preview_month_cycles(
+                db, tenant_id, account_id, year_month, cycles, virtual_reserved,
+            )
+            cycle = next(
+                (
+                    item
+                    for item in items
+                    if item.get("auto_eligible")
+                    and item.get("auto_candidate")
+                    and item["key"] not in seen
+                ),
+                None,
+            )
+            if not cycle:
+                break
+            seen.add(cycle["key"])
+            candidate = cycle["auto_candidate"]
+            virtual_reserved.add(int(candidate["bank_statement_id"]))
+            suggestions.append(
+                {
+                    "key": cycle["key"],
+                    "year_month": year_month,
+                    "invoice_group_id": cycle["invoice_group_id"],
+                    "credit_card_id": cycle["credit_card_id"],
+                    "name": cycle["name"],
+                    "amount_to_pay": cycle["amount_to_pay"],
+                    "candidate": candidate,
+                }
+            )
+
+    preview_data = preview_history(db, tenant_id, account_id)
+    remaining = [
+        cycle
+        for month in preview_data.get("months") or []
+        for cycle in month.get("cycles") or []
+    ]
+    return {
+        "suggestion_count": len(suggestions),
+        "suggestions": suggestions,
+        "skipped_multiple_count": _count_multiple_debits(remaining),
         "preview": preview_data,
     }
 

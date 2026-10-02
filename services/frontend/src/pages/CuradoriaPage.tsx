@@ -19,6 +19,7 @@ import LoadingSpinner from '../components/LoadingSpinner'
 import { Check, Loader2, Copy, FileText, ArrowDownCircle, ArrowUpCircle, Save, ArrowUpDown, ArrowUp, ArrowDown, X, AlertTriangle, Search, Landmark, CreditCard, Gift, Sparkles, Users, Tag as TagIcon, Tags as TagsIcon } from 'lucide-react'
 import { formatCurrencyWithColor } from '../utils/currency'
 import GroupDetailsModal from '../components/GroupDetailsModal.tsx'
+import { sharingPartnerLabel, sharingPercentForKind } from '../utils/accountFormatter'
 
 // ==================== INTERFACES ====================
 
@@ -46,6 +47,7 @@ interface Partner {
   account_id: number
   shared_account_id: number
   my_contribution_percentage: number
+  revenue_contribution_percentage?: number
   description: string | null
   active: boolean
   shared_account: Account | null
@@ -787,7 +789,9 @@ const CuradoriaPage = () => {
       return {
         ...group,
         expense_sharing_id: sharingId,
-        ownership_percentage: partner?.my_contribution_percentage || 50
+        ownership_percentage: partner
+          ? sharingPercentForKind(partner, group.tipo === 'receita' ? 'revenue' : 'expense')
+          : 50
       }
     }))
 
@@ -1355,6 +1359,7 @@ const CuradoriaPage = () => {
         is_sensitive: boolean
         expense_sharing_id?: number | null
         my_contribution_percentage?: number | null
+        revenue_contribution_percentage?: number | null
       } = {
         mapping_type: detectedMode,
         pattern: detectedMode === 'pattern' ? searchTerm.toLowerCase() : null,
@@ -1368,7 +1373,11 @@ const CuradoriaPage = () => {
       // Só inclui compartilhamento no mapeamento se deve sobrescrever
       if (shouldIncludeSharing) {
         mappingPayload.expense_sharing_id = sharingToUse ?? null
-        mappingPayload.my_contribution_percentage = percentageToUse ?? null
+        if (tipo === 'receita') {
+          mappingPayload.revenue_contribution_percentage = percentageToUse ?? null
+        } else {
+          mappingPayload.my_contribution_percentage = percentageToUse ?? null
+        }
       }
 
       await axios.post('/api/expenses/mappings', mappingPayload)
@@ -1648,14 +1657,19 @@ const CuradoriaPage = () => {
           original_description?: string
           expense_sharing_id?: number | null
           my_contribution_percentage?: number | null
+          revenue_contribution_percentage?: number | null
         } = {
           subtag_id: group.subtag_id!
         }
 
-        // S\u00f3 inclui compartilhamento no mapeamento se deve sobrescrever
+        // Só inclui compartilhamento no mapeamento se deve sobrescrever
         if (shouldIncludeSharing) {
           mappingPayload.expense_sharing_id = group.expense_sharing_id ?? null
-          mappingPayload.my_contribution_percentage = group.ownership_percentage ?? null
+          if (group.tipo === 'receita') {
+            mappingPayload.revenue_contribution_percentage = group.ownership_percentage ?? null
+          } else {
+            mappingPayload.my_contribution_percentage = group.ownership_percentage ?? null
+          }
         }
 
         if (existingMapping) {
@@ -1845,6 +1859,7 @@ const CuradoriaPage = () => {
             subtag_id: number
             expense_sharing_id?: number | null
             my_contribution_percentage?: number | null
+            revenue_contribution_percentage?: number | null
           } = {
             original_description: g.description.toLowerCase().trim(),
             subtag_id: g.subtag_id!
@@ -1852,7 +1867,11 @@ const CuradoriaPage = () => {
           // Só inclui compartilhamento se deve sobrescrever
           if (shouldIncludeSharing) {
             mapping.expense_sharing_id = g.expense_sharing_id ?? null
-            mapping.my_contribution_percentage = g.ownership_percentage ?? null
+            if (g.tipo === 'receita') {
+              mapping.revenue_contribution_percentage = g.ownership_percentage ?? null
+            } else {
+              mapping.my_contribution_percentage = g.ownership_percentage ?? null
+            }
           }
           return mapping
         })
@@ -2072,7 +2091,7 @@ const CuradoriaPage = () => {
                               setGlobalReceitaSharing(sharingId)
                               if (sharingId) {
                                 const partner = partners.find(p => p.id === sharingId)
-                                setGlobalReceitaPercentage(partner?.my_contribution_percentage?.toString() || '50')
+                                setGlobalReceitaPercentage(partner ? String(sharingPercentForKind(partner, 'revenue')) : '50')
                               } else {
                                 setGlobalReceitaPercentage('')
                               }
@@ -2080,23 +2099,11 @@ const CuradoriaPage = () => {
                             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                           >
                             <option value="">Selecione...</option>
-                            {partners.filter(p => p.active).map(partner => {
-                              const account = partner.shared_account
-                              const displayParts = [
-                                account?.name,
-                                account?.bank?.name,
-                                account?.agency,
-                                account?.account_number
-                              ].filter(Boolean)
-                              const displayText = displayParts.length > 0
-                                ? displayParts.join(' - ')
-                                : partner.description || `Conta ${partner.shared_account_id}`
-                              return (
-                                <option key={partner.id} value={partner.id}>
-                                  {displayText}
-                                </option>
-                              )
-                            })}
+                            {partners.filter(p => p.active).map(partner => (
+                              <option key={partner.id} value={partner.id}>
+                                {sharingPartnerLabel(partner)}
+                              </option>
+                            ))}
                           </select>
                         </div>
                         <button
@@ -2172,7 +2179,7 @@ const CuradoriaPage = () => {
                               setGlobalDespesaSharing(sharingId)
                               if (sharingId) {
                                 const partner = partners.find(p => p.id === sharingId)
-                                setGlobalDespesaPercentage(partner?.my_contribution_percentage?.toString() || '50')
+                                setGlobalDespesaPercentage(partner ? String(sharingPercentForKind(partner, 'expense')) : '50')
                               } else {
                                 setGlobalDespesaPercentage('')
                               }
@@ -2180,23 +2187,11 @@ const CuradoriaPage = () => {
                             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                           >
                             <option value="">Selecione...</option>
-                            {partners.filter(p => p.active).map(partner => {
-                              const account = partner.shared_account
-                              const displayParts = [
-                                account?.name,
-                                account?.bank?.name,
-                                account?.agency,
-                                account?.account_number
-                              ].filter(Boolean)
-                              const displayText = displayParts.length > 0
-                                ? displayParts.join(' - ')
-                                : partner.description || `Conta ${partner.shared_account_id}`
-                              return (
-                                <option key={partner.id} value={partner.id}>
-                                  {displayText}
-                                </option>
-                              )
-                            })}
+                            {partners.filter(p => p.active).map(partner => (
+                              <option key={partner.id} value={partner.id}>
+                                {sharingPartnerLabel(partner)}
+                              </option>
+                            ))}
                           </select>
                         </div>
                         <button
@@ -2685,7 +2680,11 @@ const CuradoriaPage = () => {
                                           // Definir porcentagem padrão do parceiro
                                           if (sharingId) {
                                             const partner = partners.find(p => p.id === sharingId)
-                                            setVirtualReceitaPercentage(partner?.my_contribution_percentage?.toString() || '50')
+                                            setVirtualReceitaPercentage(
+                                              partner
+                                                ? String(sharingPercentForKind(partner, 'revenue'))
+                                                : '50'
+                                            )
                                           } else {
                                             setVirtualReceitaPercentage('')
                                           }
@@ -2693,7 +2692,11 @@ const CuradoriaPage = () => {
                                           setVirtualGroupSharing(sharingId)
                                           if (sharingId) {
                                             const partner = partners.find(p => p.id === sharingId)
-                                            setVirtualGroupPercentage(partner?.my_contribution_percentage?.toString() || '50')
+                                            setVirtualGroupPercentage(
+                                              partner
+                                                ? String(sharingPercentForKind(partner, 'expense'))
+                                                : '50'
+                                            )
                                           } else {
                                             setVirtualGroupPercentage('')
                                           }
@@ -2713,24 +2716,11 @@ const CuradoriaPage = () => {
                                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:cursor-not-allowed"
                                   >
                                     <option value="">Selecione...</option>
-                                    {partners.filter(p => p.active).map(partner => {
-                                      const account = partner.shared_account
-                                      const displayParts = [
-                                        account?.name,
-                                        account?.bank?.name,
-                                        account?.agency,
-                                        account?.account_number
-                                      ].filter(Boolean)
-                                      const displayText = displayParts.length > 0
-                                        ? displayParts.join(' - ')
-                                        : partner.description || `Conta ${partner.shared_account_id}`
-
-                                      return (
-                                        <option key={partner.id} value={partner.id}>
-                                          {displayText}
-                                        </option>
-                                      )
-                                    })}
+                                    {partners.filter(p => p.active).map(partner => (
+                                      <option key={partner.id} value={partner.id}>
+                                        {sharingPartnerLabel(partner)}
+                                      </option>
+                                    ))}
                                   </select>
                                 )
                               })()}

@@ -11,6 +11,7 @@ import {
   CadastroModalHeader,
   CadastroModalShell,
 } from './CadastroFormLayout'
+import Badge from './Badge'
 
 interface Bank {
   id?: number
@@ -123,9 +124,17 @@ const SharedAccountDisplay = ({ account, ownershipPercentage, compact = false }:
                 {ownershipPercentage != null && (
                   <CadastroModalFieldsRow>
                     <div className="min-w-0">
-                      <CadastroFieldLabel>Minha Contribuição</CadastroFieldLabel>
-                      <p className="mt-0.5 text-sm font-semibold text-color-primary">
-                        {Number(ownershipPercentage).toFixed(2)}%
+                      <CadastroFieldLabel>Parte na sua conta</CadastroFieldLabel>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-semibold text-color-primary">
+                          {Number(ownershipPercentage).toFixed(2)}%
+                        </p>
+                        {Number(ownershipPercentage) >= 100 ? (
+                          <Badge variant="statusCompact" tone="brand1" label="Próprio" />
+                        ) : null}
+                      </div>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        No fechamento de conta, 100% ou sem compartilhamento aparece na aba Próprio.
                       </p>
                     </div>
                   </CadastroModalFieldsRow>

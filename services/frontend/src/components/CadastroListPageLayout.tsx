@@ -19,21 +19,39 @@ export const listPageTableFixedCls = `${listPageTableCls} table-fixed`
 export const listPageTableChromeBgCls = 'bg-gray-100 dark:bg-gray-800/75'
 export const listPageTableChromeFooterBgCls = 'bg-gray-50 dark:bg-gray-800/50'
 export const listPageTableChromeHeaderCls =
-  `${listPageTableChromeBgCls} [&_th]:border-b-2 [&_th]:border-gray-200 dark:[&_th]:border-gray-600`
+  `${listPageTableChromeBgCls} [&_th]:border-b-2 [&_th]:border-gray-200 dark:[&_th]:border-gray-600 [&_th.list-page-table-checkbox-col]:p-0 [&_th.list-page-table-index-col]:p-0`
 export const listPageTableThCls =
   'px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300'
-export const listPageTableIndexThCls =
-  `${listPageTableThCls} list-page-table-index-col text-center`
-export const listPageTableIndexTdCls =
-  'list-page-table-index-col px-0 py-3 text-center text-sm text-gray-500 dark:text-gray-400'
 export const listPageTableTdCls = 'px-4 py-3 text-sm text-gray-700 dark:text-gray-300'
-export const listPageTableBodyCls = 'divide-y divide-gray-200 dark:divide-gray-700/30'
+/** Colunas líderes (checkbox / `#`) — larguras em ListTableSelectColumns + index.css */
+export {
+  listPageTableIndexThCls,
+  listPageTableIndexTdCls,
+  listPageTableCheckboxThCls,
+  listPageTableCheckboxTdCls,
+  LIST_TABLE_CHECKBOX_COL_PX,
+  LIST_TABLE_INDEX_COL_PX,
+  LIST_TABLE_LEADING_ROW_PX,
+} from './ListTableSelectColumns'
+export const listPageTableBodyCls = ''
 export const listPageTableRowHoverCls = 'table-row-hover transition-colors'
 export const listPageTableRowInactiveCls = 'opacity-55'
 export const cadastroRowIconBtnCls =
   'rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200'
 export const cadastroRowIconDangerCls =
   'rounded-md p-1.5 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400'
+export const cadastroRowIconBtnDisabledCls =
+  'cursor-not-allowed opacity-40 hover:bg-transparent hover:text-gray-400 dark:hover:bg-transparent dark:hover:text-gray-400'
+
+/** Ícones de ação em linha (relatórios alinhados ao cadastro). */
+export function reportRowActionBtnClass(
+  enabled: boolean,
+  variant: 'default' | 'danger' = 'default',
+): string {
+  const base =
+    variant === 'danger' ? cadastroRowIconDangerCls : cadastroRowIconBtnCls
+  return enabled ? base : `${base} ${cadastroRowIconBtnDisabledCls}`
+}
 
 export type StatusFilter = 'all' | 'active' | 'inactive'
 export const listPageTableChromeFooterCls =
@@ -88,6 +106,64 @@ export function CadastroListPageHero({
   )
 }
 
+const cadastroListPrimaryButtonCls =
+  'inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50'
+
+/** Botão primário do hero (create/import) — `--color-create`, não `--color-1` da marca. */
+export function CadastroListPrimaryButton({
+  label,
+  onClick,
+  disabled,
+  icon,
+}: {
+  label: string
+  onClick: () => void
+  disabled?: boolean
+  icon: ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cadastroListPrimaryButtonCls}
+      style={{ background: 'var(--color-create)', color: 'var(--on-color-create)' }}
+    >
+      {icon} {label}
+    </button>
+  )
+}
+
+const cadastroListSecondaryButtonCls =
+  'inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 transition-opacity hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700'
+
+/** Ação secundária do hero (exportar, agrupar, etc.) — outline, não `--color-create`. */
+export function CadastroListSecondaryButton({
+  label,
+  onClick,
+  disabled,
+  icon,
+  title,
+}: {
+  label: string
+  onClick: () => void
+  disabled?: boolean
+  icon: ReactNode
+  title?: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      className={cadastroListSecondaryButtonCls}
+    >
+      {icon} {label}
+    </button>
+  )
+}
+
 export function CadastroListCreateButton({
   label,
   onClick,
@@ -98,15 +174,12 @@ export function CadastroListCreateButton({
   disabled?: boolean
 }) {
   return (
-    <button
-      type="button"
+    <CadastroListPrimaryButton
+      label={label}
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-      style={{ background: 'var(--color-create)', color: 'var(--on-color-create)' }}
-    >
-      <Plus size={18} /> {label}
-    </button>
+      icon={<Plus size={18} />}
+    />
   )
 }
 

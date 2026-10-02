@@ -74,6 +74,7 @@ gus-plumo/
 ```
 scripts/
 ├── setup_envs.py              # Setup de ambientes Python
+├── sync_cadastro_prod_dev.py  # cadastros PROD ↔ DEV (upsert; -db prod|dev)
 └── database/
     ├── backup-database.bat
     ├── restore-database.bat
@@ -158,9 +159,7 @@ scripts/
 ├── migrations/       # 0001 schema, 0002+ seeds/ajustes — ver starting_point.mdc
 │   ├── 0001_schema_inicial_multi-tenant.py
 │   ├── 0002_seed_data_inicial.py
-│   └── 0003 … 0009 (evoluções incrementais)
-├── check_accounts.py
-├── compare_databases.py
+│   └── 0003 … 0017 (evoluções incrementais)
 └── setup_venv.py
 
 uploads/avatars/      # Avatares enviados (runtime)
@@ -216,7 +215,7 @@ Componentes compartilhados entre páginas. Destaques:
 |------------|-----|
 | `Sidebar.tsx` | Navegação lateral global |
 | `ProtectedRoute.tsx` | Guard de autenticação |
-| `BrazilianDatePicker.tsx` | Datas dd/mm/aaaa (API interna YYYY-MM-DD) |
+| `date/` (`DateField`, `DateCalendar`) | **Único** componente de data do app. `DateField`: campo dd/mm/aaaa (valor `YYYY-MM-DD`; com `withTime`, `YYYY-MM-DD HH:mm`). `DateCalendar`: calendário avulso (`mode="range"` para períodos). Não usar `<input type="date">` nem libs de datepicker |
 | `ReportFilters.tsx` | Filtros de relatório |
 | `UnifiedImportModal.tsx` | Importação de arquivos |
 | `*Modal.tsx` | Modais de edição, export, conflitos, etc. |
@@ -232,7 +231,7 @@ src/
 ├── utils/          # dateUtils, exportToExcel, colorCalculations, pdfExport, …
 ├── config/         # defaultColors.ts
 ├── types/          # Tipos TS (expenseTemplate, importConflict)
-├── styles/         # CSS global complementar (datepicker, modals)
+├── styles/         # CSS global complementar (modals)
 └── index.css       # Tailwind directives + CSS variables (--color-*)
 ```
 
@@ -307,19 +306,19 @@ Arquivos `.backup`, `.sql`, `.dump` do banco
 `__init__.py`, `main.py`, `database.py`, `converters/__init__.py`, `converters/cartao_converter.py`, `core/__init__.py`, `core/logging_config.py`, `core/LOGGING_EXAMPLES.md`, `dependencies/__init__.py`, `dependencies/auth.py`, `etl/__init__.py`, `etl/extrato_etl.py`, `etl/extrato_extractor.py`, `etl/extrato_transformer.py`, `etl/README.md`, `models/__init__.py`, `models/auth_models.py`, `models/base.py`, `models/base_entity.py`, `models/import_conflict.py`, `models/unified_models.py`, `routers/*.py` (18 routers), `services/__init__.py`, `services/color_calculation_service.py`, `services/fatura_service.py`, `utils/__init__.py`, `utils/card_helper.py`, `utils/crypto_helper.py`, `utils/datetime_helper.py`, `utils/mapping_helper.py`
 
 ### `services/backend/scripts/`
-`__init__.py`, `check_accounts.py`, `cleanup_old_logs.py`, `compare_databases.py`, `convert_backup_to_new_format.py`, `debug_koelle.py`, `generate_mapping_migration_data.py`, `migration_runner.py`, `setup_venv.py`, `migrations/0001`–`0009` (+ JSON seeds), `migrations/README.md`
+`__init__.py`, `migration_runner.py`, `setup_venv.py`, `migrations/0001`–`0017`, `migrations/README.md`
 
 ### `services/backend/`
 `.gitignore`, `dev_server.py`, `requirements/install.txt`
 
 ### `services/frontend/src/components/` (29 arquivos)
-`AlertDialog.tsx`, `ApplyTemplateModal.tsx`, `BalanceDetailsModal.tsx`, `BatchEditExpenseModal.tsx`, `BrazilianDatePicker.tsx`, `ColorCustomizerUnified.tsx`, `ColorVariantsPreview.tsx`, `ConfirmDialog.tsx`, `ConflictReviewModal.tsx`, `CustomDateFilterModal.tsx`, `EditExpenseModal.tsx`, `ExportClosureModal.tsx`, `ExportModal.tsx`, `GroupDetailsModal.tsx`, `IconPicker.tsx`, `JsonTreeViewer.tsx`, `LoadingSpinner.tsx`, `ManualTransactionModal.tsx`, `MonthlyHistoryDetailsModal.tsx`, `MultiSelectDropdown.tsx`, `ProtectedRoute.tsx`, `QuickCreateTagSubtag.tsx`, `ReportFilters.tsx`, `SendToLoanModal.tsx`, `SharedAccountDisplay.tsx`, `Sidebar.tsx`, `SplitExpenseModal.tsx`, `TemplateFormModal.tsx`, `Toast.tsx`, `UnifiedImportModal.tsx`, `UnmappedRecordsModal.tsx`
+`AlertDialog.tsx`, `ApplyTemplateModal.tsx`, `BalanceDetailsModal.tsx`, `BatchEditExpenseModal.tsx`, `ColorCustomizerUnified.tsx`, `ColorVariantsPreview.tsx`, `ConfirmDialog.tsx`, `ConflictReviewModal.tsx`, `CustomDateFilterModal.tsx`, `EditExpenseModal.tsx`, `ExportClosureModal.tsx`, `ExportModal.tsx`, `GroupDetailsModal.tsx`, `IconPicker.tsx`, `JsonTreeViewer.tsx`, `LoadingSpinner.tsx`, `ManualTransactionModal.tsx`, `MonthlyHistoryDetailsModal.tsx`, `MultiSelectDropdown.tsx`, `ProtectedRoute.tsx`, `QuickCreateTagSubtag.tsx`, `ReportFilters.tsx`, `SendToLoanModal.tsx`, `SharedAccountDisplay.tsx`, `Sidebar.tsx`, `SplitExpenseModal.tsx`, `TemplateFormModal.tsx`, `Toast.tsx`, `UnifiedImportModal.tsx`, `UnmappedRecordsModal.tsx`, `date/DateField.tsx`, `date/DateCalendar.tsx`, `date/index.ts`
 
 ### `services/frontend/src/pages/` (18 + 1 tab)
 `BalancoPage.tsx`, `CartoesPage.tsx`, `ColorSettingsPage.tsx`, `CompartilhamentosPage.tsx`, `ContasPage.tsx`, `CuradoriaPage.tsx`, `EmprestimosPage.tsx`, `ExpenseTemplatesPage.tsx`, `ExtratoPage.tsx`, `FaturasPage.tsx`, `GrupoPage.tsx`, `HomePage.tsx`, `LoginPage.tsx`, `MappingsPage.tsx`, `ProfilePage.tsx`, `SelectAccountPage.tsx`, `SettingsPage.tsx`, `TagsSubtagsPage.tsx`, `tabs/TransactionMappingsTab.tsx`
 
 ### `services/frontend/src/` (demais)
-`App.tsx`, `main.tsx`, `index.css`, `vite-env.d.ts`, `config/defaultColors.ts`, `contexts/AuthContext.tsx`, `contexts/ThemeContext.tsx`, `hooks/useAlert.tsx`, `hooks/useColorApplication.ts`, `hooks/useColorData.ts`, `hooks/useConfirm.tsx`, `hooks/useEscapeKey.ts`, `services/colorApplicationService.ts`, `services/colorDataService.ts`, `services/expenseTemplatesApi.ts`, `styles/custom-date-modal.css`, `styles/datepicker-custom.css`, `types/expenseTemplate.ts`, `types/importConflict.ts`, `utils/accountFormatter.ts`, `utils/colorApplication.ts`, `utils/colorCalculations.ts`, `utils/colorUtils.ts`, `utils/currency.tsx`, `utils/dateUtils.ts`, `utils/exportToExcel.ts`, `utils/fileTypeDetector.ts`, `utils/iconMapper.tsx`, `utils/pdfExport.ts`
+`App.tsx`, `main.tsx`, `index.css`, `vite-env.d.ts`, `config/defaultColors.ts`, `contexts/AuthContext.tsx`, `contexts/ThemeContext.tsx`, `hooks/useAlert.tsx`, `hooks/useColorApplication.ts`, `hooks/useColorData.ts`, `hooks/useConfirm.tsx`, `hooks/useEscapeKey.ts`, `services/colorApplicationService.ts`, `services/colorDataService.ts`, `services/expenseTemplatesApi.ts`, `types/expenseTemplate.ts`, `types/importConflict.ts`, `utils/accountFormatter.ts`, `utils/colorApplication.ts`, `utils/colorCalculations.ts`, `utils/colorUtils.ts`, `utils/currency.tsx`, `utils/dateUtils.ts`, `utils/exportToExcel.ts`, `utils/fileTypeDetector.ts`, `utils/iconMapper.tsx`, `utils/pdfExport.ts`
 
 ### `services/frontend/` (config)
 `.gitignore`, `index.html`, `package.json`, `package-lock.json`, `postcss.config.js`, `tailwind.config.js`, `tsconfig.json`, `tsconfig.node.json`, `vite.config.ts`, `public/favicon.svg`, `public/manifest.json`

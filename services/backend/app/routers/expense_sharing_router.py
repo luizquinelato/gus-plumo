@@ -50,14 +50,24 @@ class AccountInfo(BaseModel):
         from_attributes = True
 
 
+def _validate_pct(value: Decimal | None, field: str) -> Decimal | None:
+    if value is None:
+        return None
+    if value < 0 or value > 100:
+        raise HTTPException(status_code=400, detail=f"{field} deve estar entre 0 e 100")
+    return value
+
+
 class ExpenseSharingCreate(BaseModel):
     shared_account_id: int
     my_contribution_percentage: Decimal = Decimal("50.00")
+    revenue_contribution_percentage: Decimal | None = None
     description: str | None = None
 
 
 class ExpenseSharingUpdate(BaseModel):
     my_contribution_percentage: Decimal | None = None
+    revenue_contribution_percentage: Decimal | None = None
     description: str | None = None
 
 
@@ -66,6 +76,7 @@ class ExpenseSharingResponse(BaseModel):
     account_id: int
     shared_account_id: int
     my_contribution_percentage: Decimal
+    revenue_contribution_percentage: Decimal
     description: str | None
     active: bool
     shared_account: AccountInfo | None = None
@@ -144,6 +155,11 @@ async def listar_compartilhamentos(
             account_id=account_id,  # Agora sou eu
             shared_account_id=c.account_id,  # O dono original é meu parceiro
             my_contribution_percentage=Decimal("100.00") - c.my_contribution_percentage,
+            revenue_contribution_percentage=Decimal("100.00") - (
+                c.revenue_contribution_percentage
+                if c.revenue_contribution_percentage is not None
+                else c.my_contribution_percentage
+            ),
             description=c.description,
             active=c.active,
             shared_account=AccountInfo(
@@ -245,9 +261,11 @@ async def criar_compartilhamento(
     if not account_id or not tenant_id or not user_id:
         raise HTTPException(status_code=400, detail="Dados do usuário incompletos no token")
 
-    # Valida porcentagem
-    if sharing_data.my_contribution_percentage < 0 or sharing_data.my_contribution_percentage > 100:
-        raise HTTPException(status_code=400, detail="A porcentagem de contribuição deve estar entre 0 e 100")
+    _validate_pct(sharing_data.my_contribution_percentage, "Percentual de despesa")
+    revenue_pct = sharing_data.revenue_contribution_percentage
+    if revenue_pct is None:
+        revenue_pct = sharing_data.my_contribution_percentage
+    _validate_pct(revenue_pct, "Percentual de receita")
 
     # Valida que não está tentando compartilhar consigo mesmo
     if account_id == sharing_data.shared_account_id:
@@ -292,6 +310,7 @@ async def criar_compartilhamento(
         account_id=account_id,  # Sempre a conta logada
         shared_account_id=sharing_data.shared_account_id,
         my_contribution_percentage=sharing_data.my_contribution_percentage,
+        revenue_contribution_percentage=revenue_pct,
         description=sharing_data.description
     )
     db.add(novo_compartilhamento)
@@ -324,14 +343,14 @@ async def atualizar_compartilhamento(
     if not compartilhamento:
         raise HTTPException(status_code=404, detail="Configuração de compartilhamento não encontrada")
 
-    # Valida porcentagem se fornecida
-    if sharing_data.my_contribution_percentage is not None:
-        if sharing_data.my_contribution_percentage < 0 or sharing_data.my_contribution_percentage > 100:
-            raise HTTPException(status_code=400, detail="A porcentagem de contribuição deve estar entre 0 e 100")
+    _validate_pct(sharing_data.my_contribution_percentage, "Percentual de despesa")
+    _validate_pct(sharing_data.revenue_contribution_percentage, "Percentual de receita")
 
     # Atualiza apenas os campos fornecidos
     if sharing_data.my_contribution_percentage is not None:
         compartilhamento.my_contribution_percentage = sharing_data.my_contribution_percentage
+    if sharing_data.revenue_contribution_percentage is not None:
+        compartilhamento.revenue_contribution_percentage = sharing_data.revenue_contribution_percentage
     if sharing_data.description is not None:
         compartilhamento.description = sharing_data.description
 

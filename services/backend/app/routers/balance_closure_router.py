@@ -153,6 +153,7 @@ class BalanceClosureWithItemsResponse(BaseModel):
 class BalanceClosureSettleRequest(BaseModel):
     """Request para marcar fechamento como quitado"""
     settlement_notes: str | None = None
+    settlement_date: str | None = None  # ISO format YYYY-MM-DD
 
     class Config:
         from_attributes = True
@@ -929,7 +930,7 @@ def build_item_data(
             "description": card.description if card else None,
             "number": card.number if card else None,
             "type": card.type if card else None,
-            "closing_day": card.closing_day if card else None,
+            "due_day": card.due_day if card else None,
             "active": card.active if card else None
         } if card else None,
 
@@ -1608,14 +1609,22 @@ def settle_balance_closure(
 
     account_id = current_user.get("account_id")
 
+    if request.settlement_date:
+        try:
+            settled_at = datetime.fromisoformat(request.settlement_date)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Data de quitação inválida. Use formato YYYY-MM-DD")
+        if settled_at.date() > datetime.now().date():
+            raise HTTPException(status_code=400, detail="Data de quitação não pode ser futura")
+    else:
+        settled_at = datetime.now()
+
     # Calcular saldo restante (net_balance - total já pago)
     total_paid, _ = get_closure_payment_totals(closure_id, db)
     remaining = closure_debt_remaining(closure.net_balance, total_paid)
 
     # Criar pagamento para o saldo restante (se houver)
     if remaining > Decimal('0.01'):
-        settled_at = datetime.now()
-
         payment = BalanceClosurePayment(
             balance_closure_id=closure_id,
             amount=remaining,
@@ -1629,7 +1638,7 @@ def settle_balance_closure(
 
     # Marcar como quitado
     closure.is_settled = True
-    closure.settled_at = datetime.now()
+    closure.settled_at = settled_at
     closure.settled_by = user_id
     closure.settlement_notes = request.settlement_notes
 

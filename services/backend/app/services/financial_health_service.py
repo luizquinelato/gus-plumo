@@ -17,6 +17,7 @@ from app.models.unified_models import (
     BalanceClosurePayment,
     Bank,
     BankStatement,
+    BenefitCardStatement,
     Cartao,
     CreditCardInvoice,
     ExpenseSharingSetting,
@@ -79,16 +80,16 @@ def _has_sharing(sharing_id: Any, partner_id: Any) -> bool:
 
 
 def _mine_percentage(ownership_percentage: Any, has_sharing: bool) -> Decimal:
+    if ownership_percentage is not None:
+        pct = Decimal(str(ownership_percentage))
+        if pct < ZERO:
+            return ZERO
+        if pct > HUNDRED:
+            return HUNDRED
+        return pct
     if not has_sharing:
         return HUNDRED
-    if ownership_percentage is None:
-        return HUNDRED
-    pct = Decimal(str(ownership_percentage))
-    if pct < 0:
-        return ZERO
-    if pct > HUNDRED:
-        return HUNDRED
-    return pct
+    return HUNDRED
 
 
 def _scoped_abs(
@@ -186,21 +187,51 @@ def _closure_remaining(net_balance: Any, total_paid: Decimal) -> Decimal:
     return max(ZERO, abs(_money(net_balance)) - total_paid)
 
 
-def _month_end(year: int, month: int) -> date:
-    return date(year, month, monthrange(year, month)[1])
+def _in_month(value: Any, year: int, month: int) -> bool:
+    parsed = _to_date(value)
+    return parsed is not None and parsed.year == year and parsed.month == month
+
+
+def _on_or_before_month(value: Any, year: int, month: int) -> bool:
+    parsed = _to_date(value)
+    return parsed is not None and (parsed.year, parsed.month) <= (year, month)
 
 
 def _should_separate_loan_settlement(
     *,
-    settled_as_of: bool,
+    settled_this_month: bool,
     remaining: Decimal,
     loan_amount: Decimal,
 ) -> bool:
-    """Separa o empréstimo só se, naquele mês, o balanço já estava quitado
-    ou o saldo em aberto já era menor que o empréstimo."""
-    if settled_as_of:
+    """Separa o empréstimo só se a quitação caiu neste mês,
+    ou se o saldo em aberto neste mês já era menor que o empréstimo."""
+    if settled_this_month:
         return True
     return remaining < loan_amount
+
+
+def _allocate_loan_settlement_month(
+    *,
+    periods: list[tuple[int, int]],
+    settled_at: Any,
+    net_balance: Any,
+    payments: list[tuple[Any, Decimal]],
+    loan_amount: Decimal,
+) -> Optional[tuple[int, int]]:
+    for year, month in sorted(periods):
+        paid_through = sum(
+            (amount for paid_date, amount in payments if _on_or_before_month(paid_date, year, month)),
+            ZERO,
+        )
+        remaining = _closure_remaining(net_balance, paid_through)
+        settled_this_month = _in_month(settled_at, year, month)
+        if _should_separate_loan_settlement(
+            settled_this_month=settled_this_month,
+            remaining=remaining,
+            loan_amount=loan_amount,
+        ):
+            return year, month
+    return None
 
 
 def _load_account_settlements(
@@ -261,10 +292,16 @@ def _load_account_settlements(
         .all()
     )
 
-    loan_year_col = extract("year", LoanPayment.payment_date)
-    loan_month_col = extract("month", LoanPayment.payment_date)
+    loan_pay_year = extract("year", LoanPayment.payment_date)
+    loan_pay_month = extract("month", LoanPayment.payment_date)
+    settled_year = extract("year", BalanceClosure.settled_at)
+    settled_month = extract("month", BalanceClosure.settled_at)
     loan_filters = [
-        and_(loan_year_col == year, loan_month_col == month)
+        or_(
+            and_(loan_pay_year == year, loan_pay_month == month),
+            and_(settled_year == year, settled_month == month),
+            and_(BalanceClosure.year == year, BalanceClosure.month == month),
+        )
         for year, month in periods
     ]
     loan_rows = (
@@ -280,7 +317,6 @@ def _load_account_settlements(
             BalanceClosure.id.label("closure_id"),
             BalanceClosure.year,
             BalanceClosure.month,
-            BalanceClosure.is_settled,
             BalanceClosure.settled_at,
             BalanceClosure.net_balance,
             Partner.id.label("shared_partner_id"),
@@ -382,29 +418,20 @@ def _load_account_settlements(
 
     for row in loan_rows:
         amount = _money(row.amount)
-        if amount == 0 or not row.payment_date:
+        if amount == 0:
             continue
-        as_of_year = int(row.payment_date.year)
-        as_of_month = int(row.payment_date.month)
-        as_of = _month_end(as_of_year, as_of_month)
-        paid_through = sum(
-            (
-                paid_amount
-                for paid_date, paid_amount in payments_by_closure.get(int(row.closure_id), [])
-                if paid_date <= as_of
-            ),
-            ZERO,
-        )
-        remaining = _closure_remaining(row.net_balance, paid_through)
-        settled_at = _to_date(row.settled_at)
-        settled_as_of = bool(row.is_settled) and settled_at is not None and settled_at <= as_of
-        if not _should_separate_loan_settlement(
-            settled_as_of=settled_as_of,
-            remaining=remaining,
+        allocated = _allocate_loan_settlement_month(
+            periods=periods,
+            settled_at=row.settled_at,
+            net_balance=row.net_balance,
+            payments=payments_by_closure.get(int(row.closure_id), []),
             loan_amount=amount,
-        ):
+        )
+        if allocated is None:
             continue
+        as_of_year, as_of_month = allocated
         year_month = f"{as_of_year:04d}-{as_of_month:02d}"
+        date_value = row.settled_at if _in_month(row.settled_at, as_of_year, as_of_month) else row.payment_date
         partner_name = row.shared_partner_name or "conta compartilhada"
         linked = str(row.source_table or "") == "bank_statements" and row.source_id is not None
         if linked:
@@ -415,7 +442,7 @@ def _load_account_settlements(
         _append_settlement_item(
             items,
             item_id=f"loan-settlement:{int(row.id)}",
-            date_value=row.payment_date,
+            date_value=date_value,
             year_month=year_month,
             amount=amount,
             partner_name=partner_name,
@@ -461,11 +488,11 @@ def _iso_date(value: Any) -> str:
     return parsed.isoformat() if parsed else ""
 
 
-def _invoice_billing_window(year_month: str, closing_day: int) -> tuple[date, date]:
-    """Período da fatura: dia seguinte ao fechamento anterior até o closing_day do mês."""
+def _invoice_billing_window(year_month: str, due_day: int) -> tuple[date, date]:
+    """Período da fatura: dia seguinte ao fechamento anterior até o due_day do mês."""
     year = int(year_month[:4])
     month = int(year_month[5:7])
-    close_day = min(max(int(closing_day or 14), 1), 31)
+    close_day = min(max(int(due_day or 14), 1), 31)
     end_day = min(close_day, monthrange(year, month)[1])
     end = date(year, month, end_day)
     prev_year, prev_month = _prev_month(year, month)
@@ -921,11 +948,11 @@ def compute_scoped_month_flows(
     periods: list[tuple[int, int]],
     settlements: Optional[dict[str, Any]] = None,
 ) -> dict[str, dict[str, dict[str, Decimal]]]:
-    """Rateio conta/compartilhado por mês (extrato + fatura). Acertos vêm no overlay."""
+    """Rateio conta/compartilhado por mês (extrato + fatura + benefício). Acertos vêm no overlay."""
     if not periods:
         return {"account": {}, "shared": {}}
     statements = _statements_in_periods(db, tenant_id, account_id, periods)
-    expansion = _expand_card_payments(db, tenant_id, account_id, statements)
+    expansion = _period_source_expansion(db, tenant_id, account_id, statements, periods)
     overlay = (
         settlements if settlements is not None
         else _load_account_settlements(db, tenant_id, account_id, periods)
@@ -943,10 +970,10 @@ def period_allocation_details(
     year: int,
     month: int,
 ) -> dict[str, Any]:
-    """Itens de fatura, acertos e cartões sem match para o preview do fechamento."""
+    """Itens de fatura, benefícios, acertos e cartões sem match para o preview do fechamento."""
     periods = [(year, month)]
     statements = _statements_in_periods(db, tenant_id, account_id, periods)
-    expansion = _expand_card_payments(db, tenant_id, account_id, statements)
+    expansion = _period_source_expansion(db, tenant_id, account_id, statements, periods)
     settlements = _load_account_settlements(db, tenant_id, account_id, periods)
     flows = {
         "account": _monthly_scoped_flows(statements, expansion, "account", settlements),
@@ -968,7 +995,11 @@ def period_allocation_details(
         ),
         "card_items": [
             item for item in expansion["items"]
-            if item.get("year_month") == year_month
+            if item.get("year_month") == year_month and item.get("source") != "benefit"
+        ],
+        "benefit_items": [
+            item for item in expansion["items"]
+            if item.get("year_month") == year_month and item.get("source") == "benefit"
         ],
         "unmatched_card_payments": [
             item for item in expansion.get("unmatched") or []
@@ -1191,7 +1222,7 @@ def get_details(
         else None
     )
     statements = _statements_in_periods(db, tenant_id, account_id, periods)
-    expansion = _expand_card_payments(db, tenant_id, account_id, statements)
+    expansion = _period_source_expansion(db, tenant_id, account_id, statements, periods)
     settlements = _load_account_settlements(db, tenant_id, account_id, periods)
     excluded_ids = settlements["excluded_statement_ids"]
     matched_ids = expansion["matched_ids"]
@@ -1367,7 +1398,7 @@ def _cycle_card_ids(
     return []
 
 
-def _card_closing_days(
+def _card_due_days(
     db: Session,
     tenant_id: int,
     account_id: int,
@@ -1376,7 +1407,7 @@ def _card_closing_days(
     if not card_ids:
         return {}
     rows = (
-        db.query(Cartao.id, Cartao.closing_day)
+        db.query(Cartao.id, Cartao.due_day)
         .filter(
             Cartao.tenant_id == tenant_id,
             Cartao.account_id == account_id,
@@ -1384,7 +1415,7 @@ def _card_closing_days(
         )
         .all()
     )
-    return {int(row.id): int(row.closing_day or 14) for row in rows}
+    return {int(row.id): int(row.due_day or 14) for row in rows}
 
 
 def _card_invoice_lines(
@@ -1493,6 +1524,114 @@ def _serialize_invoice_line(row: Any) -> dict[str, Any]:
     }
 
 
+def _load_benefit_items(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    periods: list[tuple[int, int]],
+) -> list[dict[str, Any]]:
+    """Lançamentos de cartão de benefício no mês civil do item (mesmo critério do balanço)."""
+    if not periods:
+        return []
+    year_col = extract("year", BenefitCardStatement.date)
+    month_col = extract("month", BenefitCardStatement.date)
+    period_filters = [
+        and_(year_col == year, month_col == month)
+        for year, month in periods
+    ]
+    SharedAccount = aliased(Account)
+    rows = (
+        db.query(
+            BenefitCardStatement.id,
+            BenefitCardStatement.date,
+            BenefitCardStatement.description,
+            BenefitCardStatement.amount,
+            BenefitCardStatement.ownership_percentage,
+            BenefitCardStatement.expense_sharing_id,
+            BenefitCardStatement.credit_card_id,
+            Cartao.name.label("card_name"),
+            Cartao.number.label("card_number"),
+            Subtag.name.label("subtag_name"),
+            Tag.id.label("tag_id"),
+            Tag.name.label("tag_name"),
+            SharedAccount.id.label("shared_partner_id"),
+            SharedAccount.name.label("shared_partner_name"),
+            SharedAccount.agency.label("shared_partner_agency"),
+            SharedAccount.account_number.label("shared_partner_account_number"),
+            Bank.name.label("shared_partner_bank"),
+        )
+        .join(Cartao, Cartao.id == BenefitCardStatement.credit_card_id)
+        .outerjoin(Subtag, Subtag.id == BenefitCardStatement.subtag_id)
+        .outerjoin(Tag, Tag.id == Subtag.tag_id)
+        .outerjoin(ExpenseSharingSetting, ExpenseSharingSetting.id == BenefitCardStatement.expense_sharing_id)
+        .outerjoin(SharedAccount, SharedAccount.id == ExpenseSharingSetting.shared_account_id)
+        .outerjoin(Bank, Bank.id == SharedAccount.bank_id)
+        .filter(
+            BenefitCardStatement.tenant_id == tenant_id,
+            or_(
+                BenefitCardStatement.account_id == account_id,
+                and_(BenefitCardStatement.account_id.is_(None), Cartao.account_id == account_id),
+            ),
+            or_(*period_filters),
+        )
+        .order_by(BenefitCardStatement.date.asc(), BenefitCardStatement.id.asc())
+        .all()
+    )
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        amount = _money(row.amount)
+        if amount == 0 or not row.date:
+            continue
+        splits = split_signed_amount(
+            amount, row.ownership_percentage, row.expense_sharing_id, row.shared_partner_id,
+        )
+        items.append({
+            "id": f"benefit:{int(row.id)}",
+            "date": _iso_date(row.date),
+            "description": row.description or "",
+            "amount": float(amount),
+            "source": "benefit",
+            "year_month": f"{int(row.date.year):04d}-{int(row.date.month):02d}",
+            "card_id": int(row.credit_card_id) if row.credit_card_id else None,
+            "card_name": row.card_name,
+            "card_number": row.card_number,
+            "tag_id": int(row.tag_id) if row.tag_id else None,
+            "tag_name": row.tag_name,
+            "subtag_name": row.subtag_name,
+            "ownership_percentage": (
+                float(row.ownership_percentage) if row.ownership_percentage is not None else None
+            ),
+            "expense_sharing_id": (
+                int(row.expense_sharing_id) if row.expense_sharing_id else None
+            ),
+            "shared_partner_id": int(row.shared_partner_id) if row.shared_partner_id else None,
+            "shared_partner_name": row.shared_partner_name,
+            "shared_partner_bank": row.shared_partner_bank,
+            "shared_partner_agency": row.shared_partner_agency,
+            "shared_partner_account_number": row.shared_partner_account_number,
+            "amount_account": splits["amount_account"],
+            "amount_shared": splits["amount_shared"],
+        })
+    return items
+
+
+def _period_source_expansion(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    statements: list[Any],
+    periods: list[tuple[int, int]],
+) -> dict[str, Any]:
+    expansion = _expand_card_payments(db, tenant_id, account_id, statements)
+    benefit_items = _load_benefit_items(db, tenant_id, account_id, periods)
+    if not benefit_items:
+        return expansion
+    return {
+        **expansion,
+        "items": list(expansion.get("items") or []) + benefit_items,
+    }
+
+
 def _expand_card_payments(
     db: Session,
     tenant_id: int,
@@ -1550,7 +1689,7 @@ def _expand_card_payments(
             "card_ids": card_ids,
         })
 
-    closing_days = _card_closing_days(db, tenant_id, account_id, list(all_card_ids))
+    due_days = _card_due_days(db, tenant_id, account_id, list(all_card_ids))
     window_starts: list[date] = []
     window_ends: list[date] = []
     for cycle in cycles:
@@ -1558,7 +1697,7 @@ def _expand_card_payments(
         for card_id in cycle["card_ids"]:
             window = _invoice_billing_window(
                 cycle["invoice_year_month"],
-                closing_days.get(int(card_id), 14),
+                due_days.get(int(card_id), 14),
             )
             windows[int(card_id)] = window
             window_starts.append(window[0])
@@ -1786,7 +1925,7 @@ def get_categories(
     month_value = _normalize_month(year, month)
     periods = _visible_periods(db, tenant_id, account_id, year, month_value)
     rows = _statements_in_periods(db, tenant_id, account_id, periods)
-    expansion = _expand_card_payments(db, tenant_id, account_id, rows)
+    expansion = _period_source_expansion(db, tenant_id, account_id, rows, periods)
     settlements = _load_account_settlements(db, tenant_id, account_id, periods)
     subtags, tags = _load_tags(db, tenant_id, account_id)
     return {

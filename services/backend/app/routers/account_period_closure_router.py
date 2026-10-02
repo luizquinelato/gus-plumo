@@ -150,11 +150,21 @@ async def bulk_close_account_periods(
 @router.delete("/{closure_id}")
 async def reopen_account_period(
     closure_id: int,
+    delete_adjustment: bool = Query(
+        True,
+        description="Se true, remove do extrato o lançamento de ajuste gravado no fechamento.",
+    ),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_account),
 ):
     tenant_id, account_id, _user_id = _scope(current_user)
     try:
-        return closure_service.reopen_period(db, tenant_id, account_id, closure_id)
+        return closure_service.reopen_period(
+            db,
+            tenant_id,
+            account_id,
+            closure_id,
+            delete_adjustment=delete_adjustment,
+        )
     except (closure_service.AccountPeriodCloseError, closure_service.AccountPeriodClosedError) as exc:
         _raise_service(exc)

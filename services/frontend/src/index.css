@@ -313,8 +313,32 @@ body {
   }
 }
 
+/* Tabelas — cabeçalho e corpo alinhados à esquerda (exceto colunas líderes) */
+table:not(.list-page-table) th,
+table:not(.list-page-table) td {
+  text-align: left !important;
+}
+
+/* Colunas líderes — 40px fixos; fora de @layer para vencer regras globais */
 .list-page-table {
   width: 100%;
+}
+.list-page-table tbody tr + tr td {
+  border-top: 1px solid rgb(229 231 235);
+}
+.dark .list-page-table tbody tr + tr td {
+  border-top-color: rgb(55 65 81);
+}
+.list-page-table col.list-page-table-checkbox-col,
+.list-page-table th.list-page-table-checkbox-col,
+.list-page-table td.list-page-table-checkbox-col {
+  width: 40px !important;
+  min-width: 40px !important;
+  max-width: 40px !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
+  text-align: center !important;
+  overflow: hidden !important;
 }
 .list-page-table col.list-page-table-index-col,
 .list-page-table th.list-page-table-index-col,
@@ -322,9 +346,23 @@ body {
   width: 40px !important;
   min-width: 40px !important;
   max-width: 40px !important;
-  padding-left: 0 !important;
-  padding-right: 0 !important;
+  padding: 0 !important;
   box-sizing: border-box !important;
   text-align: center !important;
   overflow: hidden !important;
+}
+/* table-fixed: largura 0 no <col> força o algoritmo a respeitar min/max das células (40px) */
+.list-page-table.table-fixed col.list-page-table-checkbox-col,
+.list-page-table.table-fixed col.list-page-table-index-col,
+.list-page-table.table-fixed col.list-page-table-spacer {
+  width: 0 !important;
+}
+.list-page-table col.list-page-table-spacer,
+.list-page-table th.list-page-table-spacer,
+.list-page-table td.list-page-table-spacer {
+  width: 4px !important;
+  min-width: 4px !important;
+  max-width: 4px !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
 }

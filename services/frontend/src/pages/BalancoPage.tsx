@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import BrazilianDatePicker, { BrazilianDatePickerHandle } from '../components/BrazilianDatePicker'
+import { DateField, type DateFieldHandle } from '../components/date'
 import { formatDateBR, parseLocalDate, dateToLocalString, getTodayLocalDate } from '../utils/dateUtils'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
@@ -9,7 +9,6 @@ import {
   CadastroListPageHero,
   CadastroListPageShell,
   CadastroListPageTabs,
-  listPageTableRowHoverCls,
 } from '../components/CadastroListPageLayout'
 import {
   CadastroFieldLabel,
@@ -28,6 +27,7 @@ import LoadingSpinner from '../components/LoadingSpinner'
 import BalanceDetailsModal from '../components/BalanceDetailsModal'
 import MonthlyHistoryDetailsModal from '../components/MonthlyHistoryDetailsModal'
 import SharedAccountDisplay from '../components/SharedAccountDisplay'
+import SharedClosureItemsModal from '../components/SharedClosureItemsModal'
 import JsonTreeViewer from '../components/JsonTreeViewer'
 import {
   filterRegularLoanPayments,
@@ -584,43 +584,6 @@ function pathForTab(tab: BalancoTab): string {
   return '/fechamentos/compartilhado'
 }
 
-const closureTableHeadCls =
-  'bg-gray-100 dark:bg-gray-800/80 [&_th]:border-b-2 [&_th]:border-gray-200 dark:[&_th]:border-gray-600'
-const closureTableThLeftCls =
-  'px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300'
-const closureTableThRightCls =
-  'px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300'
-const closureTableThCenterCls =
-  'px-3 py-2 text-center text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300'
-const closureTableTdCls = 'border-b border-gray-200 px-3 py-2 dark:border-gray-600'
-const closureTableFootCls =
-  'border-t-2 border-gray-200 bg-gray-50 dark:border-gray-600 dark:bg-gray-800/50'
-
-function closureItemShareValues(item: {
-  amount: number | string
-  my_contribution_percentage?: string | number
-  partner_contribution_percentage?: string | number
-  should_invert?: boolean
-}) {
-  const originalMyPercentage = parseFloat(String(item.my_contribution_percentage || '0'))
-  const originalPartnerPercentage = parseFloat(String(item.partner_contribution_percentage || '0'))
-  const myPercentage = item.should_invert ? originalPartnerPercentage : originalMyPercentage
-  const partnerPercentage = item.should_invert ? originalMyPercentage : originalPartnerPercentage
-  const rawAmount = parseFloat(String(item.amount))
-  return {
-    myPercentage,
-    partnerPercentage,
-    rawAmount,
-    myValueSigned: rawAmount * (myPercentage / 100),
-    partnerValueSigned: rawAmount * (partnerPercentage / 100),
-  }
-}
-
-function signedMoneyCls(value: number) {
-  if (Math.abs(value) < 0.01) return 'text-gray-900 dark:text-gray-100'
-  return value < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'
-}
-
 const BalancoPage = () => {
   const { showConfirm, ConfirmComponent } = useConfirm()
   const location = useLocation()
@@ -630,8 +593,8 @@ const BalancoPage = () => {
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear())
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1)
   const [loggedAccountId, setLoggedAccountId] = useState<number | null>(null)
-  const startDatePickerRef = useRef<BrazilianDatePickerHandle>(null)
-  const endDatePickerRef = useRef<BrazilianDatePickerHandle>(null)
+  const startDatePickerRef = useRef<DateFieldHandle>(null)
+  const endDatePickerRef = useRef<DateFieldHandle>(null)
 
   // Helper: Converter Date para YYYY-MM-DD HH:MM:SS (timestamp completo)
   const dateToTimestampString = (date: Date | string) => {
@@ -684,6 +647,7 @@ const BalancoPage = () => {
   const [showSettleModal, setShowSettleModal] = useState(false)
   const [closureNotes, setClosureNotes] = useState('')
   const [settlementNotes, setSettlementNotes] = useState('')
+  const [settlementDate, setSettlementDate] = useState('')
   const [closuresLoading, setClosuresLoading] = useState(false)
   const [selectedClosureIds, setSelectedClosureIds] = useState<Set<number>>(new Set())  // IDs de fechamentos selecionados
   const [bulkActionLoading, setBulkActionLoading] = useState(false)  // Loading para ações em massa
@@ -1485,6 +1449,11 @@ const BalancoPage = () => {
         allItems.push(...addSourceToItems(partnerAccount.benefit_card_revenue_items || [], 'Cartão Benefício', partnerAccount, mainAccount, true))
       }
 
+      allItems.sort((left, right) => {
+        const byDate = String(right.date || '').localeCompare(String(left.date || ''))
+        if (byDate !== 0) return byDate
+        return String(right.id ?? '').localeCompare(String(left.id ?? ''), undefined, { numeric: true })
+      })
       setClosureItems(allItems)
       setIsClosurePartnerView(isPartnerView)  // Salvar perspectiva para uso nos totais
 
@@ -1500,11 +1469,12 @@ const BalancoPage = () => {
   }
 
   const handleSettleClosure = async () => {
-    if (!selectedClosure) return
+    if (!selectedClosure || !settlementDate) return
 
     try {
       await axios.put(`/api/balance/closures/${selectedClosure.id}/settle`, {
-        settlement_notes: settlementNotes || null
+        settlement_notes: settlementNotes || null,
+        settlement_date: settlementDate,
       })
 
       setShowSettleModal(false)
@@ -1764,9 +1734,27 @@ const BalancoPage = () => {
     return (num / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   }
 
+  const clampCents = (digits: string, maxAmount: number): string => {
+    const cents = parseInt(digits || '0', 10)
+    const maxCents = Math.max(0, Math.round(maxAmount * 100))
+    if (!cents) return ''
+    return String(Math.min(cents, maxCents))
+  }
+
+  const paymentClosureRemaining = (closure: BalanceClosure): number =>
+    Math.max(0, parseFloat(String(closure.remaining_balance ?? Math.abs(closure.net_balance ?? 0))))
+
+  const editPaymentRemaining = (closure: BalanceClosure): number => {
+    const otherPaid = (closure.closure_payments || [])
+      .filter(p => p.id !== editingPaymentId)
+      .reduce((sum, p) => sum + parseFloat(String(p.amount ?? 0)), 0)
+    const debt = Math.abs(parseFloat(String(closure.net_balance ?? 0)))
+    return Math.max(0, debt - otherPaid)
+  }
+
   const handlePaymentAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const digits = e.target.value.replace(/\D/g, '')
-    setPaymentAmountCents(digits)
+    setPaymentAmountCents(paymentClosure ? clampCents(digits, paymentClosureRemaining(paymentClosure)) : digits)
   }
 
   const handleAddPayment = async () => {
@@ -2268,7 +2256,7 @@ const BalancoPage = () => {
                     <Calendar size={14} className="inline mr-1 text-color-primary" />
                     Data de Início
                   </label>
-                  <BrazilianDatePicker
+                  <DateField
                     ref={startDatePickerRef}
                     value={startDate}
                     onChange={setStartDate}
@@ -2300,7 +2288,7 @@ const BalancoPage = () => {
                     <Calendar size={14} className="inline mr-1 text-color-primary" />
                     Data de Fim
                   </label>
-                  <BrazilianDatePicker
+                  <DateField
                     ref={endDatePickerRef}
                     value={endDate}
                     onChange={setEndDate}
@@ -3964,6 +3952,7 @@ const BalancoPage = () => {
                                   <button
                                     onClick={() => {
                                       setSelectedClosure(closure)
+                                      setSettlementDate('')
                                       setShowSettleModal(true)
                                     }}
                                     className="p-1.5 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-all"
@@ -4412,415 +4401,20 @@ const BalancoPage = () => {
 
         {/* Modal: Detalhes do Fechamento - Itens */}
         {showDetailsModal && selectedClosure && (
-          <CadastroModalShell
-            maxWidth="max-w-[95vw]"
-            maxHeight="max-h-[90vh]"
-            onBackdropClick={() => {
+          <SharedClosureItemsModal
+            closure={selectedClosure}
+            items={closureItems}
+            loanPayments={closureLoanPayments}
+            isPartnerView={isClosurePartnerView}
+            onClose={() => {
               setShowDetailsModal(false)
               setSelectedClosure(null)
               setClosureItems([])
               setClosureLoanPayments([])
               setIsClosurePartnerView(false)
             }}
-            zClass="z-50"
-          >
-            <CadastroModalHeader
-              isEdit={false}
-              title={`Itens do Fechamento - ${String(selectedClosure.month).padStart(2, '0')}/${selectedClosure.year}`}
-              subtitle={`${closureItems.length} itens • ${new Date(selectedClosure.period_start_date).toLocaleDateString('pt-BR')} a ${new Date(selectedClosure.closing_date).toLocaleDateString('pt-BR')}`}
-              onClose={() => {
-                setShowDetailsModal(false)
-                setSelectedClosure(null)
-                setClosureItems([])
-                setClosureLoanPayments([])
-                setIsClosurePartnerView(false)
-              }}
-              icon={<Receipt size={18} />}
-            />
-            <CadastroModalBody>
-              <CadastroFormSection title="Lançamentos" icon={<Receipt size={14} />} bodyClassName="p-0">
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[1200px] text-sm">
-                    <thead className={closureTableHeadCls}>
-                      <tr>
-                        <th className={`${closureTableThCenterCls} w-12`}>#</th>
-                        <th className={`${closureTableThCenterCls} w-12`}>Fonte</th>
-                        <th className={closureTableThLeftCls}>Data</th>
-                        <th className={closureTableThLeftCls}>Descrição</th>
-                        <th className={closureTableThLeftCls}>Cartão</th>
-                        <th className={closureTableThLeftCls}>Tag/Subtag</th>
-                        <th className={closureTableThLeftCls}>Conta Contraparte</th>
-                        <th className={closureTableThRightCls}>Valor Total</th>
-                        <th className={closureTableThCenterCls}>%</th>
-                        <th className={closureTableThRightCls}>Minha Parte</th>
-                        <th className={closureTableThRightCls}>Contraparte</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {closureItems.map((item, index) => {
-                        const {
-                          myPercentage,
-                          rawAmount,
-                          myValueSigned,
-                          partnerValueSigned,
-                        } = closureItemShareValues(item)
-                        const totalAmount = Math.abs(rawAmount)
-                        const myValue = Math.abs(myValueSigned)
-                        const partnerValue = Math.abs(partnerValueSigned)
-                        const isNegative = rawAmount < 0
-
-                        return (
-                          <tr key={`${item.id}-${index}`} className={listPageTableRowHoverCls}>
-                            <td className={`${closureTableTdCls} text-center text-sm text-gray-500 dark:text-gray-400`}>
-                              {index + 1}
-                            </td>
-                            <td className={`${closureTableTdCls} text-center`}>
-                              {item.source_type === 'Conta Bancária' && <Landmark size={16} className="inline text-blue-600 dark:text-blue-400" />}
-                              {item.source_type === 'Cartão de Crédito' && <CreditCard size={16} className="inline text-color-primary" />}
-                              {item.source_type === 'Cartão Benefício' && <Gift size={16} className="inline text-green-600 dark:text-green-400" />}
-                            </td>
-                            <td className={`${closureTableTdCls} whitespace-nowrap text-gray-600 dark:text-gray-400`}>
-                              {item.date.includes('T')
-                                ? new Date(item.date).toLocaleString('pt-BR', {
-                                    day: '2-digit',
-                                    month: '2-digit',
-                                    year: 'numeric',
-                                    hour: '2-digit',
-                                    minute: '2-digit'
-                                  })
-                                : new Date(item.date).toLocaleDateString('pt-BR')
-                              }
-                            </td>
-                            <td className={`${closureTableTdCls} font-medium text-gray-900 dark:text-white`}>
-                              {item.description || 'Sem descrição'}
-                              {item.current_installment && item.total_installments && item.total_installments > 1 && (
-                                <span className="ml-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">
-                                  ({item.current_installment}/{item.total_installments})
-                                </span>
-                              )}
-                            </td>
-                            <td className={`${closureTableTdCls} text-xs text-gray-900 dark:text-white`}>
-                              {item.card_name ? (
-                                <div>
-                                  <span className="font-medium">{item.card_name}</span>
-                                  <span className="ml-1 text-[10px] text-gray-500 dark:text-gray-400">•••• {item.card_number}</span>
-                                </div>
-                              ) : (
-                                <span className="text-gray-400">-</span>
-                              )}
-                            </td>
-                            <td className={`${closureTableTdCls} text-gray-500 dark:text-gray-400`}>
-                              {item.tag_name ? (
-                                <>{item.tag_name}{item.subtag_name && ` > ${item.subtag_name}`}</>
-                              ) : '-'}
-                            </td>
-                            <td className={closureTableTdCls}>
-                              <SharedAccountDisplay
-                                account={item.counterpart_account ? {
-                                  id: 0,
-                                  name: item.counterpart_account.name,
-                                  bank: item.counterpart_account.bank ? { name: item.counterpart_account.bank } : null,
-                                  agency: item.counterpart_account.agency,
-                                  account_number: item.counterpart_account.number
-                                } : null}
-                                ownershipPercentage={item.should_invert
-                                  ? parseFloat(item.my_contribution_percentage || '0')
-                                  : parseFloat(item.partner_contribution_percentage || '0')}
-                              />
-                            </td>
-                            <td className={`${closureTableTdCls} whitespace-nowrap text-right tabular-nums ${
-                              totalAmount === 0 ? 'text-gray-900 dark:text-gray-100' : isNegative ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'
-                            }`}>
-                              {totalAmount === 0 ? '' : isNegative ? '-' : ''}{formatCurrency(totalAmount)}
-                            </td>
-                            <td className={`${closureTableTdCls} text-center font-medium text-gray-700 dark:text-gray-300`}>
-                              {myPercentage.toFixed(0)}%
-                            </td>
-                            <td className={`${closureTableTdCls} whitespace-nowrap text-right tabular-nums ${
-                              myValue === 0 ? 'text-gray-900 dark:text-gray-100' : myValueSigned < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'
-                            }`}>
-                              {myValue === 0 ? '' : myValueSigned < 0 ? '-' : ''}{formatCurrency(myValue)}
-                            </td>
-                            <td className={`${closureTableTdCls} whitespace-nowrap text-right tabular-nums ${
-                              partnerValue === 0 ? 'text-gray-900 dark:text-gray-100' : partnerValueSigned < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'
-                            }`}>
-                              {partnerValue === 0 ? '' : partnerValueSigned < 0 ? '-' : ''}{formatCurrency(partnerValue)}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                    {(() => {
-                      const totals = closureItems.reduce(
-                        (acc, item) => {
-                          const share = closureItemShareValues(item)
-                          acc.raw += share.rawAmount
-                          acc.mine += share.myValueSigned
-                          acc.partner += share.partnerValueSigned
-                          return acc
-                        },
-                        { raw: 0, mine: 0, partner: 0 },
-                      )
-                      return (
-                        <tfoot className={closureTableFootCls}>
-                          <tr>
-                            <td colSpan={7} className="px-3 py-2.5 font-semibold text-gray-800 dark:text-gray-100">
-                              Total
-                            </td>
-                            <td className={`px-3 py-2.5 text-right font-semibold tabular-nums ${signedMoneyCls(totals.raw)}`}>
-                              {formatSignedCurrency(totals.raw)}
-                            </td>
-                            <td className="px-3 py-2.5 text-center text-gray-500 dark:text-gray-400">—</td>
-                            <td className={`px-3 py-2.5 text-right font-semibold tabular-nums ${signedMoneyCls(totals.mine)}`}>
-                              {formatSignedCurrency(totals.mine)}
-                            </td>
-                            <td className={`px-3 py-2.5 text-right font-semibold tabular-nums ${signedMoneyCls(totals.partner)}`}>
-                              {formatSignedCurrency(totals.partner)}
-                            </td>
-                          </tr>
-                        </tfoot>
-                      )
-                    })()}
-                  </table>
-                </div>
-              </CadastroFormSection>
-
-              {filterRegularLoanPayments(closureLoanPayments).length > 0 && (
-                <CadastroFormSection title="Empréstimos" icon={<Banknote size={14} />} bodyClassName="p-0">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead className={closureTableHeadCls}>
-                        <tr>
-                          <th className={`${closureTableThCenterCls} w-12`}>#</th>
-                          <th className={closureTableThLeftCls}>Tipo</th>
-                          <th className={closureTableThLeftCls}>Descrição</th>
-                          <th className={closureTableThRightCls}>Principal</th>
-                          <th className={closureTableThRightCls}>Saldo Corrigido</th>
-                          <th className={closureTableThRightCls}>Valor Quitado</th>
-                          <th className={closureTableThRightCls}>Saldo Restante</th>
-                          <th className={closureTableThCenterCls}>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filterRegularLoanPayments(closureLoanPayments).map((payment, index) => {
-                          const originalIsLent = payment.loan_type === 'lent'
-                          const isLent = isClosurePartnerView ? !originalIsLent : originalIsLent
-
-                          const principalSigned = signedLoanFieldValue(payment.original_amount || 0, isLent, 'principal')
-                          const beforeSigned = signedLoanFieldValue(payment.remaining_before || 0, isLent, 'corrected')
-                          const paidSigned = signedLoanFieldValue(payment.amount_paid || 0, isLent, 'paid')
-                          const afterSigned = signedLoanFieldValue(payment.remaining_after || 0, isLent, 'remaining')
-
-                          const valueColor = isLent
-                            ? 'text-green-600 dark:text-green-400'
-                            : 'text-red-600 dark:text-red-400'
-
-                          const afterAbs = Math.abs(afterSigned)
-                          const remainingColor = afterAbs < 0.01
-                            ? 'text-gray-500 dark:text-gray-400'
-                            : valueColor
-
-                          const isSettled = afterAbs < 0.01
-
-                          return (
-                            <tr key={index} className={listPageTableRowHoverCls}>
-                              <td className={`${closureTableTdCls} text-center text-sm text-gray-500 dark:text-gray-400`}>
-                                {index + 1}
-                              </td>
-                              <td className={closureTableTdCls}>
-                                <span
-                                  className={`inline-flex w-[100px] items-center justify-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium text-white ${
-                                    isLent ? 'bg-green-600' : 'bg-red-600'
-                                  }`}
-                                >
-                                  {isLent ? <ArrowUp size={12} /> : <ArrowDown size={12} />}
-                                  {isLent ? 'A Receber' : 'A Pagar'}
-                                </span>
-                              </td>
-                              <td className={`${closureTableTdCls} text-gray-900 dark:text-white`}>
-                                {payment.description || 'Empréstimo'}
-                              </td>
-                              <td className={`${closureTableTdCls} text-right tabular-nums ${Math.abs(principalSigned) < 0.01 ? 'text-gray-900 dark:text-gray-100' : valueColor}`}>
-                                {formatSignedCurrency(principalSigned)}
-                              </td>
-                              <td className={`${closureTableTdCls} text-right tabular-nums ${valueColor}`}>
-                                {formatSignedCurrency(beforeSigned)}
-                              </td>
-                              <td className={`${closureTableTdCls} text-right tabular-nums ${valueColor}`}>
-                                {formatSignedCurrency(paidSigned)}
-                              </td>
-                              <td className={`${closureTableTdCls} text-right tabular-nums ${remainingColor}`}>
-                                {formatSignedCurrency(afterSigned)}
-                              </td>
-                              <td className={`${closureTableTdCls} text-center`}>
-                                <span
-                                  className={`inline-flex w-[100px] items-center justify-center gap-1.5 rounded px-3 py-1 text-xs font-medium text-white ${
-                                    isSettled ? 'bg-green-600' : 'bg-blue-600'
-                                  }`}
-                                >
-                                  <span className="text-sm font-bold">{isSettled ? '✓' : '○'}</span>
-                                  {isSettled ? 'Quitado' : 'Aberto'}
-                                </span>
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                      {(() => {
-                        const rows = filterRegularLoanPayments(closureLoanPayments)
-                        const totals = rows.reduce(
-                          (acc, payment) => {
-                            const originalIsLent = payment.loan_type === 'lent'
-                            const isLent = isClosurePartnerView ? !originalIsLent : originalIsLent
-                            acc.principal += signedLoanFieldValue(payment.original_amount || 0, isLent, 'principal')
-                            acc.before += signedLoanFieldValue(payment.remaining_before || 0, isLent, 'corrected')
-                            acc.paid += signedLoanFieldValue(payment.amount_paid || 0, isLent, 'paid')
-                            acc.after += signedLoanFieldValue(payment.remaining_after || 0, isLent, 'remaining')
-                            return acc
-                          },
-                          { principal: 0, before: 0, paid: 0, after: 0 },
-                        )
-                        return (
-                          <tfoot className={closureTableFootCls}>
-                            <tr>
-                              <td colSpan={3} className="px-3 py-2.5 font-semibold text-gray-800 dark:text-gray-100">
-                                Total
-                              </td>
-                              <td className={`px-3 py-2.5 text-right font-semibold tabular-nums ${signedMoneyCls(totals.principal)}`}>
-                                {formatSignedCurrency(totals.principal)}
-                              </td>
-                              <td className={`px-3 py-2.5 text-right font-semibold tabular-nums ${signedMoneyCls(totals.before)}`}>
-                                {formatSignedCurrency(totals.before)}
-                              </td>
-                              <td className={`px-3 py-2.5 text-right font-semibold tabular-nums ${signedMoneyCls(totals.paid)}`}>
-                                {formatSignedCurrency(totals.paid)}
-                              </td>
-                              <td className={`px-3 py-2.5 text-right font-semibold tabular-nums ${signedMoneyCls(totals.after)}`}>
-                                {formatSignedCurrency(totals.after)}
-                              </td>
-                              <td className="px-3 py-2.5" />
-                            </tr>
-                          </tfoot>
-                        )
-                      })()}
-                    </table>
-                  </div>
-                </CadastroFormSection>
-              )}
-            </CadastroModalBody>
-            <CadastroModalFooter
-              hideSave
-              closeLabel="Fechar"
-              onClose={() => {
-                setShowDetailsModal(false)
-                setSelectedClosure(null)
-                setClosureItems([])
-                setClosureLoanPayments([])
-                setIsClosurePartnerView(false)
-              }}
-              leading={
-                <div className="flex min-w-0 flex-wrap items-center justify-between gap-4">
-                  {/* Legenda */}
-                  <div className="flex items-center gap-4 text-xs text-gray-600 dark:text-gray-400">
-                    <div className="flex items-center gap-1.5">
-                      <Landmark size={14} className="text-blue-600 dark:text-blue-400" />
-                      <span>Conta Bancária</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <CreditCard size={14} className="text-color-primary" />
-                      <span>Cartão de Crédito</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <Gift size={14} className="text-green-600 dark:text-green-400" />
-                      <span>Cartão Benefício</span>
-                    </div>
-                    {filterRegularLoanPayments(closureLoanPayments).length > 0 && (
-                      <div className="flex items-center gap-1.5">
-                        <Banknote size={14} className="text-amber-600 dark:text-amber-400" />
-                        <span>Empréstimo</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Totais */}
-                  {(() => {
-                    // Cada card (main e partner) tem seus próprios valores de A Receber/A Pagar
-                    // A conta logada deve ver os valores do SEU card
-                    const closureData = selectedClosure?.closure_data || {}
-                    const mainCard = closureData.main_account_card || {}
-                    const partnerCard = closureData.partner_account_card || {}
-
-                    // Selecionar o card correto baseado na conta logada
-                    const viewerCard = isClosurePartnerView ? partnerCard : mainCard
-
-                    // Valores do card da conta logada
-                    const totalToReceive = parseFloat(viewerCard.total_to_receive ?? 0)
-                    const totalToPay = Math.abs(parseFloat(viewerCard.total_to_pay ?? 0))
-                    const loanToReceive = parseFloat(viewerCard.loan_to_receive ?? 0)
-                    const loanToPay = Math.abs(parseFloat(viewerCard.loan_to_pay ?? 0))
-
-                    // A Receber = total_to_receive + loan_to_receive
-                    const displayToReceive = totalToReceive + loanToReceive
-                    // A Pagar = |total_to_pay| + |loan_to_pay|
-                    const displayToPay = totalToPay + loanToPay
-
-                    // Saldo = A Receber - A Pagar (+ crédito da quitação, se houver)
-                    const settlementCreditSigned = selectedClosure
-                      ? getSettlementCreditSignedForViewer(selectedClosure, !isClosurePartnerView)
-                      : 0
-                    const displayBalance = displayToReceive - displayToPay + settlementCreditSigned
-                    const regularLoanCount = filterRegularLoanPayments(closureLoanPayments).length
-                    const settlementCreditTotal = selectedClosure ? getSettlementCreditTotal(selectedClosure) : 0
-
-                    return (
-                      <div className="flex items-center gap-6">
-                        {/* Saldo primeiro */}
-                        <div className="text-right">
-                          <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
-                            Saldo ({closureItems.length} {closureItems.length === 1 ? 'item' : 'itens'}
-                            {regularLoanCount > 0 && ` + ${regularLoanCount} empréstimo${regularLoanCount > 1 ? 's' : ''}`}
-                            {settlementCreditTotal > 0.01 && ', crédito quitação'})
-                          </div>
-                          <span className={`text-lg font-bold ${
-                            displayBalance === 0 ? 'text-gray-900 dark:text-gray-100' : displayBalance > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                          }`}>
-                            {displayBalance < 0 ? '-' : ''}{formatCurrency(Math.abs(displayBalance))}
-                          </span>
-                        </div>
-
-                        {/* Divisor vertical */}
-                        <div className="h-10 w-px bg-gray-300 dark:bg-gray-600"></div>
-
-                        {/* Total a Receber */}
-                        <div className="text-right">
-                          <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Total a Receber</div>
-                          <span className={`text-lg font-bold ${
-                            displayToReceive === 0 ? 'text-gray-900 dark:text-gray-100' : 'text-green-600 dark:text-green-400'
-                          }`}>
-                            {formatCurrency(displayToReceive)}
-                          </span>
-                        </div>
-
-                        {/* Divisor horizontal */}
-                        <div className="h-10 w-px bg-gray-300 dark:bg-gray-600"></div>
-
-                        {/* Total a Pagar */}
-                        <div className="text-right">
-                          <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Total a Pagar</div>
-                          <span className={`text-lg font-bold ${
-                            displayToPay === 0 ? 'text-gray-900 dark:text-gray-100' : 'text-red-600 dark:text-red-400'
-                          }`}>
-                            -{formatCurrency(displayToPay)}
-                          </span>
-                        </div>
-                      </div>
-                    )
-                  })()}
-                </div>
-                }
-              />
-            </CadastroModalShell>
-          )}
+          />
+        )}
 
         {/* Modal: Erro ao remover pagamento (empréstimo de crédito bloqueado) */}
         {paymentDeleteError && (
@@ -4959,6 +4553,17 @@ const BalancoPage = () => {
                 <CadastroModalFieldsGrid>
                   <CadastroModalFieldsRow>
                     <label className="block min-w-0">
+                      <CadastroFieldLabel required>Data da quitação</CadastroFieldLabel>
+                      <DateField
+                        value={settlementDate}
+                        onChange={setSettlementDate}
+                        maxDate={new Date()}
+                        className={`${cadastroFieldCls} mt-0.5`}
+                      />
+                    </label>
+                  </CadastroModalFieldsRow>
+                  <CadastroModalFieldsRow>
+                    <label className="block min-w-0">
                       <CadastroFieldLabel>Observações da quitação</CadastroFieldLabel>
                       <textarea
                         value={settlementNotes}
@@ -4978,6 +4583,7 @@ const BalancoPage = () => {
                 setSettlementNotes('')
               }}
               onSave={handleSettleClosure}
+              disabled={!settlementDate}
               saveLabel="Confirmar Quitação"
               saveTone="success"
             />
@@ -5001,32 +4607,15 @@ const BalancoPage = () => {
                 <CadastroModalFieldsGrid>
                   <CadastroModalFieldsRow>
                     {(() => {
-                      const remaining = parseFloat(String(paymentClosure.remaining_balance ?? Math.abs(paymentClosure.net_balance ?? 0)))
+                      const remaining = paymentClosureRemaining(paymentClosure)
                       const isFullyPaid = remaining <= 0
-                      const amountValue = parseInt(paymentAmountCents || '0', 10) / 100
-                      const mandanteAReceber = parseFloat(String(paymentClosure.net_balance ?? 0)) > 0
-                      const creditPreview = mandanteAReceber && amountValue > remaining + 0.01
-                        ? amountValue - Math.max(remaining, 0)
-                        : 0
-                      const appliedPreview = creditPreview > 0 ? Math.max(remaining, 0) : amountValue
                       return (
-                        <>
-                          <div className={`rounded-lg border p-3 text-sm ${isFullyPaid ? 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20' : 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20'}`}>
-                            <p className="mb-1 text-xs text-gray-600 dark:text-gray-400">Saldo devedor restante</p>
-                            <p className={`text-lg font-bold ${isFullyPaid ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                              {isFullyPaid ? formatCurrency(0) : `- ${formatCurrency(remaining)}`}
-                            </p>
-                          </div>
-                          {creditPreview > 0.01 && (
-                            <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm dark:border-amber-800 dark:bg-amber-900/20">
-                              <p className="mb-1 text-xs font-medium text-amber-800 dark:text-amber-200">Pagamento a maior</p>
-                              <p className="text-sm text-amber-900 dark:text-amber-100">
-                                {formatCurrency(appliedPreview)} quita o fechamento automaticamente.
-                                {' '}{formatCurrency(creditPreview)} vira empréstimo <span className="font-semibold">a pagar</span> (crédito para o próximo mês).
-                              </p>
-                            </div>
-                          )}
-                        </>
+                        <div className={`rounded-lg border p-3 text-sm ${isFullyPaid ? 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20' : 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20'}`}>
+                          <p className="mb-1 text-xs text-gray-600 dark:text-gray-400">Saldo devedor restante</p>
+                          <p className={`text-lg font-bold ${isFullyPaid ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                            {isFullyPaid ? formatCurrency(0) : `- ${formatCurrency(remaining)}`}
+                          </p>
+                        </div>
                       )
                     })()}
                   </CadastroModalFieldsRow>
@@ -5048,12 +4637,15 @@ const BalancoPage = () => {
                           placeholder="0,00"
                         />
                       </div>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        Máximo: {formatCurrency(paymentClosureRemaining(paymentClosure))}
+                      </p>
                     </label>
                   </CadastroModalFieldsRow>
                   <CadastroModalFieldsRow>
                     <label className="block min-w-0">
                       <CadastroFieldLabel required>Data do Pagamento</CadastroFieldLabel>
-                      <BrazilianDatePicker
+                      <DateField
                         value={paymentDate}
                         onChange={setPaymentDate}
                         maxDate={new Date()}
@@ -5098,30 +4690,6 @@ const BalancoPage = () => {
             <CadastroModalBody>
               <CadastroFormSection title="Pagamento" icon={<CreditCard size={14} />}>
                 <CadastroModalFieldsGrid>
-                  {(() => {
-                    const otherPaid = (editingPaymentClosure.closure_payments || [])
-                      .filter(p => p.id !== editingPaymentId)
-                      .reduce((sum, p) => sum + parseFloat(String(p.amount ?? 0)), 0)
-                    const debt = Math.abs(parseFloat(String(editingPaymentClosure.net_balance ?? 0)))
-                    const remaining = Math.max(0, debt - otherPaid)
-                    const amountValue = parseInt(editPaymentCents || '0', 10) / 100
-                    const mandanteAReceber = parseFloat(String(editingPaymentClosure.net_balance ?? 0)) > 0
-                    const creditPreview = mandanteAReceber && amountValue > remaining + 0.01
-                      ? amountValue - remaining
-                      : 0
-                    if (creditPreview <= 0.01) return null
-                    return (
-                      <CadastroModalFieldsRow>
-                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm dark:border-amber-800 dark:bg-amber-900/20">
-                          <p className="mb-1 text-xs font-medium text-amber-800 dark:text-amber-200">Pagamento a maior</p>
-                          <p className="text-sm text-amber-900 dark:text-amber-100">
-                            {formatCurrency(remaining)} quita o fechamento automaticamente.
-                            {' '}{formatCurrency(creditPreview)} vira empréstimo <span className="font-semibold">a pagar</span> (crédito para o próximo mês).
-                          </p>
-                        </div>
-                      </CadastroModalFieldsRow>
-                    )
-                  })()}
                   <CadastroModalFieldsRow>
                     <label className="block min-w-0">
                       <CadastroFieldLabel>Valor</CadastroFieldLabel>
@@ -5131,7 +4699,9 @@ const BalancoPage = () => {
                           type="text"
                           inputMode="numeric"
                           value={formatAmountMask(editPaymentCents)}
-                          onChange={e => setEditPaymentCents(e.target.value.replace(/\D/g, ''))}
+                          onChange={e => setEditPaymentCents(
+                            clampCents(e.target.value.replace(/\D/g, ''), editPaymentRemaining(editingPaymentClosure)),
+                          )}
                           className={`${cadastroFieldCls} pl-10 ${parseInt(editPaymentCents || '0') > 0 ? 'border-green-400 font-semibold text-green-700 dark:text-green-300' : ''}`}
                           placeholder="0,00"
                         />
@@ -5141,7 +4711,7 @@ const BalancoPage = () => {
                   <CadastroModalFieldsRow>
                     <label className="block min-w-0">
                       <CadastroFieldLabel>Data</CadastroFieldLabel>
-                      <BrazilianDatePicker
+                      <DateField
                         value={editPaymentDate}
                         onChange={setEditPaymentDate}
                         maxDate={new Date()}

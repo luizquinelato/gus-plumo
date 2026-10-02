@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import axios from 'axios'
 import { Wallet, PlusCircle, Users, Calendar, Percent } from 'lucide-react'
 import Toast from './Toast'
+import { DateField } from './date'
 import {
   CadastroModalShell,
   CadastroModalHeader,
@@ -464,10 +465,9 @@ export default function SendToLoanModal({ isOpen, onClose, expense, onSuccess }:
                     <CadastroModalFieldsRow>
                       <label className="block min-w-0">
                         <CadastroFieldLabel>Vencimento</CadastroFieldLabel>
-                        <input
-                          type="date"
+                        <DateField
                           value={dueDate}
-                          onChange={(e) => setDueDate(e.target.value)}
+                          onChange={setDueDate}
                           className={`${cadastroFieldCls} mt-0.5`}
                         />
                       </label>

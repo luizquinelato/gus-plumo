@@ -16,6 +16,7 @@ from sqlalchemy import func
 from app.models import CreditCardInvoice, Cartao, Subtag, Tag, TransactionMapping
 from app.utils.card_helper import CardHelper
 from app.utils.mapping_helper import MappingHelper
+from app.utils.sharing_percentage import resolve_ownership_percentage
 from app.converters.fatura_pdf import normalize_invoice_issuer
 from app.database import DATABASE_URL
 
@@ -40,42 +41,10 @@ class FaturaService:
             - ownership_percentage: 0-100 (percentual do usuário)
             - expense_sharing_id: ID da configuração de compartilhamento (se compartilhado)
         """
+        from app.utils.sharing_percentage import card_adjustment_config
+
         card = db.query(Cartao).filter(Cartao.id == card_id).first()
-
-        if not card:
-            # Padrão se cartão não encontrado
-            return {
-                "adjustment_type": "proprio",
-                "ownership_percentage": Decimal("100.00"),
-                "expense_sharing_id": None
-            }
-
-        # Mapeia ownership_type para adjustment_type
-        if card.ownership_type == "proprio":
-            return {
-                "adjustment_type": "proprio",
-                "ownership_percentage": Decimal("100.00"),
-                "expense_sharing_id": None
-            }
-        elif card.ownership_type == "compartilhado":
-            # Busca percentual do compartilhamento (default 50%)
-            ownership_pct = Decimal("50.00")  # Default 50/50
-            if card.expense_sharing and hasattr(card.expense_sharing, 'my_contribution_percentage'):
-                # Usa my_contribution_percentage da configuração de compartilhamento
-                ownership_pct = card.expense_sharing.my_contribution_percentage
-
-            return {
-                "adjustment_type": "compartilhado",
-                "ownership_percentage": ownership_pct,
-                "expense_sharing_id": card.expense_sharing_id
-            }
-        else:
-            # Fallback para 'proprio'
-            return {
-                "adjustment_type": "proprio",
-                "ownership_percentage": Decimal("100.00"),
-                "expense_sharing_id": None
-            }
+        return card_adjustment_config(card)
 
     @staticmethod
     def buscar_subtag_por_mapeamento(db: Session, descricao: str, tenant_id: int = 1) -> Optional[int]:
@@ -551,8 +520,12 @@ class FaturaService:
             Cartao.tenant_id == tenant_id,
             Cartao.active == True
         ).all()
-        cartao_cache = {c.number: c.id for c in cartoes_query}
-        logger.info(f"   ✅ {len(cartao_cache)} cartões em cache")
+        cartao_cache: dict[str, int] = {}
+        for c in cartoes_query:
+            norm = CardHelper.normalize_card_number(str(c.number))
+            cartao_cache[norm] = c.id
+            cartao_cache[str(c.number)] = c.id
+        logger.info(f"   ✅ {len(cartoes_query)} cartões em cache")
 
         # MappingHelper para buscar mapeamentos (suporta exact, pattern e regex)
         # O helper carrega todos os mapeamentos em cache e faz matching correto:
@@ -565,22 +538,18 @@ class FaturaService:
 
         # Cache de configurações de cartões: {card_id: {ownership_percentage, expense_sharing_id, ...}}
         adjustment_cache = {}
-        for c in db.query(Cartao).filter(Cartao.tenant_id == 1).all():
-            # Calcula ownership_percentage baseado no ownership_type (property calculada)
-            if c.ownership_type == 'terceiro':
-                ownership_pct = Decimal("0.00")
-            elif c.ownership_type == 'compartilhado':
-                # Busca percentual do compartilhamento (default 50%)
-                ownership_pct = Decimal("50.00")
-                if c.expense_sharing and hasattr(c.expense_sharing, 'my_contribution_percentage'):
-                    ownership_pct = Decimal(str(c.expense_sharing.my_contribution_percentage))
-            else:  # proprio
-                ownership_pct = Decimal("100.00")
+        from app.utils.sharing_percentage import card_adjustment_config
 
+        for c in db.query(Cartao).filter(Cartao.tenant_id == tenant_id).all():
+            cfg = card_adjustment_config(c)
             adjustment_cache[c.id] = {
-                'ownership_percentage': ownership_pct,
-                'expense_sharing_id': c.expense_sharing_id,
-                'account_id': c.account_id
+                "ownership_percentage": cfg["expense_ownership_percentage"],
+                "expense_sharing_id": cfg["expense_sharing_id"],
+                "account_id": c.account_id,
+                "card": c,
+                "sharing": c.expense_sharing,
+                "expense_ownership_percentage": cfg["expense_ownership_percentage"],
+                "revenue_ownership_percentage": cfg["revenue_ownership_percentage"],
             }
         logger.info(f"   ✅ {len(adjustment_cache)} configurações de cartões em cache")
 
@@ -672,7 +641,9 @@ class FaturaService:
             try:
                 # Busca cartão_id usando CACHE (sem query!)
                 cartao_number = row['Cartão'][-4:] if len(row['Cartão']) >= 4 else row['Cartão']
-                cartao_id = cartao_cache.get(cartao_number)
+                cartao_id = cartao_cache.get(
+                    CardHelper.normalize_card_number(str(cartao_number))
+                ) or cartao_cache.get(str(cartao_number))
                 if not cartao_id:
                     continue
 
@@ -848,13 +819,14 @@ class FaturaService:
                     # PRIORIDADE 1: Mapeamento (se tiver expense_sharing_id definido)
                     # PRIORIDADE 2: Cartão (configuração padrão)
                     final_expense_sharing_id = adjustment_config['expense_sharing_id']
-                    final_ownership_percentage = adjustment_config['ownership_percentage']
-
                     if mapping_data and mapping_data.get('expense_sharing_id') is not None:
-                        # Mapeamento tem compartilhamento específico - sobrescreve cartão
                         final_expense_sharing_id = mapping_data['expense_sharing_id']
-                        if mapping_data.get('my_contribution_percentage') is not None:
-                            final_ownership_percentage = Decimal(str(mapping_data['my_contribution_percentage']))
+                    final_ownership_percentage = resolve_ownership_percentage(
+                        amount=valor_invertido,
+                        sharing=adjustment_config.get('sharing'),
+                        card=adjustment_config.get('card'),
+                        mapping=mapping_data,
+                    )
 
                     # Novo registro - adiciona para insert
                     insert_record = {

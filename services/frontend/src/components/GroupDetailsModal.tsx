@@ -12,6 +12,9 @@ import {
   CadastroModalHeader,
   CadastroModalShell,
 } from './CadastroFormLayout'
+import { sharingPartnerLabel, sharingPercentForKind } from '../utils/accountFormatter'
+import Badge from './Badge'
+import { isProprioOwnershipPercent } from '../utils/ownershipPercentUi'
 
 interface Tag {
   id: number
@@ -40,6 +43,7 @@ interface Partner {
   account_id: number
   shared_account_id: number
   my_contribution_percentage: number
+  revenue_contribution_percentage?: number
   description: string | null
   active: boolean
   shared_account: Account | null
@@ -109,7 +113,12 @@ const GroupDetailsModal = ({
     // Calcular porcentagem: usar valor digitado ou padrão do parceiro
     const parsedPercentage = parseFloat(globalPercentage)
     const sharingPercentage = globalSharing
-      ? (!isNaN(parsedPercentage) ? parsedPercentage : (partners.find(p => p.id === globalSharing)?.my_contribution_percentage || 50))
+      ? (!isNaN(parsedPercentage)
+          ? parsedPercentage
+          : sharingPercentForKind(
+              partners.find(p => p.id === globalSharing),
+              tipo === 'receita' ? 'revenue' : 'expense'
+            ))
       : null
 
     const newMappings: Record<number, {
@@ -295,7 +304,7 @@ const GroupDetailsModal = ({
 
     // Obter porcentagem padrão do parceiro se selecionado
     const partner = sharingId ? partners.find(p => p.id === sharingId) : null
-    const defaultPercentage = partner?.my_contribution_percentage || 50
+    const defaultPercentage = sharingPercentForKind(partner, tipo === 'receita' ? 'revenue' : 'expense')
 
     setIndividualMappings(prev => ({
       ...prev,
@@ -431,7 +440,7 @@ const GroupDetailsModal = ({
                       if (value) {
                         const partner = partners.find(p => p.id === Number(value))
                         setGlobalSharing(Number(value))
-                        setGlobalPercentage(partner?.my_contribution_percentage?.toString() || '50')
+                        setGlobalPercentage(partner ? String(sharingPercentForKind(partner, tipo === 'receita' ? 'revenue' : 'expense')) : '50')
                       } else {
                         setGlobalSharing(null)
                         setGlobalPercentage('')
@@ -440,23 +449,11 @@ const GroupDetailsModal = ({
                     className={`${cadastroFieldCls} mt-0.5`}
                   >
                     <option value="">Selecione...</option>
-                    {partners.filter(p => p.active).map(partner => {
-                      const account = partner.shared_account
-                      const displayParts = [
-                        account?.name,
-                        account?.bank?.name,
-                        account?.agency,
-                        account?.account_number
-                      ].filter(Boolean)
-                      const displayText = displayParts.length > 0
-                        ? displayParts.join(' - ')
-                        : partner.description || `Conta ${partner.shared_account_id}`
-                      return (
-                        <option key={partner.id} value={partner.id}>
-                          {displayText}
-                        </option>
-                      )
-                    })}
+                    {partners.filter(p => p.active).map(partner => (
+                      <option key={partner.id} value={partner.id}>
+                        {sharingPartnerLabel(partner)}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 <label className="block min-w-0">
@@ -497,7 +494,7 @@ const GroupDetailsModal = ({
                             <th className="px-2 py-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 w-[20%]">Tag</th>
                             <th className="px-2 py-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 w-[20%]">Subtag</th>
                             <th className="px-2 py-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 w-[20%]">Compartilhamento</th>
-                            <th className="px-1 py-2 text-center text-xs font-semibold text-gray-600 dark:text-gray-300 w-14">%</th>
+                            <th className="px-1 py-2 text-center text-xs font-semibold text-gray-600 dark:text-gray-300 w-20" title="Parte do valor na sua conta (100% = próprio no fechamento)">Sua conta %</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -594,36 +591,30 @@ const GroupDetailsModal = ({
                                     className={cadastroFieldCls}
                                   >
                                     <option value="">Selecione...</option>
-                                    {partners.filter(p => p.active).map(partner => {
-                                      const account = partner.shared_account
-                                      const displayParts = [
-                                        account?.name,
-                                        account?.bank?.name,
-                                        account?.agency,
-                                        account?.account_number
-                                      ].filter(Boolean)
-                                      const displayText = displayParts.length > 0
-                                        ? displayParts.join(' - ')
-                                        : partner.description || `Conta ${partner.shared_account_id}`
-                                      return (
-                                        <option key={partner.id} value={partner.id}>
-                                          {displayText}
-                                        </option>
-                                      )
-                                    })}
+                                    {partners.filter(p => p.active).map(partner => (
+                                      <option key={partner.id} value={partner.id}>
+                                        {sharingPartnerLabel(partner)}
+                                      </option>
+                                    ))}
                                   </select>
                                 </td>
                                 {/* % */}
-                                <td className="px-1 py-2 text-center">
-                                  <input
-                                    type="text"
-                                    inputMode="decimal"
-                                    value={selectedPercentage ?? ''}
-                                    onChange={(e) => handleIndividualPercentageChange(record.id, e.target.value)}
-                                    disabled={!selectedSharing}
-                                    placeholder="50"
-                                    className={`${cadastroFieldCls} text-center disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:cursor-not-allowed`}
-                                  />
+                                <td className="px-1 py-2">
+                                  <div className="flex flex-col items-center gap-1">
+                                    <input
+                                      type="text"
+                                      inputMode="decimal"
+                                      value={selectedPercentage ?? ''}
+                                      onChange={(e) => handleIndividualPercentageChange(record.id, e.target.value)}
+                                      disabled={!selectedSharing}
+                                      placeholder="50"
+                                      title="Quanto do valor entra no fechamento da sua conta"
+                                      className={`${cadastroFieldCls} w-full text-center disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:cursor-not-allowed`}
+                                    />
+                                    {selectedSharing && isProprioOwnershipPercent(selectedPercentage) ? (
+                                      <Badge variant="statusCompact" tone="brand1" label="Próprio" />
+                                    ) : null}
+                                  </div>
                                 </td>
                               </tr>
                             )

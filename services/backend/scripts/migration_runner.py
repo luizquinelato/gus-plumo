@@ -270,10 +270,17 @@ def cmd_rollback_to(conn, target: str, confirm: bool):
     if not to_revert:
         print(f"✅  Already at or before version {target}. Nothing to revert.")
         return
+    modules = {f["version"]: load_module(f["path"]) for f in to_revert}
+    missing = [f"{f['version']}_{f['name']}" for f in to_revert if not callable(getattr(modules[f["version"]], "rollback", None))]
+    if missing:
+        print("❌  Rollback aborted before changing anything — missing rollback() in:")
+        for name in missing:
+            print(f"     • {name}")
+        sys.exit(1)
     print(f"🔄  Reverting {len(to_revert)} migration(s)...")
     for f in to_revert:
         close = _mig_banner(f["version"], f["name"])
-        mod = load_module(f["path"])
+        mod = modules[f["version"]]
         try:
             mod.rollback(conn)
             conn.commit()

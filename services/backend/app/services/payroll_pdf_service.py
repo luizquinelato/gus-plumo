@@ -3,7 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
-from PyPDF2 import PdfReader
+from ..utils.pdf_password import extract_pdf_text as _extract_pdf_text
 
 
 PayrollDocType = Literal["payslip", "income_report"]
@@ -41,12 +41,8 @@ MONTH_NAMES = {
 }
 
 
-def extract_pdf_text(file_path: str) -> str:
-    reader = PdfReader(file_path)
-    parts: List[str] = []
-    for page in reader.pages:
-        parts.append(page.extract_text() or "")
-    return "\n".join(parts)
+def extract_pdf_text(file_path: str, password: Optional[str] = None) -> str:
+    return _extract_pdf_text(file_path, password)
 
 
 def _normalize_pdf_text(text: str) -> str:

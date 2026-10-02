@@ -1,98 +1,68 @@
-import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect, type ReactNode } from 'react'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
 import {
   CadastroListPageBody,
   CadastroListPageHero,
+  CadastroListPrimaryButton,
   CadastroListPageShell,
+  listPageTableSectionCls,
 } from '../components/CadastroListPageLayout'
 import LoadingSpinner from '../components/LoadingSpinner'
 import UnifiedImportModal from '../components/UnifiedImportModal'
-import ManualTransactionModal from '../components/ManualTransactionModal'
-import HomeInvoiceDetailsModal, { HomeInvoiceModalParams } from '../components/HomeInvoiceDetailsModal'
 import {
   Upload,
-  CreditCard,
-  PlusCircle,
-  TrendingDown,
   TrendingUp,
+  TrendingDown,
   Gift,
   Landmark,
-  Clock,
-  ArrowRight,
-  Scale,
-  FileText,
-  Receipt,
-  ChevronRight,
   Home,
-  History,
   Eye,
   EyeOff,
+  CreditCard,
+  Receipt,
+  History,
+  Scale,
+  ArrowDownLeft,
+  ArrowUpRight,
+  BarChart3,
 } from 'lucide-react'
 import {
-  formatCurrencyWithColorSafe,
-  formatCurrencySafe,
   formatSignedCurrencySafe,
+  formatCurrency,
+  MASKED_CURRENCY,
 } from '../utils/currency'
 import { formatDateBR } from '../utils/dateUtils'
 import { useBalanceVisibility } from '../contexts/BalanceVisibilityContext'
 
-interface MonthSummary {
+interface ExecutiveFlowBlock {
+  period_label: string
   year_month: string
-  month_label: string
-  balance: number
-  total_expenses: number
-  total_revenue: number
-  expenses_count: number
-  revenue_count: number
+  current_balance?: number | null
+  opening_balance?: number | null
+  entries: number
+  exits: number
+  net: number
+  entries_count: number
+  exits_count: number
+  last_transaction_date?: string | null
 }
 
-interface CardMonthData {
-  card_id: number
-  card_number: string
-  card_name: string
-  card_type: string
-  total: number
-  count: number
+interface CreditCardExecutiveBlock {
+  last_invoice_year_month?: string | null
+  last_invoice_label?: string | null
+  last_invoice_total: number
+  last_invoice_count: number
+  average_invoice_total: number
+  average_sample_months: number
 }
 
-interface InvoiceMonthSummary {
+interface HomeExecutiveSummary {
+  period_label: string
   year_month: string
-  month_label: string
-  total: number
-  count: number
-  cards: CardMonthData[]
-}
-
-interface CardRemainingBalance {
-  card_id: number
-  card_number: string
-  card_name: string
-  card_type: string
-  remaining_total: number
-  remaining_count: number
-}
-
-interface RemainingInstallmentsSummary {
-  total: number
-  count: number
-  cards: CardRemainingBalance[]
-}
-
-interface HomeDashboardData {
-  months: MonthSummary[]
-  invoice_months: InvoiceMonthSummary[]
-  remaining_installments: RemainingInstallmentsSummary
-}
-
-interface CurrentBalanceData {
-  current_balance: number
-  total_credits: number
-  total_debits: number
-  credits_count: number
-  debits_count: number
-  last_transaction_date: string | null
+  bank: ExecutiveFlowBlock
+  benefit: ExecutiveFlowBlock
+  credit_card: CreditCardExecutiveBlock
 }
 
 const MONTH_NAMES_FULL = [
@@ -100,114 +70,149 @@ const MONTH_NAMES_FULL = [
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
 ]
 
-const MONTH_NAMES_SHORT = [
-  'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun',
-  'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez',
-]
+type LucideIcon = typeof TrendingUp
+
+function heroAmount(hidden: boolean, value: number, mode: 'signed' | 'inflow' | 'outflow' = 'signed') {
+  const valueCls = 'text-xl font-bold tabular-nums tracking-tight text-white sm:text-2xl lg:text-[1.75rem]'
+  if (hidden) {
+    return <span className={`${valueCls} tracking-widest text-white/45`}>{MASKED_CURRENCY}</span>
+  }
+  if (mode === 'outflow') {
+    const abs = formatCurrency(Math.abs(value))
+    return (
+      <span className={valueCls}>
+        {value === 0 ? formatCurrency(0) : `−${abs}`}
+      </span>
+    )
+  }
+  if (mode === 'inflow') {
+    return <span className={valueCls}>{formatCurrency(Math.abs(value))}</span>
+  }
+  return <span className={valueCls}>{formatCurrency(value)}</span>
+}
+
+function HeroMetric({
+  label,
+  icon: Icon,
+  hidden,
+  amount,
+  mode = 'signed',
+  foot,
+}: {
+  label: string
+  icon: LucideIcon
+  hidden: boolean
+  amount: number
+  mode?: 'signed' | 'inflow' | 'outflow'
+  foot?: string
+}) {
+  return (
+    <div className="rounded-xl bg-white/10 px-4 py-3 backdrop-blur-sm">
+      <div className="mb-1.5 flex items-center gap-1.5">
+        <Icon size={14} className="shrink-0 text-white/75" />
+        <span className="text-xs font-medium uppercase tracking-wide text-white/70">{label}</span>
+      </div>
+      <div>{heroAmount(hidden, amount, mode)}</div>
+      {foot ? <p className="mt-0.5 text-[11px] text-white/50">{foot}</p> : null}
+    </div>
+  )
+}
+
+function PanelHeader({
+  accentVar,
+  icon,
+  title,
+  subtitle,
+}: {
+  accentVar: string
+  icon: ReactNode
+  title: string
+  subtitle: string
+}) {
+  return (
+    <div
+      className="flex items-start gap-3 border-b border-l-4 border-gray-200 px-5 py-4 dark:border-gray-600"
+      style={{ borderLeftColor: accentVar }}
+    >
+      <div
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ring-1 ring-[color-mix(in_srgb,var(--color-1)_20%,transparent)]"
+        style={{
+          color: accentVar,
+          background: `color-mix(in srgb, ${accentVar} 14%, transparent)`,
+        }}
+      >
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <h2 className="text-lg font-bold text-gray-900 dark:text-white">{title}</h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400">{subtitle}</p>
+      </div>
+    </div>
+  )
+}
+
+function PanelCell({
+  label,
+  icon,
+  value,
+  hint,
+  large,
+}: {
+  label: string
+  icon: ReactNode
+  value: ReactNode
+  hint?: string
+  large?: boolean
+}) {
+  return (
+    <div className="flex min-h-[7.5rem] flex-col justify-center bg-white px-5 py-4 dark:bg-gray-800">
+      <div className="mb-2 flex items-center gap-2 text-gray-500 dark:text-gray-400">
+        {icon}
+        <span className="text-xs font-semibold uppercase tracking-wide">{label}</span>
+      </div>
+      <div className={large ? 'text-2xl sm:text-3xl' : 'text-xl sm:text-2xl'}>{value}</div>
+      {hint ? <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">{hint}</p> : null}
+    </div>
+  )
+}
 
 const HomePage = () => {
-  const navigate = useNavigate()
   const { hideBalanceValues, toggleBalanceVisibility } = useBalanceVisibility()
   const [isImportModalOpen, setIsImportModalOpen] = useState(false)
-  const [isManualTransactionModalOpen, setIsManualTransactionModalOpen] = useState(false)
-  const [invoiceModalParams, setInvoiceModalParams] = useState<HomeInvoiceModalParams | null>(null)
-  const [dashboardData, setDashboardData] = useState<HomeDashboardData | null>(null)
-  const [currentBalance, setCurrentBalance] = useState<CurrentBalanceData | null>(null)
-  const [isLoadingDashboard, setIsLoadingDashboard] = useState(true)
+  const [summary, setSummary] = useState<HomeExecutiveSummary | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
   const now = new Date()
-  const currentYear = now.getFullYear()
-  const currentMonthNum = now.getMonth()
-  const currentMonthLabel = `${MONTH_NAMES_FULL[currentMonthNum]} ${currentYear}`
+  const currentMonthLabel = `${MONTH_NAMES_FULL[now.getMonth()]} ${now.getFullYear()}`
 
-  const getMonthDateRange = (yearMonth?: string) => {
-    let year = currentYear
-    let month = currentMonthNum
-
-    if (yearMonth) {
-      const parts = yearMonth.split('-')
-      year = parseInt(parts[0])
-      month = parseInt(parts[1]) - 1
+  const loadSummary = async (options?: { silent?: boolean }) => {
+    try {
+      if (!options?.silent) setIsLoading(true)
+      const response = await axios.get<HomeExecutiveSummary>('/api/dashboard/home')
+      setSummary(response.data)
+    } catch (error) {
+      console.error('Erro ao carregar sumário:', error)
+    } finally {
+      if (!options?.silent) setIsLoading(false)
     }
-
-    const startDate = new Date(year, month, 1, 0, 0, 0, 0)
-    const endDate = new Date(year, month + 1, 0, 23, 59, 59, 999)
-    return { startDate, endDate }
-  }
-
-  const toLocalISOString = (date: Date): string => {
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
-    const hours = String(date.getHours()).padStart(2, '0')
-    const minutes = String(date.getMinutes()).padStart(2, '0')
-    const seconds = String(date.getSeconds()).padStart(2, '0')
-    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`
-  }
-
-  const navigateToExtrato = (yearMonth?: string) => {
-    const { startDate, endDate } = getMonthDateRange(yearMonth)
-    navigate('/relatorios/extrato', {
-      state: {
-        startDate: toLocalISOString(startDate),
-        endDate: toLocalISOString(endDate),
-        sources: ['bank', 'card', 'benefit'],
-      },
-    })
   }
 
   useEffect(() => {
-    loadDashboardData()
-    loadCurrentBalance()
+    loadSummary()
   }, [])
 
-  const loadDashboardData = async () => {
-    try {
-      setIsLoadingDashboard(true)
-      const response = await axios.get('/api/dashboard/home')
-      setDashboardData(response.data)
-    } catch (error) {
-      console.error('Erro ao carregar dados do dashboard:', error)
-    } finally {
-      setIsLoadingDashboard(false)
-    }
-  }
+  const bank = summary?.bank
+  const benefit = summary?.benefit
+  const credit = summary?.credit_card
 
-  const loadCurrentBalance = async () => {
-    try {
-      const response = await axios.get('/api/dashboard/current-balance')
-      setCurrentBalance(response.data)
-    } catch (error) {
-      console.error('Erro ao carregar saldo atual:', error)
-    }
-  }
-
-  const currentMonth = dashboardData?.months?.[0] ?? null
-  const currentInvoiceMonth = dashboardData?.invoice_months?.[0] ?? null
-  const remainingInstallments = dashboardData?.remaining_installments
-  const hasRemainingDebt = (remainingInstallments?.total ?? 0) > 0
-  const hasInvoiceData =
-    (currentInvoiceMonth?.count ?? 0) > 0 || hasRemainingDebt
-
-  const prevMonthDate = new Date(currentYear, currentMonthNum - 1, 1)
-  const previousMonthLabel = `${MONTH_NAMES_SHORT[prevMonthDate.getMonth()]}/${prevMonthDate.getFullYear()}`
-  const previousYearMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`
-
-  const monthNetBalance = currentMonth?.balance ?? 0
-  const accountBalance = currentBalance?.current_balance ?? 0
-  const previousMonthBalance = accountBalance - monthNetBalance
-
-  const remainingByCard = new Map<number, CardRemainingBalance>()
-  remainingInstallments?.cards?.forEach((card) => {
-    remainingByCard.set(card.card_id, card)
-  })
-
-  const quickLinks = [
-    { label: 'Extrato', icon: Receipt, path: '/relatorios/extrato' },
-    { label: 'Faturas', icon: CreditCard, path: '/relatorios/faturas' },
-    { label: 'Balanço', icon: Scale, path: '/fechamentos/compartilhado' },
-    { label: 'Curadoria', icon: FileText, path: '/curadoria' },
-  ]
+  const creditInsight =
+    credit && credit.average_sample_months > 0 && credit.last_invoice_total !== 0
+      ? Math.abs(credit.last_invoice_total) > credit.average_invoice_total
+        ? 'Última fatura acima da média histórica.'
+        : Math.abs(credit.last_invoice_total) < credit.average_invoice_total
+          ? 'Última fatura abaixo da média histórica.'
+          : 'Última fatura alinhada à média histórica.'
+      : null
 
   return (
     <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900">
@@ -216,389 +221,203 @@ const HomePage = () => {
         <CadastroListPageBody
           header={
             <CadastroListPageHero
-              icon={<Home className="w-8 h-8" />}
+              icon={<Home className="h-8 w-8" />}
               title="Plumo"
               subtitle={`Finanças leves, vida plena. · ${currentMonthLabel}`}
               actions={
-                <>
-                  <button
-                    onClick={() => setIsManualTransactionModalOpen(true)}
-                    className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-all hover:border-color-primary hover:text-color-primary dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
-                  >
-                    <PlusCircle size={16} />
-                    Novo lançamento
-                  </button>
-                  <button
-                    onClick={() => setIsImportModalOpen(true)}
-                    className="inline-flex items-center gap-2 rounded-lg bg-color-primary px-4 py-2 text-sm font-medium text-white shadow-sm transition-all hover:opacity-90"
-                  >
-                    <Upload size={16} />
-                    Importar
-                  </button>
-                </>
+                <CadastroListPrimaryButton
+                  label="Importar"
+                  onClick={() => setIsImportModalOpen(true)}
+                  icon={<Upload size={18} />}
+                />
               }
             />
           }
         >
-        <div className="space-y-6">
-
-          {/* Acesso rápido */}
-          <section>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {quickLinks.map(({ label, icon: Icon, path }) => (
-                <button
-                  key={path}
-                  onClick={() => navigate(path)}
-                  className="flex items-center gap-3 px-4 py-3.5 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-color-primary transition-all shadow-sm text-left group"
+          <div className="w-full min-w-0 space-y-8 pb-8">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-24">
+                <LoadingSpinner message="Carregando dados..." />
+              </div>
+            ) : summary && bank ? (
+              <>
+                <section
+                  className="relative overflow-hidden rounded-2xl p-6 shadow-lg sm:p-8"
+                  style={{ background: 'var(--gradient-1-2)' }}
                 >
-                  <div className="p-2 rounded-lg bg-gray-50 dark:bg-gray-700/50 group-hover:bg-color-primary-light transition-colors">
-                    <Icon size={16} className="text-gray-500 dark:text-gray-400 group-hover:text-color-primary transition-colors" />
-                  </div>
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    {label}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </section>
-
-          {isLoadingDashboard ? (
-            <div className="flex items-center justify-center py-24">
-              <LoadingSpinner message="Carregando dados..." />
-            </div>
-          ) : (
-            <>
-              {/* Hero — Saldo atual */}
-              <section
-                onClick={() => navigate('/relatorios/extrato')}
-                className="relative overflow-hidden rounded-2xl p-6 sm:p-8 cursor-pointer group shadow-lg hover:shadow-xl transition-all"
-                style={{ background: 'var(--gradient-1-2)' }}
-              >
-                <div className="absolute inset-0 bg-white/0 group-hover:bg-white/5 transition-colors" />
-                <div className="relative">
-                  <div className="flex items-center justify-between mb-3">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
                       <Landmark size={18} className="text-white/70" />
-                      <span className="text-sm font-medium text-white/80 uppercase tracking-wide">
-                        Saldo em conta
+                      <span className="text-sm font-medium uppercase tracking-wide text-white/80">
+                        Saldo em conta · {bank.period_label}
                       </span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          toggleBalanceVisibility()
-                        }}
-                        className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-all"
-                        title={hideBalanceValues ? 'Exibir valores' : 'Ocultar valores'}
-                        aria-label={hideBalanceValues ? 'Exibir valores' : 'Ocultar valores'}
-                      >
-                        {hideBalanceValues ? <EyeOff size={18} /> : <Eye size={18} />}
-                      </button>
-                      <ArrowRight size={18} className="text-white/50 group-hover:text-white/80 group-hover:translate-x-0.5 transition-all" />
-                    </div>
+                    <button
+                      type="button"
+                      onClick={toggleBalanceVisibility}
+                      className="rounded-lg bg-white/10 p-2 text-white/80 transition-all hover:bg-white/20 hover:text-white"
+                      title={hideBalanceValues ? 'Exibir valores' : 'Ocultar valores'}
+                    >
+                      {hideBalanceValues ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
                   </div>
-                  <p className="text-4xl sm:text-5xl font-bold text-white mb-6 tracking-tight">
-                    {formatCurrencySafe(currentBalance?.current_balance ?? 0, hideBalanceValues)}
+
+                  <p className="text-[clamp(2.5rem,5.5vw,3.75rem)] font-bold tabular-nums leading-none tracking-tight text-white">
+                    {hideBalanceValues ? (
+                      <span className="tracking-widest text-white/45">{MASKED_CURRENCY}</span>
+                    ) : (
+                      formatCurrency(bank.net)
+                    )}
                   </p>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                    <div className="bg-white/10 rounded-xl px-4 py-3 backdrop-blur-sm">
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <TrendingUp size={13} className="text-green-300" />
-                        <span className="text-xs text-white/70">Entradas</span>
-                      </div>
-                      <p className="text-sm font-semibold text-white">
-                        {formatCurrencySafe(currentBalance?.total_credits ?? 0, hideBalanceValues)}
-                      </p>
-                      <p className="text-[11px] text-white/50 mt-0.5">
-                        {currentBalance?.credits_count ?? 0} lançamentos
-                      </p>
+                  {bank.last_transaction_date ? (
+                    <p className="mt-2 text-sm text-white/60">
+                      Última movimentação em {formatDateBR(bank.last_transaction_date)}
+                    </p>
+                  ) : null}
+
+                  <div className="mt-8 border-t border-white/20 pt-6">
+                    <p className="mb-4 text-xs font-semibold uppercase tracking-wider text-white/75">
+                      Conta corrente · {bank.period_label}
+                    </p>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <HeroMetric
+                        label="Saldo mês anterior"
+                        icon={History}
+                        hidden={hideBalanceValues}
+                        amount={bank.opening_balance ?? 0}
+                        mode="signed"
+                      />
+                      <HeroMetric
+                        label="Entradas"
+                        icon={TrendingUp}
+                        hidden={hideBalanceValues}
+                        amount={bank.entries}
+                        mode="inflow"
+                        foot={`${bank.entries_count} lançamentos`}
+                      />
+                      <HeroMetric
+                        label="Saídas"
+                        icon={TrendingDown}
+                        hidden={hideBalanceValues}
+                        amount={bank.exits}
+                        mode="outflow"
+                        foot={`${bank.exits_count} lançamentos`}
+                      />
                     </div>
-                    <div className="bg-white/10 rounded-xl px-4 py-3 backdrop-blur-sm">
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <TrendingDown size={13} className="text-red-300" />
-                        <span className="text-xs text-white/70">Saídas</span>
-                      </div>
-                      <p className="text-sm font-semibold text-white">
-                        {formatCurrencySafe(currentBalance?.total_debits ?? 0, hideBalanceValues)}
-                      </p>
-                      <p className="text-[11px] text-white/50 mt-0.5">
-                        {currentBalance?.debits_count ?? 0} lançamentos
-                      </p>
-                    </div>
-                    {currentBalance?.last_transaction_date && (
-                      <div className="bg-white/10 rounded-xl px-4 py-3 backdrop-blur-sm col-span-2 sm:col-span-1">
-                        <div className="flex items-center gap-1.5 mb-1">
-                          <Clock size={13} className="text-white/60" />
-                          <span className="text-xs text-white/70">Última movimentação</span>
-                        </div>
-                        <p className="text-sm font-semibold text-white">
-                          {formatDateBR(currentBalance.last_transaction_date)}
-                        </p>
-                      </div>
-                    )}
                   </div>
-                </div>
-              </section>
-
-              {/* Conta corrente — mês atual */}
-              <section>
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <Landmark size={18} className="text-color-primary" />
-                    <h2 className="text-base font-semibold text-gray-800 dark:text-gray-200">
-                      Conta corrente
-                    </h2>
-                    <span className="text-xs text-gray-400 dark:text-gray-500">
-                      {currentMonth?.month_label ?? currentMonthLabel}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => navigateToExtrato(currentMonth?.year_month)}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-color-primary hover:opacity-80 transition-opacity"
-                  >
-                    Ver extrato
-                    <ChevronRight size={14} />
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {/* Saldo mês anterior */}
-                  <button
-                    onClick={() => navigateToExtrato(previousYearMonth)}
-                    className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 hover:border-color-primary transition-all shadow-sm text-left group"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="p-1.5 rounded-lg bg-gray-100 dark:bg-gray-700/50">
-                        <History size={14} className="text-gray-500 dark:text-gray-400" />
-                      </div>
-                      <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                        Saldo mês anterior
-                      </span>
-                    </div>
-                    <p className="text-2xl font-bold">
-                      {formatCurrencyWithColorSafe(previousMonthBalance, hideBalanceValues, true)}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      carryover de {previousMonthLabel}
-                    </p>
-                  </button>
-
-                  <button
-                    onClick={() => navigateToExtrato(currentMonth?.year_month)}
-                    className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 hover:border-color-primary transition-all shadow-sm text-left group"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="p-1.5 rounded-lg bg-green-50 dark:bg-green-900/20">
-                        <TrendingUp size={14} className="text-green-600 dark:text-green-400" />
-                      </div>
-                      <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                        Receitas
-                      </span>
-                    </div>
-                    <p className={`text-2xl font-bold ${hideBalanceValues ? 'text-gray-400 dark:text-gray-500 tracking-widest' : 'text-green-600 dark:text-green-400'}`}>
-                      {formatCurrencySafe(currentMonth?.total_revenue ?? 0, hideBalanceValues)}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      {currentMonth?.revenue_count ?? 0} lançamentos
-                    </p>
-                  </button>
-
-                  <button
-                    onClick={() => navigateToExtrato(currentMonth?.year_month)}
-                    className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 hover:border-color-primary transition-all shadow-sm text-left group"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="p-1.5 rounded-lg bg-red-50 dark:bg-red-900/20">
-                        <TrendingDown size={14} className="text-red-600 dark:text-red-400" />
-                      </div>
-                      <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                        Despesas
-                      </span>
-                    </div>
-                    <p className={`text-2xl font-bold ${hideBalanceValues ? 'text-gray-400 dark:text-gray-500 tracking-widest' : 'text-red-600 dark:text-red-400'}`}>
-                      {formatCurrencySafe(-(currentMonth?.total_expenses ?? 0), hideBalanceValues)}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      {currentMonth?.expenses_count ?? 0} lançamentos
-                    </p>
-                  </button>
-                </div>
-              </section>
-
-              {/* Cartões */}
-              {hasInvoiceData && (
-                <section>
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <CreditCard size={18} className="text-color-primary" />
-                      <h2 className="text-base font-semibold text-gray-800 dark:text-gray-200">
-                        Cartões
-                      </h2>
-                      <span className="text-xs text-gray-400 dark:text-gray-500">
-                        {currentInvoiceMonth?.month_label}
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => navigate('/relatorios/faturas')}
-                      className="inline-flex items-center gap-1 text-xs font-medium text-color-primary hover:opacity-80 transition-opacity"
-                    >
-                      Ver faturas
-                      <ChevronRight size={14} />
-                    </button>
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row gap-3 mb-4 w-full">
-                    {/* Fatura do mês */}
-                    <button
-                      onClick={() =>
-                        currentInvoiceMonth &&
-                        setInvoiceModalParams({ view: 'month', year_month: currentInvoiceMonth.year_month })
-                      }
-                      className="flex-1 bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 hover:border-color-primary transition-all shadow-sm text-left"
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                          Fatura do mês
-                        </span>
-                        <CreditCard size={14} className="text-color-primary" />
-                      </div>
-                      <p className="text-2xl font-bold text-red-600 dark:text-red-400">
-                        {formatSignedCurrencySafe(
-                          currentInvoiceMonth?.total ?? 0,
-                          hideBalanceValues,
-                          { forceNegative: (currentInvoiceMonth?.total ?? 0) !== 0 }
-                        )}
-                      </p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        {currentInvoiceMonth?.count ?? 0}{' '}
-                        {(currentInvoiceMonth?.count ?? 0) === 1 ? 'transação' : 'transações'}
-                        {' · '}
-                        {currentInvoiceMonth?.cards.length ?? 0}{' '}
-                        {(currentInvoiceMonth?.cards.length ?? 0) === 1 ? 'cartão' : 'cartões'}
-                      </p>
-                    </button>
-
-                    {/* Saldo devedor parcelado */}
-                    {hasRemainingDebt && (
-                      <button
-                        onClick={() => setInvoiceModalParams({ view: 'remaining' })}
-                        className="flex-1 bg-red-50 dark:bg-red-950/20 rounded-xl p-5 border border-red-200 dark:border-red-800/60 hover:border-red-400 dark:hover:border-red-600 transition-all shadow-sm text-left"
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs font-medium text-red-700 dark:text-red-400 uppercase tracking-wide">
-                            Saldo devedor
-                          </span>
-                          <Clock size={14} className="text-red-500 dark:text-red-400" />
-                        </div>
-                        <p className="text-2xl font-bold text-red-600 dark:text-red-400">
-                          {formatSignedCurrencySafe(
-                            Number(remainingInstallments?.total ?? 0),
-                            hideBalanceValues,
-                            { forceNegative: (remainingInstallments?.total ?? 0) !== 0 }
-                          )}
-                        </p>
-                        <p className="text-xs text-red-500/70 dark:text-red-400/60 mt-1">
-                          {remainingInstallments?.count ?? 0}{' '}
-                          {(remainingInstallments?.count ?? 0) === 1 ? 'compra parcelada' : 'compras parceladas'}
-                        </p>
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Lista de cartões */}
-                  {(currentInvoiceMonth?.cards.length ?? 0) > 0 && (
-                    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
-                      <div className="divide-y divide-gray-100 dark:divide-gray-700">
-                        {currentInvoiceMonth!.cards.map((card) => {
-                          const cardTotal = Math.abs(Number(card.total))
-                          const remaining = remainingByCard.get(card.card_id)
-
-                          return (
-                            <button
-                              key={card.card_id}
-                              onClick={() =>
-                                setInvoiceModalParams({
-                                  view: 'card',
-                                  card_id: card.card_id,
-                                  year_month: currentInvoiceMonth!.year_month,
-                                })
-                              }
-                              className="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors text-left group"
-                            >
-                              <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-color-primary-light flex items-center justify-center">
-                                {card.card_type === 'beneficios' ? (
-                                  <Gift size={16} className="text-color-primary" />
-                                ) : (
-                                  <CreditCard size={16} className="text-color-primary" />
-                                )}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-semibold text-gray-800 dark:text-gray-200 truncate">
-                                    {card.card_name}
-                                  </span>
-                                  <span className="text-xs text-gray-400 flex-shrink-0">
-                                    •••• {card.card_number}
-                                  </span>
-                                </div>
-                                <p className="text-xs text-gray-400 mt-0.5">
-                                  {card.count} {card.count === 1 ? 'transação' : 'transações'}
-                                  {remaining && remaining.remaining_total > 0 && (
-                                    <span className="text-red-500 dark:text-red-400 ml-2">
-                                      · Parcelado:{' '}
-                                      {formatSignedCurrencySafe(
-                                        Number(remaining.remaining_total),
-                                        hideBalanceValues,
-                                        { forceNegative: true }
-                                      )}
-                                    </span>
-                                  )}
-                                </p>
-                              </div>
-                              <div className="flex items-center gap-2 flex-shrink-0">
-                                {formatSignedCurrencySafe(cardTotal, hideBalanceValues, { forceNegative: true })}
-                                <ChevronRight
-                                  size={16}
-                                  className="text-gray-300 dark:text-gray-600 group-hover:text-color-primary transition-colors"
-                                />
-                              </div>
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
                 </section>
-              )}
-            </>
-          )}
-        </div>
+
+                <div className="grid grid-cols-1 items-stretch gap-6 xl:grid-cols-2 xl:gap-8">
+                  <article className={`${listPageTableSectionCls} flex flex-col overflow-hidden`}>
+                    <PanelHeader
+                      accentVar="var(--color-2)"
+                      icon={<CreditCard size={18} />}
+                      title="Cartão de crédito"
+                      subtitle={
+                        credit?.last_invoice_label
+                          ? `Última fatura · ${credit.last_invoice_label}`
+                          : 'Nenhuma fatura importada ainda'
+                      }
+                    />
+                    <div className="grid flex-1 grid-cols-1 divide-y divide-gray-200 dark:divide-gray-600 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+                      <PanelCell
+                        label="Última fatura"
+                        icon={<Receipt size={14} className="text-[var(--color-2)]" />}
+                        large
+                        hint={`${credit?.last_invoice_count ?? 0} lançamentos${
+                          credit?.last_invoice_year_month ? ` · ref. ${credit.last_invoice_year_month}` : ''
+                        }`}
+                        value={formatSignedCurrencySafe(credit?.last_invoice_total ?? 0, hideBalanceValues, {
+                          forceNegative: (credit?.last_invoice_total ?? 0) !== 0,
+                          colorClass: 'font-bold text-[var(--color-danger)]',
+                        })}
+                      />
+                      <PanelCell
+                        label="Média histórica"
+                        icon={<BarChart3 size={14} className="text-gray-600 dark:text-gray-400" />}
+                        large
+                        hint={
+                          (credit?.average_sample_months ?? 0) === 0
+                            ? 'Sem histórico de faturas'
+                            : (credit?.average_sample_months ?? 0) === 1
+                              ? '1 mês com fatura importada'
+                              : `${credit?.average_sample_months} meses com fatura importada`
+                        }
+                        value={formatSignedCurrencySafe(credit?.average_invoice_total ?? 0, hideBalanceValues, {
+                          forceNegative: (credit?.average_invoice_total ?? 0) !== 0,
+                          colorClass: 'font-bold text-gray-900 dark:text-gray-100',
+                        })}
+                      />
+                    </div>
+                    {creditInsight ? (
+                      <p className="border-t border-gray-200 bg-gray-50 px-5 py-3 text-xs text-gray-600 dark:border-gray-600 dark:bg-gray-900/40 dark:text-gray-300">
+                        {creditInsight}
+                      </p>
+                    ) : null}
+                  </article>
+
+                  <article className={`${listPageTableSectionCls} flex flex-col overflow-hidden`}>
+                    <PanelHeader
+                      accentVar="var(--color-3)"
+                      icon={<Gift size={18} />}
+                      title="Cartão benefício"
+                      subtitle={`Extrato · ${benefit?.period_label ?? '—'}`}
+                    />
+                    <div className="grid flex-1 grid-cols-1 divide-y divide-gray-200 dark:divide-gray-600 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+                      <PanelCell
+                        label="Entradas"
+                        icon={<ArrowDownLeft size={14} className="text-[var(--color-success)]" />}
+                        hint={`${benefit?.entries_count ?? 0} lanç.`}
+                        value={formatSignedCurrencySafe(benefit?.entries ?? 0, hideBalanceValues, {
+                          colorClass: 'font-bold text-[var(--color-success)]',
+                        })}
+                      />
+                      <PanelCell
+                        label="Saídas"
+                        icon={<ArrowUpRight size={14} className="text-[var(--color-danger)]" />}
+                        hint={`${benefit?.exits_count ?? 0} lanç.`}
+                        value={formatSignedCurrencySafe(benefit?.exits ?? 0, hideBalanceValues, {
+                          forceNegative: (benefit?.exits ?? 0) !== 0,
+                          colorClass: 'font-bold text-[var(--color-danger)]',
+                        })}
+                      />
+                      <PanelCell
+                        label="Saldo do período"
+                        icon={<Scale size={14} className="text-[var(--color-3)]" />}
+                        hint={
+                          benefit?.last_transaction_date
+                            ? `Até ${formatDateBR(benefit.last_transaction_date)}`
+                            : 'Sem movimentação'
+                        }
+                        value={formatSignedCurrencySafe(benefit?.net ?? 0, hideBalanceValues, {
+                          colorClass:
+                            (benefit?.net ?? 0) < 0
+                              ? 'font-bold text-[var(--color-danger)]'
+                              : (benefit?.net ?? 0) > 0
+                                ? 'font-bold text-[var(--color-success)]'
+                                : 'font-bold text-gray-700 dark:text-gray-200',
+                        })}
+                      />
+                    </div>
+                  </article>
+                </div>
+              </>
+            ) : (
+              <div className={`${listPageTableSectionCls} px-6 py-12 text-center text-sm text-gray-500`}>
+                Não foi possível carregar o panorama. Tente atualizar a página.
+              </div>
+            )}
+          </div>
         </CadastroListPageBody>
       </CadastroListPageShell>
 
       <UnifiedImportModal
         isOpen={isImportModalOpen}
-        onClose={() => {
+        onClose={(info) => {
           setIsImportModalOpen(false)
-          loadDashboardData()
-          loadCurrentBalance()
-        }}
-      />
-
-      <HomeInvoiceDetailsModal
-        isOpen={invoiceModalParams !== null}
-        onClose={() => setInvoiceModalParams(null)}
-        params={invoiceModalParams}
-      />
-
-      <ManualTransactionModal
-        isOpen={isManualTransactionModalOpen}
-        onClose={() => setIsManualTransactionModalOpen(false)}
-        onSuccess={() => {
-          loadDashboardData()
-          loadCurrentBalance()
+          if (info?.dataChanged) {
+            void loadSummary({ silent: true })
+          }
         }}
       />
     </div>

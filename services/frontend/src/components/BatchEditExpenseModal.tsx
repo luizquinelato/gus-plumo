@@ -16,6 +16,9 @@ import {
   cadastroAccentControlCls,
 } from './CadastroFormLayout'
 import { useEscapeKey } from '../hooks/useEscapeKey'
+import { sharingPartnerLabel, sharingPercentForKind } from '../utils/accountFormatter'
+import OwnershipPercentField from './OwnershipPercentField'
+import { finalizePercentInput, maskPercentInput } from '../utils/percentInput'
 
 interface ToastState {
   show: boolean
@@ -60,6 +63,7 @@ interface Partner {
   account_id: number
   shared_account_id: number
   my_contribution_percentage: number
+  revenue_contribution_percentage?: number
   description: string | null
   active: boolean
   shared_account: Account | null
@@ -170,32 +174,7 @@ const BatchEditExpenseModal = ({ isOpen, onClose, selectedItems, expenseType, on
     }
   }
 
-  const getPartnerLabel = (partner: Partner): string => {
-    const parts: string[] = []
-
-    // Nome da conta compartilhada
-    const accountName = partner.shared_account?.name || partner.shared_account?.description
-    if (accountName) {
-      parts.push(accountName)
-    }
-
-    // Banco
-    if (partner.shared_account?.bank?.name) {
-      parts.push(partner.shared_account.bank.name)
-    }
-
-    // Agência
-    if (partner.shared_account?.agency) {
-      parts.push(`Ag: ${partner.shared_account.agency}`)
-    }
-
-    // Número da conta
-    if (partner.shared_account?.account_number) {
-      parts.push(`Conta: ${partner.shared_account.account_number}`)
-    }
-
-    return parts.length > 0 ? parts.join(' • ') : 'Sem informações'
-  }
+  const getPartnerLabel = (partner: Partner): string => sharingPartnerLabel(partner)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -398,7 +377,12 @@ const BatchEditExpenseModal = ({ isOpen, onClose, selectedItems, expenseType, on
                             setFormData({
                               ...formData,
                               shared_partner_id: partnerId,
-                              ownership_percentage: selectedPartner ? selectedPartner.my_contribution_percentage.toString() : '50.00'
+                              ownership_percentage: selectedPartner
+                                ? sharingPercentForKind(
+                                    selectedPartner,
+                                    expenseType === 'receita' ? 'revenue' : 'expense'
+                                  ).toString()
+                                : '50.00'
                             })
                           }}
                           disabled={isLoading}
@@ -420,18 +404,20 @@ const BatchEditExpenseModal = ({ isOpen, onClose, selectedItems, expenseType, on
                           }
                         </select>
                       </label>
-                      <label className="block min-w-0">
-                        <CadastroFieldLabel>Minha Contribuição (%)</CadastroFieldLabel>
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={formData.ownership_percentage}
-                          onChange={(e) => setFormData({ ...formData, ownership_percentage: e.target.value })}
-                          disabled={isLoading || isLoadingData}
-                          placeholder="0.00"
-                          className={`${cadastroFieldCls} mt-0.5 disabled:opacity-50`}
-                        />
-                      </label>
+                      <OwnershipPercentField
+                        context="transaction"
+                        value={formData.ownership_percentage}
+                        onChange={(raw) =>
+                          setFormData({ ...formData, ownership_percentage: maskPercentInput(raw) })
+                        }
+                        onBlur={() =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            ownership_percentage: finalizePercentInput(prev.ownership_percentage),
+                          }))
+                        }
+                        disabled={isLoading || isLoadingData}
+                      />
                     </CadastroModalFieldsRow>
                   ) : null}
                   <CadastroModalFieldsRow>

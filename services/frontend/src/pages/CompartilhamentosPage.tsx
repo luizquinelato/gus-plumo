@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Sidebar from '../components/Sidebar'
 import {
   CadastroListCreateButton,
@@ -14,8 +14,11 @@ import {
   listPageTableRowInactiveCls,
   type StatusFilter,
 } from '../components/CadastroListPageLayout'
+import FloatingFooterBar from '../components/FloatingFooterBar'
 import { ListPageTable } from '../components/ListPageTable'
 import {
+  ListTableCheckboxCell,
+  ListTableCheckboxHeader,
   ListTableIndexCell,
   ListTableIndexHeader,
   ListTableSpacerCell,
@@ -23,6 +26,7 @@ import {
   ListTableSpacerHeader,
   ListTableStaticHeader,
 } from '../components/ListTableSelectColumns'
+import { selectionHeaderState } from '../utils/listTableSelection'
 import StatusSwitch from '../components/StatusSwitch'
 import {
   CadastroFieldLabel,
@@ -39,7 +43,9 @@ import Badge from '../components/Badge'
 import { badgeVariantForColumnRole } from '../utils/badgeSurfaces'
 import type { BadgeTone } from '../utils/badgeTones'
 import Toast from '../components/Toast'
-import { Edit2, Trash2, Users, Lock } from 'lucide-react'
+import OwnershipPercentField from '../components/OwnershipPercentField'
+import { maskPercentInput, finalizePercentInput } from '../utils/percentInput'
+import { ArrowUp, Edit2, Trash2, Users, Lock, X } from 'lucide-react'
 import axios from 'axios'
 import { useConfirm } from '../hooks/useConfirm'
 import { formatAccountDisplay } from '../utils/accountFormatter'
@@ -73,6 +79,7 @@ interface ExpenseSharing {
   account_id: number
   shared_account_id: number
   my_contribution_percentage: number
+  revenue_contribution_percentage?: number
   description?: string
   active: boolean
   shared_account?: Account
@@ -94,10 +101,15 @@ const CompartilhamentosPage = () => {
   const [formData, setFormData] = useState({
     shared_account_id: '',
     my_contribution_percentage: '50.00',
+    revenue_contribution_percentage: '50.00',
     description: ''
   })
   const [toast, setToast] = useState<ToastState>({ show: false, message: '', type: 'success' })
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('active')
+  const [selectedSharingIds, setSelectedSharingIds] = useState<Set<number>>(() => new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [showBackToTop, setShowBackToTop] = useState(false)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const { showConfirm, ConfirmComponent } = useConfirm()
 
   const showToast = (message: string, type: 'success' | 'error' | 'warning') => {
@@ -173,6 +185,7 @@ const CompartilhamentosPage = () => {
     setFormData({
       shared_account_id: '',
       my_contribution_percentage: '50.00',
+      revenue_contribution_percentage: '50.00',
       description: ''
     })
     // Recarregar contas disponíveis antes de abrir o modal
@@ -185,6 +198,9 @@ const CompartilhamentosPage = () => {
     setFormData({
       shared_account_id: compartilhamento.shared_account_id.toString(),
       my_contribution_percentage: compartilhamento.my_contribution_percentage.toString(),
+      revenue_contribution_percentage: (
+        compartilhamento.revenue_contribution_percentage ?? compartilhamento.my_contribution_percentage
+      ).toString(),
       description: compartilhamento.description || ''
     })
     setShowModal(true)
@@ -196,6 +212,7 @@ const CompartilhamentosPage = () => {
     setFormData({
       shared_account_id: '',
       my_contribution_percentage: '50.00',
+      revenue_contribution_percentage: '50.00',
       description: ''
     })
   }
@@ -204,6 +221,7 @@ const CompartilhamentosPage = () => {
     try {
       const payload: any = {
         my_contribution_percentage: parseFloat(formData.my_contribution_percentage),
+        revenue_contribution_percentage: parseFloat(formData.revenue_contribution_percentage),
         description: formData.description || null
       }
 
@@ -291,11 +309,95 @@ const CompartilhamentosPage = () => {
 
   const compartilhamentosAtivos = compartilhamentos.filter((c) => c.active)
   const compartilhamentosInativos = compartilhamentos.filter((c) => !c.active)
-  const compartilhamentosFiltrados = statusFilter === 'active'
-    ? compartilhamentosAtivos
-    : statusFilter === 'inactive'
-      ? compartilhamentosInativos
-      : compartilhamentos
+  const compartilhamentosFiltrados = useMemo(
+    () =>
+      statusFilter === 'active'
+        ? compartilhamentosAtivos
+        : statusFilter === 'inactive'
+          ? compartilhamentosInativos
+          : compartilhamentos,
+    [compartilhamentos, compartilhamentosAtivos, compartilhamentosInativos, statusFilter],
+  )
+
+  const selectableSharingIds = useMemo(
+    () => compartilhamentosFiltrados.filter((c) => !c.is_inverse).map((c) => c.id),
+    [compartilhamentosFiltrados],
+  )
+
+  const globalHeaderState = useMemo(
+    () => selectionHeaderState(selectableSharingIds, selectedSharingIds),
+    [selectableSharingIds, selectedSharingIds],
+  )
+
+  const scrollToTop = useCallback(() => {
+    setShowBackToTop(false)
+    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [])
+
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+    const handleScroll = () => setShowBackToTop(container.scrollTop > 300)
+    handleScroll()
+    container.addEventListener('scroll', handleScroll)
+    return () => container.removeEventListener('scroll', handleScroll)
+  }, [loading, compartilhamentos.length, statusFilter])
+
+  useEffect(() => {
+    const selectable = new Set(selectableSharingIds)
+    setSelectedSharingIds((prev) => {
+      const next = new Set([...prev].filter((id) => selectable.has(id)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [selectableSharingIds])
+
+  const toggleGlobalSelection = useCallback(() => {
+    const any = selectableSharingIds.some((id) => selectedSharingIds.has(id))
+    setSelectedSharingIds((prev) => {
+      const next = new Set(prev)
+      if (any) selectableSharingIds.forEach((id) => next.delete(id))
+      else selectableSharingIds.forEach((id) => next.add(id))
+      return next
+    })
+  }, [selectableSharingIds, selectedSharingIds])
+
+  const toggleSharingSelection = useCallback((id: number) => {
+    setSelectedSharingIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  const clearBulkSelection = useCallback(() => setSelectedSharingIds(new Set()), [])
+
+  const handleBulkDelete = () => {
+    const ids = [...selectedSharingIds]
+    if (ids.length === 0) return
+    showConfirm(
+      'Deletar compartilhamentos',
+      `Excluir permanentemente ${ids.length} compartilhamento(s)? Esta ação não pode ser desfeita.`,
+      async () => {
+        setBulkDeleting(true)
+        try {
+          for (const id of ids) {
+            await axios.delete(`/api/expense-sharing/${id}`)
+          }
+          clearBulkSelection()
+          await carregarCompartilhamentos()
+          showToast('Compartilhamentos excluídos com sucesso.', 'success')
+        } catch (error) {
+          console.error('Erro na exclusão em massa:', error)
+          showToast('Não foi possível excluir todos os compartilhamentos selecionados.', 'error')
+        } finally {
+          setBulkDeleting(false)
+        }
+      },
+      'Deletar',
+      'Cancelar',
+    )
+  }
 
   const handleToggleActive = (comp: ExpenseSharing) => {
     if (comp.is_inverse) return
@@ -309,6 +411,7 @@ const CompartilhamentosPage = () => {
 
       <CadastroListPageShell>
         <CadastroListPageBody
+          scrollRef={scrollContainerRef}
           header={
             <CadastroListPageHero
               icon={<Users className="w-8 h-8" />}
@@ -349,9 +452,11 @@ const CompartilhamentosPage = () => {
             />
           ) : (
             <ListPageTable
+              leadingMode="bulk"
               colsRest={<ListTableSpacerCol />}
               head={
                 <tr>
+                  <ListTableCheckboxHeader state={globalHeaderState} onToggle={toggleGlobalSelection} />
                   <ListTableIndexHeader />
                   <ListTableSpacerHeader />
                   <ListTableStaticHeader label="Conta" className="w-[16%]" />
@@ -359,31 +464,39 @@ const CompartilhamentosPage = () => {
                   <ListTableStaticHeader label="Agência" className="w-[10%]" />
                   <ListTableStaticHeader label="Conta nº" className="w-[10%]" />
                   <ListTableStaticHeader label="Descrição" className="w-[16%]" />
-                  <ListTableStaticHeader label="Minha parte" className="w-[10%]" />
-                  <ListTableStaticHeader label="Contraparte" className="w-[10%]" />
+                  <ListTableStaticHeader label="Despesa" className="w-[10%]" />
+                  <ListTableStaticHeader label="Receita" className="w-[10%]" />
                   <ListTableStaticHeader label="Status" className="w-[8%]" />
                   <ListTableStaticHeader label="Ações" className="w-[8%]" />
                 </tr>
               }
             >
               {compartilhamentosFiltrados.map((comp, index) => {
-                const minhaContribuicao = Number(comp.my_contribution_percentage)
-                const outraContaPaga = 100 - minhaContribuicao
+                const despesaPct = Number(comp.my_contribution_percentage)
+                const receitaPct = Number(
+                  comp.revenue_contribution_percentage ?? comp.my_contribution_percentage
+                )
+                const selected = selectedSharingIds.has(comp.id)
                 return (
                   <tr
                     key={comp.id}
-                    className={`${listPageTableRowHoverCls} ${!comp.active ? listPageTableRowInactiveCls : ''}`}
+                    className={`${listPageTableRowHoverCls} ${!comp.active ? listPageTableRowInactiveCls : ''} ${
+                      selected ? 'table-row-selected bg-[color-mix(in_srgb,var(--color-1)_7%,transparent)]' : ''
+                    }`}
                   >
+                    {comp.is_inverse ? (
+                      <ListTableCheckboxCell reserveOnly />
+                    ) : (
+                      <ListTableCheckboxCell
+                        checked={selected}
+                        onToggle={() => toggleSharingSelection(comp.id)}
+                      />
+                    )}
                     <ListTableIndexCell index={index + 1} />
                     <ListTableSpacerCell />
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-2">
-                        <div
-                          className="flex-shrink-0 rounded-md p-1.5 shadow-sm"
-                          style={{ background: 'var(--gradient-1-2)' }}
-                        >
-                          <Users size={15} style={{ color: 'var(--on-gradient-1-2)' }} />
-                        </div>
+                        <Users size={16} className="shrink-0" style={{ color: 'var(--color-1)' }} />
                         <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">
                           {comp.shared_account?.name || '—'}
                         </span>
@@ -414,15 +527,15 @@ const CompartilhamentosPage = () => {
                     <td className="px-3 py-3">
                       <Badge
                         variant={badgeVariantForColumnRole('statusPrimary')}
-                        tone={percentageTone(minhaContribuicao)}
-                        label={`${minhaContribuicao}%`}
+                        tone={percentageTone(despesaPct)}
+                        label={`${despesaPct}%`}
                       />
                     </td>
                     <td className="px-3 py-3">
                       <Badge
                         variant={badgeVariantForColumnRole('classificationSecondary')}
-                        tone={percentageTone(outraContaPaga)}
-                        label={`${outraContaPaga}%`}
+                        tone={percentageTone(receitaPct)}
+                        label={`${receitaPct}%`}
                       />
                     </td>
                     <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
@@ -477,6 +590,67 @@ const CompartilhamentosPage = () => {
         </CadastroListPageBody>
       </CadastroListPageShell>
 
+      {selectedSharingIds.size > 0 && (
+        <FloatingFooterBar>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <span className="font-medium text-color-primary">
+                {selectedSharingIds.size}{' '}
+                {selectedSharingIds.size === 1 ? 'compartilhamento selecionado' : 'compartilhamentos selecionados'}
+              </span>
+              <button
+                type="button"
+                onClick={clearBulkSelection}
+                disabled={bulkDeleting}
+                className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 disabled:opacity-50 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                <X size={14} />
+                Limpar
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleBulkDelete}
+                disabled={bulkDeleting}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
+                style={{ backgroundColor: 'var(--crud-delete)' }}
+              >
+                <Trash2 size={14} />
+                {bulkDeleting ? 'Excluindo…' : 'Excluir'}
+              </button>
+              {showBackToTop && (
+                <button
+                  type="button"
+                  onClick={scrollToTop}
+                  className="flex items-center gap-1.5 rounded-lg bg-color-primary px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90"
+                  title="Voltar ao topo"
+                >
+                  <ArrowUp size={14} />
+                  Topo
+                </button>
+              )}
+            </div>
+          </div>
+        </FloatingFooterBar>
+      )}
+
+      {showBackToTop && selectedSharingIds.size === 0 && (
+        <FloatingFooterBar>
+          <div className="flex items-center justify-end">
+            <button
+              type="button"
+              onClick={scrollToTop}
+              className="flex items-center gap-1.5 rounded-lg bg-color-primary px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90"
+              title="Voltar ao topo"
+            >
+              <ArrowUp size={14} />
+              Voltar ao Topo
+            </button>
+          </div>
+        </FloatingFooterBar>
+      )}
+
       {showModal && (
         <CadastroModalShell maxWidth="max-w-2xl" onBackdropClick={fecharModal}>
           <CadastroModalHeader
@@ -523,29 +697,37 @@ const CompartilhamentosPage = () => {
                       )}
                     </label>
                   </CadastroModalFieldsRow>
-                  <CadastroModalFieldsRow>
-                    <label className="block min-w-0">
-                      <CadastroFieldLabel required>Minha contribuição (%)</CadastroFieldLabel>
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.01"
-                        value={formData.my_contribution_percentage}
-                        onChange={(e) => {
-                          const value = e.target.value
-                          if (value === '' || (parseFloat(value) >= 0 && parseFloat(value) <= 100)) {
-                            setFormData({ ...formData, my_contribution_percentage: value })
-                          }
-                        }}
-                        className={`${cadastroFieldCls} mt-0.5`}
-                        required
-                      />
-                      <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
-                        <span>Minha parte: {formData.my_contribution_percentage}%</span>
-                        <span>Outra conta: {100 - parseFloat(formData.my_contribution_percentage || '0')}%</span>
-                      </div>
-                    </label>
+                  <CadastroModalFieldsRow cols={2}>
+                    <OwnershipPercentField
+                      context="sharingDefaultExpense"
+                      required
+                      value={formData.my_contribution_percentage}
+                      onChange={(raw) =>
+                        setFormData({ ...formData, my_contribution_percentage: maskPercentInput(raw) })
+                      }
+                      onBlur={() =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          my_contribution_percentage: finalizePercentInput(prev.my_contribution_percentage),
+                        }))
+                      }
+                      hint={`Parceiro fica com ${Math.max(0, 100 - parseFloat(formData.my_contribution_percentage || '0'))}% da despesa.`}
+                    />
+                    <OwnershipPercentField
+                      context="sharingDefaultRevenue"
+                      required
+                      value={formData.revenue_contribution_percentage}
+                      onChange={(raw) =>
+                        setFormData({ ...formData, revenue_contribution_percentage: maskPercentInput(raw) })
+                      }
+                      onBlur={() =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          revenue_contribution_percentage: finalizePercentInput(prev.revenue_contribution_percentage),
+                        }))
+                      }
+                      hint={`Parceiro fica com ${Math.max(0, 100 - parseFloat(formData.revenue_contribution_percentage || '0'))}% da receita.`}
+                    />
                   </CadastroModalFieldsRow>
                   <CadastroModalFieldsRow>
                     <label className="block min-w-0">
@@ -565,7 +747,7 @@ const CompartilhamentosPage = () => {
             <CadastroModalFooter
               onClose={fecharModal}
               onSave={() => void handleSubmit()}
-              disabled={!formData.shared_account_id || !formData.my_contribution_percentage}
+              disabled={!formData.shared_account_id || !formData.my_contribution_percentage || !formData.revenue_contribution_percentage}
               saveLabel={editingCompartilhamento ? 'Atualizar' : 'Criar'}
             />
           </form>

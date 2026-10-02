@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react'
-import DatePicker from 'react-datepicker'
 import { Calendar } from 'lucide-react'
-import 'react-datepicker/dist/react-datepicker.css'
-import '../styles/custom-date-modal.css'
+import { DateCalendar } from './date'
 import {
   CadastroFormSection,
   CadastroModalBody,
@@ -58,8 +56,7 @@ const CustomDateFilterModal: React.FC<CustomDateFilterModalProps> = ({
     }
   }, [isOpen, startDate, endDate])
 
-  const onChange = (dates: [Date | null, Date | null]) => {
-    const [start, end] = dates
+  const handleRangeChange = (start: Date | null, end: Date | null) => {
     setStartDate(start)
     setEndDate(end)
   }
@@ -133,17 +130,14 @@ const CustomDateFilterModal: React.FC<CustomDateFilterModalProps> = ({
         </CadastroFormSection>
         <CadastroFormSection title="Período" icon={<Calendar size={14} />}>
           <div className="flex w-full justify-center">
-            <DatePicker
-              selected={startDate}
-              onChange={onChange}
-              startDate={startDate}
-              endDate={endDate}
-              selectsRange
-              dateFormat="dd/MM/yyyy"
-              placeholderText="Clique para selecionar data inicial e final..."
+            <DateCalendar
+              mode="range"
+              rangeStart={startDate}
+              rangeEnd={endDate}
+              onRangeChange={handleRangeChange}
+              onClear={() => handleRangeChange(null, null)}
               monthsShown={2}
-              inline
-              calendarClassName="custom-calendar-full-width"
+              variant="inline"
             />
           </div>
           {startDate && endDate ? (

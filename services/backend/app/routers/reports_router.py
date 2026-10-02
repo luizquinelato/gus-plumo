@@ -56,6 +56,13 @@ class TimeSeriesResponse(BaseModel):
     granularity: str = "monthly"  # "monthly" ou "daily"
 
 
+class LinkedInvoiceSummary(BaseModel):
+    """Fatura de cartão vinculada a um lançamento bancário (somente metadados para UI)."""
+    match_id: int
+    year_month: str
+    display_name: str
+
+
 class ExpenseDetail(BaseModel):
     """Detalhes de uma despesa individual"""
     id: int
@@ -88,6 +95,8 @@ class ExpenseDetail(BaseModel):
     account_number: str | None = None
     year_month: str | None = None  # Ano/mês da fatura (YYYY-MM) - usado apenas para faturas de cartão
     migrated_from_account_id: int | None = None  # ID da conta de origem - indica item invertido/migrado
+    linked_invoice: LinkedInvoiceSummary | None = None
+    daily_month_end: bool | None = None
 
     class Config:
         populate_by_name = True
@@ -116,6 +125,8 @@ class DetailedReportResponse(BaseModel):
     total_expenses_count: int  # Quantidade de transações de despesa
     expenses_trend: str | None  # Tendência de despesas: 'up', 'down', 'stable'
     income_trend: str | None  # Tendência de receitas: 'up', 'down', 'stable'
+    opening_balance_before_period: float | None = None  # Soma por data civil antes de start_date (alinhado ao saldo diário)
+    daily_balance_rows: List[ExpenseDetail] | None = None
     top_expenses: List[TopExpense]
     expenses: List[ExpenseDetail]
 
@@ -1305,6 +1316,7 @@ async def get_detailed_report(
     origin: str | None = Query(None, description="Filtro de origem: manual, inverted (separados por vírgula)"),
     include_empty_tag: bool = Query(False, description="Incluir itens sem tag (subtag_id IS NULL)"),
     include_empty_sharing: bool = Query(False, description="Incluir itens sem compartilhamento (expense_sharing_id IS NULL)"),
+    include_daily_balance: bool = Query(False, description="Incluir linhas de saldo cumulativo calculadas no servidor"),
     limit: int = Query(100, description="Limite de registros detalhados"),
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
@@ -1385,46 +1397,103 @@ async def get_detailed_report(
         start_date_obj = None
         end_date_obj = None
 
-    # Busca despesas
-    expenses = []
-    total_amount = Decimal(0)
-    total_count = 0
+    def _fetch_expenses_for_range(
+        range_start: date | None,
+        range_end: date | None,
+        *,
+        card_use_invoice_month_filter: bool = True,
+    ) -> list:
+        range_expenses = []
+        if "bank" in sources:
+            range_expenses.extend(
+                _get_bank_expenses_by_date(
+                    db, tenant_id, range_start, range_end,
+                    tag_id_list, subtag_id_list, partner_id_list, account_id_list, limit,
+                    include_empty_tag, include_empty_sharing, logged_account_id, origin_list,
+                )
+            )
+        if "cards" in sources:
+            should_include_cards = True
+            if origin_list and 'manual' in origin_list and 'inverted' not in origin_list:
+                should_include_cards = False
+            if should_include_cards:
+                range_expenses.extend(
+                    _get_card_expenses_by_date(
+                        db, tenant_id, range_start, range_end,
+                        tag_id_list, subtag_id_list, partner_id_list, account_id_list, card_id_list, limit,
+                        include_empty_tag, include_empty_sharing, logged_account_id,
+                        use_invoice_month_filter=card_use_invoice_month_filter,
+                    )
+                )
+        if "benefits" in sources:
+            should_include_benefits = True
+            if origin_list and 'manual' in origin_list and 'inverted' not in origin_list:
+                should_include_benefits = False
+            if should_include_benefits:
+                range_expenses.extend(
+                    _get_benefit_expenses_by_date(
+                        db, tenant_id, range_start, range_end,
+                        tag_id_list, subtag_id_list, partner_id_list, account_id_list, card_id_list, limit,
+                        include_empty_tag, include_empty_sharing, logged_account_id,
+                    )
+                )
+        return range_expenses
 
-    if "bank" in sources:
-        bank_expenses = _get_bank_expenses_by_date(
-            db, tenant_id, start_date_obj, end_date_obj,
-            tag_id_list, subtag_id_list, partner_id_list, account_id_list, limit,
-            include_empty_tag, include_empty_sharing, logged_account_id, origin_list
+    from app.services.extrato_daily_balance_service import (
+        build_daily_balance_payloads,
+        compute_opening_balance_calendar,
+    )
+
+    opening_balance_before_period = None
+    daily_balance_rows: List[ExpenseDetail] | None = None
+
+    if include_daily_balance:
+        opening_calc, payloads = build_daily_balance_payloads(
+            db,
+            tenant_id,
+            sources,
+            start_date_obj,
+            end_date_obj,
+            account_id_list,
+            tag_id_list,
+            subtag_id_list,
+            partner_id_list,
+            include_empty_tag,
+            include_empty_sharing,
+            origin_list,
+            card_id_list,
         )
-        expenses.extend(bank_expenses)
-
-    if "cards" in sources:
-        # Filtro de origem "manual" só se aplica a bank_statements
-        # Se filtro de origem for apenas "manual", não busca cartões
-        should_include_cards = True
-        if origin_list and 'manual' in origin_list and 'inverted' not in origin_list:
-            should_include_cards = False
-        if should_include_cards:
-            card_expenses = _get_card_expenses_by_date(
-                db, tenant_id, start_date_obj, end_date_obj,
-                tag_id_list, subtag_id_list, partner_id_list, account_id_list, card_id_list, limit,
-                include_empty_tag, include_empty_sharing, logged_account_id
+        if start_date_obj is not None:
+            opening_balance_before_period = opening_calc
+        daily_balance_rows = [
+            ExpenseDetail(
+                id=int(p["id"]),
+                date=p["date"],
+                description=str(p["description"]),
+                amount=Decimal(str(p["amount"])),
+                source=str(p["source"]),
+                daily_month_end=bool(p.get("daily_month_end")),
             )
-            expenses.extend(card_expenses)
+            for p in payloads
+        ]
+    elif start_date_obj is not None:
+        opening_balance_before_period = compute_opening_balance_calendar(
+            db,
+            tenant_id,
+            sources,
+            start_date_obj,
+            account_id_list,
+            tag_id_list,
+            subtag_id_list,
+            partner_id_list,
+            include_empty_tag,
+            include_empty_sharing,
+            origin_list,
+            card_id_list,
+        )
 
-    if "benefits" in sources:
-        # Filtro de origem "manual" só se aplica a bank_statements
-        # Se filtro de origem for apenas "manual", não busca benefícios
-        should_include_benefits = True
-        if origin_list and 'manual' in origin_list and 'inverted' not in origin_list:
-            should_include_benefits = False
-        if should_include_benefits:
-            benefit_expenses = _get_benefit_expenses_by_date(
-                db, tenant_id, start_date_obj, end_date_obj,
-                tag_id_list, subtag_id_list, partner_id_list, account_id_list, card_id_list, limit,
-                include_empty_tag, include_empty_sharing, logged_account_id
-            )
-            expenses.extend(benefit_expenses)
+    # Busca despesas do período
+    expenses = _fetch_expenses_for_range(start_date_obj, end_date_obj)
 
     # Calcula totais ANTES de limitar (para ter o total real do período)
     total_amount = sum(e.amount for e in expenses)
@@ -1509,6 +1578,26 @@ async def get_detailed_report(
     # Ordena por valor (maior primeiro) e limita para exibição
     expenses.sort(key=lambda x: x.amount, reverse=True)
     expenses_limited = expenses[:limit]
+
+    from app.services import invoice_payment_match_service as match_service
+
+    bank_ids = [e.id for e in expenses_limited if e.source == "bank"]
+    linked_by_statement = match_service.linked_invoice_summaries_by_statement_ids(
+        db, tenant_id, logged_account_id, bank_ids,
+    )
+    if linked_by_statement:
+        enriched_limited: list[ExpenseDetail] = []
+        for expense in expenses_limited:
+            summary = linked_by_statement.get(expense.id)
+            if summary and expense.source == "bank":
+                enriched_limited.append(
+                    expense.model_copy(
+                        update={"linked_invoice": LinkedInvoiceSummary(**summary)},
+                    )
+                )
+            else:
+                enriched_limited.append(expense)
+        expenses_limited = enriched_limited
 
     # Agrupa por descrição para top gastos (usa TODOS os expenses, não limitados)
     description_totals = {}
@@ -1602,6 +1691,8 @@ async def get_detailed_report(
         total_expenses_count=total_expenses_count,
         expenses_trend=expenses_trend,
         income_trend=income_trend,
+        opening_balance_before_period=opening_balance_before_period,
+        daily_balance_rows=daily_balance_rows,
         top_expenses=top_expenses,
         expenses=expenses_limited
     )
@@ -1882,7 +1973,8 @@ def _get_card_expenses_by_date(
     limit: int,
     include_empty_tag: bool = False,
     include_empty_sharing: bool = False,
-    logged_account_id: int | None = None
+    logged_account_id: int | None = None,
+    use_invoice_month_filter: bool = True,
 ) -> List[ExpenseDetail]:
     """
     Busca despesas de faturas de cartão por range de datas.
@@ -2012,22 +2104,31 @@ def _get_card_expenses_by_date(
         Bank, Account.bank_id == Bank.id
     )
 
-    # Filtra pela data da FATURA (year_month), não pela data da compra.
-    # start_date/end_date chegam com end exclusivo (ex.: março → 2026-03-01 .. 2026-04-01).
     filters = [
         CreditCardInvoice.tenant_id == tenant_id,
         Cartao.active == True,
         Cartao.type == "credito",
     ]
 
-    if start_date is not None or end_date is not None:
-        year_month_filters = []
+    if use_invoice_month_filter:
+        # Filtra pela data da FATURA (year_month), não pela data da compra.
+        # start_date/end_date chegam com end exclusivo (ex.: março → 2026-03-01 .. 2026-04-01).
+        if start_date is not None or end_date is not None:
+            year_month_filters = []
+            if start_date is not None:
+                year_month_filters.append(CreditCardInvoice.year_month >= start_date.strftime("%Y-%m"))
+            if end_date is not None:
+                last_included = end_date - timedelta(days=1)
+                year_month_filters.append(CreditCardInvoice.year_month <= last_included.strftime("%Y-%m"))
+            filters.extend(year_month_filters)
+    else:
+        # Mesma regra do extrato bancário / saldo diário: data da transação (compra).
         if start_date is not None:
-            year_month_filters.append(CreditCardInvoice.year_month >= start_date.strftime("%Y-%m"))
+            start_datetime = datetime.combine(start_date, datetime.min.time())
+            filters.append(CreditCardInvoice.date >= start_datetime)
         if end_date is not None:
-            last_included = end_date - timedelta(days=1)
-            year_month_filters.append(CreditCardInvoice.year_month <= last_included.strftime("%Y-%m"))
-        filters.extend(year_month_filters)
+            end_datetime = datetime.combine(end_date, datetime.min.time())
+            filters.append(CreditCardInvoice.date < end_datetime)
 
     query = query.filter(*filters)
 
@@ -2701,6 +2802,7 @@ async def get_invoice_report(
     subtag_ids: str | None = Query(None, description="IDs das subtags separados por vírgula"),
     partner_ids: str | None = Query(None, description="IDs dos parceiros separados por vírgula"),
     include_empty_sharing: bool = Query(False, description="Incluir itens sem compartilhamento (expense_sharing_id IS NULL)"),
+    include_empty_tag: bool = Query(False, description="Incluir itens sem subtag (subtag_id IS NULL)"),
     issuers: str | None = Query(None, description="Emissores separados por vírgula (btg,mercadopago)"),
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
@@ -2810,13 +2912,18 @@ async def get_invoice_report(
         # Filtra por todos os meses do ano
         query = query.filter(CreditCardInvoice.year_month.like(f"{year}-%"))
 
-    # Filtro por subtags
-    if subtag_id_list:
-        query = query.filter(CreditCardInvoice.subtag_id.in_(subtag_id_list))
-    elif tag_id_list:
-        # Busca subtags das tags selecionadas
-        subtag_query = db.query(Subtag.id).filter(Subtag.tag_id.in_(tag_id_list))
-        query = query.filter(CreditCardInvoice.subtag_id.in_(subtag_query))
+    # Filtro por tags/subtags (com suporte a "Vazio")
+    if subtag_id_list or tag_id_list or include_empty_tag:
+        tag_conditions = []
+        if subtag_id_list:
+            tag_conditions.append(CreditCardInvoice.subtag_id.in_(subtag_id_list))
+        elif tag_id_list:
+            subtag_query = db.query(Subtag.id).filter(Subtag.tag_id.in_(tag_id_list))
+            tag_conditions.append(CreditCardInvoice.subtag_id.in_(subtag_query))
+        if include_empty_tag:
+            tag_conditions.append(CreditCardInvoice.subtag_id.is_(None))
+        if tag_conditions:
+            query = query.filter(or_(*tag_conditions))
 
     # Filtro por parceiros (expense_sharing_id) com suporte a "Vazio"
     if partner_id_list or include_empty_sharing:

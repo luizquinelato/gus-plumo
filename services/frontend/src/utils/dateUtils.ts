@@ -70,6 +70,24 @@ export const parseLocalDate = (dateStr: string): Date | null => {
 }
 
 /**
+ * Converte YYYY-MM-DD[ T]HH:MM[:SS] para Date local (sem conversão UTC)
+ */
+export const parseLocalDateTime = (value: string): Date | null => {
+  const match = value.trim().match(
+    /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?/,
+  )
+  if (!match) return null
+  return new Date(
+    parseInt(match[1], 10),
+    parseInt(match[2], 10) - 1,
+    parseInt(match[3], 10),
+    parseInt(match[4] ?? '0', 10),
+    parseInt(match[5] ?? '0', 10),
+    parseInt(match[6] ?? '0', 10),
+  )
+}
+
+/**
  * Formata data para exibição em português (DD/MM/YYYY)
  * @param date - Date object, string de data, ou timestamp
  * @returns String no formato DD/MM/YYYY (ex: "05/02/2026")
@@ -91,7 +109,9 @@ export const formatDateBR = (date: Date | string): string => {
  * @returns String no formato DD/MM/YYYY HH:MM:SS (ex: "05/02/2026 19:30:45")
  */
 export const formatDateTimeBR = (date: Date | string): string => {
-  const d = typeof date === 'string' ? new Date(date) : date
+  const d = typeof date === 'string'
+    ? (parseLocalDateTime(date) ?? new Date(date))
+    : date
   const day = String(d.getDate()).padStart(2, '0')
   const month = String(d.getMonth() + 1).padStart(2, '0')
   const year = d.getFullYear()
