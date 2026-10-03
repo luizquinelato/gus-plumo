@@ -1956,7 +1956,7 @@ const AccountClosuresPage = () => {
                                       className={cadastroRowIconBtnCls}
                                       title={item.open_shared_notice || 'Há fechamento compartilhado em aberto. Pagamentos entram pela data real.'}
                                       aria-label={item.open_shared_notice || 'Há fechamento compartilhado em aberto'}
-                                      onClick={() => navigate('/fechamentos/compartilhado/lista')}
+                                      onClick={() => navigate('/fechamentos/compartilhado')}
                                       style={{ color: 'var(--color-warning)' }}
                                     >
                                       <AlertTriangle size={16} />
@@ -2119,7 +2119,7 @@ const AccountClosuresPage = () => {
                 }
                 onGoToShared={() => {
                   closeModal()
-                  navigate('/fechamentos/compartilhado/lista')
+                  navigate('/fechamentos/compartilhado')
                 }}
               />
             ) : null}
@@ -2657,7 +2657,7 @@ const AccountClosuresPage = () => {
                     }
                     onGoToShared={() => {
                       closeItemsModal()
-                      navigate('/fechamentos/compartilhado/lista')
+                      navigate('/fechamentos/compartilhado')
                     }}
                   />
                 ) : null}

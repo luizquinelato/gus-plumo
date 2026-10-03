@@ -12,6 +12,7 @@ from app.database import get_db
 from app.models.unified_models import Cartao, CreditCardInvoiceGroup, ExpenseSharingSetting
 from app.dependencies.auth import get_current_user, require_account
 from app.services import invoice_payment_match_service as match_service
+from app.utils.card_invoice_calendar import apply_group_calendar_to_card
 
 router = APIRouter(prefix="/api/cartoes", tags=["cartoes"])
 
@@ -60,6 +61,7 @@ class CartaoCreate(BaseModel):
     expense_sharing_id: int | None = None
     expense_ownership_percentage: float | None = None
     revenue_ownership_percentage: float | None = None
+    closing_day: int = Field(default=14, ge=1, le=30)
     due_day: int = Field(default=14, ge=1, le=30)
     invoice_group_id: int | None = None
     active: bool = True
@@ -75,6 +77,7 @@ class CartaoUpdate(BaseModel):
     expense_ownership_percentage: float | None = None
     revenue_ownership_percentage: float | None = None
     active: bool | None = None
+    closing_day: int | None = Field(default=None, ge=1, le=30)
     due_day: int | None = Field(default=None, ge=1, le=30)
     invoice_group_id: int | None = None
     update_existing_records: bool = False  # Flag para atualizar registros existentes
@@ -94,6 +97,7 @@ class CartaoResponse(BaseModel):
     revenue_ownership_percentage: float | None = None
     expense_sharing: ExpenseSharingInfo | None = None
     active: bool
+    closing_day: int
     due_day: int
     invoice_group_id: int | None = None
     invoice_group_name: str | None = None
@@ -104,12 +108,14 @@ class CartaoResponse(BaseModel):
 
 class InvoiceGroupCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
+    closing_day: int = Field(default=14, ge=1, le=30)
     due_day: int = Field(default=14, ge=1, le=30)
     card_ids: List[int] = []
 
 
 class InvoiceGroupUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
+    closing_day: int | None = Field(default=None, ge=1, le=30)
     due_day: int | None = Field(default=None, ge=1, le=30)
     active: bool | None = None
     card_ids: List[int] | None = None
@@ -120,6 +126,7 @@ class InvoiceGroupResponse(BaseModel):
     name: str
     account_id: int
     active: bool
+    closing_day: int
     due_day: int
     card_count: int = 0
 
@@ -184,7 +191,8 @@ def _serialize_cartao(cartao: Cartao) -> dict:
         "revenue_ownership_percentage": float(cartao.revenue_ownership_percentage) if cartao.revenue_ownership_percentage is not None else None,
         "expense_sharing": None,
         "active": cartao.active,
-        "due_day": cartao.due_day,
+        "closing_day": int(cartao.closing_day or 14),
+        "due_day": int(cartao.due_day or 14),
         "invoice_group_id": cartao.invoice_group_id,
         "invoice_group_name": cartao.invoice_group.name if getattr(cartao, "invoice_group", None) else None,
     }
@@ -231,6 +239,7 @@ def _serialize_invoice_group(group: CreditCardInvoiceGroup) -> dict:
         "name": group.name,
         "account_id": group.account_id,
         "active": group.active,
+        "closing_day": int(group.closing_day or 14),
         "due_day": int(group.due_day or 14),
         "card_count": len([c for c in cards if c.type == "credito"]),
     }
@@ -253,27 +262,32 @@ def _load_invoice_group(
     return group
 
 
-def _resolve_card_due_day(
+def _resolve_card_calendar_days(
     db: Session,
     tenant_id: int,
     account_id: int | None,
     card_type: str | None,
     invoice_group_id: int | None,
-    requested_due_day: int | None,
-) -> int:
+    requested_closing: int | None,
+    requested_due: int | None,
+) -> tuple[int, int]:
     if card_type == "beneficios" or not invoice_group_id:
-        return int(requested_due_day or 14)
+        return (
+            int(requested_closing or 14),
+            int(requested_due or 14),
+        )
     if account_id is None:
         raise HTTPException(status_code=400, detail="Selecione uma conta para vincular o cartão a um grupo de fatura")
     group = _load_invoice_group(db, tenant_id, account_id, invoice_group_id)
-    return int(group.due_day or 14)
+    return (
+        int(group.closing_day or 14),
+        int(group.due_day or 14),
+    )
 
 
-def _sync_group_members_due_day(group: CreditCardInvoiceGroup) -> None:
-    due = int(group.due_day or 14)
+def _sync_group_members_calendar(group: CreditCardInvoiceGroup) -> None:
     for card in group.credit_cards or []:
-        if card.type == "credito":
-            card.due_day = due
+        apply_group_calendar_to_card(card, group)
 
 
 def _reload_invoice_group(db: Session, group_id: int, tenant_id: int, account_id: int) -> CreditCardInvoiceGroup:
@@ -317,10 +331,9 @@ def _set_group_cards(
         ~Cartao.id.in_(unique_ids),
     ).update({Cartao.invoice_group_id: None}, synchronize_session=False)
 
-    group_due = int(group.due_day or 14)
     for card in cards:
         card.invoice_group_id = group_id
-        card.due_day = group_due
+        apply_group_calendar_to_card(card, group)
 
 
 @router.get("/", response_model=List[CartaoResponse])
@@ -359,24 +372,7 @@ async def listar_cartoes(
     # Enriquecer os dados com nomes de conta e expense_sharing completo
     resultado = []
     for cartao in cartoes:
-        cartao_dict = {
-            "id": cartao.id,
-            "name": cartao.name,
-            "description": cartao.description,
-            "number": cartao.number,
-            "type": cartao.type,
-            "account_id": cartao.account_id,
-            "account_name": None,
-            "ownership_type": cartao.ownership_type,
-            "expense_sharing_id": cartao.expense_sharing_id,
-            "expense_ownership_percentage": float(cartao.expense_ownership_percentage) if cartao.expense_ownership_percentage is not None else None,
-            "revenue_ownership_percentage": float(cartao.revenue_ownership_percentage) if cartao.revenue_ownership_percentage is not None else None,
-            "expense_sharing": None,
-            "active": cartao.active,
-            "due_day": cartao.due_day,
-            "invoice_group_id": cartao.invoice_group_id,
-            "invoice_group_name": cartao.invoice_group.name if cartao.invoice_group else None,
-        }
+        cartao_dict = _serialize_cartao(cartao)
 
         # Buscar dados completos da conta (já carregado via joinedload)
         if cartao.account:
@@ -555,6 +551,7 @@ async def criar_grupo_fatura(
         if existing.active:
             raise HTTPException(status_code=400, detail="Já existe um grupo com este nome")
         existing.active = True
+        existing.closing_day = payload.closing_day
         existing.due_day = payload.due_day
         try:
             _set_group_cards(db, tenant_id, account_id, existing, payload.card_ids)
@@ -570,6 +567,7 @@ async def criar_grupo_fatura(
         tenant_id=tenant_id,
         created_by=user_id,
         active=True,
+        closing_day=payload.closing_day,
         due_day=payload.due_day,
     )
     db.add(group)
@@ -613,9 +611,15 @@ async def atualizar_grupo_fatura(
         group.name = name
     if "active" in data and data["active"] is not None:
         group.active = data["active"]
+    calendar_changed = False
+    if "closing_day" in data and data["closing_day"] is not None:
+        group.closing_day = int(data["closing_day"])
+        calendar_changed = True
     if "due_day" in data and data["due_day"] is not None:
         group.due_day = int(data["due_day"])
-        _sync_group_members_due_day(group)
+        calendar_changed = True
+    if calendar_changed:
+        _sync_group_members_calendar(group)
     if "card_ids" in data and data["card_ids"] is not None:
         try:
             _set_group_cards(db, tenant_id, account_id, group, data["card_ids"])
@@ -705,14 +709,17 @@ async def criar_cartao(
     payload["invoice_group_id"] = _validate_invoice_group(
         db, tenant_id, payload.get("account_id"), payload.get("invoice_group_id"), payload.get("type"),
     )
-    payload["due_day"] = _resolve_card_due_day(
+    closing, due = _resolve_card_calendar_days(
         db,
         tenant_id,
         payload.get("account_id"),
         payload.get("type"),
         payload.get("invoice_group_id"),
+        payload.get("closing_day"),
         payload.get("due_day"),
     )
+    payload["closing_day"] = closing
+    payload["due_day"] = due
     _normalize_card_participation(payload, db, tenant_id)
 
     # Verifica se já existe um cartão com o mesmo name e número
@@ -730,6 +737,7 @@ async def criar_cartao(
             cartao_existente.description = payload.get("description")
             cartao_existente.type = payload.get("type") or cartao_existente.type
             cartao_existente.invoice_group_id = payload.get("invoice_group_id")
+            cartao_existente.closing_day = payload.get("closing_day") or cartao_existente.closing_day
             cartao_existente.due_day = payload.get("due_day") or cartao_existente.due_day
             cartao_existente.expense_sharing_id = payload.get("expense_sharing_id")
             cartao_existente.expense_ownership_percentage = payload.get("expense_ownership_percentage")
@@ -827,16 +835,20 @@ async def atualizar_cartao(
 
     final_group_id = update_data.get('invoice_group_id', cartao.invoice_group_id)
     if card_type == 'credito' and final_group_id:
-        update_data['due_day'] = _resolve_card_due_day(
+        closing, due = _resolve_card_calendar_days(
             db,
             tenant_id,
             cartao.account_id,
             card_type,
             final_group_id,
+            update_data.get('closing_day', cartao.closing_day),
             update_data.get('due_day', cartao.due_day),
         )
-    elif cartao.invoice_group_id and card_type == 'credito' and 'due_day' in update_data:
-        update_data.pop('due_day', None)
+        update_data['closing_day'] = closing
+        update_data['due_day'] = due
+    elif cartao.invoice_group_id and card_type == 'credito':
+        for key in ('closing_day', 'due_day'):
+            update_data.pop(key, None)
 
     # Verifica se já existe outro cartão com o mesmo name e número
     if 'name' in update_data and 'number' in update_data:

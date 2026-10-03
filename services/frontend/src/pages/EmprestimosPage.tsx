@@ -5,6 +5,13 @@ import {
   CadastroListPageBody,
   CadastroListPageHero,
   CadastroListPageShell,
+  CadastroListPageTabs,
+  CadastroListPageFilterCard,
+  CadastroListPageSearchField,
+  CadastroFilterField,
+  cadastroFilterFieldCls,
+  cadastroRowIconBtnCls,
+  cadastroRowIconDangerCls,
 } from '../components/CadastroListPageLayout'
 import {
   CadastroFieldLabel,
@@ -23,7 +30,7 @@ import LoadingSpinner from '../components/LoadingSpinner'
 import Toast from '../components/Toast'
 import { DateField } from '../components/date'
 import { parseLocalDate } from '../utils/dateUtils'
-import { Wallet, Plus, Edit2, Trash2, ChevronDown, ChevronRight, Search, X, Filter, Calendar, TrendingUp, TrendingDown, CheckCircle, Check, Clock, AlertTriangle, Percent, DollarSign, ArrowUp, ArrowDown, Building2, UserX, Link2, Lock, HelpCircle } from 'lucide-react'
+import { Wallet, Plus, Edit2, Trash2, ChevronDown, ChevronRight, Filter, Calendar, CheckCircle, Clock, AlertTriangle, Percent, DollarSign, ArrowUp, ArrowDown, Building2, UserX, Link2, Lock, HelpCircle } from 'lucide-react'
 import { useConfirm } from '../hooks/useConfirm'
 
 interface ToastState {
@@ -246,15 +253,18 @@ export default function EmprestimosPage() {
   // Estados principais
   const [loans, setLoans] = useState<Loan[]>([])
   const [partners, setPartners] = useState<Partner[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(false)
   const [toast, setToast] = useState<ToastState>({ show: false, message: '', type: 'success' })
 
-  // Filtros
+  // Filtros (rascunho vs aplicado — lista só após Aplicar)
+  const [draftFilterType, setDraftFilterType] = useState<'all' | 'lent' | 'borrowed'>('all')
+  const [draftFilterPartner, setDraftFilterPartner] = useState<number | null>(null)
+  const [appliedFilterType, setAppliedFilterType] = useState<'all' | 'lent' | 'borrowed'>('all')
+  const [appliedFilterPartner, setAppliedFilterPartner] = useState<number | null>(null)
+  /** Busca por descrição na lista (só após aplicar filtros) */
   const [searchTerm, setSearchTerm] = useState('')
-  const [filterType, setFilterType] = useState<'all' | 'lent' | 'borrowed'>('all')
-  const [filterStatus, setFilterStatus] = useState<'all' | 'open' | 'settled'>('all')
-  const [filterPartner, setFilterPartner] = useState<number | null>(null)
-  const [showInactive, setShowInactive] = useState(false)
+  const [filtersApplied, setFiltersApplied] = useState(false)
+  const [listTab, setListTab] = useState<'open' | 'settled'>('open')
 
   // Estados de expansão e modais
   const [expandedLoans, setExpandedLoans] = useState<Set<number>>(new Set())
@@ -343,7 +353,6 @@ export default function EmprestimosPage() {
   }
 
   useEffect(() => {
-    loadLoans()
     loadPartners()
   }, [])
 
@@ -389,6 +398,10 @@ export default function EmprestimosPage() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const refreshLoansIfApplied = () => {
+    if (filtersApplied) void loadLoans()
   }
 
   const loadPartners = async () => {
@@ -453,7 +466,6 @@ export default function EmprestimosPage() {
 
     setIsSubmitting(true)
     try {
-      // Backend espera sempre valor positivo - o loan_type indica a direção
       const principalAmount = parseInt(formAmountCents || '0', 10) / 100
 
       const data: any = {
@@ -484,7 +496,7 @@ export default function EmprestimosPage() {
 
       setShowCreateModal(false)
       resetForm()
-      loadLoans()
+      refreshLoansIfApplied()
     } catch (error: any) {
       console.error('Erro ao salvar empréstimo:', error)
       showToast(error.response?.data?.detail || 'Erro ao salvar empréstimo', 'error')
@@ -497,12 +509,9 @@ export default function EmprestimosPage() {
     setEditingLoan(loan)
     setEditingSettled(settledMode)
     setFormLoanType(loan.loan_type)
-    // Converter principal para centavos (sempre positivo — sinal derivado do formLoanType)
     const absAmount = Math.abs(loan.principal_amount)
-    const centsStr = String(Math.round(absAmount * 100))
-    setFormAmountCents(centsStr)
-    const signedAmount = loan.loan_type === 'lent' ? -absAmount : absAmount
-    setFormAmount(signedAmount.toFixed(2))
+    setFormAmountCents(String(Math.round(absAmount * 100)))
+    setFormAmount(absAmount.toFixed(2))
     setFormDescription(loan.description)
     setFormLoanDate(loan.loan_date.split('T')[0])
     setFormDueDate(loan.due_date ? loan.due_date.split('T')[0] : '')
@@ -548,7 +557,7 @@ export default function EmprestimosPage() {
       showToast('Empréstimo reaberto com sucesso!', 'success')
       setShowReopenModal(false)
       setReopeningLoan(null)
-      loadLoans()
+      refreshLoansIfApplied()
     } catch (error: any) {
       showToast(error.response?.data?.detail || 'Erro ao reabrir empréstimo', 'error')
     } finally {
@@ -564,7 +573,7 @@ export default function EmprestimosPage() {
         try {
           await axios.delete(`/api/loans/${loan.id}`)
           showToast('Empréstimo excluído com sucesso!', 'success')
-          loadLoans()
+          refreshLoansIfApplied()
         } catch (error: any) {
           showToast(error.response?.data?.detail || 'Erro ao excluir empréstimo', 'error')
         }
@@ -620,7 +629,7 @@ export default function EmprestimosPage() {
       setShowPaymentModal(false)
       setPayingLoan(null)
       setEditingPayment(null)
-      loadLoans()
+      refreshLoansIfApplied()
     } catch (error: any) {
       showToast(error.response?.data?.detail || 'Erro ao salvar pagamento', 'error')
     } finally {
@@ -642,7 +651,7 @@ export default function EmprestimosPage() {
         try {
           await axios.delete(`/api/loans/${loan.id}/payments/${payment.id}`)
           showToast(isSettled ? 'Pagamento excluído e empréstimo reaberto!' : 'Pagamento excluído com sucesso!', 'success')
-          loadLoans()
+          refreshLoansIfApplied()
         } catch (error: any) {
           showToast(error.response?.data?.detail || 'Erro ao excluir pagamento', 'error')
         }
@@ -707,7 +716,7 @@ export default function EmprestimosPage() {
             corrected_amount: correctedAmount
           })
           showToast('Empréstimo quitado com sucesso!', 'success')
-          loadLoans()
+          refreshLoansIfApplied()
         } catch (error: any) {
           showToast(error.response?.data?.detail || 'Erro ao quitar empréstimo', 'error')
         }
@@ -717,18 +726,43 @@ export default function EmprestimosPage() {
     )
   }
 
-  // Filtrar empréstimos
-  const filteredLoans = loans.filter(loan => {
-    if (searchTerm && !loan.description.toLowerCase().includes(searchTerm.toLowerCase())) return false
-    if (filterType !== 'all' && loan.loan_type !== filterType) return false
-    if (filterStatus !== 'all' && loan.status !== filterStatus) return false
-    if (filterPartner && loan.counterpart_account_id !== filterPartner) return false
-    return true
-  })
+  const hasActiveFilters =
+    filtersApplied || draftFilterType !== 'all' || draftFilterPartner != null
 
-  // Separar empréstimos ativos e inativos (quitados)
-  const activeLoans = filteredLoans.filter(loan => loan.status !== 'settled')
-  const inactiveLoans = filteredLoans.filter(loan => loan.status === 'settled')
+  const applyFilters = async () => {
+    setSearchTerm('')
+    setAppliedFilterType(draftFilterType)
+    setAppliedFilterPartner(draftFilterPartner)
+    setFiltersApplied(true)
+    await loadLoans()
+  }
+
+  const clearFilters = () => {
+    setDraftFilterType('all')
+    setDraftFilterPartner(null)
+    setAppliedFilterType('all')
+    setAppliedFilterPartner(null)
+    setSearchTerm('')
+    setFiltersApplied(false)
+    setLoans([])
+    setListTab('open')
+  }
+
+  const filteredLoans = filtersApplied
+    ? loans.filter((loan) => {
+        const q = searchTerm.trim()
+        if (q && !loan.description.toLowerCase().includes(q.toLowerCase())) {
+          return false
+        }
+        if (appliedFilterType !== 'all' && loan.loan_type !== appliedFilterType) return false
+        if (appliedFilterPartner && loan.counterpart_account_id !== appliedFilterPartner) return false
+        return true
+      })
+    : []
+
+  const openLoans = filteredLoans.filter((loan) => loan.status !== 'settled')
+  const settledLoans = filteredLoans.filter((loan) => loan.status === 'settled')
+  const displayLoans = listTab === 'open' ? openLoans : settledLoans
 
   const getStatusIcon = (loan: Loan) => {
     // Status: Apenas Open e Settled
@@ -772,96 +806,110 @@ export default function EmprestimosPage() {
             />
           }
           tabs={
-            <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-            {/* Busca */}
-            <div className="relative">
-              <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Buscar por descrição..."
-                className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
-              {searchTerm && (
-                <button onClick={() => setSearchTerm('')} className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                  <X size={16} className="text-gray-400 hover:text-gray-600" />
-                </button>
-              )}
-            </div>
-
-            {/* Tipo */}
-            <select
-              value={filterType}
-              onChange={(e) => setFilterType(e.target.value as any)}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            <CadastroListPageFilterCard
+              hasActiveFilters={hasActiveFilters}
+              onClearFilters={clearFilters}
+              onApply={() => void applyFilters()}
+              applying={isLoading}
+              resultHint={
+                filtersApplied
+                  ? `${filteredLoans.length} empréstimo${filteredLoans.length === 1 ? '' : 's'}`
+                  : undefined
+              }
             >
-              <option value="all">Todos os tipos</option>
-              <option value="lent">A Receber (emprestei)</option>
-              <option value="borrowed">A Pagar (peguei emprestado)</option>
-            </select>
-
-            {/* Status */}
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value as any)}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-            >
-              <option value="all">Todos os status</option>
-              <option value="open">Aberto</option>
-              <option value="settled">Quitado</option>
-            </select>
-
-            {/* Parceiro */}
-            <select
-              value={filterPartner || ''}
-              onChange={(e) => setFilterPartner(e.target.value ? parseInt(e.target.value) : null)}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-            >
-              <option value="">Todos os parceiros</option>
-              {[...partners]
-                .sort((a, b) => {
-                  const nameA = getAccountDisplayName(a.shared_account).toLowerCase()
-                  const nameB = getAccountDisplayName(b.shared_account).toLowerCase()
-                  return nameA.localeCompare(nameB, 'pt-BR')
-                })
-                .map(p => {
-                  const acc = p.shared_account
-                  const bankName = acc?.bank?.name || 'Sem banco'
-                  const agencyInfo = acc?.agency ? `Ag: ${acc.agency}` : ''
-                  const accountInfo = acc?.account_number ? `Conta: ${acc.account_number}` : ''
-                  const details = [bankName, agencyInfo, accountInfo].filter(Boolean).join(' • ')
-                  return (
-                    <option key={p.shared_account_id} value={p.shared_account_id}>
-                      {getAccountDisplayName(acc)} • {details}
-                    </option>
-                  )
-                })}
-            </select>
-          </div>
-            </div>
+              <CadastroFilterField label="Tipo" icon={<ArrowUp size={12} />}>
+                <select
+                  value={draftFilterType}
+                  onChange={(e) => setDraftFilterType(e.target.value as 'all' | 'lent' | 'borrowed')}
+                  className={cadastroFilterFieldCls}
+                >
+                  <option value="all">Todos</option>
+                  <option value="lent">A receber</option>
+                  <option value="borrowed">A pagar</option>
+                </select>
+              </CadastroFilterField>
+              <CadastroFilterField label="Parceiro" icon={<Building2 size={12} />}>
+                <select
+                  value={draftFilterPartner ?? ''}
+                  onChange={(e) =>
+                    setDraftFilterPartner(e.target.value ? parseInt(e.target.value, 10) : null)
+                  }
+                  className={cadastroFilterFieldCls}
+                >
+                  <option value="">Todos</option>
+                  {[...partners]
+                    .sort((a, b) => {
+                      const nameA = getAccountDisplayName(a.shared_account).toLowerCase()
+                      const nameB = getAccountDisplayName(b.shared_account).toLowerCase()
+                      return nameA.localeCompare(nameB, 'pt-BR')
+                    })
+                    .map((p) => {
+                      const acc = p.shared_account
+                      const bankName = acc?.bank?.name || 'Sem banco'
+                      const agencyInfo = acc?.agency ? `Ag: ${acc.agency}` : ''
+                      const accountInfo = acc?.account_number ? `Conta: ${acc.account_number}` : ''
+                      const details = [bankName, agencyInfo, accountInfo].filter(Boolean).join(' • ')
+                      return (
+                        <option key={p.shared_account_id} value={p.shared_account_id}>
+                          {getAccountDisplayName(acc)} • {details}
+                        </option>
+                      )
+                    })}
+                </select>
+              </CadastroFilterField>
+            </CadastroListPageFilterCard>
           }
         >
-        {/* Lista de Empréstimos Ativos */}
         <div>
-          {isLoading ? (
-            <div className="flex items-center justify-center py-12 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+          {isLoading && filtersApplied ? (
+            <div className="flex items-center justify-center rounded-xl border border-gray-200 bg-white py-12 shadow-sm dark:border-gray-700 dark:bg-gray-800">
               <LoadingSpinner />
             </div>
-          ) : activeLoans.length === 0 && inactiveLoans.length === 0 ? (
-            <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
-              <Wallet className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-500 dark:text-gray-400">Nenhum empréstimo encontrado</p>
+          ) : !filtersApplied ? (
+            <div className="rounded-xl border border-gray-200 bg-white p-12 text-center shadow-sm dark:border-gray-700 dark:bg-gray-800">
+              <Filter size={48} className="mx-auto mb-4 text-gray-300 dark:text-gray-600" />
+              <h3 className="mb-2 text-lg font-semibold text-gray-900 dark:text-white">Nenhum filtro aplicado</h3>
+              <p className="text-gray-600 dark:text-gray-400">
+                Ajuste os filtros acima e clique em Aplicar para carregar os empréstimos.
+              </p>
             </div>
-          ) : activeLoans.length === 0 ? (
-            <div className="text-center py-8 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
-              <CheckCircle className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-400 dark:text-gray-500 text-sm">Nenhum empréstimo ativo</p>
+          ) : loans.length === 0 ? (
+            <div className="rounded-xl border border-gray-200 bg-white py-12 text-center shadow-sm dark:border-gray-700 dark:bg-gray-800">
+              <Wallet className="mx-auto mb-4 h-12 w-12 text-gray-400" />
+              <p className="text-gray-500 dark:text-gray-400">Nenhum empréstimo cadastrado</p>
             </div>
           ) : (
+            <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+              <div className="px-4 pt-3">
+                <CadastroListPageTabs
+                  tabs={[
+                    { key: 'open', label: 'Em aberto', icon: <Clock size={16} />, count: openLoans.length },
+                    { key: 'settled', label: 'Quitados', icon: <CheckCircle size={16} />, count: settledLoans.length },
+                  ]}
+                  active={listTab}
+                  onChange={setListTab}
+                  trailing={
+                    <div className="w-72">
+                      <CadastroListPageSearchField
+                        value={searchTerm}
+                        onChange={setSearchTerm}
+                        placeholder="Buscar por descrição…"
+                      />
+                    </div>
+                  }
+                />
+              </div>
+              <div className="p-4">
+          {displayLoans.length === 0 ? (
+            <div className="py-8 text-center">
+              <Wallet className="mx-auto mb-3 h-10 w-10 text-gray-300" />
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                {listTab === 'open' ? 'Nenhum empréstimo em aberto neste filtro' : 'Nenhum empréstimo quitado neste filtro'}
+              </p>
+            </div>
+          ) : listTab === 'open' ? (
             <div className="space-y-3">
-              {activeLoans.map(loan => {
+              {openLoans.map((loan) => {
                 // Determinar direção efetiva para os badges
                 const effectiveType = loan.is_owner ? loan.loan_type : (loan.loan_type === 'lent' ? 'borrowed' : 'lent')
                 const isLent = effectiveType === 'lent'
@@ -1001,19 +1049,19 @@ export default function EmprestimosPage() {
                           {/* Ações apenas para empréstimos não quitados */}
                           {loan.status !== 'settled' && (
                             <>
-                              <button onClick={() => handleOpenPayment(loan)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg" title="Registrar Pagamento">
+                              <button type="button" onClick={() => handleOpenPayment(loan)} className={cadastroRowIconBtnCls} title="Registrar Pagamento">
                                 <Plus size={18} />
                               </button>
-                              <button onClick={() => handleSettle(loan)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg" title="Quitar">
+                              <button type="button" onClick={() => handleSettle(loan)} className={cadastroRowIconBtnCls} title="Quitar">
                                 <CheckCircle size={18} />
                               </button>
-                              <button onClick={() => handleEdit(loan)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg" title="Editar">
+                              <button type="button" onClick={() => handleEdit(loan)} className={cadastroRowIconBtnCls} title="Editar">
                                 <Edit2 size={18} />
                               </button>
                             </>
                           )}
                           {/* Excluir sempre disponível para o owner */}
-                          <button onClick={() => handleDelete(loan)} className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg" title="Excluir">
+                          <button type="button" onClick={() => handleDelete(loan)} className={cadastroRowIconDangerCls} title="Excluir">
                             <Trash2 size={18} />
                           </button>
                         </div>
@@ -1069,15 +1117,17 @@ export default function EmprestimosPage() {
                                     ) : (
                                       <div className="flex items-center justify-end gap-1">
                                         <button
+                                          type="button"
                                           onClick={() => handleOpenPayment(loan, payment)}
-                                          className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg"
+                                          className={cadastroRowIconBtnCls}
                                           title="Editar Pagamento"
                                         >
                                           <Edit2 size={14} />
                                         </button>
                                         <button
+                                          type="button"
                                           onClick={() => handleDeletePayment(loan, payment)}
-                                          className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
+                                          className={cadastroRowIconDangerCls}
                                           title="Excluir Pagamento"
                                         >
                                           <Trash2 size={14} />
@@ -1096,29 +1146,9 @@ export default function EmprestimosPage() {
                 </div>
               )})}
             </div>
-          )}
-        </div>
-
-        {/* Seção de Inativos (Quitados) */}
-        {inactiveLoans.length > 0 && (
-          <div className="mt-6">
-            {/* Divisor com botão para exibir/esconder */}
-            <div className="flex items-center gap-4 mb-4">
-              <div className="flex-1 border-t border-gray-300 dark:border-gray-600"></div>
-              <button
-                onClick={() => setShowInactive(!showInactive)}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
-              >
-                {showInactive ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                <span>Quitados ({inactiveLoans.length})</span>
-              </button>
-              <div className="flex-1 border-t border-gray-300 dark:border-gray-600"></div>
-            </div>
-
-            {/* Lista de Inativos */}
-            {showInactive && (
-              <div className="space-y-3">
-                  {inactiveLoans.map(loan => {
+          ) : (
+            <div className="space-y-3">
+              {settledLoans.map((loan) => {
                     // Determinar direção efetiva para os badges
                     const effectiveType = loan.is_owner ? loan.loan_type : (loan.loan_type === 'lent' ? 'borrowed' : 'lent')
                     const isLent = effectiveType === 'lent'
@@ -1247,13 +1277,13 @@ export default function EmprestimosPage() {
                             <div className="flex items-center gap-1 self-center">
                               {/* Espaço invisível para manter alinhamento com abertos (3 botões) */}
                               <div className="w-[34px]"></div>
-                              <button onClick={() => handleReopen(loan)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg" title="Reabrir empréstimo">
+                              <button type="button" onClick={() => handleReopen(loan)} className={cadastroRowIconBtnCls} title="Reabrir empréstimo">
                                 <Lock size={18} />
                               </button>
-                              <button onClick={() => handleEdit(loan, true)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg" title="Editar (descrição/contraparte)">
+                              <button type="button" onClick={() => handleEdit(loan, true)} className={cadastroRowIconBtnCls} title="Editar (descrição/contraparte)">
                                 <Edit2 size={18} />
                               </button>
-                              <button onClick={() => handleDelete(loan)} className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg" title="Excluir">
+                              <button type="button" onClick={() => handleDelete(loan)} className={cadastroRowIconDangerCls} title="Excluir">
                                 <Trash2 size={18} />
                               </button>
                             </div>
@@ -1308,8 +1338,9 @@ export default function EmprestimosPage() {
                                           </div>
                                         ) : (
                                           <button
+                                            type="button"
                                             onClick={() => handleDeletePayment(loan, payment)}
-                                            className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
+                                            className={cadastroRowIconDangerCls}
                                             title="Excluir pagamento (reabre o empréstimo)"
                                           >
                                             <Trash2 size={14} />
@@ -1325,11 +1356,13 @@ export default function EmprestimosPage() {
                         </div>
                       )}
                     </div>
-                  )})}
+              )})}
+            </div>
+          )}
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          )}
+        </div>
 
         </CadastroListPageBody>
       </CadastroListPageShell>
@@ -1344,7 +1377,7 @@ export default function EmprestimosPage() {
             <CadastroModalHeader
               isEdit={!!editingLoan}
               title={editingLoan ? (editingSettled ? 'Editar Empréstimo (Quitado)' : 'Editar Empréstimo') : 'Novo Empréstimo'}
-              subtitle={editingSettled ? 'Empréstimo quitado: apenas descrição e contraparte podem ser alterados' : 'Cadastro de empréstimo entre contas ou entidade externa'}
+              subtitle={editingSettled ? 'Empréstimo quitado: apenas descrição e contraparte podem ser alterados' : 'Entre contas do sistema ou contraparte externa'}
               onClose={() => { setShowCreateModal(false); resetForm() }}
               icon={<Wallet size={18} />}
             />
@@ -1360,31 +1393,33 @@ export default function EmprestimosPage() {
                 <CadastroFormSection title="Identificação" icon={<Wallet size={14} />}>
                   <CadastroModalFieldsGrid>
                     <CadastroModalFieldsRow>
-                      <div className={editingSettled ? 'pointer-events-none opacity-50' : ''}>
-                        <CadastroFieldLabel>Tipo de Empréstimo</CadastroFieldLabel>
-                        <div className="mt-0.5 flex w-fit overflow-hidden rounded-lg border border-gray-300 dark:border-gray-600">
-                          <button
-                            type="button"
-                            onClick={() => setFormLoanType('lent')}
-                            className={`px-4 py-2 text-sm font-medium transition-all ${
-                              formLoanType === 'lent'
-                                ? 'bg-green-600 text-white'
-                                : 'bg-white text-gray-600 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700'
-                            }`}
-                          >
-                            Emprestei (a receber)
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setFormLoanType('borrowed')}
-                            className={`border-l border-gray-300 px-4 py-2 text-sm font-medium transition-all dark:border-gray-600 ${
-                              formLoanType === 'borrowed'
-                                ? 'bg-red-600 text-white'
-                                : 'bg-white text-gray-600 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700'
-                            }`}
-                          >
-                            Peguei emprestado (a pagar)
-                          </button>
+                      <div className={`min-w-0 ${editingSettled ? 'pointer-events-none opacity-50' : ''}`}>
+                        <CadastroFieldLabel required>Tipo de Empréstimo</CadastroFieldLabel>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-6">
+                          <label className={cadastroOptionLabelCls}>
+                            <input
+                              type="radio"
+                              name="form-loan-type"
+                              value="lent"
+                              checked={formLoanType === 'lent'}
+                              onChange={() => setFormLoanType('lent')}
+                              disabled={editingSettled}
+                              className={cadastroAccentControlCls}
+                            />
+                            A receber
+                          </label>
+                          <label className={cadastroOptionLabelCls}>
+                            <input
+                              type="radio"
+                              name="form-loan-type"
+                              value="borrowed"
+                              checked={formLoanType === 'borrowed'}
+                              onChange={() => setFormLoanType('borrowed')}
+                              disabled={editingSettled}
+                              className={cadastroAccentControlCls}
+                            />
+                            A pagar
+                          </label>
                         </div>
                       </div>
                     </CadastroModalFieldsRow>
@@ -1392,28 +1427,33 @@ export default function EmprestimosPage() {
                       <label className={`block min-w-0 ${editingSettled ? 'pointer-events-none opacity-50' : ''}`}>
                         <CadastroFieldLabel required>Valor</CadastroFieldLabel>
                         <div className="relative mt-0.5">
-                          <span className={`absolute left-3 top-1/2 -translate-y-1/2 font-semibold ${
-                            formLoanType === 'lent' ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'
-                          }`}>
+                          <span
+                            className={`absolute left-3 top-1/2 -translate-y-1/2 font-semibold ${
+                              formLoanType === 'lent'
+                                ? 'text-green-600 dark:text-green-400'
+                                : 'text-red-600 dark:text-red-400'
+                            }`}
+                          >
                             R$
                           </span>
                           <input
                             type="text"
                             inputMode="numeric"
-                            value={`${formLoanType === 'lent' && formAmountCents && formAmountCents !== '0' ? '-' : ''}${formatAmountMask(formAmountCents)}`}
+                            value={formatAmountMask(formAmountCents)}
                             onChange={(e) => {
                               const cents = e.target.value.replace(/\D/g, '')
                               const absValue = parseInt(cents || '0', 10) / 100
                               if (absValue > 99999999.99) return
-                              const signedValue = formLoanType === 'lent' ? -absValue : absValue
                               setFormAmountCents(cents)
-                              setFormAmount(signedValue === 0 ? '' : signedValue.toFixed(2))
+                              setFormAmount(absValue === 0 ? '' : absValue.toFixed(2))
                             }}
-                            placeholder="0,00"
+                            placeholder="0.00"
                             required
                             disabled={editingSettled}
                             className={`${cadastroFieldCls} pl-12 font-semibold ${
-                              formLoanType === 'lent' ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'
+                              formLoanType === 'lent'
+                                ? 'text-green-600 dark:text-green-400'
+                                : 'text-red-600 dark:text-red-400'
                             } ${editingSettled ? 'cursor-not-allowed' : ''}`}
                           />
                         </div>
@@ -1443,50 +1483,57 @@ export default function EmprestimosPage() {
                     <CadastroModalFieldsRow>
                       <div className="min-w-0">
                         <CadastroFieldLabel>Contraparte</CadastroFieldLabel>
-                        <label className={`${cadastroOptionLabelCls} mt-1.5`}>
+                        <select
+                          value={formPartnerId || ''}
+                          onChange={(e) => setFormPartnerId(e.target.value ? parseInt(e.target.value) : null)}
+                          disabled={formUseExternal}
+                          className={`${cadastroFieldCls} mt-0.5 disabled:cursor-not-allowed disabled:opacity-50`}
+                        >
+                          <option value="">Selecione uma conta parceira</option>
+                          {[...partners]
+                            .sort((a, b) => {
+                              const nameA = getAccountDisplayName(a.shared_account).toLowerCase()
+                              const nameB = getAccountDisplayName(b.shared_account).toLowerCase()
+                              return nameA.localeCompare(nameB, 'pt-BR')
+                            })
+                            .map(p => {
+                              const acc = p.shared_account
+                              const bankName = acc?.bank?.name || 'Sem banco'
+                              const agencyInfo = acc?.agency ? `Ag: ${acc.agency}` : ''
+                              const accountInfo = acc?.account_number ? `Conta: ${acc.account_number}` : ''
+                              const details = [bankName, agencyInfo, accountInfo].filter(Boolean).join(' • ')
+                              return (
+                                <option key={p.shared_account_id} value={p.shared_account_id}>
+                                  {getAccountDisplayName(acc)} • {details}
+                                </option>
+                              )
+                            })}
+                        </select>
+                        <label className={`${cadastroOptionLabelCls} mt-2.5`}>
                           <input
                             type="checkbox"
                             checked={formUseExternal}
-                            onChange={(e) => setFormUseExternal(e.target.checked)}
+                            onChange={(e) => {
+                              setFormUseExternal(e.target.checked)
+                              if (e.target.checked) {
+                                setFormPartnerId(null)
+                              } else {
+                                setFormExternalName('')
+                              }
+                            }}
                             className={`${cadastroAccentControlCls} h-4 w-4 rounded border-gray-300`}
                           />
-                          Entidade externa
+                          Externo
                         </label>
                         {formUseExternal ? (
                           <input
                             type="text"
                             value={formExternalName}
                             onChange={(e) => setFormExternalName(e.target.value)}
-                            placeholder="Nome da pessoa/empresa"
+                            placeholder="Nome da pessoa ou empresa"
                             className={`${cadastroFieldCls} mt-2`}
                           />
-                        ) : (
-                          <select
-                            value={formPartnerId || ''}
-                            onChange={(e) => setFormPartnerId(e.target.value ? parseInt(e.target.value) : null)}
-                            className={`${cadastroFieldCls} mt-2`}
-                          >
-                            <option value="">Selecione uma conta parceira</option>
-                            {[...partners]
-                              .sort((a, b) => {
-                                const nameA = getAccountDisplayName(a.shared_account).toLowerCase()
-                                const nameB = getAccountDisplayName(b.shared_account).toLowerCase()
-                                return nameA.localeCompare(nameB, 'pt-BR')
-                              })
-                              .map(p => {
-                                const acc = p.shared_account
-                                const bankName = acc?.bank?.name || 'Sem banco'
-                                const agencyInfo = acc?.agency ? `Ag: ${acc.agency}` : ''
-                                const accountInfo = acc?.account_number ? `Conta: ${acc.account_number}` : ''
-                                const details = [bankName, agencyInfo, accountInfo].filter(Boolean).join(' • ')
-                                return (
-                                  <option key={p.shared_account_id} value={p.shared_account_id}>
-                                    {getAccountDisplayName(acc)} • {details}
-                                  </option>
-                                )
-                              })}
-                          </select>
-                        )}
+                        ) : null}
                       </div>
                     </CadastroModalFieldsRow>
                   </CadastroModalFieldsGrid>

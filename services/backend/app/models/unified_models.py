@@ -192,6 +192,7 @@ class Cartao(Base, BaseEntity):
     __table_args__ = (
         CheckConstraint("type IN ('credito', 'beneficios')", name='chk_credit_cards_type'),
         CheckConstraint("due_day >= 1 AND due_day <= 30", name='chk_credit_cards_due_day'),
+        CheckConstraint("closing_day >= 1 AND closing_day <= 30", name='chk_credit_cards_closing_day'),
         {'quote': False}
     )
 
@@ -200,6 +201,7 @@ class Cartao(Base, BaseEntity):
     description = Column(String(255), nullable=True, name="description")
     number = Column(String(4), nullable=False, name="number")
     type = Column(String(20), nullable=False, default='credito', name="type")
+    closing_day = Column(Integer, nullable=False, default=14, name="closing_day")
     due_day = Column(Integer, nullable=False, default=14, name="due_day")
     account_id = Column(Integer, ForeignKey('accounts.id', ondelete='CASCADE'), nullable=True, name="account_id", index=True)
     expense_sharing_id = Column(Integer, ForeignKey('expense_sharing_settings.id'), nullable=True, name="expense_sharing_id")
@@ -246,12 +248,14 @@ class CreditCardInvoiceGroup(Base, BaseEntity):
     __table_args__ = (
         UniqueConstraint('tenant_id', 'account_id', 'name', name='unique_invoice_group_per_account'),
         CheckConstraint("due_day >= 1 AND due_day <= 30", name='chk_invoice_groups_due_day'),
+        CheckConstraint("closing_day >= 1 AND closing_day <= 30", name='chk_invoice_groups_closing_day'),
         {'quote': False}
     )
 
     name = Column(String(100), nullable=False, name="name")
     account_id = Column(Integer, ForeignKey('accounts.id', ondelete='CASCADE'), nullable=False, name="account_id", index=True)
     active = Column(Boolean, nullable=False, default=True, name="active")
+    closing_day = Column(Integer, nullable=False, default=14, name="closing_day")
     due_day = Column(Integer, nullable=False, default=14, name="due_day")
 
     account = relationship("Account", back_populates="invoice_groups")

@@ -447,6 +447,7 @@ export function CadastroModalShell({
 export function CadastroModalHeader({
   isEdit,
   title,
+  titleAddon,
   subtitle,
   onClose,
   breadcrumb,
@@ -456,6 +457,8 @@ export function CadastroModalHeader({
 }: {
   isEdit: boolean
   title?: string
+  /** Conteúdo ao lado do título (ex.: badge de status). */
+  titleAddon?: ReactNode
   subtitle?: ReactNode
   onClose: () => void
   breadcrumb?: CadastroModalBreadcrumbSegment[]
@@ -481,7 +484,10 @@ export function CadastroModalHeader({
             {breadcrumb && breadcrumb.length > 0 ? (
               <CadastroModalBreadcrumbTitle segments={breadcrumb} />
             ) : (
-              <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100">{title}</h2>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100">{title}</h2>
+                {titleAddon}
+              </div>
             )}
             {subtitle != null && (
               <p className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">{subtitle}</p>

@@ -1,12 +1,16 @@
 import { useState, useEffect } from 'react'
-import { Receipt, CreditCard, Gift, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { Receipt, CreditCard, Gift, ArrowUpDown, ArrowUp, ArrowDown, Calendar, Scale } from 'lucide-react'
 import {
   CadastroFormSection,
   CadastroModalBody,
   CadastroModalFooter,
   CadastroModalHeader,
   CadastroModalShell,
+  CadastroModalTabs,
+  cadastroSectionsStackCls,
 } from './CadastroFormLayout'
+import Badge from './Badge'
+import { listPageTableRowHoverCls } from './CadastroListPageLayout'
 
 interface BalanceItem {
   id: number
@@ -24,6 +28,7 @@ interface BalanceItem {
   card_number?: string  // Número do cartão (últimos 4 dígitos)
   card_active?: boolean  // Se o cartão está ativo
   card_type?: string  // Tipo do cartão: "crédito" ou "benefício"
+  card_closing_day?: number
   card_due_day?: number  // Dia de vencimento do cartão (1-31)
   current_installment?: number | null
   total_installments?: number | null
@@ -46,6 +51,111 @@ type SortDirection = 'asc' | 'desc'
 interface SortConfig {
   field: SortField
   direction: SortDirection
+}
+
+type FlowTotals = { count: number; raw: number; mine: number; partner: number }
+
+const balanceTableHeadCls =
+  'bg-gray-100 dark:bg-gray-800/80 [&_th]:border-b-2 [&_th]:border-gray-200 dark:[&_th]:border-gray-600'
+const balanceThLeftCls =
+  'px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300'
+const balanceThCenterCls =
+  'px-3 py-2 text-center text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300'
+const balanceTdCls = 'border-b border-gray-200 px-3 py-2 dark:border-gray-600'
+const balanceFootCls = 'border-t-2 border-gray-200 bg-gray-50 dark:border-gray-600 dark:bg-gray-800/50'
+const balanceFootTdCls = 'px-3 py-2.5 font-semibold'
+
+function formatSignedCurrency(value: number) {
+  if (Math.abs(value) < 0.005) {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(0)
+  }
+  const formatted = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Math.abs(value))
+  return `${value < 0 ? '-' : ''}${formatted}`
+}
+
+function moneyToneCls(value: number) {
+  if (Math.abs(value) < 0.005) return 'text-gray-900 dark:text-gray-100'
+  return value < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'
+}
+
+function computeFlowTotals(items: BalanceItem[], preserveSign: boolean): FlowTotals {
+  return items.reduce(
+    (acc, item) => {
+      const amount = Number(item.amount)
+      const raw = preserveSign ? amount : Math.abs(amount)
+      const myPct = Number(item.my_contribution_percentage ?? 0)
+      const partnerPct = Number(item.partner_contribution_percentage ?? 0)
+      const mine = preserveSign ? amount * (myPct / 100) : Math.abs(amount) * (myPct / 100)
+      const partner = preserveSign ? amount * (partnerPct / 100) : Math.abs(amount) * (partnerPct / 100)
+      acc.count += 1
+      acc.raw += raw
+      acc.mine += mine
+      acc.partner += partner
+      return acc
+    },
+    { count: 0, raw: 0, mine: 0, partner: 0 },
+  )
+}
+
+function BalanceFlowSummaryTable({ receitas, despesas }: { receitas: FlowTotals; despesas: FlowTotals }) {
+  const rows = [
+    { label: 'Receitas', totals: receitas },
+    { label: 'Despesas', totals: despesas },
+  ]
+  const result = {
+    raw: receitas.raw + despesas.raw,
+    mine: receitas.mine + despesas.mine,
+    partner: receitas.partner + despesas.partner,
+  }
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className={balanceTableHeadCls}>
+          <tr>
+            <th className={balanceThLeftCls}>Fluxo</th>
+            <th className={balanceThLeftCls}>Itens</th>
+            <th className={balanceThLeftCls}>Valor total</th>
+            <th className={balanceThLeftCls}>Minha parte</th>
+            <th className={balanceThLeftCls}>Contraparte</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.label}>
+              <td className={`${balanceTdCls} font-medium text-gray-700 dark:text-gray-200`}>{row.label}</td>
+              <td className={`${balanceTdCls} tabular-nums text-gray-600 dark:text-gray-300`}>{row.totals.count}</td>
+              <td className={`${balanceTdCls} tabular-nums font-semibold ${moneyToneCls(row.totals.raw)}`}>
+                {formatSignedCurrency(row.totals.raw)}
+              </td>
+              <td className={`${balanceTdCls} tabular-nums font-semibold ${moneyToneCls(row.totals.mine)}`}>
+                {formatSignedCurrency(row.totals.mine)}
+              </td>
+              <td className={`${balanceTdCls} tabular-nums font-semibold ${moneyToneCls(row.totals.partner)}`}>
+                {formatSignedCurrency(row.totals.partner)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot className={balanceFootCls}>
+          <tr>
+            <td className={`${balanceFootTdCls} text-gray-800 dark:text-gray-100`}>Resultado</td>
+            <td className={`${balanceFootTdCls} tabular-nums text-gray-600 dark:text-gray-300`}>
+              {receitas.count + despesas.count}
+            </td>
+            <td className={`${balanceFootTdCls} tabular-nums ${moneyToneCls(result.raw)}`}>
+              {formatSignedCurrency(result.raw)}
+            </td>
+            <td className={`${balanceFootTdCls} tabular-nums ${moneyToneCls(result.mine)}`}>
+              {formatSignedCurrency(result.mine)}
+            </td>
+            <td className={`${balanceFootTdCls} tabular-nums ${moneyToneCls(result.partner)}`}>
+              {formatSignedCurrency(result.partner)}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  )
 }
 
 const BalanceDetailsModal = ({
@@ -118,15 +228,6 @@ const BalanceDetailsModal = ({
   // Meses do ano selecionado
   const monthsOfActiveYear = activeYear ? (groupedByYear[activeYear] || []) : []
 
-  // Formata year_month para "ANO-NOME_MES"
-  const formatYearMonth = (yearMonth: string) => {
-    if (yearMonth === 'Sem mês') return yearMonth
-    const [year, month] = yearMonth.split('-')
-    const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-                        'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
-    return `${year}-${monthNames[parseInt(month) - 1]}`
-  }
-
   // Formata apenas o mês (sem ano)
   const formatMonthOnly = (yearMonth: string) => {
     if (yearMonth === 'Sem mês') return yearMonth
@@ -174,13 +275,6 @@ const BalanceDetailsModal = ({
   }, [isOpen, onClose])
 
   if (!isOpen) return null
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL'
-    }).format(value)
-  }
 
   const getIcon = () => {
     switch (type) {
@@ -264,31 +358,18 @@ const BalanceDetailsModal = ({
     return 0
   })
 
-  // Para cartões: mantém o sinal (negativo/positivo)
-  // Para extrato/benefícios: usa valor absoluto
-  const totalAmount = isCreditCard
-    ? currentItems.reduce((sum, item) => sum + Number(item.amount), 0)
-    : currentItems.reduce((sum, item) => sum + Math.abs(Number(item.amount)), 0)
-
-  const totalMyValue = isCreditCard
-    ? currentItems.reduce((sum, item) => {
-        const myPercentage = Number(item.my_contribution_percentage ?? 0)
-        return sum + (Number(item.amount) * (myPercentage / 100))
-      }, 0)
-    : currentItems.reduce((sum, item) => {
-        const myPercentage = Number(item.my_contribution_percentage ?? 0)
-        return sum + (Math.abs(Number(item.amount)) * (myPercentage / 100))
-      }, 0)
-
-  const totalPartnerValue = isCreditCard
-    ? currentItems.reduce((sum, item) => {
-        const partnerPercentage = Number(item.partner_contribution_percentage ?? 0)
-        return sum + (Number(item.amount) * (partnerPercentage / 100))
-      }, 0)
-    : currentItems.reduce((sum, item) => {
-        const partnerPercentage = Number(item.partner_contribution_percentage ?? 0)
-        return sum + (Math.abs(Number(item.amount)) * (partnerPercentage / 100))
-      }, 0)
+  const receitasForSummary = isCreditCard
+    ? currentItems.filter((item) => Number(item.amount) > 0)
+    : activeTab === 'revenues'
+      ? currentItems.map((item) => ({ ...item, amount: Math.abs(Number(item.amount)) }))
+      : []
+  const despesasForSummary = isCreditCard
+    ? currentItems.filter((item) => Number(item.amount) < 0)
+    : activeTab === 'expenses'
+      ? currentItems.map((item) => ({ ...item, amount: -Math.abs(Number(item.amount)) }))
+      : []
+  const summaryReceitas = computeFlowTotals(receitasForSummary, true)
+  const summaryDespesas = computeFlowTotals(despesasForSummary, true)
 
   // Função para renderizar o ícone de ordenação
   const getSortIcon = (field: SortField) => {
@@ -332,8 +413,8 @@ const BalanceDetailsModal = ({
       const [cardName] = cardKey.split('|')
       const cardNumber = items[0]?.card_number || ''
       const cardActive = items[0]?.card_active ?? true  // Default true se não informado
-      const cardDueDay = items[0]?.card_due_day  // Dia de vencimento do cartão
-      return { cardName, cardNumber, cardActive, cardDueDay, items }
+      const cardClosingDay = items[0]?.card_closing_day ?? items[0]?.card_due_day
+      return { cardName, cardNumber, cardActive, cardClosingDay, items }
     })
     .sort((a, b) => {
       // Ordena cartões por número (últimos 4 dígitos)
@@ -351,90 +432,110 @@ const BalanceDetailsModal = ({
       <CadastroModalBody
         chrome={
           isCreditCard ? (
-            <div>
-              <div className="flex overflow-x-auto border-b border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-800">
-                {sortedYears.map(year => {
-                  const totalItemsInYear = groupedByYear[year].reduce((sum, month) => sum + groupedByMonth[month].length, 0)
+            <div className="mb-4 rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden dark:border-gray-700 dark:bg-gray-800">
+              <div className="flex items-center gap-2 border-b border-gray-200 px-4 py-2 dark:border-gray-700">
+                <Calendar size={16} style={{ color: 'var(--color-1)' }} />
+                <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">Período da fatura</span>
+              </div>
+              <div className="flex overflow-x-auto border-b border-gray-200 dark:border-gray-700 px-2">
+                {sortedYears.map((year) => {
+                  const totalItemsInYear = groupedByYear[year].reduce(
+                    (sum, month) => sum + groupedByMonth[month].length,
+                    0,
+                  )
+                  const isActive = activeYear === year
                   return (
                     <button
                       key={year}
+                      type="button"
                       onClick={() => {
                         setActiveYear(year)
                         const firstMonth = groupedByYear[year]?.[0]
                         if (firstMonth) setActiveTab(firstMonth)
                       }}
-                      className={`px-4 py-2 text-xs font-bold transition-all whitespace-nowrap flex-shrink-0 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white ${
-                        activeYear === year
-                          ? 'border-b-2 border-color-primary'
-                          : 'border-b-2 border-transparent'
+                      className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-all whitespace-nowrap ${
+                        isActive
+                          ? 'border-[var(--color-1)] text-[var(--color-1)]'
+                          : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-300'
                       }`}
                     >
-                      {year} <span className="text-[10px] font-normal opacity-70">({totalItemsInYear})</span>
+                      {year}
+                      <Badge
+                        variant="tab"
+                        tone="brand1"
+                        className="bg-[var(--color-1)] text-[var(--on-color-1)]"
+                        label={String(totalItemsInYear)}
+                      />
                     </button>
                   )
                 })}
               </div>
-              <div className="flex border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-700">
-                {monthsOfActiveYear.map(month => (
-                  <button
-                    key={month}
-                    onClick={() => setActiveTab(month)}
-                    className={`flex-1 px-2 py-2.5 text-sm font-semibold transition-all whitespace-nowrap text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white ${
-                      activeTab === month
-                        ? 'border-b-2 border-color-secondary'
-                        : 'border-b-2 border-transparent'
-                    }`}
-                  >
-                    {formatMonthOnly(month)} <span className="text-xs font-normal opacity-60">({groupedByMonth[month].length})</span>
-                  </button>
-                ))}
-              </div>
+              {monthsOfActiveYear.length > 0 ? (
+                <div className="flex overflow-x-auto px-2 bg-gray-50/80 dark:bg-gray-800/50">
+                  {monthsOfActiveYear.map((month) => {
+                    const isActive = activeTab === month
+                    const monthCount = groupedByMonth[month].length
+                    return (
+                      <button
+                        key={month}
+                        type="button"
+                        onClick={() => setActiveTab(month)}
+                        className={`flex flex-1 min-w-[4.5rem] items-center justify-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition-all whitespace-nowrap ${
+                          isActive
+                            ? 'border-[var(--color-2)] text-[var(--color-2)]'
+                            : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-300'
+                        }`}
+                      >
+                        {formatMonthOnly(month)}
+                        <Badge
+                          variant="tab"
+                          tone="brand2"
+                          className={
+                            isActive
+                              ? 'bg-[var(--color-2)] text-[var(--on-color-2)]'
+                              : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                          }
+                          label={String(monthCount)}
+                        />
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : null}
             </div>
-          ) : (
-            <div className="flex overflow-x-auto border-b border-gray-200 dark:border-gray-700">
-              {expenseItems.length > 0 && (
-                <button
-                  onClick={() => setActiveTab('expenses')}
-                  className={`px-6 py-3 text-sm font-semibold transition-all flex-shrink-0 ${
-                    activeTab === 'expenses'
-                      ? `text-color-${accountColor} border-b-2 border-color-${accountColor}`
-                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-                  }`}
-                >
-                  Despesas ({expenseItems.length})
-                </button>
-              )}
-              {filteredRevenueItems.length > 0 && (
-                <button
-                  onClick={() => setActiveTab('revenues')}
-                  className={`px-6 py-3 text-sm font-semibold transition-all flex-shrink-0 ${
-                    activeTab === 'revenues'
-                      ? `text-color-${accountColor} border-b-2 border-color-${accountColor}`
-                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-                  }`}
-                >
-                  Receitas ({filteredRevenueItems.length})
-                </button>
-              )}
-            </div>
-          )
+          ) : expenseItems.length > 0 || filteredRevenueItems.length > 0 ? (
+            <CadastroModalTabs
+              ariaLabel="Tipo de lançamento"
+              active={activeTab}
+              onChange={setActiveTab}
+              className="mb-4 rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden dark:border-gray-700 dark:bg-gray-800"
+              barClassName="px-2"
+              tabs={[
+                ...(expenseItems.length > 0
+                  ? [{ key: 'expenses', label: 'Despesas', badge: expenseItems.length }]
+                  : []),
+                ...(filteredRevenueItems.length > 0
+                  ? [{ key: 'revenues', label: 'Receitas', badge: filteredRevenueItems.length }]
+                  : []),
+              ]}
+            />
+          ) : null
         }
       >
+          <div className={`${cadastroSectionsStackCls} pt-1`}>
+            <CadastroFormSection
+              title="Resumo"
+              hint="Receitas, despesas e resultado do período selecionado, com a divisão entre a sua parte e a da contraparte."
+              icon={<Scale size={14} />}
+              bodyClassName="p-0"
+            >
+              <BalanceFlowSummaryTable receitas={summaryReceitas} despesas={summaryDespesas} />
+            </CadastroFormSection>
+
           {isCreditCard ? (
             // Renderiza tabelas separadas por cartão
-            <div className="space-y-6">
-              {sortedCardGroups.map(({ cardName, cardNumber, cardActive, cardDueDay, items }) => {
-                // Calcula totais mantendo o sinal (negativo ou positivo)
-                const cardTotal = items.reduce((sum, item) => sum + Number(item.amount), 0)
-                const cardMyTotal = items.reduce((sum, item) => {
-                  const myPercentage = Number(item.my_contribution_percentage ?? 0)
-                  return sum + (Number(item.amount) * (myPercentage / 100))
-                }, 0)
-                const cardPartnerTotal = items.reduce((sum, item) => {
-                  const partnerPercentage = Number(item.partner_contribution_percentage ?? 0)
-                  return sum + (Number(item.amount) * (partnerPercentage / 100))
-                }, 0)
-
+            <>
+              {sortedCardGroups.map(({ cardName, cardNumber, cardActive, cardClosingDay, items }) => {
                 return (
                   <CadastroFormSection
                     key={cardName}
@@ -443,9 +544,11 @@ const BalanceDetailsModal = ({
                     bodyClassName="p-0"
                     trailing={
                       <div className="flex items-center gap-2">
-                        {cardDueDay && items[0]?.year_month && (() => {
-                          const [year, month] = items[0].year_month.split('-')
-                          const closingDate = new Date(parseInt(year), parseInt(month) - 1, cardDueDay, 23, 59, 59)
+                        {cardClosingDay && items[0]?.year_month && (() => {
+                          const [year, month] = items[0].year_month!.split('-')
+                          const lastDay = new Date(parseInt(year, 10), parseInt(month, 10), 0).getDate()
+                          const day = Math.min(Math.max(cardClosingDay, 1), lastDay)
+                          const closingDate = new Date(parseInt(year, 10), parseInt(month, 10) - 1, day, 23, 59, 59)
                           const formattedDate = closingDate.toLocaleString('pt-BR', {
                             day: '2-digit',
                             month: '2-digit',
@@ -471,83 +574,84 @@ const BalanceDetailsModal = ({
                     }
                   >
                     <div className="overflow-x-auto">
-                      <table className="w-full text-sm min-w-[900px]">
-                        <thead className="bg-gray-50 dark:bg-gray-700">
-                          <tr className="border-b border-gray-300 dark:border-gray-600">
+                      <table className="w-full min-w-[1000px] text-sm">
+                        <thead className={balanceTableHeadCls}>
+                          <tr>
+                            <th className={`${balanceThCenterCls} w-12`}>#</th>
                             <th
-                              className="text-left p-3 font-semibold text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors select-none"
+                              className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
                               onClick={() => handleSort('date')}
                               title="Clique para ordenar por Data"
                             >
-                              <div className="flex items-center gap-2">
+                              <span className="inline-flex items-center gap-2">
                                 Data
                                 {getSortIcon('date')}
-                              </div>
+                              </span>
                             </th>
                             <th
-                              className="text-left p-3 font-semibold text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors select-none"
+                              className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
                               onClick={() => handleSort('description')}
                               title="Clique para ordenar por Descrição"
                             >
-                              <div className="flex items-center gap-2">
+                              <span className="inline-flex items-center gap-2">
                                 Descrição
                                 {getSortIcon('description')}
-                              </div>
+                              </span>
                             </th>
                             <th
-                              className="text-left p-3 font-semibold text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors select-none"
+                              className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
                               onClick={() => handleSort('category')}
                               title="Clique para ordenar por Categoria"
                             >
-                              <div className="flex items-center gap-2">
-                                Categoria
+                              <span className="inline-flex items-center gap-2">
+                                Tag/Subtag
                                 {getSortIcon('category')}
-                              </div>
+                              </span>
                             </th>
                             <th
-                              className="text-right p-3 font-semibold text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors select-none"
+                              className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
                               onClick={() => handleSort('amount')}
-                              title="Clique para ordenar por Valor Total"
+                              title="Clique para ordenar por Valor total"
                             >
-                              <div className="flex items-center justify-end gap-2">
-                                Valor Total
+                              <span className="inline-flex items-center gap-2">
+                                Valor total
                                 {getSortIcon('amount')}
-                              </div>
+                              </span>
                             </th>
                             <th
-                              className="text-center p-3 font-semibold text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors select-none"
+                              className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
                               onClick={() => handleSort('my_percentage')}
-                              title="Clique para ordenar por Minha Parte %"
+                              title="Clique para ordenar por %"
                             >
-                              <div className="flex items-center justify-center gap-2">
-                                Minha Parte
+                              <span className="inline-flex items-center gap-2">
+                                %
                                 {getSortIcon('my_percentage')}
-                              </div>
+                              </span>
                             </th>
                             <th
-                              className="text-right p-3 font-semibold text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors select-none"
+                              className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
                               onClick={() => handleSort('my_value')}
-                              title="Clique para ordenar por Meu Valor"
+                              title="Clique para ordenar por Minha parte"
                             >
-                              <div className="flex items-center justify-end gap-2">
-                                Meu Valor
+                              <span className="inline-flex items-center gap-2">
+                                Minha parte
                                 {getSortIcon('my_value')}
-                              </div>
+                              </span>
                             </th>
                             <th
-                              className="text-right p-3 font-semibold text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors select-none"
+                              className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
                               onClick={() => handleSort('partner_value')}
-                              title="Clique para ordenar por Valor Contraparte"
+                              title="Clique para ordenar por Contraparte"
                             >
-                              <div className="flex items-center justify-end gap-2">
-                                Valor Contraparte
+                              <span className="inline-flex items-center gap-2">
+                                Contraparte
                                 {getSortIcon('partner_value')}
-                              </div>
+                              </span>
                             </th>
                           </tr>
                         </thead>
                         <tbody>
-                          {items.map((item) => {
+                          {items.map((item, index) => {
                             const myPercentage = Number(item.my_contribution_percentage ?? 0)
                             const partnerPercentage = Number(item.partner_contribution_percentage ?? 0)
                             const myValue = Math.abs(Number(item.amount)) * (myPercentage / 100)
@@ -555,87 +659,48 @@ const BalanceDetailsModal = ({
                             const isNegative = Number(item.amount) < 0
 
                             return (
-                              <tr
-                                key={item.id}
-                                className="border-l-4 border-l-gray-300 dark:border-l-gray-600 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all"
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.borderLeftColor = 'var(--color-1)'
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.borderLeftColor = ''
-                                }}
-                              >
-                                <td className="p-3 text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                              <tr key={item.id} className={listPageTableRowHoverCls}>
+                                <td className={`${balanceTdCls} text-center text-sm text-gray-500 dark:text-gray-400`}>
+                                  {index + 1}
+                                </td>
+                                <td className={`${balanceTdCls} whitespace-nowrap text-gray-600 dark:text-gray-400`}>
                                   {new Date(item.date).toLocaleDateString('pt-BR')}
                                 </td>
-                                <td className="p-3 text-gray-900 dark:text-white font-medium">
+                                <td className={`${balanceTdCls} font-medium text-gray-900 dark:text-white`}>
                                   {item.description}
                                   {item.current_installment && item.total_installments && item.total_installments > 1 && (
-                                    <span className="ml-1.5 text-xs text-gray-500 dark:text-gray-400 font-medium">
+                                    <span className="ml-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">
                                       ({item.current_installment}/{item.total_installments})
                                     </span>
                                   )}
                                 </td>
-                                <td className="p-3 text-gray-500 dark:text-gray-400">
+                                <td className={`${balanceTdCls} text-gray-500 dark:text-gray-400`}>
                                   {item.tag_name ? (
                                     <>{item.tag_name}{item.subtag_name && ` > ${item.subtag_name}`}</>
-                                  ) : '-'}
+                                  ) : '—'}
                                 </td>
-                                <td className={`p-3 text-right font-semibold whitespace-nowrap ${
-                                  isNegative
-                                    ? 'text-red-600 dark:text-red-400'
-                                    : 'text-green-600 dark:text-green-400'
-                                }`}>
-                                  {isNegative ? '-' : '+'}{formatCurrency(Math.abs(Number(item.amount)))}
+                                <td className={`${balanceTdCls} text-right tabular-nums font-semibold whitespace-nowrap ${moneyToneCls(Number(item.amount))}`}>
+                                  {formatSignedCurrency(Number(item.amount))}
                                 </td>
-                                <td className="p-3 text-center text-gray-700 dark:text-gray-300 font-medium">
+                                <td className={`${balanceTdCls} font-medium text-gray-700 dark:text-gray-300`}>
                                   {myPercentage.toFixed(0)}%
                                 </td>
-                                <td className="p-3 text-right font-semibold whitespace-nowrap text-color-primary">
-                                  {isNegative ? '-' : '+'}{formatCurrency(myValue)}
+                                <td className={`${balanceTdCls} text-right tabular-nums font-semibold whitespace-nowrap text-color-primary`}>
+                                  {formatSignedCurrency(isNegative ? -myValue : myValue)}
                                 </td>
-                                <td className="p-3 text-right font-medium whitespace-nowrap text-color-secondary">
-                                  {isNegative ? '-' : '+'}{formatCurrency(partnerValue)}
+                                <td className={`${balanceTdCls} text-right tabular-nums font-medium whitespace-nowrap text-color-secondary`}>
+                                  {formatSignedCurrency(isNegative ? -partnerValue : partnerValue)}
                                 </td>
                               </tr>
                             )
                           })}
                         </tbody>
-                        <tfoot className="bg-gray-50 dark:bg-gray-800 font-semibold border-t-2 border-gray-300 dark:border-gray-600">
-                          <tr>
-                            <td colSpan={3} className="p-3 text-right text-gray-700 dark:text-gray-300">
-                              Subtotal {cardName}:
-                            </td>
-                            <td className={`p-3 text-right whitespace-nowrap ${
-                              cardTotal < 0
-                                ? 'text-red-600 dark:text-red-400'
-                                : 'text-green-600 dark:text-green-400'
-                            }`}>
-                              {cardTotal < 0 ? '-' : ''}{formatCurrency(Math.abs(cardTotal))}
-                            </td>
-                            <td className="p-3"></td>
-                            <td className={`p-3 text-right whitespace-nowrap ${
-                              cardMyTotal < 0
-                                ? 'text-red-600 dark:text-red-400'
-                                : 'text-green-600 dark:text-green-400'
-                            }`}>
-                              {cardMyTotal < 0 ? '-' : ''}{formatCurrency(Math.abs(cardMyTotal))}
-                            </td>
-                            <td className={`p-3 text-right whitespace-nowrap ${
-                              cardPartnerTotal < 0
-                                ? 'text-red-600 dark:text-red-400'
-                                : 'text-green-600 dark:text-green-400'
-                            }`}>
-                              {cardPartnerTotal < 0 ? '-' : ''}{formatCurrency(Math.abs(cardPartnerTotal))}
-                            </td>
-                          </tr>
-                        </tfoot>
                       </table>
                     </div>
                   </CadastroFormSection>
                 )
               })}
-            </div>
+            </>
           ) : (
             <CadastroFormSection
               title={activeTab === 'expenses' ? 'Despesas' : 'Receitas'}
@@ -643,130 +708,123 @@ const BalanceDetailsModal = ({
               bodyClassName="p-0"
             >
             <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[900px]">
-                <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0">
-                  <tr className="border-b border-gray-300 dark:border-gray-600">
+              <table className="w-full min-w-[1000px] text-sm">
+                <thead className={balanceTableHeadCls}>
+                  <tr>
+                    <th className={`${balanceThCenterCls} w-12`}>#</th>
                     <th
-                      className="text-left p-3 font-semibold text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors select-none"
+                      className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
                       onClick={() => handleSort('date')}
                       title="Clique para ordenar por Data"
                     >
-                      <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center gap-2">
                         Data
                         {getSortIcon('date')}
-                      </div>
+                      </span>
                     </th>
                     <th
-                      className="text-left p-3 font-semibold text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors select-none"
+                      className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
                       onClick={() => handleSort('description')}
                       title="Clique para ordenar por Descrição"
                     >
-                      <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center gap-2">
                         Descrição
                         {getSortIcon('description')}
-                      </div>
+                      </span>
                     </th>
                     <th
-                      className="text-left p-3 font-semibold text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors select-none"
+                      className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
                       onClick={() => handleSort('category')}
                       title="Clique para ordenar por Categoria"
                     >
-                      <div className="flex items-center gap-2">
-                        Categoria
+                      <span className="inline-flex items-center gap-2">
+                        Tag/Subtag
                         {getSortIcon('category')}
-                      </div>
+                      </span>
                     </th>
                     <th
-                      className="text-right p-3 font-semibold text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors select-none"
+                      className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
                       onClick={() => handleSort('amount')}
-                      title="Clique para ordenar por Valor Total"
+                      title="Clique para ordenar por Valor total"
                     >
-                      <div className="flex items-center justify-end gap-2">
-                        Valor Total
+                      <span className="inline-flex items-center gap-2">
+                        Valor total
                         {getSortIcon('amount')}
-                      </div>
+                      </span>
                     </th>
                     <th
-                      className="text-center p-3 font-semibold text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors select-none"
+                      className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
                       onClick={() => handleSort('my_percentage')}
-                      title="Clique para ordenar por Minha Parte %"
+                      title="Clique para ordenar por %"
                     >
-                      <div className="flex items-center justify-center gap-2">
-                        Minha Parte
+                      <span className="inline-flex items-center gap-2">
+                        %
                         {getSortIcon('my_percentage')}
-                      </div>
+                      </span>
                     </th>
                     <th
-                      className="text-right p-3 font-semibold text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors select-none"
+                      className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
                       onClick={() => handleSort('my_value')}
-                      title="Clique para ordenar por Meu Valor"
+                      title="Clique para ordenar por Minha parte"
                     >
-                      <div className="flex items-center justify-end gap-2">
-                        Meu Valor
+                      <span className="inline-flex items-center gap-2">
+                        Minha parte
                         {getSortIcon('my_value')}
-                      </div>
+                      </span>
                     </th>
                     <th
-                      className="text-right p-3 font-semibold text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors select-none"
+                      className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
                       onClick={() => handleSort('partner_value')}
-                      title="Clique para ordenar por Valor Contraparte"
+                      title="Clique para ordenar por Contraparte"
                     >
-                      <div className="flex items-center justify-end gap-2">
-                        Valor Contraparte
+                      <span className="inline-flex items-center gap-2">
+                        Contraparte
                         {getSortIcon('partner_value')}
-                      </div>
+                      </span>
                     </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {currentItems.map((item) => {
+                  {currentItems.map((item, index) => {
                     const myPercentage = Number(item.my_contribution_percentage ?? 0)
                     const partnerPercentage = Number(item.partner_contribution_percentage ?? 0)
                     const myValue = Math.abs(Number(item.amount)) * (myPercentage / 100)
                     const partnerValue = Math.abs(Number(item.amount)) * (partnerPercentage / 100)
+                    const signedAmount =
+                      activeTab === 'expenses' ? -Math.abs(Number(item.amount)) : Math.abs(Number(item.amount))
 
                     return (
-                      <tr
-                        key={item.id}
-                        className="border-l-4 border-l-gray-300 dark:border-l-gray-600 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all"
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.borderLeftColor = 'var(--color-1)'
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.borderLeftColor = ''
-                        }}
-                      >
-                        <td className="p-3 text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                      <tr key={item.id} className={listPageTableRowHoverCls}>
+                        <td className={`${balanceTdCls} text-center text-sm text-gray-500 dark:text-gray-400`}>
+                          {index + 1}
+                        </td>
+                        <td className={`${balanceTdCls} whitespace-nowrap text-gray-600 dark:text-gray-400`}>
                           {new Date(item.date).toLocaleDateString('pt-BR')}
                         </td>
-                        <td className="p-3 text-gray-900 dark:text-white font-medium">
+                        <td className={`${balanceTdCls} font-medium text-gray-900 dark:text-white`}>
                           {item.description}
                           {item.current_installment && item.total_installments && item.total_installments > 1 && (
-                            <span className="ml-1.5 text-xs text-gray-500 dark:text-gray-400 font-medium">
+                            <span className="ml-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">
                               ({item.current_installment}/{item.total_installments})
                             </span>
                           )}
                         </td>
-                        <td className="p-3 text-gray-500 dark:text-gray-400">
+                        <td className={`${balanceTdCls} text-gray-500 dark:text-gray-400`}>
                           {item.tag_name ? (
                             <>{item.tag_name}{item.subtag_name && ` > ${item.subtag_name}`}</>
-                          ) : '-'}
+                          ) : '—'}
                         </td>
-                        <td className={`p-3 text-right font-semibold whitespace-nowrap ${
-                          activeTab === 'expenses'
-                            ? 'text-red-600 dark:text-red-400'
-                            : 'text-green-600 dark:text-green-400'
-                        }`}>
-                          {activeTab === 'expenses' ? '-' : '+'}{formatCurrency(Math.abs(Number(item.amount)))}
+                        <td className={`${balanceTdCls} text-right tabular-nums font-semibold whitespace-nowrap ${moneyToneCls(signedAmount)}`}>
+                          {formatSignedCurrency(signedAmount)}
                         </td>
-                        <td className="p-3 text-center text-gray-700 dark:text-gray-300 font-medium">
+                        <td className={`${balanceTdCls} font-medium text-gray-700 dark:text-gray-300`}>
                           {myPercentage.toFixed(0)}%
                         </td>
-                        <td className="p-3 text-right font-semibold whitespace-nowrap text-color-primary">
-                          {activeTab === 'expenses' ? '-' : '+'}{formatCurrency(myValue)}
+                        <td className={`${balanceTdCls} text-right tabular-nums font-semibold whitespace-nowrap text-color-primary`}>
+                          {formatSignedCurrency(activeTab === 'expenses' ? -myValue : myValue)}
                         </td>
-                        <td className="p-3 text-right font-medium whitespace-nowrap text-color-secondary">
-                          {activeTab === 'expenses' ? '-' : '+'}{formatCurrency(partnerValue)}
+                        <td className={`${balanceTdCls} text-right tabular-nums font-medium whitespace-nowrap text-color-secondary`}>
+                          {formatSignedCurrency(activeTab === 'expenses' ? -partnerValue : partnerValue)}
                         </td>
                       </tr>
                     )
@@ -776,69 +834,9 @@ const BalanceDetailsModal = ({
             </div>
             </CadastroFormSection>
           )}
-      </CadastroModalBody>
-      <CadastroModalFooter
-        onClose={onClose}
-        hideSave
-        closeLabel="Fechar"
-        leading={
-          <div className="flex min-w-0 flex-wrap items-center gap-6">
-            <div className="flex items-center gap-4 text-xs text-gray-600 dark:text-gray-400">
-              {!isCreditCard && !isBenefitCard && (
-                <div className="flex items-center gap-1.5">
-                  <Receipt size={14} className="text-color-primary" />
-                  <span>Transações</span>
-                </div>
-              )}
-              {isCreditCard && (
-                <div className="flex items-center gap-1.5">
-                  <CreditCard size={14} className="text-color-primary" />
-                  <span>Cartão de Crédito</span>
-                </div>
-              )}
-              {isBenefitCard && (
-                <div className="flex items-center gap-1.5">
-                  <Gift size={14} className="text-green-600 dark:text-green-400" />
-                  <span>Cartão Benefício</span>
-                </div>
-              )}
-            </div>
-            <div className="flex items-center gap-6">
-              <div className="text-right">
-                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Total ({currentItems.length} {currentItems.length === 1 ? 'item' : 'itens'})</div>
-                <span className={`text-lg font-bold ${
-                  isCreditCard
-                    ? (totalAmount < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400')
-                    : (activeTab === 'expenses' ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400')
-                }`}>
-                  {isCreditCard
-                    ? (totalAmount < 0 ? '-' : '') + formatCurrency(Math.abs(totalAmount))
-                    : (activeTab === 'expenses' ? '-' : '+') + formatCurrency(totalAmount)
-                  }
-                </span>
-              </div>
-              <div className="text-right">
-                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Minha Parte</div>
-                <span className="text-lg font-bold text-color-primary">
-                  {isCreditCard
-                    ? (totalMyValue < 0 ? '-' : '') + formatCurrency(Math.abs(totalMyValue))
-                    : (activeTab === 'expenses' ? '-' : '+') + formatCurrency(totalMyValue)
-                  }
-                </span>
-              </div>
-              <div className="text-right">
-                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Contraparte</div>
-                <span className="text-lg font-bold text-color-secondary">
-                  {isCreditCard
-                    ? (totalPartnerValue < 0 ? '-' : '') + formatCurrency(Math.abs(totalPartnerValue))
-                    : (activeTab === 'expenses' ? '-' : '+') + formatCurrency(totalPartnerValue)
-                  }
-                </span>
-              </div>
-            </div>
           </div>
-        }
-      />
+      </CadastroModalBody>
+      <CadastroModalFooter onClose={onClose} hideSave closeLabel="Fechar" />
     </CadastroModalShell>
   )
 }

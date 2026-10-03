@@ -259,7 +259,7 @@ export function ListTableStaticHeader({
 }) {
   return (
     <th
-      className={`px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300 ${className}`.trim()}
+      className={`px-4 py-3 text-left align-middle text-[11px] font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300 ${className}`.trim()}
     >
       {label}
     </th>

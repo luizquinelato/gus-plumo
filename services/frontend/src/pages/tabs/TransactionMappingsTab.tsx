@@ -9,6 +9,10 @@ import {
   CadastroListPageBody,
   CadastroListPageHero,
   CadastroListPageSearchField,
+  listPageTableRowHoverCls,
+  listPageTableStickyActionsCellCls,
+  listPageTableStickyActionsHeaderCls,
+  reportTableChromeHeaderCls,
 } from '../../components/CadastroListPageLayout'
 import {
   CadastroFieldLabel,
@@ -1149,7 +1153,7 @@ const TransactionMappingsTab = () => {
           <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-sm overflow-hidden ${selectedMappings.size > 0 || showBackToTop ? 'mb-20' : ''}`}>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1350px]">
-            <thead className="border-b border-gray-200 dark:border-gray-700">
+            <thead className={reportTableChromeHeaderCls}>
               <tr>
                 <th className="px-2 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider w-10">
                   <button
@@ -1189,7 +1193,9 @@ const TransactionMappingsTab = () => {
                 <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider min-w-[150px]">
                   Compartilhamento
                 </th>
-                <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider min-w-[140px] sticky right-0 bg-gray-50 dark:bg-gray-700 z-10 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.1)]">
+                <th
+                  className={`px-2 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300 min-w-[140px] ${listPageTableStickyActionsHeaderCls}`}
+                >
                   Ações
                 </th>
               </tr>
@@ -1216,10 +1222,10 @@ const TransactionMappingsTab = () => {
                   return (
                   <tr
                     key={mapping.id}
-                    className={`group border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 transition-all ${
+                    className={`${listPageTableRowHoverCls} border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 ${
                       isSelected
-                        ? 'border-l-blue-600 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30'
-                        : 'border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                        ? 'border-l-blue-600 bg-blue-50 dark:bg-blue-900/20'
+                        : 'border-l-gray-300 dark:border-l-gray-600'
                     }`}
                     onMouseEnter={(e) => {
                       if (!isSelected) {
@@ -1352,11 +1358,11 @@ const TransactionMappingsTab = () => {
                         <span className="text-gray-400 dark:text-gray-500 italic">-</span>
                       )}
                     </td>
-                    <td className={`px-2 py-3 text-sm text-left sticky right-0 z-10 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.1)] transition-colors ${
-                      isSelected
-                        ? 'bg-blue-50 dark:bg-blue-900/20 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/30'
-                        : 'bg-white dark:bg-gray-800 group-hover:bg-gray-50 dark:group-hover:bg-gray-700'
-                    }`}>
+                    <td
+                      className={`${listPageTableStickyActionsCellCls} px-2 py-3 text-sm text-left ${
+                        isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                      }`}
+                    >
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => handleEdit(mapping)}

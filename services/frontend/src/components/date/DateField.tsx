@@ -345,11 +345,11 @@ const DateField = forwardRef<DateFieldHandle, DateFieldProps>(({
           type="button"
           onClick={() => !disabled && setCalendarOpen(true)}
           disabled={disabled}
-          className="p-1 text-gray-400 hover:text-color-primary transition-colors disabled:opacity-50"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors hover:text-color-primary disabled:opacity-50"
           title="Abrir calendário"
           tabIndex={-1}
         >
-          <Calendar size={18} />
+          <Calendar size={16} />
         </button>
         {calendarOpen && createPortal(
           <div

@@ -169,23 +169,7 @@ function App() {
                 }
               />
               <Route
-                path="/fechamentos/compartilhado"
-                element={
-                  <ProtectedRoute>
-                    <BalancoPage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/fechamentos/compartilhado/historico"
-                element={
-                  <ProtectedRoute>
-                    <BalancoPage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/fechamentos/compartilhado/lista"
+                path="/fechamentos/compartilhado/*"
                 element={
                   <ProtectedRoute>
                     <BalancoPage />

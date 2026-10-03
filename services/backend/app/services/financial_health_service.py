@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Any, Optional
 
 from sqlalchemy import and_, extract, or_
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm import Session, aliased, joinedload
 
 from app.models.unified_models import (
     Account,
@@ -488,17 +488,10 @@ def _iso_date(value: Any) -> str:
     return parsed.isoformat() if parsed else ""
 
 
-def _invoice_billing_window(year_month: str, due_day: int) -> tuple[date, date]:
-    """Período da fatura: dia seguinte ao fechamento anterior até o due_day do mês."""
-    year = int(year_month[:4])
-    month = int(year_month[5:7])
-    close_day = min(max(int(due_day or 14), 1), 31)
-    end_day = min(close_day, monthrange(year, month)[1])
-    end = date(year, month, end_day)
-    prev_year, prev_month = _prev_month(year, month)
-    prev_end_day = min(close_day, monthrange(prev_year, prev_month)[1])
-    start = date(prev_year, prev_month, prev_end_day) + timedelta(days=1)
-    return start, end
+def _invoice_billing_window(year_month: str, closing_day: int) -> tuple[date, date]:
+    from app.utils.card_invoice_calendar import invoice_billing_window
+
+    return invoice_billing_window(year_month, closing_day)
 
 
 def _prev_month(year: int, month: int) -> tuple[int, int]:
@@ -1398,7 +1391,7 @@ def _cycle_card_ids(
     return []
 
 
-def _card_due_days(
+def _card_closing_days(
     db: Session,
     tenant_id: int,
     account_id: int,
@@ -1406,8 +1399,11 @@ def _card_due_days(
 ) -> dict[int, int]:
     if not card_ids:
         return {}
+    from app.utils.card_invoice_calendar import effective_closing_day
+
     rows = (
-        db.query(Cartao.id, Cartao.due_day)
+        db.query(Cartao)
+        .options(joinedload(Cartao.invoice_group))
         .filter(
             Cartao.tenant_id == tenant_id,
             Cartao.account_id == account_id,
@@ -1415,7 +1411,7 @@ def _card_due_days(
         )
         .all()
     )
-    return {int(row.id): int(row.due_day or 14) for row in rows}
+    return {int(card.id): effective_closing_day(card) for card in rows}
 
 
 def _card_invoice_lines(
@@ -1432,6 +1428,7 @@ def _card_invoice_lines(
     month_filter = CreditCardInvoice.year_month.in_(year_months) if year_months else None
     date_filter = None
     if date_start and date_end:
+        # end inclusive: compras no dia de fechamento entram até 23:59:59
         date_filter = and_(
             CreditCardInvoice.date >= datetime.combine(date_start, datetime.min.time()),
             CreditCardInvoice.date < datetime.combine(date_end + timedelta(days=1), datetime.min.time()),
@@ -1689,7 +1686,7 @@ def _expand_card_payments(
             "card_ids": card_ids,
         })
 
-    due_days = _card_due_days(db, tenant_id, account_id, list(all_card_ids))
+    due_days = _card_closing_days(db, tenant_id, account_id, list(all_card_ids))
     window_starts: list[date] = []
     window_ends: list[date] = []
     for cycle in cycles:

@@ -397,18 +397,21 @@ def apply(connection):
                 created_at TIMESTAMP DEFAULT NOW(),
                 last_updated_at TIMESTAMP DEFAULT NOW(),
                 active BOOLEAN NOT NULL DEFAULT TRUE,
+                closing_day INTEGER NOT NULL DEFAULT 14,
                 due_day INTEGER NOT NULL DEFAULT 14,
                 FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
                 FOREIGN KEY (created_by) REFERENCES users(id),
                 FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE,
                 CONSTRAINT unique_invoice_group_per_account UNIQUE (tenant_id, account_id, name),
+                CHECK (closing_day >= 1 AND closing_day <= 30),
                 CHECK (due_day >= 1 AND due_day <= 30)
             );
         """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_invoice_groups_tenant ON credit_card_invoice_groups(tenant_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_invoice_groups_account ON credit_card_invoice_groups(account_id);")
         cursor.execute("COMMENT ON TABLE credit_card_invoice_groups IS 'Agrupa cartões de crédito que são cobrados na mesma fatura/boleta.';")
-        cursor.execute("COMMENT ON COLUMN credit_card_invoice_groups.due_day IS 'Dia de vencimento da fatura conjunta; cartões do grupo herdam este valor.';")
+        cursor.execute("COMMENT ON COLUMN credit_card_invoice_groups.closing_day IS 'Dia de fechamento conjunto; cartões do grupo herdam.';")
+        cursor.execute("COMMENT ON COLUMN credit_card_invoice_groups.due_day IS 'Dia de vencimento conjunto; cartões do grupo herdam.';")
 
         # 15. Tabela credit_cards (cartões de crédito)
         # NOTA: ownership_type é DERIVADO automaticamente:
@@ -421,6 +424,7 @@ def apply(connection):
                 description VARCHAR(255),
                 number VARCHAR(4) NOT NULL,
                 type VARCHAR(20) NOT NULL DEFAULT 'credito',
+                closing_day INTEGER NOT NULL DEFAULT 14,
                 due_day INTEGER NOT NULL DEFAULT 14,
                 expense_sharing_id INTEGER,
                 expense_ownership_percentage DECIMAL(5,2),
@@ -439,6 +443,7 @@ def apply(connection):
                 FOREIGN KEY (invoice_group_id) REFERENCES credit_card_invoice_groups(id) ON DELETE SET NULL,
                 CONSTRAINT unique_card_per_tenant UNIQUE (tenant_id, name, number),
                 CHECK (type IN ('credito', 'beneficios')),
+                CHECK (closing_day >= 1 AND closing_day <= 30),
                 CHECK (due_day >= 1 AND due_day <= 30),
                 CHECK (expense_ownership_percentage IS NULL OR (expense_ownership_percentage >= 0 AND expense_ownership_percentage <= 100)),
                 CHECK (revenue_ownership_percentage IS NULL OR (revenue_ownership_percentage >= 0 AND revenue_ownership_percentage <= 100))
@@ -452,7 +457,8 @@ def apply(connection):
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_credit_cards_type ON credit_cards(type);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_credit_cards_expense_sharing ON credit_cards(expense_sharing_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_credit_cards_invoice_group ON credit_cards(invoice_group_id);")
-        cursor.execute("COMMENT ON COLUMN credit_cards.due_day IS 'Dia de vencimento da fatura (1-30). Período da fatura: (due_day+1) do mês anterior até due_day do mês atual.';")
+        cursor.execute("COMMENT ON COLUMN credit_cards.closing_day IS 'Dia de fechamento da fatura (1-30). Define ciclo e balanço compartilhado.';")
+        cursor.execute("COMMENT ON COLUMN credit_cards.due_day IS 'Dia de vencimento da fatura (1-30).';")
         cursor.execute("COMMENT ON COLUMN credit_cards.expense_sharing_id IS 'FK para expense_sharing_settings. Faturas herdam essa configuração mas podem sobrescrever. Se não nulo, cartão é compartilhado.';")
         cursor.execute("COMMENT ON COLUMN credit_cards.expense_ownership_percentage IS 'Override do % de despesa neste cartão. NULL = default 100% sem sharing; 0 = gerenciado.';")
         cursor.execute("COMMENT ON COLUMN credit_cards.revenue_ownership_percentage IS 'Override do % de receita neste cartão. NULL = default 100% sem sharing; 0 = gerenciado (sem impacto na conta).';")

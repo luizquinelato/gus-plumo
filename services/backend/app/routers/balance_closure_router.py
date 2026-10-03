@@ -761,47 +761,46 @@ class PeriodOverlapValidationResponse(BaseModel):
 
 # ==================== HELPER FUNCTIONS ====================
 
+def closure_reference_month(period_end: datetime) -> tuple[int, int]:
+    """
+    Mês/ano de referência do fechamento = calendário da data final do período.
+    Ex.: 19/02/2026–19/03/2026 → março/2026; 20/03/2026–19/04/2026 → abril/2026.
+    """
+    if not isinstance(period_end, datetime):
+        period_end = datetime.combine(period_end, datetime.min.time())
+    return period_end.year, period_end.month
+
+
+def _closure_period_end_for_display(closure: BalanceClosure) -> datetime:
+    """Data final do período (para mensagens); fallback em closing_date."""
+    data = closure.closure_data or {}
+    end_raw = data.get("end_date") or (data.get("period") or {}).get("end_date")
+    if end_raw:
+        try:
+            return datetime.fromisoformat(str(end_raw).replace("Z", "+00:00").split("+")[0])
+        except ValueError:
+            pass
+    return closure.closing_date
+
+
 def calculate_period_dates(year: int, month: int, closing_day: int | None):
     """
-    Calcula as datas de início e fim do período de fechamento.
+    Calcula as datas de início e fim do período de fechamento compartilhado.
 
-    Regra: O período vai do dia seguinte ao fechamento do mês anterior
-    até o dia do fechamento do mês atual.
-
-    Exemplo: closing_day = 19
-    - Para Jan/2026: 20/Dez/2025 00:00:00 até 19/Jan/2026 23:59:59
+    Fechamento = dia inteiro; próximo ciclo abre às 00:00 do dia seguinte.
+    Ex.: fech. 15 → 16/mês anterior 00:00:00 até 15/mês atual 23:59:59.
     """
     import calendar
-    from dateutil.relativedelta import relativedelta
 
     if closing_day:
-        # Data de fim: closing_day do mês atual
-        last_day_of_month = calendar.monthrange(year, month)[1]
-        end_day = min(closing_day, last_day_of_month)
-        period_end = datetime(year, month, end_day, 23, 59, 59)
+        from app.utils.card_invoice_calendar import invoice_period_datetimes
 
-        # Data de início: dia seguinte ao closing_day do mês anterior
-        # Calcula o mês anterior
-        previous_month_date = datetime(year, month, 1) - relativedelta(months=1)
-        prev_year = previous_month_date.year
-        prev_month = previous_month_date.month
+        year_month = f"{year:04d}-{month:02d}"
+        return invoice_period_datetimes(year_month, int(closing_day))
 
-        # Dia de início é closing_day + 1 do mês anterior
-        last_day_prev_month = calendar.monthrange(prev_year, prev_month)[1]
-        start_day = min(closing_day + 1, last_day_prev_month)
-
-        # Se closing_day + 1 ultrapassar o último dia do mês anterior,
-        # começa no dia 1 do mês atual
-        if closing_day + 1 > last_day_prev_month:
-            period_start = datetime(year, month, 1, 0, 0, 0)
-        else:
-            period_start = datetime(prev_year, prev_month, start_day, 0, 0, 0)
-    else:
-        # Sem closing_day: período é o mês inteiro
-        period_start = datetime(year, month, 1, 0, 0, 0)
-        last_day = calendar.monthrange(year, month)[1]
-        period_end = datetime(year, month, last_day, 23, 59, 59)
-
+    period_start = datetime(year, month, 1, 0, 0, 0)
+    last_day = calendar.monthrange(year, month)[1]
+    period_end = datetime(year, month, last_day, 23, 59, 59)
     return period_start, period_end
 
 
@@ -998,6 +997,25 @@ def create_balance_closure(
     except ValueError:
         period_end = datetime.strptime(request.period_end_date, "%Y-%m-%d")
 
+    closure_year, closure_month = closure_reference_month(period_end)
+    duplicate_month = db.query(BalanceClosure).filter(
+        BalanceClosure.tenant_id == tenant_id,
+        BalanceClosure.expense_sharing_id.in_(sharing_ids),
+        BalanceClosure.year == closure_year,
+        BalanceClosure.month == closure_month,
+    ).first()
+    if duplicate_month:
+        dup_end = _closure_period_end_for_display(duplicate_month)
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Já existe fechamento de {closure_month:02d}/{closure_year} "
+                f"(período {duplicate_month.period_start_date.strftime('%d/%m/%Y %H:%M:%S')} "
+                f"até {dup_end.strftime('%d/%m/%Y %H:%M:%S')}). "
+                "Só é permitido um fechamento por mês de referência (mês da data final)."
+            ),
+        )
+
     # ✅ Verificar sobreposição de períodos usando TIMESTAMPS COMPLETOS
     # Buscar todos os fechamentos que podem conflitar
     all_closures = db.query(BalanceClosure).filter(
@@ -1166,6 +1184,11 @@ def create_balance_closure(
     closure_data = request.closure_data.copy()
     if loan_payments_info:
         closure_data['loan_payments'] = loan_payments_info
+    period_meta = closure_data.setdefault("period", {})
+    period_meta["year"] = closure_year
+    period_meta["month"] = closure_month
+    period_meta["start_date"] = period_start.isoformat()
+    period_meta["end_date"] = period_end.isoformat()
 
     # ==================== CRIAR FECHAMENTO ====================
     closure = BalanceClosure(
@@ -1173,9 +1196,9 @@ def create_balance_closure(
         account_id=sharing.account_id,
         shared_account_id=sharing.shared_account_id,
         period_start_date=period_start,
-        closing_date=closing_datetime,  # ✅ Data de fim do período = timestamp do clique em "Aplicar"
-        year=request.year,
-        month=request.month,
+        closing_date=closing_datetime,  # ✅ Registro do clique em "Aplicar" / corte operacional
+        year=closure_year,
+        month=closure_month,
         total_to_receive=total_to_receive,
         total_to_pay=total_to_pay,
         net_balance=net_balance,

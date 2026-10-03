@@ -18,6 +18,11 @@ from app.models.unified_models import (
     Subtag,
     Tag,
 )
+from app.utils.card_invoice_calendar import (
+    date_in_year_month,
+    effective_closing_day,
+    effective_due_day,
+)
 
 YEAR_MONTH_LEN = 7
 CARD_TAG_NAMES = frozenset({"cartão", "cartao"})
@@ -66,12 +71,12 @@ def _parse_year_month(year_month: str) -> tuple[int, int]:
 
 def _invoice_due_date_for(year_month: str, due_day: int) -> str:
     """Data de vencimento da fatura (due_day no mês year_month)."""
-    import calendar
+    return date_in_year_month(year_month, due_day)
 
-    year, month = _parse_year_month(year_month)
-    last_day = calendar.monthrange(year, month)[1]
-    day = min(max(int(due_day or 14), 1), last_day)
-    return f"{year:04d}-{month:02d}-{day:02d}"
+
+def _invoice_closing_date_for(year_month: str, closing_day: int) -> str:
+    """Data de fechamento da fatura (closing_day no mês year_month)."""
+    return date_in_year_month(year_month, closing_day)
 
 
 def _iso_date(value: Any) -> Optional[str]:
@@ -154,7 +159,8 @@ def _serialize_cycle_cards(cards: list[Cartao]) -> list[dict[str, Any]]:
             "name": card.name,
             "number": card.number,
             "active": bool(card.active),
-            "due_day": int(card.due_day or 14),
+            "due_day": effective_due_day(card),
+            "closing_day": effective_closing_day(card),
         }
         for card in cards
     ]
@@ -439,10 +445,15 @@ def _preview_month_cycles(
             if auto_eligible and auto_candidate:
                 newly_reserved.add(int(auto_candidate["bank_statement_id"]))
 
-        due_days = sorted({int(card.due_day or 14) for card in cycle["cards"]})
+        due_days = sorted({effective_due_day(card) for card in cycle["cards"]})
         due_dates = [_invoice_due_date_for(year_month, day) for day in due_days]
         invoice_due_date = due_dates[0] if due_dates else None
         invoice_due_dates = due_dates
+
+        closing_days = sorted({effective_closing_day(card) for card in cycle["cards"]})
+        closing_dates = [_invoice_closing_date_for(year_month, day) for day in closing_days]
+        invoice_closing_date = closing_dates[0] if closing_dates else None
+        invoice_closing_dates = closing_dates
 
         items.append({
             "key": f"{year_month}:{_cycle_key(cycle['invoice_group_id'], cycle['credit_card_id'])}",
@@ -456,6 +467,8 @@ def _preview_month_cycles(
             "year_month": year_month,
             "invoice_due_date": invoice_due_date,
             "invoice_due_dates": invoice_due_dates,
+            "invoice_closing_date": invoice_closing_date,
+            "invoice_closing_dates": invoice_closing_dates,
             "net_amount": float(net_amount),
             "amount_to_pay": float(amount_to_pay),
             "line_count": line_count,

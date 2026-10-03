@@ -563,15 +563,28 @@ def sync_tags(prod_conn, dev_conn, ctx: SyncContext) -> None:
     print(f"  tags: {tag_count} upsert(s), subtags: {subtag_count} upsert(s)")
 
 
-def _credit_cards_column_names(conn) -> Set[str]:
+def _table_column_names(conn, table_name: str) -> Set[str]:
     with conn.cursor() as cur:
         cur.execute(
             """
             SELECT column_name FROM information_schema.columns
-            WHERE table_schema = 'public' AND table_name = 'credit_cards'
-            """
+            WHERE table_schema = 'public' AND table_name = %s
+            """,
+            (table_name,),
         )
         return {row["column_name"] for row in cur.fetchall()}
+
+
+def _credit_cards_column_names(conn) -> Set[str]:
+    return _table_column_names(conn, "credit_cards")
+
+
+def _card_calendar_day(row: dict, field: str) -> int:
+    """Lê closing/due do row; se ausente (prod antigo), usa due_day."""
+    val = row.get(field)
+    if val is not None:
+        return int(val)
+    return int(row.get("due_day") or 14)
 
 
 def normalize_card_participation_for_sync(
@@ -616,9 +629,22 @@ def sync_cartoes(prod_conn, dev_conn, ctx: SyncContext) -> None:
     group_count = 0
     card_count = 0
     with prod_conn.cursor() as prod_cur, dev_conn.cursor() as dev_cur:
+        prod_group_cols = _table_column_names(prod_conn, "credit_card_invoice_groups")
+        dev_group_cols = _table_column_names(dev_conn, "credit_card_invoice_groups")
+        group_select = [
+            "id",
+            "name",
+            "account_id",
+            "tenant_id",
+            "created_by",
+            "active",
+            "due_day",
+        ]
+        if "closing_day" in prod_group_cols:
+            group_select.append("closing_day")
         prod_cur.execute(
-            """
-            SELECT id, name, account_id, tenant_id, created_by, active, due_day
+            f"""
+            SELECT {", ".join(group_select)}
             FROM credit_card_invoice_groups
             WHERE tenant_id = %s ORDER BY id
             """,
@@ -638,38 +664,72 @@ def sync_cartoes(prod_conn, dev_conn, ctx: SyncContext) -> None:
             )
             existing = dev_cur.fetchone()
             created_by = map_user_id(ctx, row["created_by"])
+            due_day = _card_calendar_day(row, "due_day")
+            closing_day = _card_calendar_day(row, "closing_day")
             if existing:
                 dev_id = existing["id"]
-                dev_cur.execute(
-                    """
-                    UPDATE credit_card_invoice_groups
-                    SET active = %s, due_day = %s, created_by = %s, last_updated_at = NOW()
-                    WHERE id = %s
-                    """,
-                    (row["active"], row.get("due_day") or 14, created_by, dev_id),
-                )
+                if "closing_day" in dev_group_cols:
+                    dev_cur.execute(
+                        """
+                        UPDATE credit_card_invoice_groups
+                        SET active = %s, closing_day = %s, due_day = %s,
+                            created_by = %s, last_updated_at = NOW()
+                        WHERE id = %s
+                        """,
+                        (row["active"], closing_day, due_day, created_by, dev_id),
+                    )
+                else:
+                    dev_cur.execute(
+                        """
+                        UPDATE credit_card_invoice_groups
+                        SET active = %s, due_day = %s, created_by = %s, last_updated_at = NOW()
+                        WHERE id = %s
+                        """,
+                        (row["active"], due_day, created_by, dev_id),
+                    )
             else:
-                dev_cur.execute(
-                    """
-                    INSERT INTO credit_card_invoice_groups (
-                        name, account_id, tenant_id, created_by, active, due_day, created_at, last_updated_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s, NOW(), NOW())
-                    RETURNING id
-                    """,
-                    (
-                        row["name"],
-                        dev_account,
-                        ctx.tenant_id,
-                        created_by,
-                        row["active"],
-                        row.get("due_day") or 14,
-                    ),
-                )
+                if "closing_day" in dev_group_cols:
+                    dev_cur.execute(
+                        """
+                        INSERT INTO credit_card_invoice_groups (
+                            name, account_id, tenant_id, created_by, active,
+                            closing_day, due_day, created_at, last_updated_at
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                        RETURNING id
+                        """,
+                        (
+                            row["name"],
+                            dev_account,
+                            ctx.tenant_id,
+                            created_by,
+                            row["active"],
+                            closing_day,
+                            due_day,
+                        ),
+                    )
+                else:
+                    dev_cur.execute(
+                        """
+                        INSERT INTO credit_card_invoice_groups (
+                            name, account_id, tenant_id, created_by, active, due_day, created_at, last_updated_at
+                        ) VALUES (%s, %s, %s, %s, %s, %s, NOW(), NOW())
+                        RETURNING id
+                        """,
+                        (
+                            row["name"],
+                            dev_account,
+                            ctx.tenant_id,
+                            created_by,
+                            row["active"],
+                            due_day,
+                        ),
+                    )
                 dev_id = dev_cur.fetchone()["id"]
             ctx.invoice_group_map[row["id"]] = dev_id
             group_count += 1
 
         prod_cols = _credit_cards_column_names(prod_conn)
+        dev_cols = _credit_cards_column_names(dev_conn)
         has_iac_prod = "is_account_card" in prod_cols
         select_parts = [
             "id",
@@ -681,6 +741,8 @@ def sync_cartoes(prod_conn, dev_conn, ctx: SyncContext) -> None:
             "account_id",
             "expense_sharing_id",
         ]
+        if "closing_day" in prod_cols:
+            select_parts.append("closing_day")
         if "expense_ownership_percentage" in prod_cols:
             select_parts.append("expense_ownership_percentage")
         if "revenue_ownership_percentage" in prod_cols:
@@ -725,60 +787,121 @@ def sync_cartoes(prod_conn, dev_conn, ctx: SyncContext) -> None:
             expense_pct, revenue_pct = normalize_card_participation_for_sync(
                 row, has_is_account_card=has_iac_prod
             )
+            due_day = _card_calendar_day(row, "due_day")
+            closing_day = _card_calendar_day(row, "closing_day")
             if existing:
                 dev_id = existing["id"]
-                dev_cur.execute(
-                    """
-                    UPDATE credit_cards SET
-                        description = %s, type = %s, due_day = %s,
-                        expense_sharing_id = %s, expense_ownership_percentage = %s,
-                        revenue_ownership_percentage = %s,
-                        invoice_group_id = %s, created_by = %s, active = %s,
-                        last_updated_at = NOW()
-                    WHERE id = %s
-                    """,
-                    (
-                        row["description"],
-                        row["type"],
-                        row["due_day"],
-                        dev_sharing,
-                        expense_pct,
-                        revenue_pct,
-                        dev_group,
-                        created_by,
-                        row["active"],
-                        dev_id,
-                    ),
-                )
-            else:
-                dev_cur.execute(
-                    """
-                    INSERT INTO credit_cards (
-                        name, description, number, type, due_day, account_id,
-                        expense_sharing_id, expense_ownership_percentage,
-                        revenue_ownership_percentage, invoice_group_id,
-                        tenant_id, created_by, active, created_at, last_updated_at
-                    ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW()
+                if "closing_day" in dev_cols:
+                    dev_cur.execute(
+                        """
+                        UPDATE credit_cards SET
+                            description = %s, type = %s,
+                            closing_day = %s, due_day = %s,
+                            expense_sharing_id = %s, expense_ownership_percentage = %s,
+                            revenue_ownership_percentage = %s,
+                            invoice_group_id = %s, created_by = %s, active = %s,
+                            last_updated_at = NOW()
+                        WHERE id = %s
+                        """,
+                        (
+                            row["description"],
+                            row["type"],
+                            closing_day,
+                            due_day,
+                            dev_sharing,
+                            expense_pct,
+                            revenue_pct,
+                            dev_group,
+                            created_by,
+                            row["active"],
+                            dev_id,
+                        ),
                     )
-                    RETURNING id
-                    """,
-                    (
-                        row["name"],
-                        row["description"],
-                        row["number"],
-                        row["type"],
-                        row["due_day"],
-                        dev_account,
-                        dev_sharing,
-                        expense_pct,
-                        revenue_pct,
-                        dev_group,
-                        ctx.tenant_id,
-                        created_by,
-                        row["active"],
-                    ),
-                )
+                else:
+                    dev_cur.execute(
+                        """
+                        UPDATE credit_cards SET
+                            description = %s, type = %s, due_day = %s,
+                            expense_sharing_id = %s, expense_ownership_percentage = %s,
+                            revenue_ownership_percentage = %s,
+                            invoice_group_id = %s, created_by = %s, active = %s,
+                            last_updated_at = NOW()
+                        WHERE id = %s
+                        """,
+                        (
+                            row["description"],
+                            row["type"],
+                            due_day,
+                            dev_sharing,
+                            expense_pct,
+                            revenue_pct,
+                            dev_group,
+                            created_by,
+                            row["active"],
+                            dev_id,
+                        ),
+                    )
+            else:
+                if "closing_day" in dev_cols:
+                    dev_cur.execute(
+                        """
+                        INSERT INTO credit_cards (
+                            name, description, number, type,
+                            closing_day, due_day, account_id,
+                            expense_sharing_id, expense_ownership_percentage,
+                            revenue_ownership_percentage, invoice_group_id,
+                            tenant_id, created_by, active, created_at, last_updated_at
+                        ) VALUES (
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW()
+                        )
+                        RETURNING id
+                        """,
+                        (
+                            row["name"],
+                            row["description"],
+                            row["number"],
+                            row["type"],
+                            closing_day,
+                            due_day,
+                            dev_account,
+                            dev_sharing,
+                            expense_pct,
+                            revenue_pct,
+                            dev_group,
+                            ctx.tenant_id,
+                            created_by,
+                            row["active"],
+                        ),
+                    )
+                else:
+                    dev_cur.execute(
+                        """
+                        INSERT INTO credit_cards (
+                            name, description, number, type, due_day, account_id,
+                            expense_sharing_id, expense_ownership_percentage,
+                            revenue_ownership_percentage, invoice_group_id,
+                            tenant_id, created_by, active, created_at, last_updated_at
+                        ) VALUES (
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW()
+                        )
+                        RETURNING id
+                        """,
+                        (
+                            row["name"],
+                            row["description"],
+                            row["number"],
+                            row["type"],
+                            due_day,
+                            dev_account,
+                            dev_sharing,
+                            expense_pct,
+                            revenue_pct,
+                            dev_group,
+                            ctx.tenant_id,
+                            created_by,
+                            row["active"],
+                        ),
+                    )
                 dev_id = dev_cur.fetchone()["id"]
             ctx.credit_card_map[row["id"]] = dev_id
             card_count += 1

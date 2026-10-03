@@ -30,12 +30,15 @@ export function ListPageNestedTable({
   children,
   empty,
   alignWithListLeading = false,
+  colsRest,
 }: {
   head: ReactNode
   children?: ReactNode
   empty?: ReactNode
   /** Checkbox 40px + `#` 40px + spacer 4px — igual à {@link ListPageTable} principal. */
   alignWithListLeading?: boolean
+  /** Colunas após checkbox/#/spacer — apenas `<col>`. */
+  colsRest?: ReactNode
 }) {
   const tableCls = alignWithListLeading ? `${listPageTableCls} table-fixed` : 'w-full text-sm'
   const headCls = alignWithListLeading
@@ -51,7 +54,7 @@ export function ListPageNestedTable({
         {alignWithListLeading ? (
           <colgroup>
             <ListTableLeadingCols mode="bulk" />
-            <ListTableSpacerCol />
+            {colsRest ?? <ListTableSpacerCol />}
           </colgroup>
         ) : null}
         <thead className={headCls}>{head}</thead>

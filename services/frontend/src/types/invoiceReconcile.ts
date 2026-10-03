@@ -15,8 +15,17 @@ export interface InvoiceMatchCycle {
   group_name?: string | null
   card_names?: string[]
   card_ids: number[]
-  cards: Array<{ id: number; name: string; number: string; active?: boolean; due_day?: number }>
+  cards: Array<{
+    id: number
+    name: string
+    number: string
+    active?: boolean
+    closing_day?: number
+    due_day?: number
+  }>
   year_month: string
+  invoice_closing_date?: string | null
+  invoice_closing_dates?: string[]
   invoice_due_date?: string | null
   invoice_due_dates?: string[]
   net_amount: number

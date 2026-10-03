@@ -97,6 +97,7 @@ interface Cartao {
   revenue_ownership_percentage?: number | null
   expense_sharing?: ExpenseSharing
   active: boolean
+  closing_day?: number
   due_day?: number
   invoice_group_id?: number | null
   invoice_group_name?: string | null
@@ -107,6 +108,7 @@ interface InvoiceGroup {
   name: string
   account_id: number
   active: boolean
+  closing_day: number
   due_day: number
   card_count: number
 }
@@ -119,7 +121,37 @@ interface ToastState {
 
 const OWNERSHIP_TONE = badgeToneMap(['proprio', 'gerenciado', 'compartilhado'] as const, 'brand')
 const CARD_TYPE_TONE = badgeToneMap(['credito', 'beneficios'] as const, 'brand')
-const CARD_TABLE_COL_SPAN = 11
+const CARD_TABLE_COL_SPAN = 12
+const CARD_LIST_TABLE_MIN_WIDTH = 1080
+
+/** Larguras das colunas de dados (após checkbox / # / spacer). */
+const cardListTableColsRest = (
+  <>
+    <ListTableSpacerCol />
+    <col style={{ width: 192, minWidth: 160 }} />
+    <col style={{ width: 92, minWidth: 88 }} />
+    <col style={{ width: 80, minWidth: 76 }} />
+    <col style={{ width: 60, minWidth: 56 }} />
+    <col style={{ width: 60, minWidth: 56 }} />
+    <col style={{ width: 108, minWidth: 100 }} />
+    <col style={{ width: 120, minWidth: 108 }} />
+    <col style={{ width: 112, minWidth: 100 }} />
+    <col style={{ width: 84, minWidth: 76 }} />
+  </>
+)
+
+const cardNestedTableColsRest = (
+  <>
+    <ListTableSpacerCol />
+    <col style={{ width: 192, minWidth: 160 }} />
+    <col style={{ width: 80, minWidth: 76 }} />
+    <col style={{ width: 60, minWidth: 56 }} />
+    <col style={{ width: 60, minWidth: 56 }} />
+    <col style={{ width: 108, minWidth: 100 }} />
+    <col style={{ width: 112, minWidth: 100 }} />
+    <col style={{ width: 84, minWidth: 76 }} />
+  </>
+)
 
 function ActiveSwitch({
   checked,
@@ -157,6 +189,7 @@ const CartoesPage = () => {
   const [showGroupModal, setShowGroupModal] = useState(false)
   const [editingGroup, setEditingGroup] = useState<InvoiceGroup | null>(null)
   const [groupName, setGroupName] = useState('')
+  const [groupClosingDay, setGroupClosingDay] = useState('14')
   const [groupDueDay, setGroupDueDay] = useState('14')
   const [groupCardIds, setGroupCardIds] = useState<number[]>([])
   const [savingGroup, setSavingGroup] = useState(false)
@@ -173,6 +206,7 @@ const CartoesPage = () => {
     expense_sharing_id: '',
     expense_ownership_percentage: '',
     revenue_ownership_percentage: '',
+    closing_day: '14',
     due_day: '14',
     active: true,
     invoice_group_id: '',
@@ -278,13 +312,14 @@ const CartoesPage = () => {
 
   const cartoesCredito = cartoes.filter((c) => c.type === 'credito')
   const cartoesCreditoAtivos = cartoesCredito.filter((c) => c.active)
-  const cardDueDayLocked = formData.type === 'credito' && Boolean(formData.invoice_group_id)
+  const cardCalendarLocked = formData.type === 'credito' && Boolean(formData.invoice_group_id)
   const lockedInvoiceGroup = invoiceGroups.find((g) => String(g.id) === formData.invoice_group_id)
 
   const fecharModalGrupo = () => {
     setShowGroupModal(false)
     setEditingGroup(null)
     setGroupName('')
+    setGroupClosingDay('14')
     setGroupDueDay('14')
     setGroupCardIds([])
     setSavingGroup(false)
@@ -293,6 +328,7 @@ const CartoesPage = () => {
   const abrirModalGrupoNovo = () => {
     setEditingGroup(null)
     setGroupName('')
+    setGroupClosingDay('14')
     setGroupDueDay('14')
     setGroupCardIds([])
     setShowGroupModal(true)
@@ -301,6 +337,7 @@ const CartoesPage = () => {
   const abrirModalGrupoEditar = (group: InvoiceGroup) => {
     setEditingGroup(group)
     setGroupName(group.name)
+    setGroupClosingDay(String(group.closing_day ?? 14))
     setGroupDueDay(String(group.due_day ?? 14))
     setGroupCardIds(
       cartoes.filter((c) => c.invoice_group_id === group.id && c.type === 'credito').map((c) => c.id),
@@ -337,10 +374,12 @@ const CartoesPage = () => {
     }
     setSavingGroup(true)
     try {
+      const closing_day = parseInt(groupClosingDay, 10) || 14
       const due_day = parseInt(groupDueDay, 10) || 14
       if (editingGroup) {
         await axios.put(`/api/cartoes/invoice-groups/${editingGroup.id}`, {
           name,
+          closing_day,
           due_day,
           card_ids: groupCardIds,
         })
@@ -348,6 +387,7 @@ const CartoesPage = () => {
       } else {
         await axios.post('/api/cartoes/invoice-groups', {
           name,
+          closing_day,
           due_day,
           card_ids: groupCardIds,
         })
@@ -390,6 +430,7 @@ const CartoesPage = () => {
         description: formData.description || null,
         number: formData.number,
         type: formData.type,
+        closing_day: parseInt(formData.closing_day) || 14,
         due_day: parseInt(formData.due_day) || 14,
         active: formData.active,
       }
@@ -483,6 +524,7 @@ const CartoesPage = () => {
       expense_sharing_id: '',
       expense_ownership_percentage: '',
       revenue_ownership_percentage: '',
+      closing_day: '14',
       due_day: '14',
       active: true,
       invoice_group_id: '',
@@ -514,6 +556,7 @@ const CartoesPage = () => {
           : cartao.expense_sharing
             ? String(sharingPercentForKind(cartao.expense_sharing, 'revenue'))
             : '',
+      closing_day: cartao.closing_day?.toString() || '14',
       due_day: cartao.due_day?.toString() || '14',
       active: cartao.active !== false,
       invoice_group_id:
@@ -539,6 +582,7 @@ const CartoesPage = () => {
       expense_sharing_id: '',
       expense_ownership_percentage: '',
       revenue_ownership_percentage: '',
+      closing_day: '14',
       due_day: '14',
       active: true,
       invoice_group_id: '',
@@ -853,20 +897,22 @@ const CartoesPage = () => {
           ) : (
             <ListPageTable
               leadingMode="bulk"
-              colsRest={<ListTableSpacerCol />}
+              minWidth={CARD_LIST_TABLE_MIN_WIDTH}
+              colsRest={cardListTableColsRest}
               head={
                 <tr>
                   <ListTableCheckboxHeader state={globalHeaderState} onToggle={toggleGlobalSelection} />
                   <ListTableIndexHeader />
                   <ListTableSpacerHeader />
-                  <ListTableStaticHeader label="Nome" className="min-w-[8rem]" />
-                  <ListTableStaticHeader label="Tipo" className="w-[6.5rem]" />
-                  <ListTableStaticHeader label="Final" className="w-[4.5rem]" />
-                  <ListTableStaticHeader label="Venc." className="w-[4.5rem]" />
-                  <ListTableStaticHeader label="Propriedade" className="w-[7rem]" />
-                  <ListTableStaticHeader label="Compart." className="w-[7rem]" />
-                  <ListTableStaticHeader label="Status" className="w-[6.5rem]" />
-                  <ListTableStaticHeader label="Ações" className="w-[5.5rem]" />
+                  <ListTableStaticHeader label="Nome" />
+                  <ListTableStaticHeader label="Tipo" />
+                  <ListTableStaticHeader label="Final" />
+                  <ListTableStaticHeader label="Fech." className="px-2" />
+                  <ListTableStaticHeader label="Venc." className="px-2" />
+                  <ListTableStaticHeader label="Propriedade" />
+                  <ListTableStaticHeader label="Compart." />
+                  <ListTableStaticHeader label="Status" />
+                  <ListTableStaticHeader label="Ações" className="px-2" />
                 </tr>
               }
             >
@@ -877,8 +923,8 @@ const CartoesPage = () => {
                     {groupedRows.map(({ group, cards }) => {
                       rowIndex += 1
                       const isExpanded = expandedGroups.has(group.id)
+                      const groupClose = group.closing_day ?? 14
                       const groupDue = group.due_day ?? 14
-                      const activeCount = cards.filter((c) => c.active).length
                       const groupCardsState = selectionHeaderState(
                         cards.map((c) => c.id),
                         selectedCardIds,
@@ -897,7 +943,7 @@ const CartoesPage = () => {
                             />
                             <ListTableIndexCell index={rowIndex} />
                             <ListTableSpacerCell />
-                            <td className="cursor-pointer px-3 py-3" onClick={() => toggleGroupExpand(group.id)}>
+                            <td className="max-w-0 cursor-pointer px-3 py-3" onClick={() => toggleGroupExpand(group.id)}>
                               <div className="flex min-w-0 items-center gap-2">
                                 <button
                                   type="button"
@@ -905,7 +951,7 @@ const CartoesPage = () => {
                                     e.stopPropagation()
                                     toggleGroupExpand(group.id)
                                   }}
-                                  className={cadastroRowIconBtnCls}
+                                  className={`${cadastroRowIconBtnCls} shrink-0`}
                                   title={isExpanded ? 'Recolher cartões' : 'Expandir cartões'}
                                   aria-expanded={isExpanded}
                                 >
@@ -913,31 +959,24 @@ const CartoesPage = () => {
                                 </button>
                                 <Layers size={16} className="shrink-0" style={{ color: 'var(--color-1)' }} />
                                 <span
-                                  className={`truncate text-sm font-semibold ${
+                                  className={`min-w-0 flex-1 truncate text-sm font-semibold ${
                                     isExpanded ? 'text-[var(--color-1)]' : 'text-gray-800 dark:text-gray-100'
                                   }`}
+                                  title={group.name}
                                 >
                                   {group.name}
                                 </span>
-                                <Badge
-                                  variant={badgeVariantForColumnRole('metricGhost')}
-                                  tone="brand3"
-                                  label={String(cards.length)}
-                                />
                               </div>
                             </td>
                             <td className="px-3 py-3">
                               <Badge variant={badgeVariantForColumnRole('scope')} tone="brand4" label="Conjunta" />
                             </td>
                             <td className="px-3 py-3 text-sm text-gray-400">—</td>
-                            <td className="px-3 py-3 text-sm tabular-nums text-gray-600 dark:text-gray-300">
-                              {`dia ${groupDue}`}
-                            </td>
+                            <td className="px-2 py-3 text-center text-sm tabular-nums text-gray-600 dark:text-gray-300">{groupClose}</td>
+                            <td className="px-2 py-3 text-center text-sm tabular-nums text-gray-600 dark:text-gray-300">{groupDue}</td>
                             <td className="px-3 py-3 text-sm text-gray-400">—</td>
                             <td className="px-3 py-3 text-sm text-gray-400">—</td>
-                            <td className="px-3 py-3 text-sm text-gray-600 dark:text-gray-300">
-                              {cards.length ? `${activeCount}/${cards.length} ativos` : '—'}
-                            </td>
+                            <td className="px-3 py-3 text-sm text-gray-400">—</td>
                             <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center gap-0.5">
                                 <button
@@ -976,6 +1015,7 @@ const CartoesPage = () => {
                                   </div>
                                   <ListPageNestedTable
                                     alignWithListLeading
+                                    colsRest={cardNestedTableColsRest}
                                     head={
                                       <tr>
                                         <ListTableCheckboxHeader reserveOnly />
@@ -983,10 +1023,11 @@ const CartoesPage = () => {
                                         <ListTableSpacerHeader />
                                         <ListTableStaticHeader label="Nome" />
                                         <ListTableStaticHeader label="Final" />
-                                        <ListTableStaticHeader label="Venc." />
+                                        <ListTableStaticHeader label="Fech." className="px-2" />
+                                        <ListTableStaticHeader label="Venc." className="px-2" />
                                         <ListTableStaticHeader label="Propriedade" />
                                         <ListTableStaticHeader label="Status" />
-                                        <ListTableStaticHeader label="Ações" />
+                                        <ListTableStaticHeader label="Ações" className="px-2" />
                                       </tr>
                                     }
                                   >
@@ -1005,7 +1046,7 @@ const CartoesPage = () => {
                                         />
                                         <ListTableIndexCell index={cardIndex + 1} />
                                         <ListTableSpacerCell />
-                                        <td className="px-3 py-2">
+                                        <td className="max-w-0 px-3 py-2">
                                           <div className="flex min-w-0 items-center gap-2">
                                             <CreditCard size={14} className="shrink-0 text-[var(--color-2)]" />
                                             <span
@@ -1018,7 +1059,8 @@ const CartoesPage = () => {
                                           </div>
                                         </td>
                                         <td className="px-3 py-2 font-mono text-sm text-gray-600 dark:text-gray-300">•••• {cartao.number}</td>
-                                        <td className="px-3 py-2 text-sm tabular-nums">dia {cartao.due_day || 14}</td>
+                                        <td className="px-2 py-2 text-center text-sm tabular-nums">{cartao.closing_day || 14}</td>
+                                        <td className="px-2 py-2 text-center text-sm tabular-nums">{cartao.due_day || 14}</td>
                                         <td className="px-3 py-2">
                                           <Badge
                                             variant={badgeVariantForColumnRole('classificationSecondary')}
@@ -1063,7 +1105,7 @@ const CartoesPage = () => {
                           />
                           <ListTableIndexCell index={rowIndex} />
                           <ListTableSpacerCell />
-                          <td className="px-3 py-3">
+                          <td className="max-w-0 px-3 py-3">
                             <div className="flex min-w-0 items-center gap-2">
                               <TypeIcon
                                 size={16}
@@ -1087,8 +1129,11 @@ const CartoesPage = () => {
                             />
                           </td>
                           <td className="px-3 py-3 font-mono text-sm text-gray-600 dark:text-gray-300">•••• {cartao.number}</td>
-                          <td className="px-3 py-3 text-sm tabular-nums text-gray-600 dark:text-gray-300">
-                            {isBenefit ? '—' : `dia ${cartao.due_day || 14}`}
+                          <td className="px-2 py-3 text-center text-sm tabular-nums text-gray-600 dark:text-gray-300">
+                            {isBenefit ? '—' : cartao.closing_day || 14}
+                          </td>
+                          <td className="px-2 py-3 text-center text-sm tabular-nums text-gray-600 dark:text-gray-300">
+                            {isBenefit ? '—' : cartao.due_day || 14}
                           </td>
                           <td className="px-3 py-3">
                             <Badge
@@ -1245,7 +1290,21 @@ const CartoesPage = () => {
                   </CadastroModalFieldsRow>
                   <CadastroModalFieldsRow cols={2}>
                     <label className="block min-w-0">
-                      <CadastroFieldLabel required>Dia de Vencimento</CadastroFieldLabel>
+                      <CadastroFieldLabel required>Dia de fechamento</CadastroFieldLabel>
+                      <input
+                        type="number"
+                        value={formData.closing_day}
+                        onChange={(e) => setFormData({ ...formData, closing_day: e.target.value })}
+                        required
+                        min={1}
+                        max={30}
+                        disabled={cardCalendarLocked}
+                        className={`${cadastroFieldCls} mt-0.5 disabled:cursor-not-allowed disabled:opacity-60`}
+                        placeholder="Ex: 3"
+                      />
+                    </label>
+                    <label className="block min-w-0">
+                      <CadastroFieldLabel required>Dia de vencimento</CadastroFieldLabel>
                       <input
                         type="number"
                         value={formData.due_day}
@@ -1253,23 +1312,22 @@ const CartoesPage = () => {
                         required
                         min={1}
                         max={30}
-                        disabled={cardDueDayLocked}
-                        title={
-                          cardDueDayLocked
-                            ? `Definido pelo grupo ${lockedInvoiceGroup?.name ?? ''}`
-                            : undefined
-                        }
+                        disabled={cardCalendarLocked}
                         className={`${cadastroFieldCls} mt-0.5 disabled:cursor-not-allowed disabled:opacity-60`}
-                        placeholder="Ex: 14"
+                        placeholder="Ex: 10"
                       />
-                      {cardDueDayLocked ? (
-                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                          Vencimento do grupo &quot;{lockedInvoiceGroup?.name}&quot; (dia {lockedInvoiceGroup?.due_day ?? formData.due_day}).
-                          Edite no modal do grupo.
-                        </p>
-                      ) : null}
                     </label>
                   </CadastroModalFieldsRow>
+                  {cardCalendarLocked ? (
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Calendário do grupo &quot;{lockedInvoiceGroup?.name}&quot; (fech. {lockedInvoiceGroup?.closing_day ?? formData.closing_day} · venc.{' '}
+                      {lockedInvoiceGroup?.due_day ?? formData.due_day}). Edite no modal do grupo.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Fechamento define o ciclo da fatura no balanço; vencimento é quando a fatura vence e o pagamento é debitado.
+                    </p>
+                  )}
                   <CadastroModalFieldsRow>
                     <label className="block min-w-0">
                       <CadastroFieldLabel>Descrição</CadastroFieldLabel>
@@ -1294,6 +1352,7 @@ const CartoesPage = () => {
                             setFormData({
                               ...formData,
                               invoice_group_id,
+                              closing_day: group ? String(group.closing_day ?? 14) : formData.closing_day,
                               due_day: group ? String(group.due_day ?? 14) : formData.due_day,
                             })
                           }}
@@ -1304,7 +1363,7 @@ const CartoesPage = () => {
                             .filter((g) => g.active !== false)
                             .map((group) => (
                               <option key={group.id} value={group.id}>
-                                {group.name} · venc. dia {group.due_day ?? 14}
+                                {group.name} · fech. {group.closing_day ?? 14} · venc. {group.due_day ?? 14}
                               </option>
                             ))}
                         </select>
@@ -1518,7 +1577,7 @@ const CartoesPage = () => {
       )}
 
       {showGroupModal && (
-        <CadastroModalShell maxWidth="max-w-4xl">
+        <CadastroModalShell maxWidth="max-w-6xl">
           <CadastroModalHeader
             isEdit={!!editingGroup}
             title={editingGroup ? 'Editar grupo de fatura' : 'Novo grupo de fatura'}
@@ -1529,7 +1588,7 @@ const CartoesPage = () => {
           <CadastroModalBody>
             <CadastroFormSection title="Identificação" icon={<Layers size={14} />}>
               <CadastroModalFieldsGrid>
-                <CadastroModalFieldsRow cols={2}>
+                <CadastroModalFieldsRow>
                   <label className="block min-w-0">
                     <CadastroFieldLabel required>Nome do grupo</CadastroFieldLabel>
                     <input
@@ -1540,8 +1599,21 @@ const CartoesPage = () => {
                       className={`${cadastroFieldCls} mt-0.5`}
                     />
                   </label>
+                </CadastroModalFieldsRow>
+                <CadastroModalFieldsRow cols={2}>
                   <label className="block min-w-0">
-                    <CadastroFieldLabel required>Dia de vencimento</CadastroFieldLabel>
+                    <CadastroFieldLabel required>Fechamento</CadastroFieldLabel>
+                    <input
+                      type="number"
+                      min={1}
+                      max={30}
+                      value={groupClosingDay}
+                      onChange={(e) => setGroupClosingDay(e.target.value)}
+                      className={`${cadastroFieldCls} mt-0.5`}
+                    />
+                  </label>
+                  <label className="block min-w-0">
+                    <CadastroFieldLabel required>Vencimento</CadastroFieldLabel>
                     <input
                       type="number"
                       min={1}
@@ -1549,13 +1621,12 @@ const CartoesPage = () => {
                       value={groupDueDay}
                       onChange={(e) => setGroupDueDay(e.target.value)}
                       className={`${cadastroFieldCls} mt-0.5`}
-                      placeholder="Ex: 14"
                     />
                   </label>
                 </CadastroModalFieldsRow>
               </CadastroModalFieldsGrid>
               <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                Todos os cartões do grupo usam este vencimento. Alterar aqui atualiza os cartões já no grupo.
+                Todos os cartões do grupo herdam estes dias. Alterar aqui atualiza os cartões já no grupo.
               </p>
             </CadastroFormSection>
 
@@ -1575,10 +1646,18 @@ const CartoesPage = () => {
               ) : (
                 <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700">
                   <div className="max-h-[min(22rem,50vh)] overflow-y-auto scroll-slim">
-                    <table className="w-full text-sm">
+                    <table className="w-full table-fixed text-sm">
+                      <colgroup>
+                        <col style={{ width: 40, minWidth: 40 }} />
+                        <col />
+                        <col style={{ width: 92, minWidth: 92 }} />
+                        <col style={{ width: 56, minWidth: 56 }} />
+                        <col style={{ width: 56, minWidth: 56 }} />
+                        <col style={{ width: 220, minWidth: 180 }} />
+                      </colgroup>
                       <thead className="sticky top-0 z-[1] border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/95">
                         <tr>
-                          <th className="w-10 px-2 py-2 text-left">
+                          <th className="px-2 py-2 text-left">
                             <BulkSelectCheckbox
                               state={groupCardsSelectState}
                               onClick={toggleSelectAllGroupCards}
@@ -1587,10 +1666,13 @@ const CartoesPage = () => {
                           <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                             Nome
                           </th>
-                          <th className="w-16 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                          <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                             Final
                           </th>
-                          <th className="w-16 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                          <th className="whitespace-nowrap px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                            Fech.
+                          </th>
+                          <th className="whitespace-nowrap px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                             Venc.
                           </th>
                           <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
@@ -1633,15 +1715,14 @@ const CartoesPage = () => {
                                   onClick={() => toggleGroupCard(cartao.id)}
                                 />
                               </td>
-                              <td className="px-3 py-2 font-medium text-gray-900 dark:text-gray-100">
+                              <td className="max-w-0 truncate px-3 py-2 font-medium text-gray-900 dark:text-gray-100">
                                 {cartao.name}
                               </td>
-                              <td className="px-3 py-2 font-mono text-gray-600 dark:text-gray-300">
+                              <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-gray-600 dark:text-gray-300">
                                 •••• {cartao.number}
                               </td>
-                              <td className="px-3 py-2 tabular-nums text-gray-600 dark:text-gray-300">
-                                dia {cartao.due_day || 14}
-                              </td>
+                              <td className="whitespace-nowrap px-2 py-2 tabular-nums text-gray-600 dark:text-gray-300">{cartao.closing_day || 14}</td>
+                              <td className="whitespace-nowrap px-2 py-2 tabular-nums text-gray-600 dark:text-gray-300">{cartao.due_day || 14}</td>
                               <td className="px-3 py-2">
                                 <div className="flex flex-wrap items-center gap-1.5">
                                   <Badge

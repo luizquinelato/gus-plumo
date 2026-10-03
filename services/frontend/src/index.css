@@ -298,6 +298,13 @@ body {
     background-color: var(--row-hover-bg);
     box-shadow: inset 4px 0 0 0 var(--color-1);
   }
+  .list-page-table-sticky-actions {
+    transition: background-color 0.15s ease;
+  }
+  tr:hover > td.list-page-table-sticky-actions,
+  .table-row-hover:hover > td.list-page-table-sticky-actions {
+    background-color: var(--row-hover-bg);
+  }
   .table-row-hover-soft {
     transition: background-color 0.15s ease, box-shadow 0.15s ease;
   }
@@ -365,4 +372,9 @@ table:not(.list-page-table) td {
   max-width: 4px !important;
   padding: 0 !important;
   box-sizing: border-box !important;
+}
+.list-page-table th:not(.list-page-table-checkbox-col):not(.list-page-table-index-col):not(.list-page-table-spacer):not(.list-page-table-drag-col),
+.list-page-table td:not(.list-page-table-checkbox-col):not(.list-page-table-index-col):not(.list-page-table-spacer):not(.list-page-table-drag-col) {
+  text-align: left;
+  vertical-align: middle;
 }

@@ -93,6 +93,10 @@ interface EditableItem {
   expense_sharing_id: number | null
 }
 
+/** Grip + # + campos — mesma grade no cabeçalho e em cada linha */
+const applyTemplateItemGridCls =
+  'grid grid-cols-[14px_minmax(2.25rem,3.25rem)_minmax(0,2fr)_minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_minmax(6.5rem,7rem)] gap-x-2 gap-y-2 items-center'
+
 const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTemplateModalProps) => {
   const { showError, showSuccess } = useAlert()
   const [items, setItems] = useState<EditableItem[]>([])
@@ -448,21 +452,20 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
             </div>
           ) : (
             <CadastroFormSection title="Lançamentos" icon={<FileText size={14} />}>
+              <div className="min-w-0 overflow-x-auto">
               {/* Header dos campos */}
-              <div className="flex items-end gap-2 pb-2 border-b border-gray-200 dark:border-gray-700">
-                <div className="w-[14px]"></div>
-                <div className="flex items-center w-6">
-                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400">#</span>
-                </div>
-                <div className="flex-1 grid grid-cols-[2fr_1.2fr_0.8fr_1fr_1fr_1.2fr_0.6fr] gap-2">
-                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Descrição</span>
-                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Valor</span>
-                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Data</span>
-                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Tag</span>
-                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Subtag</span>
-                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Compartilhamento</span>
-                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Minha %</span>
-                </div>
+              <div
+                className={`${applyTemplateItemGridCls} pb-2 border-b border-gray-200 dark:border-gray-700 min-w-[960px]`}
+              >
+                <GripVertical size={14} className="invisible shrink-0 justify-self-center" aria-hidden />
+                <span className="text-xs font-medium text-gray-500 dark:text-gray-400">#</span>
+                <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Descrição</span>
+                <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Valor</span>
+                <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Data</span>
+                <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Tag</span>
+                <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Subtag</span>
+                <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Compartilhamento</span>
+                <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Minha %</span>
               </div>
 
               {/* Itens */}
@@ -471,27 +474,20 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
                 return (
                 <div
                   key={index}
-                  className="flex items-center gap-2"
+                  className={`${applyTemplateItemGridCls} min-w-[960px]`}
                 >
-                  <div className="flex items-center">
-                    <GripVertical size={14} className="text-gray-400" />
-                  </div>
-                  {/* Número do item */}
-                  <div className="flex items-center">
-                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400 flex items-center gap-1">
-                      #{index + 1}
-                      {selectedSubtag && (
-                        selectedSubtag.type === 'receita'
-                          ? <ArrowUpCircle size={14} className="text-green-600 dark:text-green-400" title="Receita" />
-                          : <ArrowDownCircle size={14} className="text-red-600 dark:text-red-400" title="Despesa" />
-                      )}
-                    </span>
-                  </div>
+                  <GripVertical size={14} className="text-gray-400 shrink-0 justify-self-center" aria-hidden />
+                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400 flex items-center gap-0.5 whitespace-nowrap">
+                    #{index + 1}
+                    {selectedSubtag && (
+                      selectedSubtag.type === 'receita'
+                        ? <ArrowUpCircle size={14} className="text-green-600 dark:text-green-400" aria-label="Receita" />
+                        : <ArrowDownCircle size={14} className="text-red-600 dark:text-red-400" aria-label="Despesa" />
+                    )}
+                  </span>
 
-                  {/* Campos do item em grid horizontal */}
-                  <div className="flex-1 grid grid-cols-[2fr_1.2fr_0.8fr_1fr_1fr_1.2fr_0.6fr] gap-2">
                     {/* Descrição */}
-                    <div>
+                    <div className="min-w-0">
                       <input
                         type="text"
                         value={item.description}
@@ -502,7 +498,7 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
                     </div>
 
                     {/* Valor com prefixo R$ */}
-                    <div>
+                    <div className="min-w-0">
                       <div className="relative">
                         <span className={`absolute left-2 top-1/2 -translate-y-1/2 text-sm font-semibold ${
                           item.amount && parseFloat(item.amount) < 0
@@ -546,7 +542,7 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
                     </div>
 
                     {/* Data */}
-                    <div>
+                    <div className="min-w-0">
                       <DateField
                         value={item.date}
                         onChange={(value) => updateItem(index, 'date', value)}
@@ -555,7 +551,7 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
                     </div>
 
                     {/* Tag */}
-                    <div>
+                    <div className="min-w-0">
                       <select
                         value={item.tag_id || 0}
                         onChange={(e) => {
@@ -580,7 +576,7 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
                     </div>
 
                     {/* Subtag */}
-                    <div>
+                    <div className="min-w-0">
                       <select
                         value={item.subtag_id || 0}
                         onChange={(e) => {
@@ -614,7 +610,7 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
                     </div>
 
                     {/* Compartilhamento */}
-                    <div>
+                    <div className="min-w-0">
                       <select
                         value={item.expense_sharing_id || ''}
                         onChange={(e) => {
@@ -655,9 +651,10 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
                       </select>
                     </div>
 
-                    <div>
+                    <div className="min-w-[6.5rem]">
                       <OwnershipPercentField
                         compact
+                        hideLabel
                         context="transaction"
                         value={item.ownership_percentage}
                         onChange={(raw) => updateItem(index, 'ownership_percentage', maskPercentInput(raw))}
@@ -670,12 +667,13 @@ const ApplyTemplateModal = ({ isOpen, onClose, onSuccess, template }: ApplyTempl
                           )
                         }}
                         placeholder="100"
+                        inputClassName="pr-9"
                       />
                     </div>
-                  </div>
                 </div>
                 )
               })}
+              </div>
             </CadastroFormSection>
           )}
         </CadastroModalBody>

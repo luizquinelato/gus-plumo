@@ -9,7 +9,12 @@ export const cadastroListTabsPad =
   'shrink-0 bg-gray-50 px-6 pb-3 pt-3 dark:bg-gray-900 lg:px-8'
 
 export const cadastroFilterFieldCls =
-  'w-full rounded-lg border border-gray-300 bg-white px-2 py-2 text-sm text-gray-900 shadow-sm transition-all focus:border-[var(--color-1)] focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--color-1)_25%,transparent)] dark:border-gray-600 dark:bg-gray-700 dark:text-white'
+  'box-border h-9 w-full rounded-lg border border-gray-300 bg-white px-2 py-0 text-sm leading-normal text-gray-900 shadow-sm transition-all focus:border-[var(--color-1)] focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--color-1)_25%,transparent)] dark:border-gray-600 dark:bg-gray-700 dark:text-white'
+export const cadastroFilterApplyBtnCls =
+  'inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-4 text-sm font-medium transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50'
+/** Espaço equivalente ao rótulo de {@link CadastroFilterField} — alinha Aplicar à linha dos inputs. */
+export const cadastroFilterApplyLabelSpacerCls =
+  'mb-1 flex h-4 items-center text-xs font-medium opacity-0 pointer-events-none select-none'
 
 export const listPageTableSectionCls =
   'overflow-hidden rounded-lg border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-800'
@@ -20,9 +25,19 @@ export const listPageTableChromeBgCls = 'bg-gray-100 dark:bg-gray-800/75'
 export const listPageTableChromeFooterBgCls = 'bg-gray-50 dark:bg-gray-800/50'
 export const listPageTableChromeHeaderCls =
   `${listPageTableChromeBgCls} [&_th]:border-b-2 [&_th]:border-gray-200 dark:[&_th]:border-gray-600 [&_th.list-page-table-checkbox-col]:p-0 [&_th.list-page-table-index-col]:p-0`
+/** Cabeçalho sticky da coluna Ações — mesma cor do chrome do thead (sem linha divisória). */
+export const listPageTableStickyActionsHeaderCls =
+  `sticky right-0 z-10 ${listPageTableChromeBgCls}`
+/** Célula sticky Ações — hover sincronizado via `.list-page-table-sticky-actions` em index.css */
+export const listPageTableStickyActionsCellCls =
+  'list-page-table-sticky-actions sticky right-0 z-10 align-middle bg-white dark:bg-gray-800'
+/** Thead de relatórios legados (sem ListPageTable) — alinhado ao chrome das listagens. */
+export const reportTableChromeHeaderCls =
+  `border-b border-gray-200 dark:border-gray-700 ${listPageTableChromeBgCls}`
 export const listPageTableThCls =
-  'px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300'
-export const listPageTableTdCls = 'px-4 py-3 text-sm text-gray-700 dark:text-gray-300'
+  'px-4 py-3 text-left align-middle text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300'
+export const listPageTableTdCls =
+  'px-4 py-3 text-left align-middle text-sm text-gray-700 dark:text-gray-300'
 /** Colunas líderes (checkbox / `#`) — larguras em ListTableSelectColumns + index.css */
 export {
   listPageTableIndexThCls,
@@ -210,6 +225,7 @@ export function CadastroListPageFilterCard({
   onClearFilters,
   onApply,
   applying = false,
+  applyDisabled = false,
   resultHint,
   gridClass,
   children,
@@ -218,6 +234,8 @@ export function CadastroListPageFilterCard({
   onClearFilters: () => void
   onApply: () => void
   applying?: boolean
+  /** Desabilita Aplicar (ex.: filtros obrigatórios ainda não preenchidos). */
+  applyDisabled?: boolean
   resultHint?: ReactNode
   gridClass?: string
   children?: ReactNode
@@ -244,22 +262,27 @@ export function CadastroListPageFilterCard({
         ) : null}
       </div>
 
-      <div className="flex w-full items-end gap-3">
+      <div className="flex w-full gap-3">
         {children ? (
           <div className={`min-w-0 flex-1 ${rowCls}`}>{children}</div>
         ) : (
           <span className="min-w-0 flex-1" aria-hidden />
         )}
-        <button
-          type="button"
-          onClick={onApply}
-          disabled={applying}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-          style={{ background: 'var(--color-create)', color: 'var(--on-color-create)' }}
-        >
-          <Filter size={14} />
-          Aplicar
-        </button>
+        <div className="flex shrink-0 flex-col">
+          <span className={cadastroFilterApplyLabelSpacerCls} aria-hidden>
+            &#8203;
+          </span>
+          <button
+            type="button"
+            onClick={onApply}
+            disabled={applying || applyDisabled}
+            className={cadastroFilterApplyBtnCls}
+            style={{ background: 'var(--color-create)', color: 'var(--on-color-create)' }}
+          >
+            <Filter size={14} />
+            Aplicar
+          </button>
+        </div>
       </div>
     </div>
   )

@@ -108,22 +108,29 @@ const formatCycleMonthColumn = (yearMonth: string) => {
   return `${String(period.month).padStart(2, '0')}/${period.year}`
 }
 
-const formatInvoiceDueDates = (cycle: InvoiceMatchCycle) => {
-  const dates = cycle.invoice_due_dates?.length
-    ? cycle.invoice_due_dates
-    : cycle.invoice_due_date
-      ? [cycle.invoice_due_date]
+const formatCalendarDatesFromCycle = (
+  cycle: InvoiceMatchCycle,
+  kind: 'closing' | 'due',
+) => {
+  const dateKey = kind === 'closing' ? 'invoice_closing_dates' : 'invoice_due_dates'
+  const singleKey = kind === 'closing' ? 'invoice_closing_date' : 'invoice_due_date'
+  const dayKey = kind === 'closing' ? 'closing_day' : 'due_day'
+
+  const dates = cycle[dateKey]?.length
+    ? cycle[dateKey]!
+    : cycle[singleKey]
+      ? [cycle[singleKey]!]
       : []
   if (dates.length === 0) {
-    const fallbackDays = [...new Set(cycle.cards.map((card) => card.due_day ?? 14))]
+    const fallbackDays = [...new Set(cycle.cards.map((card) => card[dayKey] ?? 14))]
     const [ymYear, ymMonth] = cycle.year_month.split('-').map(Number)
     if (!ymYear || !ymMonth) return '—'
     const lastDay = new Date(ymYear, ymMonth, 0).getDate()
     return fallbackDays
       .sort((left, right) => left - right)
       .map((day) => {
-        const closeDay = Math.min(Math.max(day, 1), lastDay)
-        return formatDate(`${ymYear}-${String(ymMonth).padStart(2, '0')}-${String(closeDay).padStart(2, '0')}`)
+        const clamped = Math.min(Math.max(day, 1), lastDay)
+        return formatDate(`${ymYear}-${String(ymMonth).padStart(2, '0')}-${String(clamped).padStart(2, '0')}`)
       })
       .join(' · ')
   }
@@ -652,8 +659,11 @@ const ReconciliacaoPage = () => {
         <td className={`${listPageTableTdCls} whitespace-nowrap tabular-nums text-gray-700 dark:text-gray-200`}>
           {formatCycleMonthColumn(cycle.year_month)}
         </td>
-        <td className={`${listPageTableTdCls} whitespace-nowrap tabular-nums text-gray-700 dark:text-gray-200`}>
-          {formatInvoiceDueDates(cycle)}
+        <td className={`${listPageTableTdCls} whitespace-nowrap tabular-nums text-xs text-gray-700 dark:text-gray-200`}>
+          {formatCalendarDatesFromCycle(cycle, 'closing')}
+        </td>
+        <td className={`${listPageTableTdCls} whitespace-nowrap tabular-nums text-xs text-gray-700 dark:text-gray-200`}>
+          {formatCalendarDatesFromCycle(cycle, 'due')}
         </td>
         <td className={listPageTableTdCls}>
           <div className="flex flex-wrap items-center gap-1.5">
@@ -779,7 +789,8 @@ const ReconciliacaoPage = () => {
             {bulkSelectTab ? <ListTableIndexHeader /> : null}
             <ListTableSpacerHeader />
             <ListTableStaticHeader label="Mês" className="w-[5.5rem]" />
-            <ListTableStaticHeader label="Data fatura" className="w-[7rem]" />
+            <ListTableStaticHeader label="Fechamento" className="w-[7rem]" />
+            <ListTableStaticHeader label="Vencimento" className="w-[7rem]" />
             <ListTableStaticHeader label="Ciclo" className="min-w-[10rem]" />
             <ListTableStaticHeader label="Líquido" className="w-[7rem]" />
             <ListTableStaticHeader label="Status" className="w-[11rem]" />

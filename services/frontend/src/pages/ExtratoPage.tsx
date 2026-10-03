@@ -9,7 +9,11 @@ import {
   CadastroListPageTabs,
   CadastroListPrimaryButton,
   CadastroListSecondaryButton,
+  listPageTableRowHoverCls,
+  listPageTableStickyActionsCellCls,
+  listPageTableStickyActionsHeaderCls,
   reportRowActionBtnClass,
+  reportTableChromeHeaderCls,
 } from '../components/CadastroListPageLayout'
 import {
   CadastroFormSection,
@@ -1530,7 +1534,7 @@ const ExtratoPage = () => {
             <div className={`${selectedItems.size > 0 || showBackToTop ? 'pb-20' : ''}`}>
               <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
                 <table className="w-full table-auto">
-                  <thead className="border-b border-gray-200 dark:border-gray-700">
+                  <thead className={reportTableChromeHeaderCls}>
                     <tr>
                       {/* Checkbox Selecionar Todos */}
                       <th className="px-2 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap w-10">
@@ -1570,7 +1574,9 @@ const ExtratoPage = () => {
                       <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap min-w-[180px] cursor-pointer hover:text-color-primary" onClick={() => handleSort('shared_partner_name')}>
                         Compartilhamento {sortField === 'shared_partner_name' && (sortDirection === 'asc' ? '↑' : '↓')}
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap min-w-[160px] sticky right-0 bg-gray-50 dark:bg-gray-700 z-10 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.1)]">
+                      <th
+                        className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300 whitespace-nowrap min-w-[160px] ${listPageTableStickyActionsHeaderCls}`}
+                      >
                         Ações
                       </th>
                     </tr>
@@ -1589,12 +1595,14 @@ const ExtratoPage = () => {
                           return (
                             <tr
                               key={`${expense.source}-${expense.id}`}
-                              className={`group border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 transition-all ${
+                              className={`border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 ${
                                 isDailyBalance
                                   ? `${dailyBalanceRowClass(expense)} font-medium`
-                                  : isItemSelected(expense)
-                                    ? 'border-l-blue-600 bg-blue-50 dark:bg-blue-900/20 hover:bg-gray-50 dark:hover:bg-gray-700'
-                                    : 'border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                                  : `${listPageTableRowHoverCls} ${
+                                      isItemSelected(expense)
+                                        ? 'border-l-blue-600 bg-blue-50 dark:bg-blue-900/20'
+                                        : 'border-l-gray-300 dark:border-l-gray-600'
+                                    }`
                               }`}
                               onMouseEnter={(e) => {
                                 if (!isDailyBalance && !isItemSelected(expense)) {
@@ -1739,13 +1747,15 @@ const ExtratoPage = () => {
                               </td>
 
                               {/* Ações */}
-                              <td className={`px-4 py-4 text-left whitespace-nowrap sticky right-0 z-10 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.1)] ${
-                                isDailyBalance
-                                  ? dailyBalanceRowClass(expense)
-                                  : isItemSelected(expense)
-                                    ? 'bg-blue-50 dark:bg-blue-900/20 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/30'
-                                    : 'bg-white dark:bg-gray-800 group-hover:bg-gray-50 dark:group-hover:bg-gray-700'
-                              }`}>
+                              <td
+                                className={`${listPageTableStickyActionsCellCls} px-4 py-4 text-left whitespace-nowrap ${
+                                  isDailyBalance
+                                    ? dailyBalanceRowClass(expense)
+                                    : isItemSelected(expense)
+                                      ? 'bg-blue-50 dark:bg-blue-900/20'
+                                      : ''
+                                }`}
+                              >
                                 {isDailyBalance ? (
                                   <span className="text-xs text-gray-500 dark:text-gray-400">Resumo</span>
                                 ) : (
