@@ -1,12 +1,11 @@
-import { useState, useEffect } from 'react'
-import { Receipt, CreditCard, Gift, ArrowUpDown, ArrowUp, ArrowDown, Calendar, Scale } from 'lucide-react'
+import { useState, useEffect, type ReactNode } from 'react'
+import { Receipt, CreditCard, Gift, ArrowUpDown, ArrowUp, ArrowDown, ArrowUpCircle, ArrowDownCircle, Calendar, Scale } from 'lucide-react'
 import {
   CadastroFormSection,
   CadastroModalBody,
   CadastroModalFooter,
   CadastroModalHeader,
   CadastroModalShell,
-  CadastroModalTabs,
   cadastroSectionsStackCls,
 } from './CadastroFormLayout'
 import Badge from './Badge'
@@ -21,6 +20,7 @@ interface BalanceItem {
   subtag_name?: string
   my_contribution_percentage: number
   partner_contribution_percentage: number
+  should_invert?: boolean
   // Campos específicos para credit_card_invoices
   year_month?: string  // Formato: "YYYY-MM" (ex: "2025-12")
   card_id?: number
@@ -78,22 +78,241 @@ function moneyToneCls(value: number) {
   return value < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'
 }
 
-function computeFlowTotals(items: BalanceItem[], preserveSign: boolean): FlowTotals {
+function computeItemShare(item: BalanceItem) {
+  const originalMy = parseFloat(String(item.my_contribution_percentage ?? '0'))
+  const originalPartner = parseFloat(String(item.partner_contribution_percentage ?? '0'))
+  const myPercentage = item.should_invert ? originalPartner : originalMy
+  const partnerPercentage = item.should_invert ? originalMy : originalPartner
+  const rawAmount = Number(item.amount)
+  return {
+    myPercentage,
+    partnerPercentage,
+    rawAmount,
+    mine: rawAmount * (myPercentage / 100),
+    partner: rawAmount * (partnerPercentage / 100),
+  }
+}
+
+function formatShareCell(value: number, blankZero = false) {
+  if (blankZero && Math.abs(value) < 0.005) {
+    return <span className="text-gray-400">—</span>
+  }
+  return formatSignedCurrency(value)
+}
+
+function sumFlowTotals(items: BalanceItem[]): FlowTotals {
   return items.reduce(
     (acc, item) => {
-      const amount = Number(item.amount)
-      const raw = preserveSign ? amount : Math.abs(amount)
-      const myPct = Number(item.my_contribution_percentage ?? 0)
-      const partnerPct = Number(item.partner_contribution_percentage ?? 0)
-      const mine = preserveSign ? amount * (myPct / 100) : Math.abs(amount) * (myPct / 100)
-      const partner = preserveSign ? amount * (partnerPct / 100) : Math.abs(amount) * (partnerPct / 100)
+      const share = computeItemShare(item)
       acc.count += 1
-      acc.raw += raw
-      acc.mine += mine
-      acc.partner += partner
+      acc.raw += share.rawAmount
+      acc.mine += share.mine
+      acc.partner += share.partner
       return acc
     },
     { count: 0, raw: 0, mine: 0, partner: 0 },
+  )
+}
+
+function cardSummaryTitle(cardName: string, cardNumber: string) {
+  const suffix = cardNumber ? ` *** ${cardNumber.slice(-4)}` : ''
+  return `Resumo · ${cardName}${suffix}`
+}
+
+function sourceSummaryLabel(type: BalanceDetailsModalProps['type']) {
+  switch (type) {
+    case 'transactions':
+      return 'Conta corrente'
+    case 'benefit_card':
+      return 'Cartão benefício'
+    default:
+      return 'Cartão de crédito'
+  }
+}
+
+function sortBalanceItems(items: BalanceItem[], sortConfig: SortConfig[]) {
+  return [...items].sort((a, b) => {
+    for (const sort of sortConfig) {
+      let compareResult = 0
+
+      switch (sort.field) {
+        case 'date':
+          compareResult = new Date(a.date).getTime() - new Date(b.date).getTime()
+          break
+        case 'description':
+          compareResult = a.description.localeCompare(b.description, 'pt-BR')
+          break
+        case 'category': {
+          const catA = a.tag_name ? `${a.tag_name}${a.subtag_name ? ` > ${a.subtag_name}` : ''}` : ''
+          const catB = b.tag_name ? `${b.tag_name}${b.subtag_name ? ` > ${b.subtag_name}` : ''}` : ''
+          compareResult = catA.localeCompare(catB, 'pt-BR')
+          break
+        }
+        case 'amount':
+          compareResult = Math.abs(Number(a.amount)) - Math.abs(Number(b.amount))
+          break
+        case 'my_percentage':
+          compareResult = Number(a.my_contribution_percentage ?? 0) - Number(b.my_contribution_percentage ?? 0)
+          break
+        case 'my_value': {
+          const myValueA = computeItemShare(a).mine
+          const myValueB = computeItemShare(b).mine
+          compareResult = myValueA - myValueB
+          break
+        }
+        case 'partner_value': {
+          const partnerValueA = computeItemShare(a).partner
+          const partnerValueB = computeItemShare(b).partner
+          compareResult = partnerValueA - partnerValueB
+          break
+        }
+      }
+
+      if (compareResult !== 0) {
+        return sort.direction === 'asc' ? compareResult : -compareResult
+      }
+    }
+
+    return 0
+  })
+}
+
+function BalanceDetailsItemsTable({
+  items,
+  sortConfig,
+  onSort,
+  getSortIcon,
+}: {
+  items: BalanceItem[]
+  sortConfig: SortConfig[]
+  onSort: (field: SortField) => void
+  getSortIcon: (field: SortField) => ReactNode
+}) {
+  if (items.length === 0) {
+    return <p className="px-3 py-4 text-center text-sm text-gray-500 dark:text-gray-400">Nenhum lançamento.</p>
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[1000px] text-sm">
+        <thead className={balanceTableHeadCls}>
+          <tr>
+            <th className={`${balanceThCenterCls} w-12`}>#</th>
+            <th
+              className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
+              onClick={() => onSort('date')}
+              title="Clique para ordenar por Data"
+            >
+              <span className="inline-flex items-center gap-2">
+                Data
+                {getSortIcon('date')}
+              </span>
+            </th>
+            <th
+              className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
+              onClick={() => onSort('description')}
+              title="Clique para ordenar por Descrição"
+            >
+              <span className="inline-flex items-center gap-2">
+                Descrição
+                {getSortIcon('description')}
+              </span>
+            </th>
+            <th
+              className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
+              onClick={() => onSort('category')}
+              title="Clique para ordenar por Categoria"
+            >
+              <span className="inline-flex items-center gap-2">
+                Tag/Subtag
+                {getSortIcon('category')}
+              </span>
+            </th>
+            <th
+              className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
+              onClick={() => onSort('amount')}
+              title="Clique para ordenar por Valor total"
+            >
+              <span className="inline-flex items-center gap-2">
+                Valor total
+                {getSortIcon('amount')}
+              </span>
+            </th>
+            <th
+              className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
+              onClick={() => onSort('my_percentage')}
+              title="Clique para ordenar por %"
+            >
+              <span className="inline-flex items-center gap-2">
+                %
+                {getSortIcon('my_percentage')}
+              </span>
+            </th>
+            <th
+              className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
+              onClick={() => onSort('my_value')}
+              title="Clique para ordenar por Minha parte"
+            >
+              <span className="inline-flex items-center gap-2">
+                Minha parte
+                {getSortIcon('my_value')}
+              </span>
+            </th>
+            <th
+              className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
+              onClick={() => onSort('partner_value')}
+              title="Clique para ordenar por Contraparte"
+            >
+              <span className="inline-flex items-center gap-2">
+                Contraparte
+                {getSortIcon('partner_value')}
+              </span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item, index) => {
+            const share = computeItemShare(item)
+
+            return (
+              <tr key={item.id} className={listPageTableRowHoverCls}>
+                <td className={`${balanceTdCls} text-center text-sm text-gray-500 dark:text-gray-400`}>
+                  {index + 1}
+                </td>
+                <td className={`${balanceTdCls} whitespace-nowrap text-gray-600 dark:text-gray-400`}>
+                  {new Date(item.date).toLocaleDateString('pt-BR')}
+                </td>
+                <td className={`${balanceTdCls} font-medium text-gray-900 dark:text-white`}>
+                  {item.description}
+                  {item.current_installment && item.total_installments && item.total_installments > 1 && (
+                    <span className="ml-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">
+                      ({item.current_installment}/{item.total_installments})
+                    </span>
+                  )}
+                </td>
+                <td className={`${balanceTdCls} text-gray-500 dark:text-gray-400`}>
+                  {item.tag_name ? (
+                    <>{item.tag_name}{item.subtag_name && ` > ${item.subtag_name}`}</>
+                  ) : '—'}
+                </td>
+                <td className={`${balanceTdCls} text-right tabular-nums font-semibold whitespace-nowrap ${moneyToneCls(share.rawAmount)}`}>
+                  {formatSignedCurrency(share.rawAmount)}
+                </td>
+                <td className={`${balanceTdCls} text-center font-medium text-gray-700 dark:text-gray-300`}>
+                  {share.myPercentage.toFixed(0)}%
+                </td>
+                <td className={`${balanceTdCls} text-right tabular-nums font-semibold whitespace-nowrap ${moneyToneCls(share.mine)}`}>
+                  {formatShareCell(share.mine, true)}
+                </td>
+                <td className={`${balanceTdCls} text-right tabular-nums font-semibold whitespace-nowrap ${moneyToneCls(share.partner)}`}>
+                  {formatShareCell(share.partner, true)}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -249,8 +468,6 @@ const BalanceDetailsModal = ({
         if (firstMonth) {
           setActiveTab(firstMonth)
         }
-      } else {
-        setActiveTab(expenseItems.length > 0 ? 'expenses' : 'revenues')
       }
       // Reseta ordenação padrão
       setSortConfig([
@@ -311,65 +528,13 @@ const BalanceDetailsModal = ({
     })
   }
 
-  // Ordena os itens com base na configuração de ordenação
-  const currentItems = (
-    isCreditCard
-      ? (groupedByMonth[activeTab] || [])
-      : (activeTab === 'expenses' ? expenseItems : filteredRevenueItems)
-  ).sort((a, b) => {
-    for (const sort of sortConfig) {
-      let compareResult = 0
+  const periodItems = isCreditCard ? groupedByMonth[activeTab] || [] : []
+  const sortedPeriodItems = sortBalanceItems(periodItems, sortConfig)
+  const sortedExpenseItems = sortBalanceItems(expenseItems, sortConfig)
+  const sortedRevenueItems = sortBalanceItems(filteredRevenueItems, sortConfig)
 
-      switch (sort.field) {
-        case 'date':
-          compareResult = new Date(a.date).getTime() - new Date(b.date).getTime()
-          break
-        case 'description':
-          compareResult = a.description.localeCompare(b.description, 'pt-BR')
-          break
-        case 'category':
-          const catA = a.tag_name ? `${a.tag_name}${a.subtag_name ? ` > ${a.subtag_name}` : ''}` : ''
-          const catB = b.tag_name ? `${b.tag_name}${b.subtag_name ? ` > ${b.subtag_name}` : ''}` : ''
-          compareResult = catA.localeCompare(catB, 'pt-BR')
-          break
-        case 'amount':
-          compareResult = Math.abs(Number(a.amount)) - Math.abs(Number(b.amount))
-          break
-        case 'my_percentage':
-          compareResult = Number(a.my_contribution_percentage ?? 0) - Number(b.my_contribution_percentage ?? 0)
-          break
-        case 'my_value':
-          const myValueA = Math.abs(Number(a.amount)) * (Number(a.my_contribution_percentage ?? 0) / 100)
-          const myValueB = Math.abs(Number(b.amount)) * (Number(b.my_contribution_percentage ?? 0) / 100)
-          compareResult = myValueA - myValueB
-          break
-        case 'partner_value':
-          const partnerValueA = Math.abs(Number(a.amount)) * (Number(a.partner_contribution_percentage ?? 0) / 100)
-          const partnerValueB = Math.abs(Number(b.amount)) * (Number(b.partner_contribution_percentage ?? 0) / 100)
-          compareResult = partnerValueA - partnerValueB
-          break
-      }
-
-      if (compareResult !== 0) {
-        return sort.direction === 'asc' ? compareResult : -compareResult
-      }
-    }
-
-    return 0
-  })
-
-  const receitasForSummary = isCreditCard
-    ? currentItems.filter((item) => Number(item.amount) > 0)
-    : activeTab === 'revenues'
-      ? currentItems.map((item) => ({ ...item, amount: Math.abs(Number(item.amount)) }))
-      : []
-  const despesasForSummary = isCreditCard
-    ? currentItems.filter((item) => Number(item.amount) < 0)
-    : activeTab === 'expenses'
-      ? currentItems.map((item) => ({ ...item, amount: -Math.abs(Number(item.amount)) }))
-      : []
-  const summaryReceitas = computeFlowTotals(receitasForSummary, true)
-  const summaryDespesas = computeFlowTotals(despesasForSummary, true)
+  const summaryHint =
+    'Receitas, despesas e resultado, com a divisão entre a sua parte e a da contraparte.'
 
   // Função para renderizar o ícone de ordenação
   const getSortIcon = (field: SortField) => {
@@ -399,7 +564,7 @@ const BalanceDetailsModal = ({
 
   // Agrupa itens por cartão (apenas para credit_card)
   const groupedByCard = isCreditCard
-    ? currentItems.reduce((acc, item) => {
+    ? sortedPeriodItems.reduce((acc, item) => {
         const cardKey = `${item.card_name || 'Sem cartão'}|${item.card_id || 0}`
         if (!acc[cardKey]) acc[cardKey] = []
         acc[cardKey].push(item)
@@ -407,19 +572,13 @@ const BalanceDetailsModal = ({
       }, {} as Record<string, BalanceItem[]>)
     : {}
 
-  // Ordena grupos de cartão e seus itens
   const sortedCardGroups = Object.entries(groupedByCard)
     .map(([cardKey, items]) => {
       const [cardName] = cardKey.split('|')
-      const cardNumber = items[0]?.card_number || ''
-      const cardActive = items[0]?.card_active ?? true  // Default true se não informado
-      const cardClosingDay = items[0]?.card_closing_day ?? items[0]?.card_due_day
-      return { cardName, cardNumber, cardActive, cardClosingDay, items }
+      const cardNumber = items[0]?.card_number ? String(items[0].card_number) : ''
+      return { cardName, cardNumber, items }
     })
-    .sort((a, b) => {
-      // Ordena cartões por número (últimos 4 dígitos)
-      return (a.cardNumber || '').localeCompare(b.cardNumber || '', 'pt-BR')
-    })
+    .sort((a, b) => (a.cardNumber || '').localeCompare(b.cardNumber || '', 'pt-BR'))
 
   return (
     <CadastroModalShell maxWidth="max-w-[95vw] xl:max-w-[90vw] 2xl:max-w-[85vw]" onBackdropClick={onClose}>
@@ -503,336 +662,96 @@ const BalanceDetailsModal = ({
                 </div>
               ) : null}
             </div>
-          ) : expenseItems.length > 0 || filteredRevenueItems.length > 0 ? (
-            <CadastroModalTabs
-              ariaLabel="Tipo de lançamento"
-              active={activeTab}
-              onChange={setActiveTab}
-              className="mb-4 rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden dark:border-gray-700 dark:bg-gray-800"
-              barClassName="px-2"
-              tabs={[
-                ...(expenseItems.length > 0
-                  ? [{ key: 'expenses', label: 'Despesas', badge: expenseItems.length }]
-                  : []),
-                ...(filteredRevenueItems.length > 0
-                  ? [{ key: 'revenues', label: 'Receitas', badge: filteredRevenueItems.length }]
-                  : []),
-              ]}
-            />
           ) : null
         }
       >
           <div className={`${cadastroSectionsStackCls} pt-1`}>
-            <CadastroFormSection
-              title="Resumo"
-              hint="Receitas, despesas e resultado do período selecionado, com a divisão entre a sua parte e a da contraparte."
-              icon={<Scale size={14} />}
-              bodyClassName="p-0"
-            >
-              <BalanceFlowSummaryTable receitas={summaryReceitas} despesas={summaryDespesas} />
-            </CadastroFormSection>
-
           {isCreditCard ? (
-            // Renderiza tabelas separadas por cartão
-            <>
-              {sortedCardGroups.map(({ cardName, cardNumber, cardActive, cardClosingDay, items }) => {
-                return (
-                  <CadastroFormSection
-                    key={cardName}
-                    title={`${cardName}${cardNumber ? ` *** ${cardNumber.slice(-4)}` : ''} (${items.length} ${items.length === 1 ? 'item' : 'itens'})`}
-                    icon={<CreditCard size={14} />}
-                    bodyClassName="p-0"
-                    trailing={
-                      <div className="flex items-center gap-2">
-                        {cardClosingDay && items[0]?.year_month && (() => {
-                          const [year, month] = items[0].year_month!.split('-')
-                          const lastDay = new Date(parseInt(year, 10), parseInt(month, 10), 0).getDate()
-                          const day = Math.min(Math.max(cardClosingDay, 1), lastDay)
-                          const closingDate = new Date(parseInt(year, 10), parseInt(month, 10) - 1, day, 23, 59, 59)
-                          const formattedDate = closingDate.toLocaleString('pt-BR', {
-                            day: '2-digit',
-                            month: '2-digit',
-                            year: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            second: '2-digit'
-                          })
-                          return (
-                            <span className="text-xs text-gray-600 dark:text-gray-400 bg-gray-200 dark:bg-gray-600 px-2 py-1 rounded">
-                              Fechou dia {formattedDate}
-                            </span>
-                          )
-                        })()}
-                        <span className={`inline-flex items-center justify-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
-                          cardActive
-                            ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
-                            : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
-                        }`}>
-                          {cardActive ? '✅ Ativo' : '⏸️ Inativo'}
-                        </span>
-                      </div>
-                    }
-                  >
-                    <div className="overflow-x-auto">
-                      <table className="w-full min-w-[1000px] text-sm">
-                        <thead className={balanceTableHeadCls}>
-                          <tr>
-                            <th className={`${balanceThCenterCls} w-12`}>#</th>
-                            <th
-                              className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
-                              onClick={() => handleSort('date')}
-                              title="Clique para ordenar por Data"
-                            >
-                              <span className="inline-flex items-center gap-2">
-                                Data
-                                {getSortIcon('date')}
-                              </span>
-                            </th>
-                            <th
-                              className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
-                              onClick={() => handleSort('description')}
-                              title="Clique para ordenar por Descrição"
-                            >
-                              <span className="inline-flex items-center gap-2">
-                                Descrição
-                                {getSortIcon('description')}
-                              </span>
-                            </th>
-                            <th
-                              className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
-                              onClick={() => handleSort('category')}
-                              title="Clique para ordenar por Categoria"
-                            >
-                              <span className="inline-flex items-center gap-2">
-                                Tag/Subtag
-                                {getSortIcon('category')}
-                              </span>
-                            </th>
-                            <th
-                              className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
-                              onClick={() => handleSort('amount')}
-                              title="Clique para ordenar por Valor total"
-                            >
-                              <span className="inline-flex items-center gap-2">
-                                Valor total
-                                {getSortIcon('amount')}
-                              </span>
-                            </th>
-                            <th
-                              className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
-                              onClick={() => handleSort('my_percentage')}
-                              title="Clique para ordenar por %"
-                            >
-                              <span className="inline-flex items-center gap-2">
-                                %
-                                {getSortIcon('my_percentage')}
-                              </span>
-                            </th>
-                            <th
-                              className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
-                              onClick={() => handleSort('my_value')}
-                              title="Clique para ordenar por Minha parte"
-                            >
-                              <span className="inline-flex items-center gap-2">
-                                Minha parte
-                                {getSortIcon('my_value')}
-                              </span>
-                            </th>
-                            <th
-                              className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
-                              onClick={() => handleSort('partner_value')}
-                              title="Clique para ordenar por Contraparte"
-                            >
-                              <span className="inline-flex items-center gap-2">
-                                Contraparte
-                                {getSortIcon('partner_value')}
-                              </span>
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {items.map((item, index) => {
-                            const myPercentage = Number(item.my_contribution_percentage ?? 0)
-                            const partnerPercentage = Number(item.partner_contribution_percentage ?? 0)
-                            const myValue = Math.abs(Number(item.amount)) * (myPercentage / 100)
-                            const partnerValue = Math.abs(Number(item.amount)) * (partnerPercentage / 100)
-                            const isNegative = Number(item.amount) < 0
-
-                            return (
-                              <tr key={item.id} className={listPageTableRowHoverCls}>
-                                <td className={`${balanceTdCls} text-center text-sm text-gray-500 dark:text-gray-400`}>
-                                  {index + 1}
-                                </td>
-                                <td className={`${balanceTdCls} whitespace-nowrap text-gray-600 dark:text-gray-400`}>
-                                  {new Date(item.date).toLocaleDateString('pt-BR')}
-                                </td>
-                                <td className={`${balanceTdCls} font-medium text-gray-900 dark:text-white`}>
-                                  {item.description}
-                                  {item.current_installment && item.total_installments && item.total_installments > 1 && (
-                                    <span className="ml-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">
-                                      ({item.current_installment}/{item.total_installments})
-                                    </span>
-                                  )}
-                                </td>
-                                <td className={`${balanceTdCls} text-gray-500 dark:text-gray-400`}>
-                                  {item.tag_name ? (
-                                    <>{item.tag_name}{item.subtag_name && ` > ${item.subtag_name}`}</>
-                                  ) : '—'}
-                                </td>
-                                <td className={`${balanceTdCls} text-right tabular-nums font-semibold whitespace-nowrap ${moneyToneCls(Number(item.amount))}`}>
-                                  {formatSignedCurrency(Number(item.amount))}
-                                </td>
-                                <td className={`${balanceTdCls} font-medium text-gray-700 dark:text-gray-300`}>
-                                  {myPercentage.toFixed(0)}%
-                                </td>
-                                <td className={`${balanceTdCls} text-right tabular-nums font-semibold whitespace-nowrap text-color-primary`}>
-                                  {formatSignedCurrency(isNegative ? -myValue : myValue)}
-                                </td>
-                                <td className={`${balanceTdCls} text-right tabular-nums font-medium whitespace-nowrap text-color-secondary`}>
-                                  {formatSignedCurrency(isNegative ? -partnerValue : partnerValue)}
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </CadastroFormSection>
+            sortedCardGroups.length === 0 ? (
+              <p className="py-6 text-center text-sm text-gray-500 dark:text-gray-400">Nenhum lançamento neste período.</p>
+            ) : (
+              sortedCardGroups.map(({ cardName, cardNumber, items }) => {
+                const cardReceitas = sortBalanceItems(
+                  items.filter((item) => Number(item.amount) >= 0),
+                  sortConfig,
                 )
-              })}
-            </>
-          ) : (
-            <CadastroFormSection
-              title={activeTab === 'expenses' ? 'Despesas' : 'Receitas'}
-              icon={isBenefitCard ? <Gift size={14} /> : <Receipt size={14} />}
-              bodyClassName="p-0"
-            >
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1000px] text-sm">
-                <thead className={balanceTableHeadCls}>
-                  <tr>
-                    <th className={`${balanceThCenterCls} w-12`}>#</th>
-                    <th
-                      className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
-                      onClick={() => handleSort('date')}
-                      title="Clique para ordenar por Data"
-                    >
-                      <span className="inline-flex items-center gap-2">
-                        Data
-                        {getSortIcon('date')}
-                      </span>
-                    </th>
-                    <th
-                      className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
-                      onClick={() => handleSort('description')}
-                      title="Clique para ordenar por Descrição"
-                    >
-                      <span className="inline-flex items-center gap-2">
-                        Descrição
-                        {getSortIcon('description')}
-                      </span>
-                    </th>
-                    <th
-                      className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
-                      onClick={() => handleSort('category')}
-                      title="Clique para ordenar por Categoria"
-                    >
-                      <span className="inline-flex items-center gap-2">
-                        Tag/Subtag
-                        {getSortIcon('category')}
-                      </span>
-                    </th>
-                    <th
-                      className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
-                      onClick={() => handleSort('amount')}
-                      title="Clique para ordenar por Valor total"
-                    >
-                      <span className="inline-flex items-center gap-2">
-                        Valor total
-                        {getSortIcon('amount')}
-                      </span>
-                    </th>
-                    <th
-                      className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
-                      onClick={() => handleSort('my_percentage')}
-                      title="Clique para ordenar por %"
-                    >
-                      <span className="inline-flex items-center gap-2">
-                        %
-                        {getSortIcon('my_percentage')}
-                      </span>
-                    </th>
-                    <th
-                      className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
-                      onClick={() => handleSort('my_value')}
-                      title="Clique para ordenar por Minha parte"
-                    >
-                      <span className="inline-flex items-center gap-2">
-                        Minha parte
-                        {getSortIcon('my_value')}
-                      </span>
-                    </th>
-                    <th
-                      className={`${balanceThLeftCls} cursor-pointer select-none hover:bg-gray-200/60 dark:hover:bg-gray-700/60`}
-                      onClick={() => handleSort('partner_value')}
-                      title="Clique para ordenar por Contraparte"
-                    >
-                      <span className="inline-flex items-center gap-2">
-                        Contraparte
-                        {getSortIcon('partner_value')}
-                      </span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {currentItems.map((item, index) => {
-                    const myPercentage = Number(item.my_contribution_percentage ?? 0)
-                    const partnerPercentage = Number(item.partner_contribution_percentage ?? 0)
-                    const myValue = Math.abs(Number(item.amount)) * (myPercentage / 100)
-                    const partnerValue = Math.abs(Number(item.amount)) * (partnerPercentage / 100)
-                    const signedAmount =
-                      activeTab === 'expenses' ? -Math.abs(Number(item.amount)) : Math.abs(Number(item.amount))
+                const cardDespesas = sortBalanceItems(
+                  items.filter((item) => Number(item.amount) < 0),
+                  sortConfig,
+                )
+                const groupKey = `${cardName}|${cardNumber}`
 
-                    return (
-                      <tr key={item.id} className={listPageTableRowHoverCls}>
-                        <td className={`${balanceTdCls} text-center text-sm text-gray-500 dark:text-gray-400`}>
-                          {index + 1}
-                        </td>
-                        <td className={`${balanceTdCls} whitespace-nowrap text-gray-600 dark:text-gray-400`}>
-                          {new Date(item.date).toLocaleDateString('pt-BR')}
-                        </td>
-                        <td className={`${balanceTdCls} font-medium text-gray-900 dark:text-white`}>
-                          {item.description}
-                          {item.current_installment && item.total_installments && item.total_installments > 1 && (
-                            <span className="ml-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">
-                              ({item.current_installment}/{item.total_installments})
-                            </span>
-                          )}
-                        </td>
-                        <td className={`${balanceTdCls} text-gray-500 dark:text-gray-400`}>
-                          {item.tag_name ? (
-                            <>{item.tag_name}{item.subtag_name && ` > ${item.subtag_name}`}</>
-                          ) : '—'}
-                        </td>
-                        <td className={`${balanceTdCls} text-right tabular-nums font-semibold whitespace-nowrap ${moneyToneCls(signedAmount)}`}>
-                          {formatSignedCurrency(signedAmount)}
-                        </td>
-                        <td className={`${balanceTdCls} font-medium text-gray-700 dark:text-gray-300`}>
-                          {myPercentage.toFixed(0)}%
-                        </td>
-                        <td className={`${balanceTdCls} text-right tabular-nums font-semibold whitespace-nowrap text-color-primary`}>
-                          {formatSignedCurrency(activeTab === 'expenses' ? -myValue : myValue)}
-                        </td>
-                        <td className={`${balanceTdCls} text-right tabular-nums font-medium whitespace-nowrap text-color-secondary`}>
-                          {formatSignedCurrency(activeTab === 'expenses' ? -partnerValue : partnerValue)}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-            </CadastroFormSection>
+                return (
+                  <div key={groupKey} className="space-y-4">
+                    <CadastroFormSection
+                      title={cardSummaryTitle(cardName, cardNumber)}
+                      hint={summaryHint}
+                      icon={<CreditCard size={14} />}
+                      bodyClassName="p-0"
+                    >
+                      <BalanceFlowSummaryTable
+                        receitas={sumFlowTotals(cardReceitas)}
+                        despesas={sumFlowTotals(cardDespesas)}
+                      />
+                    </CadastroFormSection>
+                    {cardReceitas.length > 0 && (
+                      <CadastroFormSection title="Receitas" icon={<ArrowUpCircle size={14} />} bodyClassName="p-0">
+                        <BalanceDetailsItemsTable
+                          items={cardReceitas}
+                          sortConfig={sortConfig}
+                          onSort={handleSort}
+                          getSortIcon={getSortIcon}
+                        />
+                      </CadastroFormSection>
+                    )}
+                    {cardDespesas.length > 0 && (
+                      <CadastroFormSection title="Despesas" icon={<ArrowDownCircle size={14} />} bodyClassName="p-0">
+                        <BalanceDetailsItemsTable
+                          items={cardDespesas}
+                          sortConfig={sortConfig}
+                          onSort={handleSort}
+                          getSortIcon={getSortIcon}
+                        />
+                      </CadastroFormSection>
+                    )}
+                  </div>
+                )
+              })
+            )
+          ) : (
+            <>
+              <CadastroFormSection
+                title={`Resumo · ${sourceSummaryLabel(type)}`}
+                hint={summaryHint}
+                icon={<Scale size={14} />}
+                bodyClassName="p-0"
+              >
+                <BalanceFlowSummaryTable
+                  receitas={sumFlowTotals(filteredRevenueItems)}
+                  despesas={sumFlowTotals(expenseItems)}
+                />
+              </CadastroFormSection>
+              {filteredRevenueItems.length > 0 && (
+                <CadastroFormSection title="Receitas" icon={<ArrowUpCircle size={14} />} bodyClassName="p-0">
+                  <BalanceDetailsItemsTable
+                    items={sortedRevenueItems}
+                    sortConfig={sortConfig}
+                    onSort={handleSort}
+                    getSortIcon={getSortIcon}
+                  />
+                </CadastroFormSection>
+              )}
+              {expenseItems.length > 0 && (
+                <CadastroFormSection title="Despesas" icon={<ArrowDownCircle size={14} />} bodyClassName="p-0">
+                  <BalanceDetailsItemsTable
+                    items={sortedExpenseItems}
+                    sortConfig={sortConfig}
+                    onSort={handleSort}
+                    getSortIcon={getSortIcon}
+                  />
+                </CadastroFormSection>
+              )}
+            </>
           )}
           </div>
       </CadastroModalBody>

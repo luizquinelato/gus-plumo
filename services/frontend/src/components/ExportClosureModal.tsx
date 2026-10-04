@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Download, FileSpreadsheet, FileText } from 'lucide-react'
 import {
+  CadastroFieldLabel,
   CadastroFormSection,
   CadastroModalBody,
   CadastroModalFieldsGrid,
@@ -60,37 +61,40 @@ export const ExportClosureModal: React.FC<ExportClosureModalProps> = ({
         icon={<Download size={18} />}
       />
       <CadastroModalBody>
-        <CadastroFormSection title="Formato" icon={<FileText size={14} />}>
+        <CadastroFormSection title="Formato" icon={<FileText size={14} />} bodyClassName="p-0">
           <CadastroModalFieldsGrid>
-            <CadastroModalFieldsRow cols={2}>
-              <button
-                type="button"
-                onClick={() => setFormat('pdf')}
-                className={`flex items-center justify-center gap-1.5 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all ${
-                  format === 'pdf'
-                    ? 'border-[var(--color-1)] bg-[color-mix(in_srgb,var(--color-1)_12%,white)] text-gray-900 dark:bg-[color-mix(in_srgb,var(--color-1)_20%,transparent)] dark:text-white'
-                    : 'border-gray-300 text-gray-600 hover:border-gray-400 dark:border-gray-600 dark:text-gray-400'
-                }`}
-              >
-                <FileText size={16} />
-                PDF
-              </button>
-              <button
-                type="button"
-                onClick={() => setFormat('excel')}
-                className={`flex items-center justify-center gap-1.5 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all ${
-                  format === 'excel'
-                    ? 'border-[var(--color-1)] bg-[color-mix(in_srgb,var(--color-1)_12%,white)] text-gray-900 dark:bg-[color-mix(in_srgb,var(--color-1)_20%,transparent)] dark:text-white'
-                    : 'border-gray-300 text-gray-600 hover:border-gray-400 dark:border-gray-600 dark:text-gray-400'
-                }`}
-              >
-                <FileSpreadsheet size={16} />
-                Excel
-              </button>
+            <CadastroModalFieldsRow>
+              <div className="min-w-0">
+                <CadastroFieldLabel>Arquivo</CadastroFieldLabel>
+                <div className="mt-1.5 flex flex-wrap items-center gap-6">
+                  <label className={cadastroOptionLabelCls}>
+                    <input
+                      type="radio"
+                      name="closure-export-format"
+                      checked={format === 'pdf'}
+                      onChange={() => setFormat('pdf')}
+                      className={cadastroAccentControlCls}
+                    />
+                    <FileText size={16} className="text-gray-500 dark:text-gray-400" />
+                    PDF
+                  </label>
+                  <label className={cadastroOptionLabelCls}>
+                    <input
+                      type="radio"
+                      name="closure-export-format"
+                      checked={format === 'excel'}
+                      onChange={() => setFormat('excel')}
+                      className={cadastroAccentControlCls}
+                    />
+                    <FileSpreadsheet size={16} className="text-gray-500 dark:text-gray-400" />
+                    Excel
+                  </label>
+                </div>
+              </div>
             </CadastroModalFieldsRow>
           </CadastroModalFieldsGrid>
         </CadastroFormSection>
-        <CadastroFormSection title="Opções" icon={<Download size={14} />}>
+        <CadastroFormSection title="Opções" icon={<Download size={14} />} bodyClassName="p-0">
           <CadastroModalFieldsGrid>
             <CadastroModalFieldsRow>
               <label className={`${cadastroOptionLabelCls} items-start`}>

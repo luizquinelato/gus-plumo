@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Sidebar from '../components/Sidebar'
 import {
   CadastroListCreateButton,
@@ -12,17 +12,21 @@ import {
   CadastroListPageTabs,
   cadastroRowIconBtnCls,
   cadastroRowIconDangerCls,
+  listPageTableBodyCls,
+  listPageTableChromeHeaderCls,
+  listPageTableCls,
   listPageTableRowHoverCls,
   type StatusFilter,
 } from '../components/CadastroListPageLayout'
 import FloatingFooterBar from '../components/FloatingFooterBar'
 import BulkSelectCheckbox, { type HeaderCheckState } from '../components/BulkSelectCheckbox'
-import { ListPageExpandRow, ListPageNestedTable, ListPageTable } from '../components/ListPageTable'
+import { ListPageNestedTable } from '../components/ListPageTable'
 import {
   ListTableCheckboxCell,
   ListTableCheckboxHeader,
   ListTableIndexCell,
   ListTableIndexHeader,
+  ListTableLeadingCols,
   ListTableSpacerCell,
   ListTableSpacerCol,
   ListTableSpacerHeader,
@@ -121,37 +125,52 @@ interface ToastState {
 
 const OWNERSHIP_TONE = badgeToneMap(['proprio', 'gerenciado', 'compartilhado'] as const, 'brand')
 const CARD_TYPE_TONE = badgeToneMap(['credito', 'beneficios'] as const, 'brand')
-const CARD_TABLE_COL_SPAN = 12
-const CARD_LIST_TABLE_MIN_WIDTH = 1080
 
-/** Larguras das colunas de dados (após checkbox / # / spacer). */
-const cardListTableColsRest = (
+/** Mesmo padrão visual da lista em EmprestimosPage (card + borda lateral). */
+const cardListItemCls =
+  'rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800'
+const cardListGroupCls = `${cardListItemCls} border-l-4 border-l-[var(--color-1)]`
+
+/** Checkbox / # / spacer fixos; 9 colunas de dados repartem o resto igualmente (`table-fixed`). */
+const cardCartoesTableColsEqual = (
   <>
     <ListTableSpacerCol />
-    <col style={{ width: 192, minWidth: 160 }} />
-    <col style={{ width: 92, minWidth: 88 }} />
-    <col style={{ width: 80, minWidth: 76 }} />
-    <col style={{ width: 60, minWidth: 56 }} />
-    <col style={{ width: 60, minWidth: 56 }} />
-    <col style={{ width: 108, minWidth: 100 }} />
-    <col style={{ width: 120, minWidth: 108 }} />
-    <col style={{ width: 112, minWidth: 100 }} />
-    <col style={{ width: 84, minWidth: 76 }} />
+    <col />
+    <col />
+    <col />
+    <col />
+    <col />
+    <col />
+    <col />
+    <col />
+    <col />
   </>
 )
 
-const cardNestedTableColsRest = (
-  <>
-    <ListTableSpacerCol />
-    <col style={{ width: 192, minWidth: 160 }} />
-    <col style={{ width: 80, minWidth: 76 }} />
-    <col style={{ width: 60, minWidth: 56 }} />
-    <col style={{ width: 60, minWidth: 56 }} />
-    <col style={{ width: 108, minWidth: 100 }} />
-    <col style={{ width: 112, minWidth: 100 }} />
-    <col style={{ width: 84, minWidth: 76 }} />
-  </>
-)
+function CardNestedTableHead({
+  checkboxState,
+  onToggleCheckbox,
+}: {
+  checkboxState: HeaderCheckState
+  onToggleCheckbox: () => void
+}) {
+  return (
+    <tr>
+      <ListTableCheckboxHeader state={checkboxState} onToggle={onToggleCheckbox} />
+      <ListTableIndexHeader />
+      <ListTableSpacerHeader />
+      <ListTableStaticHeader label="Nome" className="px-3 py-2" />
+      <ListTableStaticHeader label="Tipo" className="px-3 py-2" />
+      <ListTableStaticHeader label="Final" className="px-3 py-2" />
+      <ListTableStaticHeader label="Fech." className="px-2 py-2 text-center" />
+      <ListTableStaticHeader label="Venc." className="px-2 py-2 text-center" />
+      <ListTableStaticHeader label="Propriedade" className="px-3 py-2" />
+      <ListTableStaticHeader label="Compart." className="px-3 py-2" />
+      <ListTableStaticHeader label="Status" className="px-3 py-2" />
+      <ListTableStaticHeader label="Ações" className="px-2 py-2" />
+    </tr>
+  )
+}
 
 function ActiveSwitch({
   checked,
@@ -715,6 +734,11 @@ const CartoesPage = () => {
     [groupedRows, expandedGroups],
   )
 
+  const ungroupedCardsSelectState = useMemo(
+    () => selectionHeaderState(ungroupedCards.map((c) => c.id), selectedCardIds),
+    [ungroupedCards, selectedCardIds],
+  )
+
   const expandAllGroups = useCallback(() => {
     setExpandedGroups(new Set(groupedRows.map((row) => row.group.id)))
   }, [groupedRows])
@@ -788,6 +812,74 @@ const CartoesPage = () => {
       </button>
     </div>
   )
+
+  const renderCartaoTableRow = (cartao: Cartao, lineIndex: number) => {
+    const isBenefit = cartao.type === 'beneficios'
+    const selected = selectedCardIds.has(cartao.id)
+    return (
+      <tr
+        key={cartao.id}
+        className={`${listPageTableRowHoverCls} ${
+          selected ? 'bg-[color-mix(in_srgb,var(--color-1)_6%,transparent)]' : ''
+        } ${!cartao.active ? 'opacity-80' : ''}`}
+      >
+        <ListTableCheckboxCell checked={selected} onToggle={() => toggleCardSelection(cartao.id)} />
+        <ListTableIndexCell index={lineIndex} />
+        <ListTableSpacerCell />
+        <td className="max-w-0 px-3 py-2">
+          <div className="flex min-w-0 items-center gap-2">
+            {isBenefit ? (
+              <Gift size={14} className="shrink-0 text-[var(--color-3)]" />
+            ) : (
+              <CreditCard size={14} className="shrink-0 text-[var(--color-2)]" />
+            )}
+            <span
+              className={`truncate text-sm font-medium ${
+                cartao.active ? 'text-gray-900 dark:text-gray-100' : 'text-gray-500 dark:text-gray-400'
+              }`}
+            >
+              {cartao.name}
+            </span>
+          </div>
+        </td>
+        <td className="whitespace-nowrap px-3 py-2">
+          <Badge
+            variant={badgeVariantForColumnRole('classificationPrimary')}
+            tone={isBenefit ? CARD_TYPE_TONE.beneficios : CARD_TYPE_TONE.credito}
+            label={isBenefit ? 'Benefícios' : 'Crédito'}
+          />
+        </td>
+        <td className="whitespace-nowrap px-3 py-2 font-mono text-sm text-gray-600 dark:text-gray-300">
+          •••• {cartao.number}
+        </td>
+        <td className="whitespace-nowrap px-2 py-2 text-center text-sm tabular-nums text-gray-600 dark:text-gray-300">
+          {isBenefit ? '—' : cartao.closing_day || 14}
+        </td>
+        <td className="whitespace-nowrap px-2 py-2 text-center text-sm tabular-nums text-gray-600 dark:text-gray-300">
+          {isBenefit ? '—' : cartao.due_day || 14}
+        </td>
+        <td className="whitespace-nowrap px-3 py-2">
+          <Badge
+            variant={badgeVariantForColumnRole('classificationSecondary')}
+            tone={ownershipTone(cartao.ownership_type)}
+            label={getOwnershipTypeLabel(cartao.ownership_type)}
+          />
+        </td>
+        <td className="max-w-0 px-3 py-2">{renderSharingCell(cartao)}</td>
+        <td className="whitespace-nowrap px-3 py-2" onClick={(e) => e.stopPropagation()}>
+          <StatusSwitch
+            checked={cartao.active}
+            onChange={() => handleToggleActive(cartao)}
+            size="sm"
+            labelOn="Ativo"
+            labelOff="Inativo"
+            showLabel
+          />
+        </td>
+        <td className="whitespace-nowrap px-2 py-2">{renderCartaoActions(cartao)}</td>
+      </tr>
+    )
+  }
 
   const handleReativar = (id: number) => {
     showConfirm(
@@ -895,272 +987,141 @@ const CartoesPage = () => {
               description="Tente outro termo de busca."
             />
           ) : (
-            <ListPageTable
-              leadingMode="bulk"
-              minWidth={CARD_LIST_TABLE_MIN_WIDTH}
-              colsRest={cardListTableColsRest}
-              head={
-                <tr>
-                  <ListTableCheckboxHeader state={globalHeaderState} onToggle={toggleGlobalSelection} />
-                  <ListTableIndexHeader />
-                  <ListTableSpacerHeader />
-                  <ListTableStaticHeader label="Nome" />
-                  <ListTableStaticHeader label="Tipo" />
-                  <ListTableStaticHeader label="Final" />
-                  <ListTableStaticHeader label="Fech." className="px-2" />
-                  <ListTableStaticHeader label="Venc." className="px-2" />
-                  <ListTableStaticHeader label="Propriedade" />
-                  <ListTableStaticHeader label="Compart." />
-                  <ListTableStaticHeader label="Status" />
-                  <ListTableStaticHeader label="Ações" className="px-2" />
-                </tr>
-              }
-            >
-              {(() => {
-                let rowIndex = 0
-                return (
-                  <>
-                    {groupedRows.map(({ group, cards }) => {
-                      rowIndex += 1
-                      const isExpanded = expandedGroups.has(group.id)
-                      const groupClose = group.closing_day ?? 14
-                      const groupDue = group.due_day ?? 14
-                      const groupCardsState = selectionHeaderState(
-                        cards.map((c) => c.id),
-                        selectedCardIds,
-                      )
-                      const groupRowSelected = groupCardsState !== 'none'
-                      return (
-                        <Fragment key={`group-${group.id}`}>
-                          <tr
-                            className={`${listPageTableRowHoverCls} ${
-                              isExpanded ? 'bg-[color-mix(in_srgb,var(--color-1)_4%,transparent)] [&>td]:border-b-0' : ''
-                            } ${groupRowSelected && !isExpanded ? 'table-row-selected bg-[color-mix(in_srgb,var(--color-1)_7%,transparent)]' : ''}`}
-                          >
-                            <ListTableCheckboxCell
-                              state={groupCardsState}
-                              onToggle={() => toggleGroupCardsSelection(cards)}
-                            />
-                            <ListTableIndexCell index={rowIndex} />
-                            <ListTableSpacerCell />
-                            <td className="max-w-0 cursor-pointer px-3 py-3" onClick={() => toggleGroupExpand(group.id)}>
-                              <div className="flex min-w-0 items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    toggleGroupExpand(group.id)
-                                  }}
-                                  className={`${cadastroRowIconBtnCls} shrink-0`}
-                                  title={isExpanded ? 'Recolher cartões' : 'Expandir cartões'}
-                                  aria-expanded={isExpanded}
-                                >
-                                  {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                                </button>
-                                <Layers size={16} className="shrink-0" style={{ color: 'var(--color-1)' }} />
-                                <span
-                                  className={`min-w-0 flex-1 truncate text-sm font-semibold ${
-                                    isExpanded ? 'text-[var(--color-1)]' : 'text-gray-800 dark:text-gray-100'
-                                  }`}
-                                  title={group.name}
-                                >
-                                  {group.name}
-                                </span>
-                              </div>
-                            </td>
-                            <td className="px-3 py-3">
-                              <Badge variant={badgeVariantForColumnRole('scope')} tone="brand4" label="Conjunta" />
-                            </td>
-                            <td className="px-3 py-3 text-sm text-gray-400">—</td>
-                            <td className="px-2 py-3 text-center text-sm tabular-nums text-gray-600 dark:text-gray-300">{groupClose}</td>
-                            <td className="px-2 py-3 text-center text-sm tabular-nums text-gray-600 dark:text-gray-300">{groupDue}</td>
-                            <td className="px-3 py-3 text-sm text-gray-400">—</td>
-                            <td className="px-3 py-3 text-sm text-gray-400">—</td>
-                            <td className="px-3 py-3 text-sm text-gray-400">—</td>
-                            <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                              <div className="flex items-center gap-0.5">
-                                <button
-                                  type="button"
-                                  onClick={() => abrirModalGrupoEditar(group)}
-                                  className={cadastroRowIconBtnCls}
-                                  title="Editar grupo"
-                                >
-                                  <Edit2 size={15} />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => excluirGrupo(group)}
-                                  className={cadastroRowIconDangerCls}
-                                  title="Excluir grupo"
-                                >
-                                  <Trash2 size={15} />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                          {isExpanded && (
-                            <ListPageExpandRow colSpan={CARD_TABLE_COL_SPAN}>
-                              {cards.length === 0 ? (
-                                <p className="text-sm text-gray-500">Nenhum cartão neste grupo para o filtro atual.</p>
-                              ) : (
-                                <>
-                                  <div className="mb-3 flex items-center gap-2">
-                                    <BulkSelectCheckbox
-                                      state={groupCardsState}
-                                      onClick={() => toggleGroupCardsSelection(cards)}
-                                    />
-                                    <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
-                                      Selecionar todos os cartões deste grupo
-                                    </span>
-                                  </div>
-                                  <ListPageNestedTable
-                                    alignWithListLeading
-                                    colsRest={cardNestedTableColsRest}
-                                    head={
-                                      <tr>
-                                        <ListTableCheckboxHeader reserveOnly />
-                                        <ListTableIndexHeader />
-                                        <ListTableSpacerHeader />
-                                        <ListTableStaticHeader label="Nome" />
-                                        <ListTableStaticHeader label="Final" />
-                                        <ListTableStaticHeader label="Fech." className="px-2" />
-                                        <ListTableStaticHeader label="Venc." className="px-2" />
-                                        <ListTableStaticHeader label="Propriedade" />
-                                        <ListTableStaticHeader label="Status" />
-                                        <ListTableStaticHeader label="Ações" className="px-2" />
-                                      </tr>
-                                    }
-                                  >
-                                    {cards.map((cartao, cardIndex) => (
-                                      <tr
-                                        key={cartao.id}
-                                        className={`${listPageTableRowHoverCls} ${
-                                          selectedCardIds.has(cartao.id)
-                                            ? 'bg-[color-mix(in_srgb,var(--color-1)_6%,transparent)]'
-                                            : ''
-                                        }`}
-                                      >
-                                        <ListTableCheckboxCell
-                                          checked={selectedCardIds.has(cartao.id)}
-                                          onToggle={() => toggleCardSelection(cartao.id)}
-                                        />
-                                        <ListTableIndexCell index={cardIndex + 1} />
-                                        <ListTableSpacerCell />
-                                        <td className="max-w-0 px-3 py-2">
-                                          <div className="flex min-w-0 items-center gap-2">
-                                            <CreditCard size={14} className="shrink-0 text-[var(--color-2)]" />
-                                            <span
-                                              className={`truncate text-sm font-medium ${
-                                                cartao.active ? 'text-gray-900 dark:text-gray-100' : 'text-gray-500 dark:text-gray-400'
-                                              }`}
-                                            >
-                                              {cartao.name}
-                                            </span>
-                                          </div>
-                                        </td>
-                                        <td className="px-3 py-2 font-mono text-sm text-gray-600 dark:text-gray-300">•••• {cartao.number}</td>
-                                        <td className="px-2 py-2 text-center text-sm tabular-nums">{cartao.closing_day || 14}</td>
-                                        <td className="px-2 py-2 text-center text-sm tabular-nums">{cartao.due_day || 14}</td>
-                                        <td className="px-3 py-2">
-                                          <Badge
-                                            variant={badgeVariantForColumnRole('classificationSecondary')}
-                                            tone={ownershipTone(cartao.ownership_type)}
-                                            label={getOwnershipTypeLabel(cartao.ownership_type)}
-                                          />
-                                        </td>
-                                        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                                          <StatusSwitch
-                                            checked={cartao.active}
-                                            onChange={() => handleToggleActive(cartao)}
-                                            size="sm"
-                                            showLabel
-                                          />
-                                        </td>
-                                        <td className="px-3 py-2">{renderCartaoActions(cartao)}</td>
-                                      </tr>
-                                    ))}
-                                  </ListPageNestedTable>
-                                </>
-                              )}
-                            </ListPageExpandRow>
-                          )}
-                        </Fragment>
-                      )
-                    })}
-                    {ungroupedCards.map((cartao) => {
-                      rowIndex += 1
-                      const isBenefit = cartao.type === 'beneficios'
-                      const TypeIcon = isBenefit ? Gift : CreditCard
-                      const selected = selectedCardIds.has(cartao.id)
-                      return (
-                        <tr
-                          key={cartao.id}
-                          className={`${listPageTableRowHoverCls} ${
-                            selected ? 'table-row-selected bg-[color-mix(in_srgb,var(--color-1)_7%,transparent)]' : ''
-                          }`}
-                        >
-                          <ListTableCheckboxCell
-                            checked={selected}
-                            onToggle={() => toggleCardSelection(cartao.id)}
-                          />
-                          <ListTableIndexCell index={rowIndex} />
-                          <ListTableSpacerCell />
-                          <td className="max-w-0 px-3 py-3">
-                            <div className="flex min-w-0 items-center gap-2">
-                              <TypeIcon
-                                size={16}
-                                className="shrink-0"
-                                style={{ color: isBenefit ? 'var(--color-3)' : 'var(--color-2)' }}
-                              />
-                              <span
-                                className={`truncate text-sm font-semibold ${
-                                  cartao.active ? 'text-gray-800 dark:text-gray-100' : 'text-gray-500 dark:text-gray-400'
-                                }`}
-                              >
-                                {cartao.name}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="px-3 py-3">
-                            <Badge
-                              variant={badgeVariantForColumnRole('classificationPrimary')}
-                              tone={isBenefit ? CARD_TYPE_TONE.beneficios : CARD_TYPE_TONE.credito}
-                              label={isBenefit ? 'Benefícios' : 'Crédito'}
-                            />
-                          </td>
-                          <td className="px-3 py-3 font-mono text-sm text-gray-600 dark:text-gray-300">•••• {cartao.number}</td>
-                          <td className="px-2 py-3 text-center text-sm tabular-nums text-gray-600 dark:text-gray-300">
-                            {isBenefit ? '—' : cartao.closing_day || 14}
-                          </td>
-                          <td className="px-2 py-3 text-center text-sm tabular-nums text-gray-600 dark:text-gray-300">
-                            {isBenefit ? '—' : cartao.due_day || 14}
-                          </td>
-                          <td className="px-3 py-3">
-                            <Badge
-                              variant={badgeVariantForColumnRole('classificationSecondary')}
-                              tone={ownershipTone(cartao.ownership_type)}
-                              label={getOwnershipTypeLabel(cartao.ownership_type)}
-                            />
-                          </td>
-                          <td className="px-3 py-3">{renderSharingCell(cartao)}</td>
-                          <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                            <StatusSwitch
-                              checked={cartao.active}
-                              onChange={() => handleToggleActive(cartao)}
-                              size="sm"
-                              labelOn="Ativo"
-                              labelOff="Inativo"
-                              showLabel
-                            />
-                          </td>
-                          <td className="px-3 py-3">{renderCartaoActions(cartao)}</td>
-                        </tr>
-                      )
-                    })}
-                  </>
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-2.5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+                <BulkSelectCheckbox state={globalHeaderState} onClick={toggleGlobalSelection} />
+                <span className="text-sm text-gray-600 dark:text-gray-400">
+                  Selecionar todos os cartões visíveis
+                  <span className="ml-1 tabular-nums text-gray-400">({visibleCardIds.length})</span>
+                </span>
+              </div>
+
+              {groupedRows.map(({ group, cards }) => {
+                const isExpanded = expandedGroups.has(group.id)
+                const groupClose = group.closing_day ?? 14
+                const groupDue = group.due_day ?? 14
+                const groupCardsState = selectionHeaderState(
+                  cards.map((c) => c.id),
+                  selectedCardIds,
                 )
-              })()}
-            </ListPageTable>
+                const groupRowSelected = groupCardsState !== 'none'
+                return (
+                  <div
+                    key={`group-${group.id}`}
+                    className={`${cardListGroupCls} ${
+                      groupRowSelected ? 'ring-1 ring-[color-mix(in_srgb,var(--color-1)_35%,transparent)]' : ''
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex min-w-0 flex-1 items-center gap-3">
+                        <BulkSelectCheckbox
+                          state={groupCardsState}
+                          onClick={() => toggleGroupCardsSelection(cards)}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => toggleGroupExpand(group.id)}
+                          className="rounded p-1 hover:bg-gray-100 dark:hover:bg-gray-700"
+                          title={isExpanded ? 'Recolher cartões' : 'Expandir cartões'}
+                          aria-expanded={isExpanded}
+                        >
+                          {isExpanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+                        </button>
+                        <div className="min-w-0 flex-1">
+                          <div className="mb-1 flex min-w-0 items-center gap-2">
+                            <Layers size={18} className="shrink-0" style={{ color: 'var(--color-1)' }} />
+                            <span
+                              className="truncate font-medium text-gray-900 dark:text-white"
+                              title={group.name}
+                            >
+                              {group.name}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500 dark:text-gray-400">
+                            <Badge variant={badgeVariantForColumnRole('scope')} tone="brand4" label="Fatura conjunta" />
+                            <span className="tabular-nums">Fech. {groupClose}</span>
+                            <span className="tabular-nums">Venc. {groupDue}</span>
+                            <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                              {cards.length} {cards.length === 1 ? 'cartão' : 'cartões'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1 self-start">
+                        <button
+                          type="button"
+                          onClick={() => abrirModalGrupoEditar(group)}
+                          className={cadastroRowIconBtnCls}
+                          title="Editar grupo"
+                        >
+                          <Edit2 size={18} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => excluirGrupo(group)}
+                          className={cadastroRowIconDangerCls}
+                          title="Excluir grupo"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {isExpanded && (
+                      <div className="mt-4 ml-10">
+                        {cards.length > 0 && (
+                          <h4 className="mb-3 text-sm font-medium text-gray-900 dark:text-white">Cartões do grupo</h4>
+                        )}
+                        {cards.length === 0 ? (
+                          <p className="text-sm italic text-gray-500 dark:text-gray-400">
+                            Nenhum cartão neste grupo para o filtro atual.
+                          </p>
+                        ) : (
+                          <div className="overflow-x-auto">
+                            <ListPageNestedTable
+                              alignWithListLeading
+                              colsRest={cardCartoesTableColsEqual}
+                              head={
+                                <CardNestedTableHead
+                                  checkboxState={groupCardsState}
+                                  onToggleCheckbox={() => toggleGroupCardsSelection(cards)}
+                                />
+                              }
+                            >
+                              {cards.map((cartao, cardIndex) => renderCartaoTableRow(cartao, cardIndex + 1))}
+                            </ListPageNestedTable>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+
+              {ungroupedCards.length > 0 && (
+                <div className="space-y-3">
+                  {groupedRows.length > 0 && (
+                    <p className="pt-1 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                      Cartões avulsos
+                    </p>
+                  )}
+                  <div className="overflow-x-auto">
+                    <ListPageNestedTable
+                      alignWithListLeading
+                      colsRest={cardCartoesTableColsEqual}
+                      head={
+                        <CardNestedTableHead
+                          checkboxState={ungroupedCardsSelectState}
+                          onToggleCheckbox={() => toggleGroupCardsSelection(ungroupedCards)}
+                        />
+                      }
+                    >
+                      {ungroupedCards.map((cartao, cardIndex) => renderCartaoTableRow(cartao, cardIndex + 1))}
+                    </ListPageNestedTable>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </CadastroListPageBody>
       </CadastroListPageShell>
@@ -1436,7 +1397,7 @@ const CartoesPage = () => {
                       </span>
                       <ActiveSwitch
                         checked={formData.active}
-                        onToggle={() => setFormData({ ...formData, active: !formData.active })}
+                        onClick={() => setFormData({ ...formData, active: !formData.active })}
                         title={formData.active ? 'Ativo' : 'Inativo'}
                       />
                     </div>
@@ -1646,42 +1607,33 @@ const CartoesPage = () => {
               ) : (
                 <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700">
                   <div className="max-h-[min(22rem,50vh)] overflow-y-auto scroll-slim">
-                    <table className="w-full table-fixed text-sm">
+                    <table className={`${listPageTableCls} table-fixed w-full`}>
                       <colgroup>
-                        <col style={{ width: 40, minWidth: 40 }} />
+                        <ListTableLeadingCols mode="bulk" />
+                        <ListTableSpacerCol />
                         <col />
-                        <col style={{ width: 92, minWidth: 92 }} />
+                        <col style={{ width: 92, minWidth: 88 }} />
                         <col style={{ width: 56, minWidth: 56 }} />
                         <col style={{ width: 56, minWidth: 56 }} />
                         <col style={{ width: 220, minWidth: 180 }} />
                       </colgroup>
-                      <thead className="sticky top-0 z-[1] border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/95">
+                      <thead className={`sticky top-0 z-[1] ${listPageTableChromeHeaderCls} [&_th]:py-2`}>
                         <tr>
-                          <th className="px-2 py-2 text-left">
-                            <BulkSelectCheckbox
-                              state={groupCardsSelectState}
-                              onClick={toggleSelectAllGroupCards}
-                            />
-                          </th>
-                          <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                            Nome
-                          </th>
-                          <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                            Final
-                          </th>
-                          <th className="whitespace-nowrap px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                            Fech.
-                          </th>
-                          <th className="whitespace-nowrap px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                            Venc.
-                          </th>
-                          <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                            Situação
-                          </th>
+                          <ListTableCheckboxHeader
+                            state={groupCardsSelectState}
+                            onToggle={toggleSelectAllGroupCards}
+                          />
+                          <ListTableIndexHeader />
+                          <ListTableSpacerHeader />
+                          <ListTableStaticHeader label="Nome" className="px-3 py-2" />
+                          <ListTableStaticHeader label="Final" className="px-3 py-2" />
+                          <ListTableStaticHeader label="Fech." className="px-2 py-2" />
+                          <ListTableStaticHeader label="Venc." className="px-2 py-2" />
+                          <ListTableStaticHeader label="Situação" className="px-3 py-2" />
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                        {cartoesCredito.map((cartao) => {
+                      <tbody className={`${listPageTableBodyCls} [&_td]:py-2`}>
+                        {cartoesCredito.map((cartao, cardPickIndex) => {
                           const selected = groupCardIds.includes(cartao.id)
                           const otherGroup =
                             cartao.invoice_group_id && cartao.invoice_group_id !== editingGroup?.id
@@ -1706,15 +1658,12 @@ const CartoesPage = () => {
                               }`}
                               onClick={() => toggleGroupCard(cartao.id)}
                             >
-                              <td
-                                className="px-2 py-2"
-                                onClick={(event) => event.stopPropagation()}
-                              >
-                                <BulkSelectCheckbox
-                                  checked={selected}
-                                  onClick={() => toggleGroupCard(cartao.id)}
-                                />
-                              </td>
+                              <ListTableCheckboxCell
+                                checked={selected}
+                                onToggle={() => toggleGroupCard(cartao.id)}
+                              />
+                              <ListTableIndexCell index={cardPickIndex + 1} />
+                              <ListTableSpacerCell />
                               <td className="max-w-0 truncate px-3 py-2 font-medium text-gray-900 dark:text-gray-100">
                                 {cartao.name}
                               </td>

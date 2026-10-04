@@ -13,6 +13,7 @@ export const LIST_TABLE_INDEX_COL_PX = 40
 export const LIST_TABLE_DRAG_COL_PX = 36
 export const LIST_TABLE_LEADING_ROW_PX = 48
 export const LIST_TABLE_SPACER_COL_PX = 4
+export const LIST_TABLE_EXPAND_COL_PX = 28
 
 export const listPageTableCheckboxColCls = 'list-page-table-checkbox-col'
 export const listPageTableCheckboxThCls =
@@ -52,6 +53,12 @@ const spacerColStyle: CSSProperties = {
   maxWidth: LIST_TABLE_SPACER_COL_PX,
 }
 
+const expandColStyle: CSSProperties = {
+  width: LIST_TABLE_EXPAND_COL_PX,
+  minWidth: LIST_TABLE_EXPAND_COL_PX,
+  maxWidth: LIST_TABLE_EXPAND_COL_PX,
+}
+
 const leadingInnerCls = 'flex items-center justify-center'
 const checkboxLeadingInnerStyle: CSSProperties = {
   width: LIST_TABLE_CHECKBOX_COL_PX,
@@ -63,7 +70,7 @@ const leadingInnerStyle: CSSProperties = {
   height: LIST_TABLE_LEADING_ROW_PX,
 }
 
-function LeadingCellWrap({ children, style }: { children: ReactNode; style: CSSProperties }) {
+function LeadingCellWrap({ children, style }: { children?: ReactNode; style: CSSProperties }) {
   return (
     <div className={leadingInnerCls} style={style}>
       {children}
@@ -138,6 +145,44 @@ export function ListTableLeadingColgroup({ mode = 'index-only' }: { mode?: ListT
 
 export function ListTableSpacerCol() {
   return <col className="list-page-table-spacer" style={spacerColStyle} />
+}
+
+export const listPageTableExpandColCls = 'list-page-table-expand-col'
+export const listPageTableExpandThCls =
+  'list-page-table-expand-col box-border shrink-0 p-0 align-middle text-center'
+export const listPageTableExpandTdCls =
+  'list-page-table-expand-col box-border shrink-0 p-0 align-middle text-center'
+
+export function ListTableExpandCol() {
+  return (
+    <col
+      className={listPageTableExpandColCls}
+      style={expandColStyle}
+      width={LIST_TABLE_EXPAND_COL_PX}
+    />
+  )
+}
+
+export function ListTableExpandHeader() {
+  return <th className={listPageTableExpandThCls} style={expandColStyle} aria-hidden />
+}
+
+export function ListTableExpandCell({ children }: { children?: ReactNode }) {
+  return (
+    <td className={listPageTableExpandTdCls} style={expandColStyle}>
+      {children ? (
+        <div className="flex h-full items-center justify-center">{children}</div>
+      ) : null}
+    </td>
+  )
+}
+
+export function ListTableIndexReserveCell() {
+  return (
+    <td className={listPageTableIndexTdCls} style={indexColStyle} aria-hidden>
+      <LeadingCellWrap style={leadingInnerStyle} />
+    </td>
+  )
 }
 
 export function ListTableDragHeader() {

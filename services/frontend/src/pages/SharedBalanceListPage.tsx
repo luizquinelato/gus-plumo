@@ -18,14 +18,11 @@ import {
   cadastroRowIconDangerCls,
   reportRowActionBtnClass,
   listPageTableRowHoverCls,
-  listPageTableStickyActionsCellCls,
-  listPageTableStickyActionsHeaderCls,
-  listPageTableTdCls,
+  listPageTableSectionCls,
 } from '../components/CadastroListPageLayout'
-import { ListPageTable } from '../components/ListPageTable'
+import { ListPageNestedTable } from '../components/ListPageTable'
+import BulkSelectCheckbox from '../components/BulkSelectCheckbox'
 import {
-  ListTableCheckboxCell,
-  ListTableCheckboxHeader,
   ListTableIndexCell,
   ListTableIndexHeader,
   ListTableSpacerCell,
@@ -43,13 +40,19 @@ import {
   CadastroModalFooter,
   CadastroModalHeader,
   CadastroModalShell,
+  cadastroAccentControlCls,
   cadastroFieldCls,
+  cadastroOptionLabelCls,
 } from '../components/CadastroFormLayout'
 import FloatingFooterBar from '../components/FloatingFooterBar'
 import Toast from '../components/Toast'
 import LoadingSpinner from '../components/LoadingSpinner'
 import BalanceDetailsModal from '../components/BalanceDetailsModal'
 import SharedAccountDisplay from '../components/SharedAccountDisplay'
+import {
+  buildSharedAccountNameColorMap,
+  sharedAccountNameColorClass,
+} from '../utils/sharedAccountNameColors'
 import SharedClosureItemsModal from '../components/SharedClosureItemsModal'
 import JsonTreeViewer from '../components/JsonTreeViewer'
 import {
@@ -61,7 +64,7 @@ import {
   signedLoanFieldValue,
 } from '../utils/closureCreditUtils'
 import { useConfirm } from '../hooks/useConfirm'
-import { Scale, Calendar, Building2, TrendingUp, TrendingDown, Minus, CreditCard, Receipt, Archive, Eye, Lock, Unlock, ChevronDown, ChevronUp, Landmark, Gift, FileJson, Braces, Copy, Check, CheckCircle, Clock, Trash2, ChevronRight, AlertTriangle, X, Download, Filter, Search, Banknote, HelpCircle, ArrowUpCircle, ArrowDownCircle, ArrowUp, ArrowDown, UnfoldVertical, FoldVertical, CheckSquare, Square, MinusSquare } from 'lucide-react'
+import { Scale, Calendar, Building2, TrendingUp, TrendingDown, Minus, Receipt, Archive, Eye, Lock, Unlock, ChevronDown, ChevronUp, Landmark, Gift, FileJson, Braces, Copy, Check, CheckCircle, Clock, Trash2, ChevronRight, AlertTriangle, X, Download, Filter, Search, Banknote, HelpCircle, ArrowUpCircle, ArrowDownCircle, ArrowUp, ArrowDown, ArrowLeftRight, UnfoldVertical, FoldVertical, CheckSquare, Square, MinusSquare, Plus, MessageSquare, Pencil } from 'lucide-react'
 import { exportBalanceClosureToPDF } from '../utils/pdfExport'
 import { exportBalanceClosureToExcel } from '../utils/exportToExcel'
 import { ExportClosureModal } from '../components/ExportClosureModal'
@@ -492,6 +495,74 @@ const JsonViewerModal = ({ isOpen, data, onClose, jsonCopied, onCopy }: JsonView
 
 const REALIZAR_PATH = '/fechamentos/compartilhado/realizar'
 
+const cardListItemCls =
+  'rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800'
+const closureCardPendingCls = `${cardListItemCls} border-l-4 border-l-amber-500`
+const closureCardSettledCls =
+  `${cardListItemCls} border-l-4 border-l-green-500 bg-green-50/50 dark:bg-green-900/10`
+
+/** Colunas de dados repartem o espaço igualmente; só `#` + spacer fixos. */
+const closureNestedCols4 = (
+  <>
+    <ListTableSpacerCol />
+    <col />
+    <col />
+    <col />
+    <col />
+  </>
+)
+const closureNestedCols3 = (
+  <>
+    <ListTableSpacerCol />
+    <col />
+    <col />
+    <col />
+  </>
+)
+const closureNestedCols5 = (
+  <>
+    <ListTableSpacerCol />
+    <col />
+    <col />
+    <col />
+    <col />
+    <col />
+  </>
+)
+
+function ClosureExpandSectionTitle({
+  icon,
+  title,
+  count,
+  trailing,
+  tone = 'indigo',
+}: {
+  icon: React.ReactNode
+  title: string
+  count?: number
+  trailing?: React.ReactNode
+  tone?: 'indigo' | 'amber'
+}) {
+  const toneCls =
+    tone === 'amber'
+      ? 'text-amber-800 dark:text-amber-200'
+      : 'text-indigo-700 dark:text-indigo-300'
+  const barCls = tone === 'amber' ? 'bg-amber-500' : 'bg-indigo-500 dark:bg-indigo-400'
+  const countCls =
+    tone === 'amber' ? 'text-amber-600 dark:text-amber-400' : 'text-indigo-400 dark:text-indigo-500'
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-2">
+      <div className={`h-4 w-1 shrink-0 rounded-full ${barCls}`} />
+      {icon}
+      <span className={`text-xs font-semibold uppercase tracking-wide ${toneCls}`}>{title}</span>
+      {count != null && count > 0 ? (
+        <span className={`text-xs ${countCls}`}>({count})</span>
+      ) : null}
+      {trailing ? <div className="ml-auto flex items-center gap-2">{trailing}</div> : null}
+    </div>
+  )
+}
+
 function getAccountDisplayName(account: Account | undefined) {
   if (!account) return 'Sem nome'
   return account.name || account.description || 'Sem nome'
@@ -517,7 +588,8 @@ function parseClosureDateTime(raw: string): Date {
 const SharedBalanceListPage = () => {
   const { showConfirm, ConfirmComponent } = useConfirm()
   const navigate = useNavigate()
-  const [selectedPartnerAccountId, setSelectedPartnerAccountId] = useState<number | null>(null)
+  const [draftPartnerAccountId, setDraftPartnerAccountId] = useState<number | null>(null)
+  const [appliedPartnerAccountId, setAppliedPartnerAccountId] = useState<number | null>(null)
   const [draftYear, setDraftYear] = useState('')
   const [appliedYear, setAppliedYear] = useState<number | 'all' | null>(null)
   const [filtersApplied, setFiltersApplied] = useState(false)
@@ -571,7 +643,6 @@ const SharedBalanceListPage = () => {
   const [annualHistoryData, setAnnualHistoryData] = useState<AnnualHistory | null>(null)
   const [loading, setLoading] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
-  const [isFirstLoad, setIsFirstLoad] = useState(true)
   const [toast, setToast] = useState<ToastState>({ show: false, message: '', type: 'success' })
 
   // Estados para fechamentos
@@ -582,7 +653,7 @@ const SharedBalanceListPage = () => {
   const [isClosurePartnerView, setIsClosurePartnerView] = useState(false)  // Se estamos vendo da perspectiva da conta parceira
   const [showClosureModal, setShowClosureModal] = useState(false)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
-  const [showSettleModal, setShowSettleModal] = useState(false)
+  const [isSettlingClosure, setIsSettlingClosure] = useState(false)
   const [closureNotes, setClosureNotes] = useState('')
   const [settlementNotes, setSettlementNotes] = useState('')
   const [settlementDate, setSettlementDate] = useState('')
@@ -626,6 +697,7 @@ const SharedBalanceListPage = () => {
   const [paymentAmountCents, setPaymentAmountCents] = useState('') // dígitos brutos (centavos)
   const [paymentDate, setPaymentDate] = useState('')
   const [paymentNotes, setPaymentNotes] = useState('')
+  const [paymentModalMode, setPaymentModalMode] = useState<'partial' | 'settle'>('partial')
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false)
   // Estados para modal de edição de pagamento
   const [showEditPaymentModal, setShowEditPaymentModal] = useState(false)
@@ -636,11 +708,10 @@ const SharedBalanceListPage = () => {
   const [editPaymentNotes, setEditPaymentNotes] = useState('')
   const [isSavingPaymentEdit, setIsSavingPaymentEdit] = useState(false)
 
-  // Estados para modal de remoção de liquidações de empréstimos
-  const [showRemoveLoanPaymentsModal, setShowRemoveLoanPaymentsModal] = useState(false)
-  const [removeLoanPaymentsClosure, setRemoveLoanPaymentsClosure] = useState<BalanceClosure | null>(null)
-  const [selectedLoanIdsToRemove, setSelectedLoanIdsToRemove] = useState<Set<number>>(new Set())
-  const [removingLoanPayments, setRemovingLoanPayments] = useState(false)
+  const [reopenModalClosure, setReopenModalClosure] = useState<BalanceClosure | null>(null)
+  const [reopenClearPayments, setReopenClearPayments] = useState(true)
+  const [reopenClearLoans, setReopenClearLoans] = useState(true)
+  const [reopenExecuting, setReopenExecuting] = useState(false)
 
   // Estados para modais de detalhes
   interface ModalState {
@@ -731,17 +802,10 @@ const SharedBalanceListPage = () => {
         console.error('Erro ao carregar parceiros:', error)
       } finally {
         setInitialLoading(false)
-        setIsFirstLoad(false)  // Marca que o primeiro carregamento foi concluído
       }
     }
     loadInitialData()
   }, [])
-
-  useEffect(() => {
-    if (isFirstLoad) return
-    setFiltersApplied(false)
-    setClosures([])
-  }, [selectedPartnerAccountId, isFirstLoad])
 
   useEffect(() => {
     const container = closuresScrollContainerRef.current
@@ -777,18 +841,22 @@ const SharedBalanceListPage = () => {
     return `${prefix}${formatCurrency(Math.abs(signed))}`
   }
 
-  const loadClosures = async (yearFilter: number | 'all') => {
-    if (!selectedPartnerAccountId) return
+  const loadClosures = async (
+    yearFilter: number | 'all',
+    partnerAccountId: number | null = appliedPartnerAccountId,
+  ) => {
     setClosuresLoading(true)
     setSelectedClosureIds(new Set())
     try {
-      const params: Record<string, number> = {}
+      const params: Record<string, number> = { limit: 1000 }
       if (yearFilter !== 'all') {
         params.year = yearFilter
       }
-      const sharing = partners.find((p) => p.shared_account_id === selectedPartnerAccountId)
-      if (sharing) {
-        params.expense_sharing_id = sharing.id
+      if (partnerAccountId) {
+        const sharing = partners.find((p) => p.shared_account_id === partnerAccountId)
+        if (sharing) {
+          params.expense_sharing_id = sharing.id
+        }
       }
       const response = await axios.get('/api/balance/closures', { params })
       setClosures(response.data.closures)
@@ -801,15 +869,16 @@ const SharedBalanceListPage = () => {
   }
 
   const applyListFilters = () => {
-    if (!selectedPartnerAccountId) return
     const yearFilter = draftYear === '' ? 'all' : Number(draftYear)
+    setAppliedPartnerAccountId(draftPartnerAccountId)
     setAppliedYear(yearFilter)
     setFiltersApplied(true)
-    void loadClosures(yearFilter)
+    void loadClosures(yearFilter, draftPartnerAccountId)
   }
 
   const clearListFilters = () => {
-    setSelectedPartnerAccountId(null)
+    setDraftPartnerAccountId(null)
+    setAppliedPartnerAccountId(null)
     setDraftYear('')
     setAppliedYear(null)
     setFiltersApplied(false)
@@ -818,7 +887,7 @@ const SharedBalanceListPage = () => {
   }
 
   const hasActiveListFilters =
-    Boolean(selectedPartnerAccountId) || filtersApplied || draftYear !== ''
+    Boolean(draftPartnerAccountId) || filtersApplied || draftYear !== ''
 
   const closureSelectHeaderState = useMemo(
     () => selectionHeaderState(
@@ -830,9 +899,14 @@ const SharedBalanceListPage = () => {
 
   const filterResultHint = useMemo(() => {
     if (!filtersApplied) return undefined
-    const yearLabel = appliedYear === 'all' ? 'Todos' : String(appliedYear)
-    return `${closures.length} fechamento${closures.length === 1 ? '' : 's'} · ${yearLabel}`
-  }, [filtersApplied, appliedYear, closures.length])
+    const partnerLabel = appliedPartnerAccountId
+      ? getAccountDisplayName(
+          partners.find((p) => p.shared_account_id === appliedPartnerAccountId)?.shared_account,
+        )
+      : 'Todos os parceiros'
+    const yearLabel = appliedYear === 'all' ? 'Todos os anos' : String(appliedYear)
+    return `${closures.length} fechamento${closures.length === 1 ? '' : 's'} · ${partnerLabel} · ${yearLabel}`
+  }, [filtersApplied, appliedYear, closures.length, appliedPartnerAccountId, partners])
 
   const sortedPartners = useMemo(
     () =>
@@ -923,17 +997,23 @@ const SharedBalanceListPage = () => {
   }
 
   const handleSettleClosure = async () => {
-    if (!selectedClosure || !settlementDate) return
+    const closure = paymentClosure ?? selectedClosure
+    if (!closure || !settlementDate) return
 
+    setIsSettlingClosure(true)
     try {
-      await axios.put(`/api/balance/closures/${selectedClosure.id}/settle`, {
+      await axios.put(`/api/balance/closures/${closure.id}/settle`, {
         settlement_notes: settlementNotes || null,
         settlement_date: settlementDate,
       })
 
-      setShowSettleModal(false)
+      setShowPaymentModal(false)
+      setPaymentClosure(null)
+      setPaymentAmountCents('')
       setShowDetailsModal(false)
+      setSelectedClosure(null)
       setSettlementNotes('')
+      setSettlementDate('')
       setClosureLoanPayments([])
       setToast({ show: true, message: 'Fechamento marcado como quitado!', type: 'success' })
 
@@ -941,6 +1021,8 @@ const SharedBalanceListPage = () => {
     } catch (error: any) {
       console.error('Erro ao quitar fechamento:', error)
       setToast({ show: true, message: error.response?.data?.detail || 'Erro ao quitar fechamento', type: 'error' })
+    } finally {
+      setIsSettlingClosure(false)
     }
   }
 
@@ -950,12 +1032,22 @@ const SharedBalanceListPage = () => {
     setShowUnsettleModal(true)
   }
 
-  const handleConfirmUnsettle = async (clearPayments: boolean) => {
+  const handleConfirmUnsettle = async (options: { clearPayments: boolean; clearLoanLiquidations: boolean }) => {
     if (!unsettleClosure) return
     setUnsettleClearingAll(true)
     setUnsettleClearError(null)
     try {
-      if (clearPayments) {
+      if (options.clearLoanLiquidations) {
+        const loanIds = filterRegularLoanPayments(getClosureLoanPaymentsList(unsettleClosure)).map(
+          (lp: { loan_id: number }) => lp.loan_id,
+        )
+        if (loanIds.length > 0) {
+          await axios.delete(`/api/balance/closures/${unsettleClosure.id}/loan-payments`, {
+            data: { loan_ids: loanIds },
+          })
+        }
+      }
+      if (options.clearPayments) {
         await axios.delete(`/api/balance/closures/${unsettleClosure.id}/payments`)
       }
       await axios.delete(`/api/balance/closures/${unsettleClosure.id}/settle`)
@@ -968,7 +1060,7 @@ const SharedBalanceListPage = () => {
       console.error('Erro ao remover quitação:', error)
       const detail = error.response?.data?.detail
       if (
-        clearPayments &&
+        options.clearPayments &&
         detail &&
         typeof detail === 'object' &&
         detail.code === 'credit_loans_blocked'
@@ -989,41 +1081,124 @@ const SharedBalanceListPage = () => {
     }
   }
 
+  const executeDeleteClosure = async (
+    closure: BalanceClosure,
+    options: { clearPayments: boolean; clearLoans: boolean },
+  ) => {
+    if (options.clearLoans) {
+      const loanIds = filterRegularLoanPayments(getClosureLoanPaymentsList(closure)).map(
+        (lp: { loan_id: number }) => lp.loan_id,
+      )
+      if (loanIds.length > 0) {
+        await axios.delete(`/api/balance/closures/${closure.id}/loan-payments`, {
+          data: { loan_ids: loanIds },
+        })
+      }
+    }
+    if (options.clearPayments) {
+      await axios.delete(`/api/balance/closures/${closure.id}/payments`)
+    }
+    await axios.delete(`/api/balance/closures/${closure.id}`)
+  }
+
   const handleReopenClosure = (closure: BalanceClosure) => {
     if (closure.is_settled) {
-      setToast({ show: true, message: 'Não é possível reabrir um fechamento já quitado. Remova a quitação primeiro.', type: 'warning' })
+      setToast({
+        show: true,
+        message: 'Fechamento quitado: use o ícone de quitado para remover a quitação antes de excluir.',
+        type: 'warning',
+      })
+      return
+    }
+
+    const activePayments = (closure.closure_payments || []).filter((p) => p.active !== false)
+    const loanLiq = filterRegularLoanPayments(getClosureLoanPaymentsList(closure))
+    if (activePayments.length > 0 || loanLiq.length > 0) {
+      setReopenModalClosure(closure)
+      setReopenClearPayments(activePayments.length > 0)
+      setReopenClearLoans(loanLiq.length > 0)
       return
     }
 
     showConfirm(
-      'Reabrir Fechamento',
-      `Deseja realmente reabrir o fechamento de ${String(closure.month).padStart(2, '0')}/${closure.year}? Isso permitirá criar um novo fechamento para o mesmo período.`,
+      'Excluir fechamento',
+      `Deseja excluir o fechamento de ${String(closure.month).padStart(2, '0')}/${closure.year}? Será possível fechar o período novamente.`,
       async () => {
         try {
-          await axios.delete(`/api/balance/closures/${closure.id}`)
-          setToast({ show: true, message: 'Fechamento reaberto com sucesso!', type: 'success' })
-
+          await executeDeleteClosure(closure, { clearPayments: false, clearLoans: false })
+          setToast({ show: true, message: 'Fechamento excluído com sucesso!', type: 'success' })
           if (appliedYear != null) void loadClosures(appliedYear)
         } catch (error: any) {
-          console.error('Erro ao reabrir fechamento:', error)
-          setToast({ show: true, message: error.response?.data?.detail || 'Erro ao reabrir fechamento', type: 'error' })
+          console.error('Erro ao excluir fechamento:', error)
+          setToast({
+            show: true,
+            message: error.response?.data?.detail || 'Erro ao excluir fechamento',
+            type: 'error',
+          })
         }
       },
-      'Reabrir',
-      'Cancelar'
+      'Excluir',
+      'Cancelar',
     )
   }
 
-  // Handler para abrir modal de remoção de liquidações de empréstimos
-  const handleOpenRemoveLoanPaymentsModal = (closure: BalanceClosure) => {
+  const handleConfirmReopenClosure = async () => {
+    if (!reopenModalClosure) return
+    setReopenExecuting(true)
+    try {
+      await executeDeleteClosure(reopenModalClosure, {
+        clearPayments: reopenClearPayments,
+        clearLoans: reopenClearLoans,
+      })
+      setToast({ show: true, message: 'Fechamento excluído com sucesso!', type: 'success' })
+      setReopenModalClosure(null)
+      if (appliedYear != null) void loadClosures(appliedYear)
+    } catch (error: any) {
+      console.error('Erro ao excluir fechamento:', error)
+      setToast({
+        show: true,
+        message: error.response?.data?.detail || 'Erro ao excluir fechamento',
+        type: 'error',
+      })
+    } finally {
+      setReopenExecuting(false)
+    }
+  }
+
+  const handleRemoveClosureLoanLiquidation = (
+    closure: BalanceClosure,
+    loanId: number,
+    description: string,
+  ) => {
     if (closure.is_settled) {
-      setToast({ show: true, message: 'Não é possível remover liquidações de um fechamento quitado. Remova a quitação primeiro.', type: 'warning' })
+      setToast({
+        show: true,
+        message: 'Remova a quitação antes de alterar liquidações de empréstimo.',
+        type: 'warning',
+      })
       return
     }
-
-    setRemoveLoanPaymentsClosure(closure)
-    setSelectedLoanIdsToRemove(new Set())
-    setShowRemoveLoanPaymentsModal(true)
+    showConfirm(
+      'Remover liquidação de empréstimo',
+      `Remover a liquidação "${description || 'Empréstimo'}"? O empréstimo será reaberto.`,
+      async () => {
+        try {
+          await axios.delete(`/api/balance/closures/${closure.id}/loan-payments`, {
+            data: { loan_ids: [loanId] },
+          })
+          setToast({ show: true, message: 'Liquidação removida.', type: 'success' })
+          if (appliedYear != null) void loadClosures(appliedYear)
+        } catch (error: any) {
+          setToast({
+            show: true,
+            message: error.response?.data?.detail || 'Erro ao remover liquidação',
+            type: 'error',
+          })
+        }
+      },
+      'Remover',
+      'Cancelar',
+    )
   }
 
   // Extrair loan_payments do closure_data
@@ -1047,11 +1222,11 @@ const SharedBalanceListPage = () => {
   }
 
   const closuresScorecards = useMemo(() => {
-    let openAmount = 0
-    let totalPaid = 0
-    let totalLoanPaid = 0
+    let openReceive = 0
+    let openPay = 0
+    let loanReceiveOpen = 0
+    let loanPayOpen = 0
     let pendingCount = 0
-    let paymentsCount = 0
     let loanPaymentsCount = 0
 
     closures.forEach(closure => {
@@ -1065,84 +1240,44 @@ const SharedBalanceListPage = () => {
       const totalToPay = parseFloat(viewerCard.total_to_pay ?? 0)
       const loanToReceive = parseFloat(viewerCard.loan_to_receive ?? 0)
       const loanToPay = parseFloat(viewerCard.loan_to_pay ?? 0)
-      const displayNetBalance = (totalToReceive + loanToReceive) - (Math.abs(totalToPay) + Math.abs(loanToPay))
 
-      const paid = parseFloat(String(closure.total_paid ?? 0))
-      totalPaid += paid
-      paymentsCount += (closure.closure_payments || []).length
+      loanPaymentsCount += filterRegularLoanPayments(getClosureLoanPaymentsList(closure)).length
 
-      if (!closure.is_settled) {
-        pendingCount += 1
-        const remainingAbs = parseFloat(String(closure.remaining_balance ?? Math.abs(displayNetBalance)))
-        if (remainingAbs > 0.01) {
-          openAmount += displayNetBalance >= 0 ? remainingAbs : -remainingAbs
-        }
+      if (closure.is_settled) {
+        return
       }
 
-      const loanPayments = filterRegularLoanPayments(getClosureLoanPaymentsList(closure))
-      loanPayments.forEach(payment => {
-        const originalIsLent = payment.loan_type === 'lent'
-        const isLent = isCounterpart ? !originalIsLent : originalIsLent
-        totalLoanPaid += signedLoanFieldValue(payment.amount_paid || 0, isLent, 'paid')
-        loanPaymentsCount += 1
-      })
+      pendingCount += 1
+      openReceive += totalToReceive
+      openPay += Math.abs(totalToPay)
+      loanReceiveOpen += loanToReceive
+      loanPayOpen += Math.abs(loanToPay)
     })
 
-    return { openAmount, totalPaid, totalLoanPaid, pendingCount, paymentsCount, loanPaymentsCount }
+    return {
+      openReceive,
+      openPay,
+      loanReceiveOpen,
+      loanPayOpen,
+      pendingCount,
+      loanPaymentsCount,
+    }
   }, [closures, loggedAccountId])
 
-  // Toggle seleção de um loan para remoção
-  const toggleLoanSelection = (loanId: number) => {
-    setSelectedLoanIdsToRemove(prev => {
-      const newSet = new Set(prev)
-      if (newSet.has(loanId)) {
-        newSet.delete(loanId)
-      } else {
-        newSet.add(loanId)
-      }
-      return newSet
-    })
-  }
-
-  // Selecionar/Deselecionar todos os loans
-  const toggleSelectAllLoans = (loanPayments: any[]) => {
-    if (selectedLoanIdsToRemove.size === loanPayments.length) {
-      setSelectedLoanIdsToRemove(new Set())
-    } else {
-      setSelectedLoanIdsToRemove(new Set(loanPayments.map((lp: any) => lp.loan_id)))
+  const closureAccountNameColors = useMemo(() => {
+    const ids: number[] = []
+    if (loggedAccountId != null) ids.push(Number(loggedAccountId))
+    for (const partner of partners) {
+      if (partner.shared_account_id) ids.push(Number(partner.shared_account_id))
     }
-  }
-
-  // Executar remoção das liquidações selecionadas
-  const handleConfirmRemoveLoanPayments = async () => {
-    if (!removeLoanPaymentsClosure || selectedLoanIdsToRemove.size === 0) return
-
-    setRemovingLoanPayments(true)
-    try {
-      const response = await axios.delete(
-        `/api/balance/closures/${removeLoanPaymentsClosure.id}/loan-payments`,
-        { data: { loan_ids: Array.from(selectedLoanIdsToRemove) } }
-      )
-
-      setToast({
-        show: true,
-        message: response.data?.message || 'Liquidações de empréstimos removidas com sucesso!',
-        type: 'success'
-      })
-
-      // Fechar modal e recarregar dados
-      setShowRemoveLoanPaymentsModal(false)
-      setRemoveLoanPaymentsClosure(null)
-      setSelectedLoanIdsToRemove(new Set())
-      if (appliedYear != null) void loadClosures(appliedYear)
-
-    } catch (error: any) {
-      console.error('Erro ao remover liquidações de empréstimos:', error)
-      setToast({ show: true, message: error.response?.data?.detail || 'Erro ao remover liquidações de empréstimos', type: 'error' })
-    } finally {
-      setRemovingLoanPayments(false)
+    for (const closure of closures) {
+      const mainId = closure.closure_data?.main_account_card?.account_id
+      const partnerId = closure.closure_data?.partner_account_card?.account_id
+      if (mainId) ids.push(Number(mainId))
+      if (partnerId) ids.push(Number(partnerId))
     }
-  }
+    return buildSharedAccountNameColorMap(ids, loggedAccountId)
+  }, [closures, loggedAccountId, partners])
 
   // ==================== PAGAMENTOS PARCIAIS ====================
 
@@ -1158,13 +1293,29 @@ const SharedBalanceListPage = () => {
     })
   }
 
+  const closePaymentModal = () => {
+    setShowPaymentModal(false)
+    setPaymentClosure(null)
+    setPaymentAmountCents('')
+    setPaymentNotes('')
+    setSettlementNotes('')
+    setSettlementDate('')
+  }
+
   const openPaymentModal = (closure: BalanceClosure) => {
+    const remaining = paymentClosureRemaining(closure)
     setPaymentClosure(closure)
+    setSelectedClosure(closure)
     setPaymentAmountCents('')
     setPaymentDate(getTodayLocalDate())
     setPaymentNotes('')
+    setSettlementDate(getTodayLocalDate())
+    setSettlementNotes('')
+    setPaymentModalMode(remaining > 0.01 ? 'partial' : 'settle')
     setShowPaymentModal(true)
   }
+
+  const paymentModalDateFieldWrapCls = `${cadastroFieldCls} mt-0.5 box-border !py-0 flex h-9 items-center`
 
   // Máscara BRL: dígitos brutos → "1.234,56"
   const formatAmountMask = (cents: string): string => {
@@ -1402,7 +1553,7 @@ const SharedBalanceListPage = () => {
           if (appliedYear != null) void loadClosures(appliedYear)
 
           // Recarregar último fechamento para atualizar datas mínimas
-          const sharing = partners.find(p => p.shared_account_id === selectedPartnerAccountId)
+          const sharing = partners.find(p => p.shared_account_id === appliedPartnerAccountId)
           if (sharing) {
             await loadLastClosureAndSetDates(sharing.id)
           }
@@ -1529,9 +1680,8 @@ const SharedBalanceListPage = () => {
           setShowJsonModal(false)
           setJsonClosureData(null)
           setJsonCopied(false)
-        } else if (showSettleModal) {
-          setShowSettleModal(false)
-          setSettlementNotes('')
+        } else if (showPaymentModal) {
+          closePaymentModal()
         } else if (showDetailsModal) {
           setShowDetailsModal(false)
           setSelectedClosure(null)
@@ -1546,9 +1696,6 @@ const SharedBalanceListPage = () => {
           setShowJsonModal(false)
           setJsonClosureData(null)
           setJsonCopied(false)
-        } else if (showSettleModal) {
-          // Confirmar quitação
-          handleSettleClosure()
         } else if (showDetailsModal) {
           setShowDetailsModal(false)
           setSelectedClosure(null)
@@ -1559,11 +1706,11 @@ const SharedBalanceListPage = () => {
       }
     }
 
-    if (showDetailsModal || showJsonModal || showSettleModal) {
+    if (showDetailsModal || showJsonModal || showPaymentModal) {
       window.addEventListener('keydown', handleKeyDown)
       return () => window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [showDetailsModal, showJsonModal, showSettleModal, handleSettleClosure])
+  }, [showDetailsModal, showJsonModal, showPaymentModal])
 
   const formatMonth = (monthStr: string) => {
     const [year, month] = monthStr.split('-')
@@ -1643,7 +1790,7 @@ const SharedBalanceListPage = () => {
                   label="Realizar fechamento"
                   icon={<Archive size={18} />}
                   onClick={() => {
-                    const q = selectedPartnerAccountId ? `?partner=${selectedPartnerAccountId}` : ''
+                    const q = draftPartnerAccountId ? `?partner=${draftPartnerAccountId}` : ''
                     navigate(`${REALIZAR_PATH}${q}`)
                   }}
                 />
@@ -1656,18 +1803,17 @@ const SharedBalanceListPage = () => {
               onClearFilters={clearListFilters}
               onApply={applyListFilters}
               applying={closuresLoading}
-              applyDisabled={!selectedPartnerAccountId}
               resultHint={filterResultHint}
             >
               <CadastroFilterField label="Conta compartilhada" icon={<Building2 size={12} />}>
                 <select
-                  value={selectedPartnerAccountId || ''}
+                  value={draftPartnerAccountId || ''}
                   onChange={(e) =>
-                    setSelectedPartnerAccountId(e.target.value ? parseInt(e.target.value, 10) : null)
+                    setDraftPartnerAccountId(e.target.value ? parseInt(e.target.value, 10) : null)
                   }
                   className={cadastroFilterFieldCls}
                 >
-                  <option value="">Selecione...</option>
+                  <option value="">Todos</option>
                   {partnerSelectOptions}
                 </select>
               </CadastroFilterField>
@@ -1697,30 +1843,12 @@ const SharedBalanceListPage = () => {
               <CadastroListPageEmptyCard
                 icon={<Filter size={32} className="text-gray-400" />}
                 title="Nenhum filtro aplicado"
-                description="Escolha o parceiro e o ano (ou Todos) e clique em Aplicar para listar os fechamentos."
+                description="Escolha parceiro e ano (ou Todos em cada campo) e clique em Aplicar para listar os fechamentos."
               />
             )}
 
             {!closuresLoading && filtersApplied && (
               <div className="space-y-4">
-                {selectedPartnerAccountId && (
-                  <div className="mb-6 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
-                    <div className="flex flex-wrap items-center gap-4">
-                      <div className="flex items-center gap-2">
-                        <Building2 size={16} className="text-color-primary" />
-                        <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                          {partners.find((p) => p.shared_account_id === selectedPartnerAccountId)?.shared_account?.name ||
-                            'Conta parceira'}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
-                        <Calendar size={16} className="text-color-primary" />
-                        Ano: {appliedYear === 'all' ? 'Todos' : appliedYear}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
                 {closures.length === 0 ? (
                   <CadastroListPageEmptyCard
                     icon={<Archive size={32} className="text-gray-400" />}
@@ -1729,114 +1857,106 @@ const SharedBalanceListPage = () => {
                   />
                 ) : (
                   <>
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                    <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700 transition-all hover:border-color-primary hover:shadow-md">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <Unlock className="h-5 w-5 shrink-0 text-gray-500 dark:text-gray-400" />
-                          <div>
-                            <p className="text-xs text-gray-600 dark:text-gray-400">Aberto</p>
-                            <p className={`text-lg font-bold ${
-                              closuresScorecards.openAmount > 0
-                                ? 'text-green-600 dark:text-green-400'
-                                : closuresScorecards.openAmount < 0
-                                ? 'text-red-600 dark:text-red-400'
-                                : 'text-gray-600 dark:text-gray-400'
-                            }`}>
-                              {formatSignedCurrency(closuresScorecards.openAmount)}
-                            </p>
-                          </div>
+                  <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                    <article className={`${listPageTableSectionCls} flex flex-col overflow-hidden`}>
+                      <div
+                        className="flex items-start gap-3 border-b border-l-4 border-gray-200 px-5 py-4 dark:border-gray-600"
+                        style={{ borderLeftColor: 'var(--color-1)' }}
+                      >
+                        <div
+                          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ring-1 ring-[color-mix(in_srgb,var(--color-1)_20%,transparent)]"
+                          style={{
+                            color: 'var(--color-1)',
+                            background: 'color-mix(in srgb, var(--color-1) 14%, transparent)',
+                          }}
+                        >
+                          <Scale size={18} />
                         </div>
-                        <span className="text-xs text-gray-500 dark:text-gray-500">
-                          {closuresScorecards.pendingCount} pend.
-                        </span>
+                        <div className="min-w-0">
+                          <h2 className="text-lg font-bold text-gray-900 dark:text-white">Balanço aberto</h2>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">
+                            {closuresScorecards.pendingCount}{' '}
+                            {closuresScorecards.pendingCount === 1 ? 'fechamento pendente' : 'fechamentos pendentes'}
+                          </p>
+                        </div>
                       </div>
-                    </div>
+                      <div className="grid grid-cols-1 divide-y divide-gray-200 dark:divide-gray-600 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+                        <div className="flex min-h-[6.5rem] flex-col justify-center bg-white px-5 py-4 dark:bg-gray-800">
+                          <div className="mb-2 flex items-center gap-2 text-gray-500 dark:text-gray-400">
+                            <ArrowUp size={14} className="text-[var(--color-success)]" />
+                            <span className="text-xs font-semibold uppercase tracking-wide">À receber</span>
+                          </div>
+                          <p className="text-xl font-bold tabular-nums text-[var(--color-success)] sm:text-2xl">
+                            {formatCurrency(closuresScorecards.openReceive)}
+                          </p>
+                        </div>
+                        <div className="flex min-h-[6.5rem] flex-col justify-center bg-white px-5 py-4 dark:bg-gray-800">
+                          <div className="mb-2 flex items-center gap-2 text-gray-500 dark:text-gray-400">
+                            <ArrowDown size={14} className="text-[var(--color-danger)]" />
+                            <span className="text-xs font-semibold uppercase tracking-wide">À pagar</span>
+                          </div>
+                          <p className="text-xl font-bold tabular-nums text-[var(--color-danger)] sm:text-2xl">
+                            {formatCurrency(closuresScorecards.openPay)}
+                          </p>
+                        </div>
+                      </div>
+                    </article>
 
-                    <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700 transition-all hover:border-color-primary hover:shadow-md">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <CreditCard className="h-5 w-5 shrink-0 text-gray-500 dark:text-gray-400" />
-                          <div>
-                            <p className="text-xs text-gray-600 dark:text-gray-400">Pago</p>
-                            <p className="text-lg font-bold text-gray-900 dark:text-white">
-                              {formatCurrency(closuresScorecards.totalPaid)}
-                            </p>
-                          </div>
+                    <article className={`${listPageTableSectionCls} flex flex-col overflow-hidden`}>
+                      <div
+                        className="flex items-start gap-3 border-b border-l-4 border-gray-200 px-5 py-4 dark:border-gray-600"
+                        style={{ borderLeftColor: 'var(--color-3)' }}
+                      >
+                        <div
+                          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ring-1 ring-[color-mix(in_srgb,var(--color-3)_20%,transparent)]"
+                          style={{
+                            color: 'var(--color-3)',
+                            background: 'color-mix(in srgb, var(--color-3) 14%, transparent)',
+                          }}
+                        >
+                          <Landmark size={18} />
                         </div>
-                        <span className="text-xs text-gray-500 dark:text-gray-500">
-                          {closuresScorecards.paymentsCount} pag.
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700 transition-all hover:border-color-primary hover:shadow-md">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <Banknote className="h-5 w-5 shrink-0 text-gray-500 dark:text-gray-400" />
-                          <div>
-                            <p className="text-xs text-gray-600 dark:text-gray-400">Total Empréstimo Pago</p>
-                            <p className={`text-lg font-bold ${
-                              closuresScorecards.totalLoanPaid > 0
-                                ? 'text-green-600 dark:text-green-400'
-                                : closuresScorecards.totalLoanPaid < 0
-                                ? 'text-red-600 dark:text-red-400'
-                                : 'text-gray-600 dark:text-gray-400'
-                            }`}>
-                              {formatSignedCurrency(closuresScorecards.totalLoanPaid)}
-                            </p>
-                          </div>
+                        <div className="min-w-0">
+                          <h2 className="text-lg font-bold text-gray-900 dark:text-white">Empréstimos aberto</h2>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">
+                            {closuresScorecards.loanPaymentsCount}{' '}
+                            {closuresScorecards.loanPaymentsCount === 1 ? 'liquidação' : 'liquidações'}
+                          </p>
                         </div>
-                        <span className="text-xs text-gray-500 dark:text-gray-500">
-                          {closuresScorecards.loanPaymentsCount} liq.
-                        </span>
                       </div>
-                    </div>
+                      <div className="grid grid-cols-1 divide-y divide-gray-200 dark:divide-gray-600 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+                        <div className="flex min-h-[6.5rem] flex-col justify-center bg-white px-5 py-4 dark:bg-gray-800">
+                          <div className="mb-2 flex items-center gap-2 text-gray-500 dark:text-gray-400">
+                            <ArrowUp size={14} className="text-[var(--color-success)]" />
+                            <span className="text-xs font-semibold uppercase tracking-wide">À receber</span>
+                          </div>
+                          <p className="text-xl font-bold tabular-nums text-[var(--color-success)] sm:text-2xl">
+                            {formatCurrency(closuresScorecards.loanReceiveOpen)}
+                          </p>
+                        </div>
+                        <div className="flex min-h-[6.5rem] flex-col justify-center bg-white px-5 py-4 dark:bg-gray-800">
+                          <div className="mb-2 flex items-center gap-2 text-gray-500 dark:text-gray-400">
+                            <ArrowDown size={14} className="text-[var(--color-danger)]" />
+                            <span className="text-xs font-semibold uppercase tracking-wide">À pagar</span>
+                          </div>
+                          <p className="text-xl font-bold tabular-nums text-[var(--color-danger)] sm:text-2xl">
+                            {formatCurrency(closuresScorecards.loanPayOpen)}
+                          </p>
+                        </div>
+                      </div>
+                    </article>
                   </div>
 
                   <div className={selectedClosureIds.size > 0 || showClosuresBackToTop ? 'pb-20' : ''}>
-                    <ListPageTable
-                      framed
-                      minWidth={980}
-                      leadingMode="bulk"
-                      colsRest={
-                        <>
-                          <ListTableSpacerCol />
-                          <col style={{ width: 28, minWidth: 28, maxWidth: 28 }} />
-                          <col />
-                          <col style={{ width: '12%', minWidth: 120 }} />
-                          <col style={{ width: '12%', minWidth: 120 }} />
-                          <col />
-                          <col style={{ width: '10%', minWidth: 96 }} />
-                          <col style={{ width: '10%', minWidth: 96 }} />
-                          <col style={{ width: '9%', minWidth: 88 }} />
-                          <col style={{ width: 240, minWidth: 240 }} />
-                        </>
-                      }
-                      head={
-                        <tr>
-                          <ListTableCheckboxHeader
-                            state={closureSelectHeaderState}
-                            onToggle={toggleSelectAll}
-                          />
-                          <ListTableIndexHeader />
-                          <ListTableSpacerHeader />
-                          <th className="w-7 max-w-[28px] p-0 align-middle" aria-hidden />
-                          <ListTableStaticHeader label="Período" />
-                          <ListTableStaticHeader label="Conta Principal" />
-                          <ListTableStaticHeader label="Contraparte" />
-                          <ListTableStaticHeader label="Valores" />
-                          <ListTableStaticHeader label="Pagamentos" />
-                          <ListTableStaticHeader label="Saldo" />
-                          <ListTableStaticHeader label="Status" />
-                          <ListTableStaticHeader
-                            label="Ações"
-                            className={`${listPageTableStickyActionsHeaderCls} w-[240px]`}
-                          />
-                        </tr>
-                      }
-                    >
-                        {closures.map((closure, index) => {
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-2.5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+                        <BulkSelectCheckbox state={closureSelectHeaderState} onClick={toggleSelectAll} />
+                        <span className="text-sm text-gray-600 dark:text-gray-400">
+                          Selecionar todos os fechamentos
+                          <span className="ml-1 tabular-nums text-gray-400">({closures.length})</span>
+                        </span>
+                      </div>
+                        {closures.map((closure) => {
                           // Os valores são calculados a partir do closure_data JSON
                           // Cada card (main e partner) tem seus próprios valores de A Receber/A Pagar
                           // A conta logada deve ver os valores do SEU card
@@ -1874,230 +1994,212 @@ const SharedBalanceListPage = () => {
                                                    (mainCard.loan_payments && mainCard.loan_payments.length > 0) ||
                                                    (partnerCard.loan_payments && partnerCard.loan_payments.length > 0) ||
                                                    rootLoanPayments.length > 0)
-                          const hasRemovableLoanLiquidations = [
-                            ...(mainCard.loan_payments || []),
-                            ...(partnerCard.loan_payments || []),
-                            ...rootLoanPayments,
-                          ].some((lp: any) => lp && !lp.generated_on_settlement)
+                          const closureLoanLiquidations = filterRegularLoanPayments(
+                            getClosureLoanPaymentsList(closure),
+                          )
+                          const partialPaymentsCount = (closure.closure_payments || []).length
+                          const hasExpandableDetails =
+                            partialPaymentsCount > 0 || closureLoanLiquidations.length > 0
+                          const cardShellCls = closure.is_settled ? closureCardSettledCls : closureCardPendingCls
+                          const selected = selectedClosureIds.has(closure.id)
+                          const otherCard = isCounterpart ? mainCard : partnerCard
+                          const periodStart = parseClosureDateTime(closure.period_start_date)
+                          const periodEnd = parseClosureDateTime(closurePeriodEndRaw(closure))
+                          const periodRangeLabel = `${periodStart.toLocaleDateString('pt-BR')} ${periodStart.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} → ${periodEnd.toLocaleDateString('pt-BR')} ${periodEnd.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+                          const totalPaid = parseFloat(String(closure.total_paid ?? 0))
+                          const paymentsCount = (closure.closure_payments || []).length
+                          const settlementCreditSigned = getSettlementCreditSignedForViewer(closure, !isCounterpart)
+                          const settlementCreditTotal = getSettlementCreditTotal(closure)
+                          const remainingBalance = closure.is_settled
+                            ? 0
+                            : parseFloat(String(closure.remaining_balance ?? Math.abs(displayNetBalance)))
+                          const displayBalance =
+                            closure.is_settled && settlementCreditTotal > 0.01
+                              ? settlementCreditSigned
+                              : totalPaid > 0
+                                ? remainingBalance
+                                : displayNetBalance
+                          const isRemainingView = !closure.is_settled && totalPaid > 0
+                          const isCreditSettleView = closure.is_settled && settlementCreditTotal > 0.01
 
                           return (
-                          <React.Fragment key={closure.id}>
-                          <tr
-                            className={`${listPageTableRowHoverCls} border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 ${
-                              selectedClosureIds.has(closure.id)
-                                ? 'border-l-blue-600 bg-blue-50 dark:bg-blue-900/20'
-                                : 'border-l-gray-300 dark:border-l-gray-600'
+                          <div
+                            key={closure.id}
+                            className={`${cardShellCls} ${
+                              selected ? 'ring-1 ring-[color-mix(in_srgb,var(--color-1)_35%,transparent)]' : ''
                             }`}
-                            onMouseEnter={(e) => {
-                              if (!selectedClosureIds.has(closure.id)) {
-                                e.currentTarget.style.borderLeftColor = 'var(--color-1)'
-                              }
-                            }}
-                            onMouseLeave={(e) => {
-                              if (!selectedClosureIds.has(closure.id)) {
-                                e.currentTarget.style.borderLeftColor = ''
-                              }
-                            }}
                           >
-                            <ListTableCheckboxCell
-                              checked={selectedClosureIds.has(closure.id)}
-                              onToggle={() => toggleClosureSelection(closure.id)}
-                            />
-                            <ListTableIndexCell index={index + 1} />
-                            <ListTableSpacerCell />
-                            <td className="w-7 max-w-[28px] p-0 align-middle">
-                              {(closure.closure_payments || []).length > 0 ? (
-                                <div className="flex h-full items-center justify-center">
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleClosureExpansion(closure.id)}
-                                    className={cadastroRowIconBtnCls}
-                                    title={expandedClosureIds.has(closure.id) ? 'Colapsar pagamentos' : 'Expandir pagamentos'}
-                                  >
-                                    {expandedClosureIds.has(closure.id) ? (
-                                      <ChevronDown size={14} />
-                                    ) : (
-                                      <ChevronRight size={14} />
-                                    )}
-                                  </button>
-                                </div>
-                              ) : null}
-                            </td>
-                            {/* Coluna Período — Início + Fim mesclados */}
-                            <td className={listPageTableTdCls}>
-                              <div className="flex flex-col items-start gap-1 text-left">
-                                <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+                              <BulkSelectCheckbox
+                                checked={selected}
+                                onClick={() => toggleClosureSelection(closure.id)}
+                              />
+                              {hasExpandableDetails ? (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleClosureExpansion(closure.id)}
+                                  className="shrink-0 rounded p-1 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                  title={
+                                    expandedClosureIds.has(closure.id)
+                                      ? 'Colapsar pagamentos e liquidações'
+                                      : 'Expandir pagamentos e liquidações'
+                                  }
+                                  aria-expanded={expandedClosureIds.has(closure.id)}
+                                >
+                                  {expandedClosureIds.has(closure.id) ? (
+                                    <ChevronDown size={20} />
+                                  ) : (
+                                    <ChevronRight size={20} />
+                                  )}
+                                </button>
+                              ) : (
+                                <span className="w-7 shrink-0" aria-hidden />
+                              )}
+                              <div className="min-w-0 max-w-[15rem] shrink sm:max-w-[19rem] md:max-w-[22rem] md:shrink-0">
+                                <p
+                                  className="truncate text-sm font-semibold text-gray-900 dark:text-white"
+                                  title={closureReferenceLabel(closure)}
+                                >
                                   {closureReferenceLabel(closure)}
+                                </p>
+                                <p
+                                  className="whitespace-nowrap text-xs text-gray-500 dark:text-gray-400"
+                                  title={periodRangeLabel}
+                                >
+                                  {periodRangeLabel}
+                                </p>
+                              </div>
+                              <div className="mx-0.5 hidden h-10 w-px shrink-0 bg-gray-200 dark:bg-gray-600 sm:block" />
+                              <div className="hidden min-w-0 shrink items-center gap-1.5 sm:flex">
+                                <div className="min-w-0 max-w-[8rem] shrink md:max-w-[9.5rem]">
+                                  {viewerCard?.account_id ? (
+                                    <SharedAccountDisplay
+                                      compact
+                                      account={{
+                                        id: viewerCard.account_id || 0,
+                                        name: viewerCard.account_name,
+                                        bank: {
+                                          code: viewerCard.bank_code || '',
+                                          name: viewerCard.bank_name || '',
+                                        },
+                                        agency: viewerCard.agency,
+                                        account_number: viewerCard.account_number,
+                                      }}
+                                    />
+                                  ) : (
+                                    <span className="text-xs text-gray-400">—</span>
+                                  )}
+                                </div>
+                                <span
+                                  className="hidden shrink-0 text-gray-400 dark:text-gray-500 md:inline-flex"
+                                  title="Troca entre contas compartilhadas"
+                                  aria-hidden
+                                >
+                                  <ArrowLeftRight size={16} strokeWidth={2} />
                                 </span>
-                                <div className="flex items-baseline gap-1.5">
-                                  <span className="text-[10px] font-medium text-gray-400 dark:text-gray-500 w-5 shrink-0">De</span>
-                                  <span className="text-xs text-gray-700 dark:text-gray-300 whitespace-nowrap">
-                                    {parseClosureDateTime(closure.period_start_date).toLocaleDateString('pt-BR')}
-                                  </span>
-                                  <span className="text-[10px] text-gray-400 dark:text-gray-500 whitespace-nowrap">
-                                    {parseClosureDateTime(closure.period_start_date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                                  </span>
+                                <div className="hidden min-w-0 max-w-[8rem] shrink md:block md:max-w-[9.5rem]">
+                                  {otherCard?.account_id ? (
+                                    <SharedAccountDisplay
+                                      compact
+                                      nameClassName={sharedAccountNameColorClass(
+                                        closureAccountNameColors,
+                                        otherCard.account_id,
+                                        loggedAccountId,
+                                      )}
+                                      account={{
+                                        id: otherCard.account_id || 0,
+                                        name: otherCard.account_name,
+                                        bank: {
+                                          code: otherCard.bank_code || '',
+                                          name: otherCard.bank_name || '',
+                                        },
+                                        agency: otherCard.agency,
+                                        account_number: otherCard.account_number,
+                                      }}
+                                    />
+                                  ) : (
+                                    <span className="text-xs text-gray-400">—</span>
+                                  )}
                                 </div>
-                                <div className="flex items-baseline gap-1.5">
-                                  <span className="text-[10px] font-medium text-gray-400 dark:text-gray-500 w-5 shrink-0">Até</span>
-                                  <span className="text-xs font-semibold text-gray-900 dark:text-white whitespace-nowrap">
-                                    {parseClosureDateTime(closurePeriodEndRaw(closure)).toLocaleDateString('pt-BR')}
-                                  </span>
-                                  <span className="text-[10px] text-gray-400 dark:text-gray-500 whitespace-nowrap">
-                                    {parseClosureDateTime(closurePeriodEndRaw(closure)).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                                  </span>
-                                </div>
-                                {closure.notes && (
-                                  <span className="text-[10px] text-gray-500 dark:text-gray-400 truncate max-w-[130px]">• {closure.notes}</span>
+                              </div>
+                              <div className="mx-0.5 hidden h-10 w-px shrink-0 bg-gray-200 dark:bg-gray-600 sm:block" />
+                            </div>
+                            <div className="flex shrink-0 items-center gap-3">
+                              <div className="hidden text-right self-start w-[128px] md:block">
+                                <p className="text-sm text-gray-500 dark:text-gray-400">Valores</p>
+                                <p className="whitespace-nowrap text-xs font-bold text-gray-900 dark:text-gray-100">
+                                  <span className="text-green-600 dark:text-green-400">↑ {formatCurrency(displayToReceive)}</span>
+                                </p>
+                                <p className="whitespace-nowrap text-xs font-bold">
+                                  <span className="text-red-600 dark:text-red-400">↓ {formatCurrency(displayToPay)}</span>
+                                </p>
+                              </div>
+                              <div className="mx-1 hidden h-10 w-px shrink-0 bg-gray-200 dark:bg-gray-600 md:block" />
+                              <div className="hidden text-right self-start w-[96px] md:block">
+                                <p className="text-sm text-gray-500 dark:text-gray-400">Empréstimos</p>
+                                {closureLoanLiquidations.length > 0 ? (
+                                  <>
+                                    <p className="text-xs font-bold text-amber-700 dark:text-amber-400">
+                                      {closureLoanLiquidations.length}
+                                    </p>
+                                    <p className="text-xs font-medium text-amber-600 dark:text-amber-500">liquidações</p>
+                                  </>
+                                ) : (
+                                  <p className="text-xs font-bold text-gray-300 dark:text-gray-600">—</p>
                                 )}
                               </div>
-                            </td>
-                            <td className={`${listPageTableTdCls} max-w-[150px]`}>
-                              {/* Conta Principal: exibe viewerCard (conta logada) */}
-                              {viewerCard?.account_id ? (
-                                <SharedAccountDisplay
-                                  account={{
-                                    id: viewerCard.account_id || 0,
-                                    name: viewerCard.account_name,
-                                    bank: {
-                                      code: viewerCard.bank_code || '',
-                                      name: viewerCard.bank_name || ''
-                                    },
-                                    agency: viewerCard.agency,
-                                    account_number: viewerCard.account_number
-                                  }}
-                                />
-                              ) : (
-                                <span className="text-gray-400">-</span>
-                              )}
-                            </td>
-                            <td className={`${listPageTableTdCls} max-w-[150px]`}>
-                              {/* Contraparte: exibe otherCard (outra conta) */}
-                              {(() => {
-                                const otherCard = isCounterpart ? mainCard : partnerCard
-                                return otherCard?.account_id ? (
-                                  <SharedAccountDisplay
-                                    account={{
-                                      id: otherCard.account_id || 0,
-                                      name: otherCard.account_name,
-                                      bank: {
-                                        code: otherCard.bank_code || '',
-                                        name: otherCard.bank_name || ''
-                                      },
-                                      agency: otherCard.agency,
-                                      account_number: otherCard.account_number
-                                    }}
-                                  />
+                              <div className="mx-1 hidden h-10 w-px shrink-0 bg-gray-200 dark:bg-gray-600 md:block" />
+                              <div className="hidden text-right self-start w-[100px] md:block">
+                                <p className="text-sm text-gray-500 dark:text-gray-400">Pagamentos</p>
+                                {paymentsCount > 0 ? (
+                                  <>
+                                    <p className="text-xs font-bold text-gray-900 dark:text-gray-100">{paymentsCount}</p>
+                                    <p className="text-xs font-bold text-green-600 dark:text-green-400">
+                                      {formatCurrency(totalPaid)}
+                                    </p>
+                                  </>
                                 ) : (
-                                  <span className="text-gray-400">-</span>
-                                )
-                              })()}
-                            </td>
-                            {/* Coluna Valores — A Receber e A Pagar empilhados */}
-                            <td className={listPageTableTdCls}>
-                              <div className="flex flex-col items-start gap-0.5">
-                                <span className="text-xs font-medium text-green-600 dark:text-green-400 whitespace-nowrap">
-                                  ↑ {formatCurrency(displayToReceive)}
-                                </span>
-                                <span className="text-xs font-medium text-red-600 dark:text-red-400 whitespace-nowrap">
-                                  ↓ {formatCurrency(displayToPay)}
-                                </span>
+                                  <p className="text-xs font-bold text-gray-300 dark:text-gray-600">—</p>
+                                )}
                               </div>
-                            </td>
-                            {/* Coluna Pagamentos (antes do Saldo) */}
-                            <td className={`${listPageTableTdCls} whitespace-nowrap`}>
-                              {(() => {
-                                const totalPaid = parseFloat(String(closure.total_paid ?? 0))
-                                const paymentsCount = (closure.closure_payments || []).length
-                                return paymentsCount > 0 ? (
-                                  <div className="flex flex-col items-start gap-0.5">
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">
-                                      <CreditCard size={11} />
-                                      {paymentsCount}
-                                    </span>
-                                    <span className="text-[10px] text-green-600 dark:text-green-400 font-medium">{formatCurrency(totalPaid)}</span>
-                                  </div>
-                                ) : (
-                                  <span className="text-gray-300 dark:text-gray-600">—</span>
-                                )
-                              })()}
-                            </td>
-                            {/* Coluna Saldo — saldo restante ou crédito da quitação */}
-                            {(() => {
-                              const settlementCreditSigned = getSettlementCreditSignedForViewer(closure, !isCounterpart)
-                              const settlementCreditTotal = getSettlementCreditTotal(closure)
-
-                              if (closure.is_settled && settlementCreditTotal > 0.01) {
-                                return (
-                                  <td className={`${listPageTableTdCls} whitespace-nowrap ${
-                                    settlementCreditSigned > 0
+                              <div className="mx-1 hidden h-10 w-px shrink-0 bg-gray-200 dark:bg-gray-600 md:block" />
+                              <div className="text-right self-start w-[110px]">
+                                <p className="text-sm text-gray-500 dark:text-gray-400">Saldo</p>
+                                <p
+                                  className={`font-bold ${
+                                    displayBalance > 0
                                       ? 'text-green-600 dark:text-green-400'
-                                      : settlementCreditSigned < 0
-                                      ? 'text-red-600 dark:text-red-400'
-                                      : 'text-gray-600 dark:text-gray-400'
-                                  }`}>
-                                    <div className="flex flex-col items-start">
-                                      <span className="font-medium">{formatSignedCurrency(settlementCreditSigned)}</span>
-                                      <span className="text-[10px] text-amber-600 dark:text-amber-400">crédito quitação</span>
-                                    </div>
-                                  </td>
-                                )
-                              }
-
-                              const totalPaid = parseFloat(String(closure.total_paid ?? 0))
-                              const remaining = closure.is_settled ? 0 : (parseFloat(String(closure.remaining_balance ?? Math.abs(displayNetBalance))) - 0)
-                              const displayBalance = totalPaid > 0 ? remaining : displayNetBalance
-                              const isRemainingView = totalPaid > 0
-                              return (
-                                <td className={`${listPageTableTdCls} whitespace-nowrap ${
-                                  displayBalance > 0
-                                    ? 'text-green-600 dark:text-green-400'
-                                    : displayBalance < 0
-                                    ? 'text-red-600 dark:text-red-400'
-                                    : 'text-gray-600 dark:text-gray-400'
-                                }`}>
-                                  <div className="flex flex-col items-start">
-                                    <span className="font-medium">{formatSignedCurrency(displayBalance)}</span>
-                                    {isRemainingView && (
-                                      <span className="text-[10px] text-gray-400 dark:text-gray-500">restante</span>
-                                    )}
-                                  </div>
-                                </td>
-                              )
-                            })()}
-                            <td className={listPageTableTdCls}>
-                              <div className="flex flex-col items-start gap-1">
+                                      : displayBalance < 0
+                                        ? 'text-red-600 dark:text-red-400'
+                                        : 'text-gray-900 dark:text-gray-100'
+                                  }`}
+                                >
+                                  {formatSignedCurrency(displayBalance)}
+                                </p>
+                                {isCreditSettleView && (
+                                  <p className="text-xs text-amber-600 dark:text-amber-400">crédito quitação</p>
+                                )}
+                                {isRemainingView && (
+                                  <p className="text-xs text-gray-500 dark:text-gray-400">restante</p>
+                                )}
+                              </div>
+                              <div className="mx-1 hidden h-10 w-px shrink-0 bg-gray-200 dark:bg-gray-600 sm:block" />
+                              <div className="flex items-center self-center">
                                 {closure.is_settled ? (
-                                  <span
-                                    className="inline-block px-2.5 py-0.5 text-xs font-medium rounded text-white"
-                                    style={{ backgroundColor: 'var(--status-success)' }}
-                                  >
+                                  <span className="inline-flex w-[88px] items-center justify-center gap-1.5 rounded px-3 py-1 text-xs font-medium text-white bg-green-600">
+                                    <Lock size={14} strokeWidth={2.25} aria-hidden />
                                     Quitado
                                   </span>
                                 ) : (
-                                  <span
-                                    className="inline-block px-2.5 py-0.5 text-xs font-medium rounded text-white"
-                                    style={{ backgroundColor: 'var(--status-warning)' }}
-                                  >
+                                  <span className="inline-flex w-[88px] items-center justify-center gap-1.5 rounded px-3 py-1 text-xs font-medium text-white bg-blue-600">
+                                    <Unlock size={14} strokeWidth={2.25} aria-hidden />
                                     Pendente
                                   </span>
                                 )}
-                                {hasLoanPayments && (
-                                  <span
-                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 whitespace-nowrap"
-                                    title="Possui liquidações de empréstimos"
-                                  >
-                                    <Banknote size={9} /> Empr.
-                                  </span>
-                                )}
                               </div>
-                            </td>
-                            <td
-                              className={`${listPageTableStickyActionsCellCls} overflow-hidden ${
-                                selectedClosureIds.has(closure.id) ? 'bg-blue-50 dark:bg-blue-900/20' : ''
-                              }`}
-                            >
-                              <div className="flex items-center gap-1">
+                              <div className="mx-1 hidden h-10 w-px shrink-0 bg-gray-200 dark:bg-gray-600 sm:block" />
+                              <div className="flex items-center gap-1 self-center">
                                 <button
                                   type="button"
                                   onClick={() => handleViewClosureDetails(closure)}
@@ -2105,14 +2207,6 @@ const SharedBalanceListPage = () => {
                                   title="Ver detalhes do fechamento"
                                 >
                                   <Eye size={15} />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => { setExportTargetClosure(closure as any); setShowExportModal(true) }}
-                                  className={cadastroRowIconBtnCls}
-                                  title="Exportar fechamento"
-                                >
-                                  <Download size={15} />
                                 </button>
                                 <button
                                   type="button"
@@ -2126,221 +2220,280 @@ const SharedBalanceListPage = () => {
                                 >
                                   <Braces size={15} />
                                 </button>
-                                {!closure.is_settled && (() => {
-                                  const noBalance = parseFloat(String(closure.remaining_balance ?? Math.abs(parseFloat(String(closure.net_balance ?? 0))))) <= 0.01
-                                  return (
-                                    <button
-                                      type="button"
-                                      onClick={() => !noBalance && openPaymentModal(closure)}
-                                      disabled={noBalance}
-                                      className={reportRowActionBtnClass(!noBalance)}
-                                      title={noBalance ? 'Saldo zerado' : 'Registrar pagamento parcial'}
-                                    >
-                                      <CreditCard size={15} />
-                                    </button>
-                                  )
-                                })()}
-                                {!closure.is_settled ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setExportTargetClosure(closure as any)
+                                    setShowExportModal(true)
+                                  }}
+                                  className={cadastroRowIconBtnCls}
+                                  title="Exportar fechamento"
+                                >
+                                  <Download size={15} />
+                                </button>
+                                {closure.is_settled ? (
                                   <button
                                     type="button"
-                                    onClick={() => {
-                                      setSelectedClosure(closure)
-                                      setSettlementDate('')
-                                      setShowSettleModal(true)
-                                    }}
-                                    className={cadastroRowIconBtnCls}
-                                    title="Marcar como quitado"
+                                    onClick={() => handleUnsettleClosure(closure)}
+                                    className={`${cadastroRowIconBtnCls} text-green-600 dark:text-green-400`}
+                                    title="Quitado — remover quitação"
                                   >
-                                    <CheckCircle size={15} />
+                                    <Lock size={15} />
                                   </button>
                                 ) : (
                                   <button
                                     type="button"
-                                    onClick={() => handleUnsettleClosure(closure)}
-                                    className={cadastroRowIconBtnCls}
-                                    title="Remover quitação"
+                                    onClick={() => openPaymentModal(closure)}
+                                    className={reportRowActionBtnClass(true)}
+                                    title="Registrar pagamento ou quitar"
                                   >
-                                    <CheckCircle size={15} />
+                                    <Plus size={15} />
                                   </button>
                                 )}
                                 <button
                                   type="button"
-                                  onClick={() => hasRemovableLoanLiquidations && !closure.is_settled && handleOpenRemoveLoanPaymentsModal(closure)}
-                                  disabled={!hasRemovableLoanLiquidations || closure.is_settled}
-                                  className={reportRowActionBtnClass(hasRemovableLoanLiquidations && !closure.is_settled)}
+                                  onClick={() => handleReopenClosure(closure)}
+                                  className={reportRowActionBtnClass(!closure.is_settled, 'danger')}
                                   title={
                                     closure.is_settled
-                                      ? 'Remova a quitação para poder remover liquidações de empréstimos'
-                                      : hasRemovableLoanLiquidations
-                                        ? 'Remover liquidações de empréstimos deste fechamento'
-                                        : 'Este fechamento não possui liquidações de empréstimos'
+                                      ? 'Excluir fechamento (remova a quitação antes)'
+                                      : 'Excluir fechamento'
                                   }
+                                  disabled={closure.is_settled}
                                 >
-                                  <Banknote size={15} />
+                                  <Trash2 size={15} />
                                 </button>
-                                {!closure.is_settled && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleReopenClosure(closure)}
-                                    className={cadastroRowIconDangerCls}
-                                    title="Excluir fechamento"
-                                  >
-                                    <Trash2 size={15} />
-                                  </button>
-                                )}
                               </div>
-                            </td>
-                          </tr>
-                          {/* Sub-linhas expansíveis: histórico de pagamentos */}
-                          {expandedClosureIds.has(closure.id) && (closure.closure_payments || []).length > 0 && (
-                            <React.Fragment>
-                              {/* Barra de título da seção */}
-                              <tr className="bg-indigo-50 dark:bg-indigo-900/15 border-t border-indigo-200 dark:border-indigo-800">
-                                <td colSpan={11} className="pl-10 pr-4 py-2">
-                                  <div className="flex items-center gap-2">
-                                    <div className="w-1 h-4 rounded-full bg-indigo-500 dark:bg-indigo-400 shrink-0" />
-                                    <CreditCard size={13} className="text-gray-500 dark:text-gray-400" />
-                                    <span className="text-xs font-semibold text-indigo-700 dark:text-indigo-300 uppercase tracking-wide">
-                                      Pagamentos Parciais
-                                    </span>
-                                    <span className="text-xs text-indigo-400 dark:text-indigo-500">
-                                      ({(closure.closure_payments || []).length})
-                                    </span>
-                                    <span className="ml-auto text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                                      Total pago: <span className="font-semibold text-green-600 dark:text-green-400">{formatCurrency(parseFloat(String(closure.total_paid ?? 0)))}</span>
-                                    </span>
-                                  </div>
-                                </td>
-                                <td className="sticky right-0 z-10 bg-indigo-50 py-2 px-3 dark:bg-indigo-900/15" />
-                              </tr>
-                              {/* Cabeçalho das colunas — alinhado com as colunas da tabela pai */}
-                              <tr className="bg-gray-50 dark:bg-gray-700/40 border-t border-gray-200 dark:border-gray-700 text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
-                                <td className="w-8 align-middle px-2 py-1.5" />
-                                <td className="w-8 align-middle px-2 py-1.5 text-left">#</td>
-                                <td className="list-page-table-spacer w-1 p-0 align-middle" />
-                                <td className="w-7 max-w-[28px] p-0 align-middle" />
-                                <td className="align-middle px-4 py-1.5 text-left">Data</td>
-                                <td className="align-middle px-3 py-1.5 text-left">Valor pago</td>
-                                <td className="align-middle px-3 py-1.5" colSpan={5}>
-                                  Observação
-                                </td>
-                                <td className="sticky right-0 z-10 w-[175px] align-middle bg-gray-50 px-3 py-1.5 dark:bg-gray-700/40">
-                                  Ações
-                                </td>
-                              </tr>
-                              {/* Uma linha por pagamento — células alinhadas às colunas da tabela */}
-                              {(closure.closure_payments || []).map((payment, payIdx) => {
-                                const rowBg = payIdx % 2 === 0
-                                  ? 'bg-white dark:bg-gray-800'
-                                  : 'bg-gray-50/70 dark:bg-gray-700/20'
-                                return (
-                                <tr
-                                  key={payment.id}
-                                  className={`border-t border-gray-100 dark:border-gray-700/60 hover:bg-indigo-50/60 dark:hover:bg-indigo-900/20 transition-colors ${rowBg}`}
-                                >
-                                  <td className="w-8 align-middle px-2 py-2" />
-                                  {/* select — índice do pagamento */}
-                                  <td className="w-8 align-middle px-2 py-2 text-left text-xs font-medium text-gray-400 dark:text-gray-500">
-                                    {payIdx + 1}
-                                  </td>
-                                  <td className="list-page-table-spacer w-1 p-0 align-middle" />
-                                  <td className="w-7 max-w-[28px] p-0 align-middle" />
-                                  {/* Período → data do pagamento */}
-                                  <td className={`${listPageTableTdCls} py-2 text-xs whitespace-nowrap align-middle`}>
-                                    {new Date(payment.payment_date).toLocaleDateString('pt-BR')}
-                                  </td>
-                                  {/* Conta Principal → valor pago (alinhado à direita) */}
-                                  <td className="align-middle px-3 py-2 text-left text-xs font-semibold text-green-600 dark:text-green-400 whitespace-nowrap">
-                                    {formatCurrency(parseFloat(String(payment.amount)))}
-                                  </td>
-                                  {/* Contraparte + Valores + Pagamentos + Saldo + Status → observação (colSpan=5) */}
-                                  <td colSpan={5} className="align-middle px-3 py-2 text-xs text-gray-500 dark:text-gray-400 truncate overflow-hidden">
-                                    {payment.notes || <span className="italic text-gray-300 dark:text-gray-600">—</span>}
-                                  </td>
-                                  {/* Ações — sticky */}
-                                  <td
-                                    className={`sticky right-0 z-10 align-middle py-2 px-3 ${rowBg} hover:bg-indigo-50/60 dark:hover:bg-indigo-900/20`}
-                                  >
-                                    <div className="flex items-center gap-1">
-                                      {!closure.is_settled && (
-                                        <button
-                                          onClick={() => openEditPayment(payment, closure)}
-                                          className="p-1 text-gray-400 hover:text-indigo-600 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 rounded transition-all"
-                                          title="Editar pagamento"
-                                        >
-                                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                                        </button>
-                                      )}
-                                      <button
-                                        onClick={() => handleDeletePayment(closure, payment.id)}
-                                        className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-all"
-                                        title="Remover pagamento"
-                                      >
-                                        <Trash2 size={12} />
-                                      </button>
-                                    </div>
-                                  </td>
-                                </tr>
-                                )
-                              })}
-                              {(() => {
-                                const settlementCredits = getSettlementCreditEntries(closure)
-                                if (settlementCredits.length === 0) return null
-                                const signedTotal = getSettlementCreditSignedForViewer(closure, !isCounterpart)
-                                return (
+                            </div>
+                          </div>
+                          {expandedClosureIds.has(closure.id) && hasExpandableDetails && (
+                            <div className="mt-4 ml-10 space-y-5">
+                                {partialPaymentsCount > 0 && (
                                   <>
-                                    <tr className="bg-amber-50 dark:bg-amber-900/15 border-t border-amber-200 dark:border-amber-800">
-                                      <td colSpan={11} className="pl-10 pr-4 py-2">
-                                        <div className="flex items-center gap-2">
-                                          <div className="w-1 h-4 rounded-full bg-amber-500 shrink-0" />
-                                          <Banknote size={13} className="text-amber-600 dark:text-amber-400" />
-                                          <span className="text-xs font-semibold text-amber-800 dark:text-amber-200 uppercase tracking-wide">
-                                            Saldo gerado no pagamento a maior
+                                    <ClosureExpandSectionTitle
+                                      icon={<Banknote size={14} className="text-gray-500 dark:text-gray-400" />}
+                                      title="Pagamentos parciais"
+                                      count={partialPaymentsCount}
+                                      trailing={
+                                        <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                          Total pago:{' '}
+                                          <span className="font-semibold text-green-600 dark:text-green-400">
+                                            {formatCurrency(parseFloat(String(closure.total_paid ?? 0)))}
                                           </span>
-                                          <span className="ml-auto text-xs font-bold whitespace-nowrap">
-                                            <span className={signedTotal < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}>
-                                              {formatSignedCurrency(signedTotal)}
-                                            </span>
-                                          </span>
+                                        </span>
+                                      }
+                                    />
+                                    <ListPageNestedTable
+                                      alignWithListLeading
+                                      leadingMode="index-only"
+                                      colsRest={closureNestedCols4}
+                                      head={
+                                        <tr>
+                                          <ListTableIndexHeader />
+                                          <ListTableSpacerHeader />
+                                          <ListTableStaticHeader label="Data" className="px-3 py-2" />
+                                          <ListTableStaticHeader label="Valor pago" className="px-3 py-2" />
+                                          <ListTableStaticHeader label="Observação" className="px-3 py-2" />
+                                          <ListTableStaticHeader label="Ações" className="px-2 py-2" />
+                                        </tr>
+                                      }
+                                    >
+                                      {(closure.closure_payments || []).map((payment, payIdx) => (
+                                        <tr key={payment.id} className={listPageTableRowHoverCls}>
+                                          <ListTableIndexCell index={payIdx + 1} />
+                                          <ListTableSpacerCell />
+                                          <td className="px-3 py-2 text-sm whitespace-nowrap text-gray-800 dark:text-gray-100">
+                                            {new Date(payment.payment_date).toLocaleDateString('pt-BR')}
+                                          </td>
+                                          <td className="px-3 py-2 text-sm font-semibold text-green-600 dark:text-green-400 whitespace-nowrap">
+                                            {formatCurrency(parseFloat(String(payment.amount)))}
+                                          </td>
+                                          <td className="max-w-0 px-3 py-2 text-sm text-gray-500 dark:text-gray-400 truncate">
+                                            {payment.notes || <span className="italic text-gray-300 dark:text-gray-600">—</span>}
+                                          </td>
+                                          <td className="px-2 py-2">
+                                            <div className="flex items-center gap-0.5">
+                                              {!closure.is_settled && (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => openEditPayment(payment, closure)}
+                                                  className={cadastroRowIconBtnCls}
+                                                  title="Editar pagamento"
+                                                >
+                                                  <Pencil size={14} />
+                                                </button>
+                                              )}
+                                              <button
+                                                type="button"
+                                                onClick={() => handleDeletePayment(closure, payment.id)}
+                                                className={cadastroRowIconDangerCls}
+                                                title="Remover pagamento"
+                                              >
+                                                <Trash2 size={14} />
+                                              </button>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </ListPageNestedTable>
+                                    {(() => {
+                                      const settlementCredits = getSettlementCreditEntries(closure)
+                                      if (settlementCredits.length === 0) return null
+                                      const signedTotal = getSettlementCreditSignedForViewer(closure, !isCounterpart)
+                                      return (
+                                        <div className="mt-4">
+                                          <ClosureExpandSectionTitle
+                                            tone="amber"
+                                            icon={<Banknote size={14} className="text-amber-600 dark:text-amber-400" />}
+                                            title="Saldo gerado no pagamento a maior"
+                                            trailing={
+                                              <span
+                                                className={`text-xs font-bold whitespace-nowrap ${
+                                                  signedTotal < 0
+                                                    ? 'text-red-600 dark:text-red-400'
+                                                    : 'text-green-600 dark:text-green-400'
+                                                }`}
+                                              >
+                                                {formatSignedCurrency(signedTotal)}
+                                              </span>
+                                            }
+                                          />
+                                          <ListPageNestedTable
+                                            alignWithListLeading
+                                            leadingMode="index-only"
+                                            colsRest={closureNestedCols3}
+                                            head={
+                                              <tr>
+                                                <ListTableIndexHeader />
+                                                <ListTableSpacerHeader />
+                                                <ListTableStaticHeader label="Descrição" className="px-3 py-2" />
+                                                <ListTableStaticHeader label="Empréstimo" className="px-3 py-2" />
+                                                <ListTableStaticHeader label="Saldo" className="px-3 py-2" />
+                                              </tr>
+                                            }
+                                          >
+                                            {settlementCredits.map((credit, ci) => (
+                                              <tr key={`credit-${credit.loan_id ?? ci}`} className={listPageTableRowHoverCls}>
+                                                <ListTableIndexCell index={ci + 1} />
+                                                <ListTableSpacerCell />
+                                                <td className="px-3 py-2 text-sm text-gray-700 dark:text-gray-300">
+                                                  {credit.description || 'Crédito da quitação'}
+                                                </td>
+                                                <td className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
+                                                  #{credit.loan_id}
+                                                </td>
+                                                <td className="px-3 py-2 text-sm font-semibold text-red-600 dark:text-red-400 whitespace-nowrap">
+                                                  {formatSignedCurrency(
+                                                    signedLoanFieldValue(credit.original_amount || 0, isCounterpart, 'remaining'),
+                                                  )}
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </ListPageNestedTable>
                                         </div>
-                                      </td>
-                                      <td className="sticky right-0 z-10 bg-amber-50 py-2 px-3 dark:bg-amber-900/15" />
-                                    </tr>
-                                    {settlementCredits.map((credit, ci) => (
-                                      <tr key={`credit-${credit.loan_id ?? ci}`} className="border-t border-amber-100 dark:border-amber-900/30 bg-amber-50/50 dark:bg-amber-900/10">
-                                        <td className="w-8 align-middle px-2 py-2" />
-                                        <td className="w-8 align-middle px-2 py-2 text-left text-xs text-amber-600 dark:text-amber-400">
-                                          {ci + 1}
-                                        </td>
-                                        <td className="list-page-table-spacer w-1 p-0 align-middle" />
-                                        <td className="w-7 max-w-[28px] p-0 align-middle" />
-                                        <td className="align-middle px-3 py-2 text-xs text-gray-600 dark:text-gray-400" colSpan={2}>
-                                          {credit.description || 'Crédito da quitação'}
-                                        </td>
-                                        <td colSpan={5} className="align-middle px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
-                                          Empréstimo a pagar · #{credit.loan_id}
-                                        </td>
-                                        <td className="sticky right-0 z-10 align-middle bg-amber-50/50 py-2 px-3 text-left text-xs font-semibold text-red-600 dark:bg-amber-900/10 dark:text-red-400">
-                                          {formatSignedCurrency(
-                                            signedLoanFieldValue(credit.original_amount || 0, isCounterpart, 'remaining')
-                                          )}
-                                        </td>
-                                      </tr>
-                                    ))}
+                                      )
+                                    })()}
                                   </>
-                                )
-                              })()}
-                              {/* Fechamento visual da seção */}
-                              <tr className="border-t border-indigo-200 dark:border-indigo-800/60">
-                                <td colSpan={11} className="pb-0"></td>
-                                <td className="sticky right-0 z-10 bg-white pb-0 dark:bg-gray-800"></td>
-                              </tr>
-                            </React.Fragment>
+                                )}
+                                {closureLoanLiquidations.length > 0 && (
+                                  <>
+                                    <ClosureExpandSectionTitle
+                                      tone="amber"
+                                      icon={<Landmark size={14} className="text-amber-700 dark:text-amber-300" />}
+                                      title="Liquidações de empréstimo"
+                                      count={closureLoanLiquidations.length}
+                                    />
+                                    <ListPageNestedTable
+                                      alignWithListLeading
+                                      leadingMode="index-only"
+                                      colsRest={closureNestedCols5}
+                                      head={
+                                        <tr>
+                                          <ListTableIndexHeader />
+                                          <ListTableSpacerHeader />
+                                          <ListTableStaticHeader label="Tipo" className="px-3 py-2" />
+                                          <ListTableStaticHeader label="Descrição" className="px-3 py-2" />
+                                          <ListTableStaticHeader label="Quitado" className="px-3 py-2" />
+                                          <ListTableStaticHeader label="Saldo restante" className="px-3 py-2" />
+                                          <ListTableStaticHeader label="Ações" className="px-2 py-2" />
+                                        </tr>
+                                      }
+                                    >
+                                      {closureLoanLiquidations.map((lp: any, liIdx: number) => {
+                                        const originalIsLent = lp.loan_type === 'lent'
+                                        const isLent = isCounterpart ? !originalIsLent : originalIsLent
+                                        return (
+                                          <tr
+                                            key={`loan-liq-${lp.loan_id}-${liIdx}`}
+                                            className={`${listPageTableRowHoverCls} border-l-4 border-l-amber-500`}
+                                          >
+                                            <ListTableIndexCell index={liIdx + 1} />
+                                            <ListTableSpacerCell />
+                                            <td className="px-3 py-2">
+                                              <span
+                                                className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold text-white ${
+                                                  isLent ? 'bg-green-600' : 'bg-red-600'
+                                                }`}
+                                              >
+                                                {isLent ? 'A receber' : 'A pagar'}
+                                              </span>
+                                            </td>
+                                            <td className="px-3 py-2 text-sm font-medium text-gray-800 dark:text-gray-100">
+                                              {lp.description || `Empréstimo #${lp.loan_id}`}
+                                            </td>
+                                            <td className="px-3 py-2 text-sm font-semibold text-green-600 dark:text-green-400 whitespace-nowrap">
+                                              {formatCurrency(Math.abs(lp.amount_paid || 0))}
+                                            </td>
+                                            <td className="px-3 py-2 text-sm whitespace-nowrap">
+                                              <span
+                                                className={
+                                                  Math.abs(lp.remaining_after || 0) < 0.01
+                                                    ? 'text-gray-500 dark:text-gray-400'
+                                                    : isLent
+                                                      ? 'text-green-600 dark:text-green-400'
+                                                      : 'text-red-600 dark:text-red-400'
+                                                }
+                                              >
+                                                {formatCurrency(Math.abs(lp.remaining_after || 0))}
+                                              </span>
+                                            </td>
+                                            <td className="px-2 py-2">
+                                              <button
+                                                type="button"
+                                                disabled={closure.is_settled}
+                                                onClick={() =>
+                                                  handleRemoveClosureLoanLiquidation(
+                                                    closure,
+                                                    lp.loan_id,
+                                                    lp.description || '',
+                                                  )
+                                                }
+                                                className={
+                                                  closure.is_settled
+                                                    ? `${cadastroRowIconDangerCls} cursor-not-allowed opacity-40`
+                                                    : cadastroRowIconDangerCls
+                                                }
+                                                title={
+                                                  closure.is_settled
+                                                    ? 'Remova a quitação antes'
+                                                    : 'Remover liquidação'
+                                                }
+                                              >
+                                                <Trash2 size={14} />
+                                              </button>
+                                            </td>
+                                          </tr>
+                                        )
+                                      })}
+                                    </ListPageNestedTable>
+                                  </>
+                                )}
+                            </div>
                           )}
-                          </React.Fragment>
+                          </div>
                           )
                         })}
-                    </ListPageTable>
+                    </div>
                   </div>
                   </>
                 )}
@@ -2461,29 +2614,50 @@ const SharedBalanceListPage = () => {
               iconStyle={{ backgroundColor: 'var(--color-delete)', color: 'var(--on-color-delete)' }}
             />
             <CadastroModalBody>
-              <CadastroFormSection title="Empréstimos bloqueados" icon={<Trash2 size={14} />}>
-                <p className="text-sm text-gray-600 dark:text-gray-400">{paymentDeleteError.message}</p>
-                {paymentDeleteError.loans.length > 0 && (
-                  <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-amber-900 dark:text-amber-100">
-                    {paymentDeleteError.loans.map(loan => (
-                      <li key={loan.id}>
-                        <span className="font-medium">{loan.description}</span>
-                        <span className="text-xs text-amber-700 dark:text-amber-300"> (#{loan.id})</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
-                  Ajuste ou exclua esses empréstimos em Empréstimos e tente novamente.
-                </p>
+              <CadastroFormSection title="Empréstimos bloqueados" icon={<Trash2 size={14} />} bodyClassName="p-0">
+                <CadastroModalFieldsGrid>
+                  <CadastroModalFieldsRow>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{paymentDeleteError.message}</p>
+                  </CadastroModalFieldsRow>
+                  {paymentDeleteError.loans.length > 0 && (
+                    <CadastroModalFieldsRow>
+                      <ul className="list-disc space-y-1 pl-5 text-sm text-amber-900 dark:text-amber-100">
+                        {paymentDeleteError.loans.map(loan => (
+                          <li key={loan.id}>
+                            <span className="font-medium">{loan.description}</span>
+                            <span className="text-xs text-amber-700 dark:text-amber-300"> (#{loan.id})</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </CadastroModalFieldsRow>
+                  )}
+                  <CadastroModalFieldsRow>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Ajuste ou exclua esses empréstimos em Empréstimos e tente novamente.
+                    </p>
+                  </CadastroModalFieldsRow>
+                </CadastroModalFieldsGrid>
               </CadastroFormSection>
             </CadastroModalBody>
             <CadastroModalFooter onClose={() => setPaymentDeleteError(null)} hideSave closeLabel="Fechar" />
           </CadastroModalShell>
         )}
 
-        {/* Modal: Reabrir (Remover Quitação) */}
-        {showUnsettleModal && unsettleClosure && (
+        {/* Modal: Remover quitação */}
+        {showUnsettleModal && unsettleClosure && (() => {
+          const activePayments = (unsettleClosure.closure_payments || []).filter((p) => p.active !== false)
+          const unsettleLoans = filterRegularLoanPayments(getClosureLoanPaymentsList(unsettleClosure))
+          const hasPayments = activePayments.length > 0
+          const hasLoans = unsettleLoans.length > 0
+          const unsettleSaveLabel =
+            hasPayments && hasLoans
+              ? 'Remover quitação e limpar pagamentos e empréstimos'
+              : hasPayments
+                ? 'Remover quitação e limpar pagamentos'
+                : hasLoans
+                  ? 'Remover quitação e limpar empréstimos'
+                  : 'Remover quitação'
+          return (
           <CadastroModalShell
             maxWidth="max-w-3xl"
             onBackdropClick={() => { setShowUnsettleModal(false); setUnsettleClosure(null); setUnsettleClearError(null) }}
@@ -2492,15 +2666,15 @@ const SharedBalanceListPage = () => {
             <CadastroModalHeader
               isEdit={true}
               title="Remover Quitação"
-              subtitle={`Fechamento ${String(unsettleClosure.month).padStart(2, '0')}/${unsettleClosure.year} será reaberto.`}
+              subtitle={`Fechamento ${String(unsettleClosure.month).padStart(2, '0')}/${unsettleClosure.year} voltará ao status pendente.`}
               onClose={() => { setShowUnsettleModal(false); setUnsettleClosure(null); setUnsettleClearError(null) }}
               icon={<Unlock size={18} />}
             />
             <CadastroModalBody>
-              <CadastroFormSection title="Pagamentos registrados" icon={<Unlock size={14} />} bodyClassName="p-0">
-                {(unsettleClosure.closure_payments || []).filter(p => p.active !== false).length > 0 ? (
-                  <div className="divide-y divide-gray-100 dark:divide-gray-700">
-                    {(unsettleClosure.closure_payments || []).filter(p => p.active !== false).map((p: any) => (
+              <CadastroFormSection title="Pagamentos parciais" icon={<Banknote size={14} />} bodyClassName="p-0">
+                {hasPayments ? (
+                  <div className="divide-y divide-gray-300 dark:divide-gray-600">
+                    {activePayments.map((p: any) => (
                       <div key={p.id} className="flex items-center justify-between px-3 py-2 text-sm">
                         <span className="text-gray-600 dark:text-gray-400">
                           {p.payment_date ? new Date(p.payment_date).toLocaleDateString('pt-BR') : '—'}
@@ -2513,222 +2687,379 @@ const SharedBalanceListPage = () => {
                     ))}
                   </div>
                 ) : (
-                  <p className="px-3 py-3 text-sm italic text-gray-500 dark:text-gray-400">Nenhum pagamento registrado.</p>
+                  <p className="px-3 py-3 text-sm italic text-gray-500 dark:text-gray-400">Nenhum pagamento parcial.</p>
+                )}
+              </CadastroFormSection>
+              <CadastroFormSection title="Liquidações de empréstimo" icon={<Landmark size={14} />} bodyClassName="p-0">
+                {hasLoans ? (
+                  <div className="divide-y divide-amber-100 dark:divide-amber-900/40">
+                    {unsettleLoans.map((lp: any) => (
+                      <div
+                        key={lp.loan_id}
+                        className="flex items-center justify-between bg-amber-50/60 px-3 py-2 text-sm dark:bg-amber-900/15"
+                      >
+                        <span className="font-medium text-gray-800 dark:text-gray-100">
+                          {lp.description || `Empréstimo #${lp.loan_id}`}
+                        </span>
+                        <span className="text-xs font-semibold text-amber-800 dark:text-amber-200">
+                          {formatCurrency(Math.abs(lp.amount_paid || 0))} quitado
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="px-3 py-3 text-sm italic text-gray-500 dark:text-gray-400">Nenhuma liquidação de empréstimo.</p>
                 )}
               </CadastroFormSection>
               {unsettleClearError && (
-                <CadastroFormSection title="Não é possível limpar os pagamentos" icon={<AlertTriangle size={14} />}>
-                  <p className="text-sm text-amber-800 dark:text-amber-200">{unsettleClearError.message}</p>
-                  {unsettleClearError.loans.length > 0 && (
-                    <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-900 dark:text-amber-100">
-                      {unsettleClearError.loans.map(loan => (
-                        <li key={loan.id}>
-                          <span className="font-medium">{loan.description}</span>
-                          <span className="text-xs text-amber-700 dark:text-amber-300"> (#{loan.id})</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
-                    Ajuste ou exclua esses empréstimos em Empréstimos e tente novamente.
-                  </p>
+                <CadastroFormSection title="Não é possível limpar os pagamentos" icon={<AlertTriangle size={14} />} bodyClassName="p-0">
+                  <CadastroModalFieldsGrid>
+                    <CadastroModalFieldsRow>
+                      <p className="text-sm text-amber-800 dark:text-amber-200">{unsettleClearError.message}</p>
+                    </CadastroModalFieldsRow>
+                    {unsettleClearError.loans.length > 0 && (
+                      <CadastroModalFieldsRow>
+                        <ul className="list-disc space-y-1 pl-5 text-sm text-amber-900 dark:text-amber-100">
+                          {unsettleClearError.loans.map(loan => (
+                            <li key={loan.id}>
+                              <span className="font-medium">{loan.description}</span>
+                              <span className="text-xs text-amber-700 dark:text-amber-300"> (#{loan.id})</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </CadastroModalFieldsRow>
+                    )}
+                    <CadastroModalFieldsRow>
+                      <p className="text-xs text-amber-700 dark:text-amber-300">
+                        Ajuste ou exclua esses empréstimos em Empréstimos e tente novamente.
+                      </p>
+                    </CadastroModalFieldsRow>
+                  </CadastroModalFieldsGrid>
                 </CadastroFormSection>
               )}
             </CadastroModalBody>
             <CadastroModalFooter
               onClose={() => { setShowUnsettleModal(false); setUnsettleClosure(null); setUnsettleClearError(null) }}
               saving={unsettleClearingAll}
-              onSave={() => handleConfirmUnsettle((unsettleClosure.closure_payments || []).filter(p => p.active !== false).length > 0)}
-              saveLabel={(unsettleClosure.closure_payments || []).filter(p => p.active !== false).length > 0
-                ? 'Reabrir e limpar todos os pagamentos'
-                : 'Reabrir sem alterar pagamentos'}
-              saveTone={(unsettleClosure.closure_payments || []).filter(p => p.active !== false).length > 0 ? 'danger' : 'default'}
-              saveIcon={(unsettleClosure.closure_payments || []).filter(p => p.active !== false).length > 0 ? <Trash2 size={15} /> : <Unlock size={15} />}
+              onSave={() =>
+                handleConfirmUnsettle({
+                  clearPayments: hasPayments,
+                  clearLoanLiquidations: hasLoans,
+                })
+              }
+              saveLabel={unsettleSaveLabel}
+              saveTone={hasPayments || hasLoans ? 'danger' : 'default'}
+              saveIcon={hasPayments || hasLoans ? <Trash2 size={15} /> : <Unlock size={15} />}
               secondaryActions={
-                (unsettleClosure.closure_payments || []).filter(p => p.active !== false).length > 0 ? (
+                hasPayments || hasLoans ? (
                   <button
                     type="button"
-                    onClick={() => handleConfirmUnsettle(false)}
+                    onClick={() =>
+                      handleConfirmUnsettle({ clearPayments: false, clearLoanLiquidations: false })
+                    }
                     disabled={unsettleClearingAll}
                     className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
                     style={{ background: 'var(--color-edit)', color: 'var(--on-color-edit)' }}
                   >
                     <Unlock size={15} />
-                    Reabrir sem alterar pagamentos
+                    Remover quitação sem limpar
                   </button>
                 ) : null
               }
             />
           </CadastroModalShell>
-        )}
-        {/* Modal: Marcar como Quitado */}
-        {showSettleModal && selectedClosure && (
-          <CadastroModalShell
-            maxWidth="max-w-md"
-            onBackdropClick={() => {
-              setShowSettleModal(false)
-              setSettlementNotes('')
-            }}
-            zClass="z-50"
-          >
-            <CadastroModalHeader
-              isEdit={false}
-              title="Marcar como Quitado"
-              subtitle={`Confirma a quitação do fechamento de ${String(selectedClosure.month).padStart(2, '0')}/${selectedClosure.year}?`}
-              onClose={() => {
-                setShowSettleModal(false)
-                setSettlementNotes('')
-              }}
-              icon={<CheckCircle size={18} />}
-              iconStyle={{ backgroundColor: 'var(--color-success)', color: 'var(--on-color-success)' }}
-            />
-            <CadastroModalBody>
-              <CadastroFormSection title="Quitação" icon={<CheckCircle size={14} />}>
-                <CadastroModalFieldsGrid>
-                  <CadastroModalFieldsRow>
-                    <label className="block min-w-0">
-                      <CadastroFieldLabel required>Data da quitação</CadastroFieldLabel>
-                      <DateField
-                        value={settlementDate}
-                        onChange={setSettlementDate}
-                        maxDate={new Date()}
-                        className={`${cadastroFieldCls} mt-0.5`}
-                      />
-                    </label>
-                  </CadastroModalFieldsRow>
-                  <CadastroModalFieldsRow>
-                    <label className="block min-w-0">
-                      <CadastroFieldLabel>Observações da quitação</CadastroFieldLabel>
-                      <textarea
-                        value={settlementNotes}
-                        onChange={(e) => setSettlementNotes(e.target.value)}
-                        placeholder="Ex: Pago via PIX, Transferência bancária, etc."
-                        className={`${cadastroFieldCls} mt-0.5`}
-                        rows={3}
-                      />
-                    </label>
-                  </CadastroModalFieldsRow>
-                </CadastroModalFieldsGrid>
-              </CadastroFormSection>
-            </CadastroModalBody>
-            <CadastroModalFooter
-              onClose={() => {
-                setShowSettleModal(false)
-                setSettlementNotes('')
-              }}
-              onSave={handleSettleClosure}
-              disabled={!settlementDate}
-              saveLabel="Confirmar Quitação"
-              saveTone="success"
-            />
-          </CadastroModalShell>
-        )}
-
-        {/* Modal: Registrar Pagamento Parcial */}
-        {showPaymentModal && paymentClosure && (
-          <CadastroModalShell
-            maxWidth="max-w-md"
-            zClass="z-50"
-          >
-            <CadastroModalHeader
-              isEdit={false}
-              title="Registrar Pagamento Parcial"
-              onClose={() => { setShowPaymentModal(false); setPaymentClosure(null) }}
-              icon={<CreditCard size={18} />}
-            />
-            <CadastroModalBody>
-              <CadastroFormSection title="Pagamento" icon={<CreditCard size={14} />}>
-                <CadastroModalFieldsGrid>
-                  <CadastroModalFieldsRow>
-                    {(() => {
-                      const remaining = paymentClosureRemaining(paymentClosure)
-                      const isFullyPaid = remaining <= 0
-                      return (
-                        <div className={`rounded-lg border p-3 text-sm ${isFullyPaid ? 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20' : 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20'}`}>
-                          <p className="mb-1 text-xs text-gray-600 dark:text-gray-400">Saldo devedor restante</p>
-                          <p className={`text-lg font-bold ${isFullyPaid ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                            {isFullyPaid ? formatCurrency(0) : `- ${formatCurrency(remaining)}`}
-                          </p>
-                        </div>
-                      )
-                    })()}
-                  </CadastroModalFieldsRow>
-                  <CadastroModalFieldsRow>
-                    <label className="block min-w-0">
-                      <CadastroFieldLabel required>Valor do Pagamento</CadastroFieldLabel>
-                      <div className="relative mt-0.5">
-                        <span className={`absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold ${parseInt(paymentAmountCents || '0') > 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-400 dark:text-gray-500'}`}>R$</span>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          value={formatAmountMask(paymentAmountCents)}
-                          onChange={handlePaymentAmountChange}
-                          className={`${cadastroFieldCls} pl-9 ${
-                            parseInt(paymentAmountCents || '0') > 0
-                              ? 'border-green-400 font-semibold text-green-700 dark:border-green-600 dark:text-green-300'
-                              : ''
-                          }`}
-                          placeholder="0,00"
-                        />
-                      </div>
-                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        Máximo: {formatCurrency(paymentClosureRemaining(paymentClosure))}
+          )
+        })()}
+        {/* Modal: Excluir fechamento (com opção de limpar vínculos) */}
+        {reopenModalClosure && (() => {
+          const activePayments = (reopenModalClosure.closure_payments || []).filter((p) => p.active !== false)
+          const reopenLoans = filterRegularLoanPayments(getClosureLoanPaymentsList(reopenModalClosure))
+          return (
+            <CadastroModalShell
+              maxWidth="max-w-lg"
+              onBackdropClick={() => setReopenModalClosure(null)}
+              zClass="z-50"
+            >
+              <CadastroModalHeader
+                isEdit={true}
+                title="Excluir fechamento"
+                subtitle={`${String(reopenModalClosure.month).padStart(2, '0')}/${reopenModalClosure.year} — o período poderá ser fechado novamente.`}
+                onClose={() => setReopenModalClosure(null)}
+                icon={<Trash2 size={18} />}
+                iconStyle={{ backgroundColor: 'var(--crud-delete)', color: '#fff' }}
+              />
+              <CadastroModalBody>
+                <CadastroFormSection title="Resumo" icon={<Scale size={14} />} bodyClassName="p-0">
+                  <CadastroModalFieldsGrid>
+                    <CadastroModalFieldsRow>
+                      <p className="text-sm text-gray-600 dark:text-gray-300">
+                        Este fechamento possui registros vinculados. Escolha o que remover junto com o fechamento.
                       </p>
-                    </label>
+                    </CadastroModalFieldsRow>
+                  </CadastroModalFieldsGrid>
+                </CadastroFormSection>
+                <CadastroFormSection title="O que limpar" icon={<Trash2 size={14} />} bodyClassName="p-0">
+                  <CadastroModalFieldsGrid>
+                    {activePayments.length > 0 && (
+                      <CadastroModalFieldsRow>
+                        <label className={`${cadastroOptionLabelCls} items-start`}>
+                          <input
+                            type="checkbox"
+                            checked={reopenClearPayments}
+                            onChange={(e) => setReopenClearPayments(e.target.checked)}
+                            className={`${cadastroAccentControlCls} mt-0.5 h-4 w-4 rounded border-gray-300`}
+                          />
+                          <span>
+                            <span className="block text-sm font-medium">Limpar pagamentos parciais</span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              {activePayments.length} pagamento(s) registrado(s)
+                            </span>
+                          </span>
+                        </label>
+                      </CadastroModalFieldsRow>
+                    )}
+                    {reopenLoans.length > 0 && (
+                      <CadastroModalFieldsRow>
+                        <label className={`${cadastroOptionLabelCls} items-start`}>
+                          <input
+                            type="checkbox"
+                            checked={reopenClearLoans}
+                            onChange={(e) => setReopenClearLoans(e.target.checked)}
+                            className={`${cadastroAccentControlCls} mt-0.5 h-4 w-4 rounded border-gray-300`}
+                          />
+                          <span>
+                            <span className="block text-sm font-medium">Limpar liquidações de empréstimo</span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              {reopenLoans.length} liquidação(ões) — empréstimos serão reabertos
+                            </span>
+                          </span>
+                        </label>
+                      </CadastroModalFieldsRow>
+                    )}
+                  </CadastroModalFieldsGrid>
+                </CadastroFormSection>
+              </CadastroModalBody>
+              <CadastroModalFooter
+                onClose={() => setReopenModalClosure(null)}
+                saving={reopenExecuting}
+                onSave={() => void handleConfirmReopenClosure()}
+                saveLabel="Excluir fechamento"
+                saveTone="danger"
+                saveIcon={<Trash2 size={15} />}
+              />
+            </CadastroModalShell>
+          )
+        })()}
+        {/* Modal: Pagamento parcial e quitação */}
+        {showPaymentModal && paymentClosure && (() => {
+          const remaining = paymentClosureRemaining(paymentClosure)
+          const canRegisterPayment = remaining > 0.01
+          const mode = canRegisterPayment ? paymentModalMode : 'settle'
+          const partialValid =
+            Boolean(paymentAmountCents) &&
+            parseInt(paymentAmountCents) > 0 &&
+            Boolean(paymentDate)
+          const settleValid = Boolean(settlementDate)
+          const saving = mode === 'partial' ? isSubmittingPayment : isSettlingClosure
+          const saveDisabled = mode === 'partial' ? !partialValid : !settleValid
+
+          return (
+          <CadastroModalShell
+            maxWidth="max-w-2xl"
+            onBackdropClick={closePaymentModal}
+            zClass="z-50"
+          >
+            <CadastroModalHeader
+              isEdit={false}
+              title="Pagamento do fechamento"
+              subtitle={`Período ${String(paymentClosure.month).padStart(2, '0')}/${paymentClosure.year}`}
+              onClose={closePaymentModal}
+              icon={<Banknote size={18} />}
+            />
+            <CadastroModalBody>
+              <CadastroFormSection title="Resumo" icon={<Scale size={14} />} bodyClassName="p-0">
+                <CadastroModalFieldsGrid>
+                  <CadastroModalFieldsRow>
+                    <div
+                      className={`w-full rounded-lg border px-4 py-3 ${
+                        canRegisterPayment
+                          ? 'border-red-200 bg-red-50 dark:border-red-800/60 dark:bg-red-900/20'
+                          : 'border-green-200 bg-green-50 dark:border-green-800/60 dark:bg-green-900/20'
+                      }`}
+                    >
+                      <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                        Saldo restante
+                      </p>
+                      <p
+                        className={`mt-1 text-2xl font-bold tabular-nums ${
+                          canRegisterPayment
+                            ? 'text-red-600 dark:text-red-400'
+                            : 'text-green-600 dark:text-green-400'
+                        }`}
+                      >
+                        {canRegisterPayment ? formatCurrency(remaining) : formatCurrency(0)}
+                      </p>
+                      {!canRegisterPayment && (
+                        <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                          Sem saldo pendente — marque como quitado.
+                        </p>
+                      )}
+                    </div>
                   </CadastroModalFieldsRow>
                   <CadastroModalFieldsRow>
-                    <label className="block min-w-0">
-                      <CadastroFieldLabel required>Data do Pagamento</CadastroFieldLabel>
-                      <DateField
-                        value={paymentDate}
-                        onChange={setPaymentDate}
-                        maxDate={new Date()}
-                        className={`${cadastroFieldCls} mt-0.5`}
-                      />
-                    </label>
-                  </CadastroModalFieldsRow>
-                  <CadastroModalFieldsRow>
-                    <label className="block min-w-0">
-                      <CadastroFieldLabel>Observações</CadastroFieldLabel>
-                      <input
-                        type="text"
-                        value={paymentNotes}
-                        onChange={e => setPaymentNotes(e.target.value)}
-                        className={`${cadastroFieldCls} mt-0.5`}
-                        placeholder="Ex: Transferência PIX..."
-                      />
-                    </label>
+                    <div>
+                      <CadastroFieldLabel>O que deseja fazer?</CadastroFieldLabel>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-6">
+                        <label
+                          className={`${cadastroOptionLabelCls} ${!canRegisterPayment ? 'cursor-not-allowed opacity-50' : ''}`}
+                        >
+                          <input
+                            type="radio"
+                            name="closure-payment-mode"
+                            checked={mode === 'partial'}
+                            disabled={!canRegisterPayment}
+                            onChange={() => setPaymentModalMode('partial')}
+                            className={cadastroAccentControlCls}
+                          />
+                          Pagamento parcial
+                        </label>
+                        <label className={cadastroOptionLabelCls}>
+                          <input
+                            type="radio"
+                            name="closure-payment-mode"
+                            checked={mode === 'settle'}
+                            onChange={() => setPaymentModalMode('settle')}
+                            className={cadastroAccentControlCls}
+                          />
+                          Quitar fechamento
+                        </label>
+                      </div>
+                    </div>
                   </CadastroModalFieldsRow>
                 </CadastroModalFieldsGrid>
               </CadastroFormSection>
+              {((mode === 'partial' && canRegisterPayment) || mode === 'settle') && (
+                <CadastroFormSection title="Dados" icon={<Banknote size={14} />} bodyClassName="p-0">
+                  <CadastroModalFieldsGrid>
+                    <CadastroModalFieldsRow cols={2}>
+                      <label className="block min-w-0">
+                        <CadastroFieldLabel required>Data</CadastroFieldLabel>
+                        <div className={paymentModalDateFieldWrapCls}>
+                          <DateField
+                            value={mode === 'partial' ? paymentDate : settlementDate}
+                            onChange={mode === 'partial' ? setPaymentDate : setSettlementDate}
+                            maxDate={new Date()}
+                            className="min-h-0 w-full border-0 bg-transparent p-0 shadow-none"
+                          />
+                        </div>
+                      </label>
+                      {mode === 'partial' && canRegisterPayment ? (
+                        <label className="block min-w-0">
+                          <CadastroFieldLabel required>Valor</CadastroFieldLabel>
+                          <div className="relative mt-0.5">
+                            <span
+                              className={`absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold ${
+                                parseInt(paymentAmountCents || '0') > 0
+                                  ? 'text-green-600 dark:text-green-400'
+                                  : 'text-gray-400 dark:text-gray-500'
+                              }`}
+                            >
+                              R$
+                            </span>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              value={formatAmountMask(paymentAmountCents)}
+                              onChange={handlePaymentAmountChange}
+                              className={`${cadastroFieldCls} h-9 w-full py-0 pl-9 ${
+                                parseInt(paymentAmountCents || '0') > 0
+                                  ? 'border-green-400 font-semibold text-green-700 dark:border-green-600 dark:text-green-300'
+                                  : ''
+                              }`}
+                              placeholder="0,00"
+                            />
+                          </div>
+                          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            Máx. {formatCurrency(remaining)}
+                          </p>
+                        </label>
+                      ) : (
+                        <div aria-hidden />
+                      )}
+                    </CadastroModalFieldsRow>
+                  </CadastroModalFieldsGrid>
+                </CadastroFormSection>
+              )}
+              {((mode === 'partial' && canRegisterPayment) || mode === 'settle') && (
+                <CadastroFormSection title="Observações" icon={<MessageSquare size={14} />} bodyClassName="p-0">
+                  <CadastroModalFieldsGrid>
+                    <CadastroModalFieldsRow>
+                      <label className="block min-w-0">
+                        <span className="sr-only">Observações</span>
+                        <textarea
+                          value={mode === 'partial' ? paymentNotes : settlementNotes}
+                          onChange={(e) =>
+                            mode === 'partial'
+                              ? setPaymentNotes(e.target.value)
+                              : setSettlementNotes(e.target.value)
+                          }
+                          className={`${cadastroFieldCls} min-h-[2.75rem] resize-y`}
+                          placeholder={
+                            mode === 'partial'
+                              ? 'Ex: PIX, transferência…'
+                              : 'Ex: acordo final, comprovante…'
+                          }
+                          rows={2}
+                        />
+                      </label>
+                    </CadastroModalFieldsRow>
+                  </CadastroModalFieldsGrid>
+                </CadastroFormSection>
+              )}
             </CadastroModalBody>
             <CadastroModalFooter
-              onClose={() => { setShowPaymentModal(false); setPaymentClosure(null) }}
-              onSave={handleAddPayment}
-              saving={isSubmittingPayment}
-              disabled={!paymentAmountCents || parseInt(paymentAmountCents) === 0 || !paymentDate}
-              saveLabel="Registrar Pagamento"
-              saveIcon={<Check size={15} />}
+              onClose={closePaymentModal}
+              onSave={() => {
+                if (mode === 'partial') void handleAddPayment()
+                else void handleSettleClosure()
+              }}
+              saving={saving}
+              disabled={saveDisabled || saving}
+              saveLabel={mode === 'partial' ? 'Registrar pagamento' : 'Quitar fechamento'}
+              saveIcon={mode === 'partial' ? <Check size={15} /> : <CheckCircle size={15} />}
+              saveTone={mode === 'settle' ? 'success' : 'default'}
             />
           </CadastroModalShell>
-        )}
+          )
+        })()}
         {/* Modal: Editar Pagamento */}
         {showEditPaymentModal && editingPaymentClosure && (
-          <CadastroModalShell maxWidth="max-w-md" zClass="z-50">
+          <CadastroModalShell maxWidth="max-w-2xl" onBackdropClick={closeEditPaymentModal} zClass="z-50">
             <CadastroModalHeader
               isEdit={true}
               title="Editar Pagamento"
               onClose={closeEditPaymentModal}
-              icon={<CreditCard size={18} />}
+              icon={<Banknote size={18} />}
             />
             <CadastroModalBody>
-              <CadastroFormSection title="Pagamento" icon={<CreditCard size={14} />}>
+              <CadastroFormSection title="Dados" icon={<Banknote size={14} />} bodyClassName="p-0">
                 <CadastroModalFieldsGrid>
-                  <CadastroModalFieldsRow>
+                  <CadastroModalFieldsRow cols={2}>
                     <label className="block min-w-0">
-                      <CadastroFieldLabel>Valor</CadastroFieldLabel>
+                      <CadastroFieldLabel required>Data</CadastroFieldLabel>
+                      <div className={paymentModalDateFieldWrapCls}>
+                        <DateField
+                          value={editPaymentDate}
+                          onChange={setEditPaymentDate}
+                          maxDate={new Date()}
+                          className="min-h-0 w-full border-0 bg-transparent p-0 shadow-none"
+                        />
+                      </div>
+                    </label>
+                    <label className="block min-w-0">
+                      <CadastroFieldLabel required>Valor</CadastroFieldLabel>
                       <div className="relative mt-0.5">
-                        <span className={`absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold ${parseInt(editPaymentCents || '0') > 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}`}>R$</span>
+                        <span className={`absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold ${parseInt(editPaymentCents || '0') > 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-400 dark:text-gray-500'}`}>R$</span>
                         <input
                           type="text"
                           inputMode="numeric"
@@ -2736,32 +3067,28 @@ const SharedBalanceListPage = () => {
                           onChange={e => setEditPaymentCents(
                             clampCents(e.target.value.replace(/\D/g, ''), editPaymentRemaining(editingPaymentClosure)),
                           )}
-                          className={`${cadastroFieldCls} pl-10 ${parseInt(editPaymentCents || '0') > 0 ? 'border-green-400 font-semibold text-green-700 dark:text-green-300' : ''}`}
+                          className={`${cadastroFieldCls} h-9 w-full py-0 pl-9 ${parseInt(editPaymentCents || '0') > 0 ? 'border-green-400 font-semibold text-green-700 dark:border-green-600 dark:text-green-300' : ''}`}
                           placeholder="0,00"
                         />
                       </div>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        Máx. {formatCurrency(editPaymentRemaining(editingPaymentClosure))}
+                      </p>
                     </label>
                   </CadastroModalFieldsRow>
+                </CadastroModalFieldsGrid>
+              </CadastroFormSection>
+              <CadastroFormSection title="Observações" icon={<MessageSquare size={14} />} bodyClassName="p-0">
+                <CadastroModalFieldsGrid>
                   <CadastroModalFieldsRow>
                     <label className="block min-w-0">
-                      <CadastroFieldLabel>Data</CadastroFieldLabel>
-                      <DateField
-                        value={editPaymentDate}
-                        onChange={setEditPaymentDate}
-                        maxDate={new Date()}
-                        className={`${cadastroFieldCls} mt-0.5`}
-                      />
-                    </label>
-                  </CadastroModalFieldsRow>
-                  <CadastroModalFieldsRow>
-                    <label className="block min-w-0">
-                      <CadastroFieldLabel>Observações</CadastroFieldLabel>
-                      <input
-                        type="text"
+                      <span className="sr-only">Observações</span>
+                      <textarea
                         value={editPaymentNotes}
                         onChange={e => setEditPaymentNotes(e.target.value)}
-                        placeholder="Ex: Pago via PIX, Transferência bancária..."
-                        className={`${cadastroFieldCls} mt-0.5`}
+                        placeholder="Ex: PIX, transferência…"
+                        className={`${cadastroFieldCls} min-h-[2.75rem] resize-y`}
+                        rows={2}
                       />
                     </label>
                   </CadastroModalFieldsRow>
@@ -2778,182 +3105,6 @@ const SharedBalanceListPage = () => {
             />
           </CadastroModalShell>
         )}
-
-        {/* Modal: Remover Liquidações de Empréstimos */}
-        {showRemoveLoanPaymentsModal && removeLoanPaymentsClosure && (() => {
-          const loanPayments = getClosureLoanPaymentsList(removeLoanPaymentsClosure)
-            .filter((lp: any) => !lp.generated_on_settlement)
-          const allSelected = selectedLoanIdsToRemove.size === loanPayments.length && loanPayments.length > 0
-          const someSelected = selectedLoanIdsToRemove.size > 0 && selectedLoanIdsToRemove.size < loanPayments.length
-
-          return (
-            <CadastroModalShell
-              maxWidth="max-w-5xl"
-              maxHeight="max-h-[90vh]"
-              onBackdropClick={() => {
-                setShowRemoveLoanPaymentsModal(false)
-                setRemoveLoanPaymentsClosure(null)
-                setSelectedLoanIdsToRemove(new Set())
-              }}
-              zClass="z-50"
-            >
-              <CadastroModalHeader
-                isEdit={true}
-                title="Remover Liquidações de Empréstimos"
-                subtitle={`${new Date(removeLoanPaymentsClosure.period_start_date).toLocaleDateString('pt-BR')} ${new Date(removeLoanPaymentsClosure.period_start_date).toLocaleTimeString('pt-BR')} — ${new Date(removeLoanPaymentsClosure.closing_date).toLocaleDateString('pt-BR')} ${new Date(removeLoanPaymentsClosure.closing_date).toLocaleTimeString('pt-BR')}`}
-                onClose={() => {
-                  setShowRemoveLoanPaymentsModal(false)
-                  setRemoveLoanPaymentsClosure(null)
-                  setSelectedLoanIdsToRemove(new Set())
-                }}
-                icon={<Banknote size={18} />}
-              />
-              <CadastroModalBody>
-                <CadastroFormSection title="Liquidações" icon={<Banknote size={14} />} bodyClassName="p-0">
-                  {loanPayments.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                      Nenhuma liquidação de empréstimo encontrada neste fechamento.
-                    </div>
-                  ) : (
-                    <>
-                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                        Selecione as liquidações que deseja remover. Os empréstimos correspondentes serão reabertos.
-                      </p>
-
-                      <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-lg">
-                        <table className="w-full text-sm">
-                          <thead className="border-b border-gray-200 dark:border-gray-700">
-                            <tr>
-                              <th className="px-3 py-2 text-left w-10">
-                                <button
-                                  onClick={() => toggleSelectAllLoans(loanPayments)}
-                                  className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
-                                  title={allSelected ? 'Desmarcar todos' : 'Selecionar todos'}
-                                >
-                                  {allSelected ? (
-                                    <CheckSquare size={18} className="text-blue-600" />
-                                  ) : someSelected ? (
-                                    <MinusSquare size={18} className="text-blue-600" />
-                                  ) : (
-                                    <Square size={18} className="text-gray-400" />
-                                  )}
-                                </button>
-                              </th>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
-                                Tipo
-                              </th>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
-                                Descrição
-                              </th>
-                              <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
-                                Valor Original
-                              </th>
-                              <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
-                                Pago
-                              </th>
-                              <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
-                                Saldo
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {loanPayments.map((payment: any) => {
-                              const isSelected = selectedLoanIdsToRemove.has(payment.loan_id)
-                              const isLent = payment.loan_type === 'lent'
-
-                              return (
-                                <tr
-                                  key={payment.loan_id}
-                                  className={`border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 transition-all cursor-pointer ${
-                                    isSelected
-                                      ? 'border-l-blue-600 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30'
-                                      : 'border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50'
-                                  }`}
-                                  onClick={() => toggleLoanSelection(payment.loan_id)}
-                                  onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.borderLeftColor = 'var(--color-1)' }}
-                                  onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.borderLeftColor = '' }}
-                                >
-                                  <td className="px-3 py-2">
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        toggleLoanSelection(payment.loan_id)
-                                      }}
-                                      className="p-1"
-                                    >
-                                      {isSelected ? (
-                                        <CheckSquare size={18} className="text-blue-600" />
-                                      ) : (
-                                        <Square size={18} className="text-gray-400" />
-                                      )}
-                                    </button>
-                                  </td>
-                                  <td className="px-3 py-2">
-                                    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium w-[100px] justify-center text-white ${
-                                      isLent ? 'bg-green-600' : 'bg-red-600'
-                                    }`}>
-                                      {isLent ? <ArrowUp size={12} /> : <ArrowDown size={12} />}
-                                      {isLent ? 'A Receber' : 'A Pagar'}
-                                    </span>
-                                  </td>
-                                  <td className="px-3 py-2 text-gray-900 dark:text-white">
-                                    {payment.description}
-                                  </td>
-                                  <td className="px-3 py-2 text-right text-gray-600 dark:text-gray-400">
-                                    {formatCurrency(Math.abs(payment.original_amount || 0))}
-                                  </td>
-                                  <td className={`px-3 py-2 text-right font-medium ${
-                                    isLent ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                                  }`}>
-                                    {formatCurrency(Math.abs(payment.amount_paid || 0))}
-                                  </td>
-                                  <td className={`px-3 py-2 text-right ${
-                                    Math.abs(payment.remaining_after || 0) < 0.01
-                                      ? 'text-gray-400 dark:text-gray-500'
-                                      : isLent ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                                  }`}>
-                                    {formatCurrency(Math.abs(payment.remaining_after || 0))}
-                                  </td>
-                                </tr>
-                              )
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      {selectedLoanIdsToRemove.size > 0 && (
-                        <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg">
-                          <div className="flex items-center gap-2 text-blue-700 dark:text-blue-400">
-                            <AlertTriangle size={16} />
-                            <span className="text-sm font-medium">
-                              {selectedLoanIdsToRemove.size} liquidação(ões) selecionada(s) para remoção
-                            </span>
-                          </div>
-                          <p className="text-xs text-blue-600 dark:text-blue-500 mt-1 ml-6">
-                            Os empréstimos correspondentes serão reabertos e os valores serão recalculados no fechamento.
-                          </p>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </CadastroFormSection>
-              </CadastroModalBody>
-              <CadastroModalFooter
-                onClose={() => {
-                  setShowRemoveLoanPaymentsModal(false)
-                  setRemoveLoanPaymentsClosure(null)
-                  setSelectedLoanIdsToRemove(new Set())
-                }}
-                onSave={handleConfirmRemoveLoanPayments}
-                saving={removingLoanPayments}
-                disabled={selectedLoanIdsToRemove.size === 0}
-                saveLabel="Remover Selecionados"
-                saveTone="danger"
-                saveIcon={<Trash2 size={15} />}
-              />
-            </CadastroModalShell>
-          )
-        })()}
 
         {/* Modal: Ver JSON Completo */}
         {showJsonModal && jsonClosureData && (

@@ -1224,7 +1224,7 @@ const TransactionMappingsTab = () => {
                     key={mapping.id}
                     className={`${listPageTableRowHoverCls} border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 ${
                       isSelected
-                        ? 'border-l-blue-600 bg-blue-50 dark:bg-blue-900/20'
+                        ? 'table-row-selected border-l-blue-600 bg-[color-mix(in_srgb,var(--color-1)_7%,transparent)]'
                         : 'border-l-gray-300 dark:border-l-gray-600'
                     }`}
                     onMouseEnter={(e) => {
@@ -1358,11 +1358,7 @@ const TransactionMappingsTab = () => {
                         <span className="text-gray-400 dark:text-gray-500 italic">-</span>
                       )}
                     </td>
-                    <td
-                      className={`${listPageTableStickyActionsCellCls} px-2 py-3 text-sm text-left ${
-                        isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : ''
-                      }`}
-                    >
+                    <td className={`${listPageTableStickyActionsCellCls} px-2 py-3 text-sm text-left`}>
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => handleEdit(mapping)}

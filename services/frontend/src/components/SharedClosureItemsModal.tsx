@@ -1,5 +1,6 @@
-import { useMemo, useState, type ReactNode } from 'react'
-import { ArrowDown, ArrowDownCircle, ArrowUp, ArrowUpCircle, Banknote, CreditCard, Gift, Landmark, Receipt, Scale } from 'lucide-react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { ArrowDown, ArrowDownCircle, ArrowUp, ArrowUpCircle, Banknote, Calendar, CreditCard, Gift, Landmark, Receipt, Scale } from 'lucide-react'
+import Badge from './Badge'
 import {
   CadastroFormSection,
   CadastroModalBody,
@@ -354,6 +355,226 @@ function ClosureBalanceTable({ closure, isPartnerView }: { closure: any; isPartn
   )
 }
 
+function formatMonthOnly(yearMonth: string) {
+  if (yearMonth === 'Sem mês') return yearMonth
+  const [, month] = yearMonth.split('-')
+  const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
+  return monthNames[parseInt(month, 10) - 1]
+}
+
+function groupCardItemsByPeriod(allItems: any[]) {
+  const groupedByMonth = allItems.reduce((acc, item) => {
+    const month = item.year_month || 'Sem mês'
+    if (!acc[month]) acc[month] = []
+    acc[month].push(item)
+    return acc
+  }, {} as Record<string, any[]>)
+
+  const sortedMonths = Object.keys(groupedByMonth).sort((a, b) => {
+    if (a === 'Sem mês') return 1
+    if (b === 'Sem mês') return -1
+    return b.localeCompare(a)
+  })
+
+  const groupedByYear = sortedMonths.reduce((acc, yearMonth) => {
+    if (yearMonth === 'Sem mês') {
+      if (!acc['Sem ano']) acc['Sem ano'] = []
+      acc['Sem ano'].push(yearMonth)
+    } else {
+      const year = yearMonth.split('-')[0]
+      if (!acc[year]) acc[year] = []
+      acc[year].push(yearMonth)
+    }
+    return acc
+  }, {} as Record<string, string[]>)
+
+  const sortedYears = Object.keys(groupedByYear).sort((a, b) => {
+    if (a === 'Sem ano') return 1
+    if (b === 'Sem ano') return -1
+    return b.localeCompare(a)
+  })
+
+  return { groupedByMonth, groupedByYear, sortedYears }
+}
+
+function groupItemsByCard(items: any[]) {
+  const grouped = items.reduce((acc, item) => {
+    const key = `${item.card_name || 'Sem cartão'}|${item.card_id ?? 0}`
+    if (!acc[key]) acc[key] = []
+    acc[key].push(item)
+    return acc
+  }, {} as Record<string, any[]>)
+
+  return Object.entries(grouped)
+    .map(([cardKey, groupItems]) => {
+      const [cardName] = cardKey.split('|')
+      const cardNumber = groupItems[0]?.card_number ? String(groupItems[0].card_number) : ''
+      return { cardName, cardNumber, items: groupItems }
+    })
+    .sort((a, b) => (a.cardNumber || '').localeCompare(b.cardNumber || '', 'pt-BR'))
+}
+
+function cardSummaryTitle(cardName: string, cardNumber: string) {
+  const suffix = cardNumber ? ` *** ${cardNumber.slice(-4)}` : ''
+  return `Resumo · ${cardName}${suffix}`
+}
+
+function CardSourceTabContent({
+  receitas,
+  despesas,
+}: {
+  receitas: any[]
+  despesas: any[]
+}) {
+  const allItems = useMemo(() => [...receitas, ...despesas], [receitas, despesas])
+  const { groupedByMonth, groupedByYear, sortedYears } = useMemo(
+    () => groupCardItemsByPeriod(allItems),
+    [allItems],
+  )
+
+  const [activeYear, setActiveYear] = useState('')
+  const [activeMonth, setActiveMonth] = useState('')
+
+  useEffect(() => {
+    if (sortedYears.length === 0) {
+      setActiveYear('')
+      setActiveMonth('')
+      return
+    }
+    const firstYear = sortedYears[0]
+    const firstMonth = groupedByYear[firstYear]?.[0] ?? ''
+    setActiveYear(firstYear)
+    setActiveMonth(firstMonth)
+  }, [sortedYears, groupedByYear])
+
+  const monthsOfActiveYear = activeYear ? groupedByYear[activeYear] || [] : []
+
+  const filteredReceitas = useMemo(() => {
+    if (!activeMonth) return receitas
+    return receitas.filter((item) => (item.year_month || 'Sem mês') === activeMonth)
+  }, [receitas, activeMonth])
+
+  const filteredDespesas = useMemo(() => {
+    if (!activeMonth) return despesas
+    return despesas.filter((item) => (item.year_month || 'Sem mês') === activeMonth)
+  }, [despesas, activeMonth])
+
+  const cardGroups = useMemo(() => {
+    const periodItems = [...filteredReceitas, ...filteredDespesas]
+    return groupItemsByCard(periodItems)
+  }, [filteredReceitas, filteredDespesas])
+
+  return (
+    <>
+      {sortedYears.length > 0 && (
+        <div className="mb-4 rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden dark:border-gray-700 dark:bg-gray-800">
+          <div className="flex items-center gap-2 border-b border-gray-200 px-4 py-2 dark:border-gray-700">
+            <Calendar size={16} style={{ color: 'var(--color-1)' }} />
+            <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">Período da fatura</span>
+          </div>
+          <div className="flex overflow-x-auto border-b border-gray-200 dark:border-gray-700 px-2">
+            {sortedYears.map((year) => {
+              const totalItemsInYear = groupedByYear[year].reduce(
+                (sum, month) => sum + groupedByMonth[month].length,
+                0,
+              )
+              const isActive = activeYear === year
+              return (
+                <button
+                  key={year}
+                  type="button"
+                  onClick={() => {
+                    setActiveYear(year)
+                    const firstMonth = groupedByYear[year]?.[0]
+                    if (firstMonth) setActiveMonth(firstMonth)
+                  }}
+                  className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-all whitespace-nowrap ${
+                    isActive
+                      ? 'border-[var(--color-1)] text-[var(--color-1)]'
+                      : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-300'
+                  }`}
+                >
+                  {year}
+                  <Badge
+                    variant="tab"
+                    tone="brand1"
+                    className="bg-[var(--color-1)] text-[var(--on-color-1)]"
+                    label={String(totalItemsInYear)}
+                  />
+                </button>
+              )
+            })}
+          </div>
+          {monthsOfActiveYear.length > 0 ? (
+            <div className="flex overflow-x-auto px-2 bg-gray-50/80 dark:bg-gray-800/50">
+              {monthsOfActiveYear.map((month) => {
+                const isActive = activeMonth === month
+                const monthCount = groupedByMonth[month].length
+                return (
+                  <button
+                    key={month}
+                    type="button"
+                    onClick={() => setActiveMonth(month)}
+                    className={`flex flex-1 min-w-[4.5rem] items-center justify-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition-all whitespace-nowrap ${
+                      isActive
+                        ? 'border-[var(--color-2)] text-[var(--color-2)]'
+                        : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-300'
+                    }`}
+                  >
+                    {formatMonthOnly(month)}
+                    <Badge
+                      variant="tab"
+                      tone="brand2"
+                      className={
+                        isActive
+                          ? 'bg-[var(--color-2)] text-[var(--on-color-2)]'
+                          : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                      }
+                      label={String(monthCount)}
+                    />
+                  </button>
+                )
+              })}
+            </div>
+          ) : null}
+        </div>
+      )}
+      {cardGroups.length === 0 ? (
+        <p className="py-6 text-center text-sm text-gray-500 dark:text-gray-400">Nenhum lançamento neste período.</p>
+      ) : (
+        cardGroups.map(({ cardName, cardNumber, items }) => {
+          const cardReceitas = items.filter((item) => parseFloat(String(item.amount)) >= 0)
+          const cardDespesas = items.filter((item) => parseFloat(String(item.amount)) < 0)
+          const groupKey = `${cardName}|${cardNumber}`
+
+          return (
+            <div key={groupKey} className="space-y-4">
+              <CadastroFormSection
+                title={cardSummaryTitle(cardName, cardNumber)}
+                hint="Receitas, despesas e resultado, com a divisão entre a sua parte e a da contraparte."
+                icon={<CreditCard size={14} />}
+                bodyClassName="p-0"
+              >
+                <FlowSummaryTable receitas={sumItems(cardReceitas)} despesas={sumItems(cardDespesas)} />
+              </CadastroFormSection>
+              {cardReceitas.length > 0 && (
+                <CadastroFormSection title="Receitas" icon={<ArrowUpCircle size={14} />} bodyClassName="p-0">
+                  <ItemsTable items={cardReceitas} showCard={false} />
+                </CadastroFormSection>
+              )}
+              {cardDespesas.length > 0 && (
+                <CadastroFormSection title="Despesas" icon={<ArrowDownCircle size={14} />} bodyClassName="p-0">
+                  <ItemsTable items={cardDespesas} showCard={false} />
+                </CadastroFormSection>
+              )}
+            </div>
+          )
+        })
+      )}
+    </>
+  )
+}
+
 function LoansTable({ loans, isPartnerView }: { loans: any[]; isPartnerView: boolean }) {
   const signed = (payment: any) => {
     const isLent = isPartnerView ? payment.loan_type !== 'lent' : payment.loan_type === 'lent'
@@ -504,22 +725,29 @@ export default function SharedClosureItemsModal({
         }
       >
         {activeSource ? (
-          <>
-            <CadastroFormSection
-              title={`Resumo · ${activeSource.label}`}
-              hint="Receitas, despesas e resultado, com a divisão entre a sua parte e a da contraparte."
-              icon={<Scale size={14} />}
-              bodyClassName="p-0"
-            >
-              <FlowSummaryTable receitas={sumItems(activeSource.receitas)} despesas={sumItems(activeSource.despesas)} />
-            </CadastroFormSection>
-            <CadastroFormSection title="Receitas" icon={<ArrowUpCircle size={14} />} bodyClassName="p-0">
-              <ItemsTable items={activeSource.receitas} showCard={activeSource.key !== 'bank'} />
-            </CadastroFormSection>
-            <CadastroFormSection title="Despesas" icon={<ArrowDownCircle size={14} />} bodyClassName="p-0">
-              <ItemsTable items={activeSource.despesas} showCard={activeSource.key !== 'bank'} />
-            </CadastroFormSection>
-          </>
+          activeSource.key === 'card' ? (
+            <CardSourceTabContent
+              receitas={activeSource.receitas}
+              despesas={activeSource.despesas}
+            />
+          ) : (
+            <>
+              <CadastroFormSection
+                title={`Resumo · ${activeSource.label}`}
+                hint="Receitas, despesas e resultado, com a divisão entre a sua parte e a da contraparte."
+                icon={<Scale size={14} />}
+                bodyClassName="p-0"
+              >
+                <FlowSummaryTable receitas={sumItems(activeSource.receitas)} despesas={sumItems(activeSource.despesas)} />
+              </CadastroFormSection>
+              <CadastroFormSection title="Receitas" icon={<ArrowUpCircle size={14} />} bodyClassName="p-0">
+                <ItemsTable items={activeSource.receitas} showCard={activeSource.key !== 'bank'} />
+              </CadastroFormSection>
+              <CadastroFormSection title="Despesas" icon={<ArrowDownCircle size={14} />} bodyClassName="p-0">
+                <ItemsTable items={activeSource.despesas} showCard={activeSource.key !== 'bank'} />
+              </CadastroFormSection>
+            </>
+          )
         ) : (
           <>
             <CadastroFormSection

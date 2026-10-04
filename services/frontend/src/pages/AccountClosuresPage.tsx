@@ -1840,7 +1840,14 @@ const AccountClosuresPage = () => {
                       const key = monthKey(item)
                       const selected = selectedKeys.has(key)
                       return (
-                        <tr key={key} className={listPageTableRowHoverCls}>
+                        <tr
+                          key={key}
+                          className={`${listPageTableRowHoverCls} ${
+                            selected
+                              ? 'table-row-selected bg-[color-mix(in_srgb,var(--color-1)_7%,transparent)]'
+                              : ''
+                          }`}
+                        >
                           {activeTab === 'open' || selectableClosedMonths.length > 0 ? (
                             <ListTableCheckboxCell
                               checked={selected}

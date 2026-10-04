@@ -1600,7 +1600,7 @@ const ExtratoPage = () => {
                                   ? `${dailyBalanceRowClass(expense)} font-medium`
                                   : `${listPageTableRowHoverCls} ${
                                       isItemSelected(expense)
-                                        ? 'border-l-blue-600 bg-blue-50 dark:bg-blue-900/20'
+                                        ? 'table-row-selected border-l-blue-600 bg-[color-mix(in_srgb,var(--color-1)_7%,transparent)]'
                                         : 'border-l-gray-300 dark:border-l-gray-600'
                                     }`
                               }`}
@@ -1749,11 +1749,7 @@ const ExtratoPage = () => {
                               {/* Ações */}
                               <td
                                 className={`${listPageTableStickyActionsCellCls} px-4 py-4 text-left whitespace-nowrap ${
-                                  isDailyBalance
-                                    ? dailyBalanceRowClass(expense)
-                                    : isItemSelected(expense)
-                                      ? 'bg-blue-50 dark:bg-blue-900/20'
-                                      : ''
+                                  isDailyBalance ? dailyBalanceRowClass(expense) : ''
                                 }`}
                               >
                                 {isDailyBalance ? (

@@ -13,6 +13,8 @@ import {
   CadastroListPrimaryButton,
   CadastroFilterField,
   cadastroFilterFieldCls,
+  listPageTableRowHoverCls,
+  listPageTableSectionCls,
 } from '../components/CadastroListPageLayout'
 import {
   CadastroFieldLabel,
@@ -23,12 +25,13 @@ import {
   CadastroModalFooter,
   CadastroModalHeader,
   CadastroModalShell,
+  cadastroAccentControlCls,
   cadastroFieldCls,
+  cadastroOptionLabelCls,
 } from '../components/CadastroFormLayout'
 import FloatingFooterBar from '../components/FloatingFooterBar'
 import Toast from '../components/Toast'
 import LoadingSpinner from '../components/LoadingSpinner'
-import BalanceDetailsModal from '../components/BalanceDetailsModal'
 import SharedAccountDisplay from '../components/SharedAccountDisplay'
 import SharedClosureItemsModal from '../components/SharedClosureItemsModal'
 import JsonTreeViewer from '../components/JsonTreeViewer'
@@ -45,6 +48,7 @@ import { Scale, Calendar, Building2, TrendingUp, TrendingDown, Minus, CreditCard
 import { exportBalanceClosureToPDF } from '../utils/pdfExport'
 import { exportBalanceClosureToExcel } from '../utils/exportToExcel'
 import { ExportClosureModal } from '../components/ExportClosureModal'
+import Badge from '../components/Badge'
 
 interface ToastState {
   show: boolean
@@ -205,6 +209,333 @@ interface BalanceClosure {
   credit_loan_amount?: number | null
 }
 
+type LoanTotalsSnapshot = {
+  totalLent: number
+  totalBorrowed: number
+  hasLentLoans: boolean
+  hasBorrowedLoans: boolean
+}
+
+function countCardItems(card: AccountBalanceCard) {
+  return (
+    (card.expense_items?.length || 0)
+    + (card.revenue_items?.length || 0)
+    + (card.credit_card_expense_items?.length || 0)
+    + (card.credit_card_revenue_items?.length || 0)
+    + (card.benefit_card_expense_items?.length || 0)
+    + (card.benefit_card_revenue_items?.length || 0)
+  )
+}
+
+function buildClosureDataSnapshot(balanceData: BalanceCalculation, loanTotals: LoanTotalsSnapshot) {
+  const mainCard = balanceData.main_account_card
+  const partnerCard = balanceData.partner_account_card
+  const mainNetBeforeLoans = Math.abs(mainCard.total_expenses || 0) - Math.abs(mainCard.total_revenues || 0)
+  const partnerNetBeforeLoans = Math.abs(partnerCard.total_expenses || 0) - Math.abs(partnerCard.total_revenues || 0)
+  const mainLoanToReceive = loanTotals.totalLent
+  const mainLoanToPay = -loanTotals.totalBorrowed
+  const partnerLoanToReceive = loanTotals.totalBorrowed
+  const partnerLoanToPay = -loanTotals.totalLent
+
+  return {
+    ...balanceData,
+    main_account_card: {
+      account_id: mainCard.account_id,
+      account_name: mainCard.account_name,
+      account_number: mainCard.account_number,
+      bank_name: mainCard.bank_name,
+      agency: mainCard.agency,
+      status: mainCard.status,
+      total_to_receive: Math.abs(parseFloat(String(mainCard.total_expenses)) || 0),
+      total_to_pay: -(Math.abs(parseFloat(String(mainCard.total_revenues)) || 0)),
+      net_amount_before_loans: mainNetBeforeLoans,
+      loan_to_receive: mainLoanToReceive,
+      loan_to_pay: mainLoanToPay,
+      net_amount: mainNetBeforeLoans + mainLoanToReceive + mainLoanToPay,
+      expense_items: mainCard.expense_items,
+      revenue_items: mainCard.revenue_items,
+      credit_card_expense_items: mainCard.credit_card_expense_items,
+      credit_card_revenue_items: mainCard.credit_card_revenue_items,
+      benefit_card_expense_items: mainCard.benefit_card_expense_items,
+      benefit_card_revenue_items: mainCard.benefit_card_revenue_items,
+    },
+    partner_account_card: {
+      account_id: partnerCard.account_id,
+      account_name: partnerCard.account_name,
+      account_number: partnerCard.account_number,
+      bank_name: partnerCard.bank_name,
+      agency: partnerCard.agency,
+      status: partnerCard.status,
+      total_to_receive: Math.abs(parseFloat(String(partnerCard.total_expenses)) || 0),
+      total_to_pay: -(Math.abs(parseFloat(String(partnerCard.total_revenues)) || 0)),
+      net_amount_before_loans: partnerNetBeforeLoans,
+      loan_to_receive: partnerLoanToReceive,
+      loan_to_pay: partnerLoanToPay,
+      net_amount: partnerNetBeforeLoans + partnerLoanToReceive + partnerLoanToPay,
+      expense_items: partnerCard.expense_items,
+      revenue_items: partnerCard.revenue_items,
+      credit_card_expense_items: partnerCard.credit_card_expense_items,
+      credit_card_revenue_items: partnerCard.credit_card_revenue_items,
+      benefit_card_expense_items: partnerCard.benefit_card_expense_items,
+      benefit_card_revenue_items: partnerCard.benefit_card_revenue_items,
+    },
+  }
+}
+
+function buildAllClosureItems(
+  closureData: any,
+  isPartnerView: boolean,
+  accountScope: 'main' | 'partner' | 'all' = 'all',
+) {
+  const allItems: any[] = []
+  const mainAccount = closureData.main_account_card
+  const partnerAccount = closureData.partner_account_card
+  const includeMain = accountScope === 'all' || accountScope === 'main'
+  const includePartner = accountScope === 'all' || accountScope === 'partner'
+
+  const addSourceToItems = (
+    items: any[],
+    source: string,
+    ownerAccount: any,
+    counterpartAccount: any,
+    isFromPartner: boolean,
+  ) =>
+    (items || []).map((item) => ({
+      ...item,
+      source_type: source,
+      owner_account: {
+        name: ownerAccount.account_name,
+        number: ownerAccount.account_number,
+        bank: ownerAccount.bank_name,
+        agency: ownerAccount.agency,
+      },
+      counterpart_account: {
+        name: counterpartAccount.account_name,
+        number: counterpartAccount.account_number,
+        bank: counterpartAccount.bank_name,
+        agency: counterpartAccount.agency,
+      },
+      should_invert: isPartnerView !== isFromPartner,
+    }))
+
+  if (mainAccount && includeMain) {
+    allItems.push(...addSourceToItems(mainAccount.expense_items, 'Conta Bancária', mainAccount, partnerAccount, false))
+    allItems.push(...addSourceToItems(mainAccount.revenue_items, 'Conta Bancária', mainAccount, partnerAccount, false))
+    allItems.push(...addSourceToItems(mainAccount.credit_card_expense_items, 'Cartão de Crédito', mainAccount, partnerAccount, false))
+    allItems.push(...addSourceToItems(mainAccount.credit_card_revenue_items, 'Cartão de Crédito', mainAccount, partnerAccount, false))
+    allItems.push(...addSourceToItems(mainAccount.benefit_card_expense_items, 'Cartão Benefício', mainAccount, partnerAccount, false))
+    allItems.push(...addSourceToItems(mainAccount.benefit_card_revenue_items, 'Cartão Benefício', mainAccount, partnerAccount, false))
+  }
+
+  if (partnerAccount && includePartner) {
+    allItems.push(...addSourceToItems(partnerAccount.expense_items, 'Conta Bancária', partnerAccount, mainAccount, true))
+    allItems.push(...addSourceToItems(partnerAccount.revenue_items, 'Conta Bancária', partnerAccount, mainAccount, true))
+    allItems.push(...addSourceToItems(partnerAccount.credit_card_expense_items, 'Cartão de Crédito', partnerAccount, mainAccount, true))
+    allItems.push(...addSourceToItems(partnerAccount.credit_card_revenue_items, 'Cartão de Crédito', partnerAccount, mainAccount, true))
+    allItems.push(...addSourceToItems(partnerAccount.benefit_card_expense_items, 'Cartão Benefício', partnerAccount, mainAccount, true))
+    allItems.push(...addSourceToItems(partnerAccount.benefit_card_revenue_items, 'Cartão Benefício', partnerAccount, mainAccount, true))
+  }
+
+  allItems.sort((left, right) => {
+    const byDate = String(right.date || '').localeCompare(String(left.date || ''))
+    if (byDate !== 0) return byDate
+    return String(right.id ?? '').localeCompare(String(left.id ?? ''), undefined, { numeric: true })
+  })
+
+  return allItems
+}
+
+function accountFlowTotals(
+  card: AccountBalanceCard,
+  loanTotals: LoanTotalsSnapshot,
+  perspective: 'main' | 'partner',
+) {
+  const receiveTx = Math.abs(card.total_expenses || 0)
+  const payTx = Math.abs(card.total_revenues || 0)
+  // Conta logada: receber = quitacao de emprestimos que eu fiz; pagar = quitacao do que eu peguei.
+  // Conta contraparte: espelha (o que eu recebo/pago aparece invertido para o parceiro).
+  const loanReceive = perspective === 'main' ? loanTotals.totalLent : loanTotals.totalBorrowed
+  const loanPay = perspective === 'main' ? loanTotals.totalBorrowed : loanTotals.totalLent
+  const showLoanBreakdown = loanTotals.hasLentLoans || loanTotals.hasBorrowedLoans
+  const net = receiveTx + loanReceive - payTx - loanPay
+  return {
+    receiveTx,
+    payTx,
+    loanReceive,
+    loanPay,
+    showLoanBreakdown,
+    net,
+  }
+}
+
+function formatPanelCurrency(value: number) {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
+}
+
+function BalanceMetricCell({
+  label,
+  icon,
+  amount,
+  amountClassName,
+}: {
+  label: string
+  icon: React.ReactNode
+  amount: number
+  amountClassName: string
+}) {
+  return (
+    <div className="flex min-h-[6.5rem] flex-col justify-center bg-white px-5 py-4 dark:bg-gray-800">
+      <div className="mb-2 flex items-center gap-2 text-gray-500 dark:text-gray-400">
+        {icon}
+        <span className="text-xs font-semibold uppercase tracking-wide">{label}</span>
+      </div>
+      <p className={`text-xl font-bold tabular-nums sm:text-2xl ${amountClassName}`}>
+        {formatPanelCurrency(amount)}
+      </p>
+    </div>
+  )
+}
+
+function ClosureAccountBalancePanel({
+  accentVar,
+  accountName,
+  bankSubtitle,
+  receiveTx,
+  payTx,
+  loanReceive,
+  loanPay,
+  showLoanBreakdown,
+  netBalance,
+  itemCount,
+  onViewItems,
+}: {
+  accentVar: string
+  accountName: string
+  bankSubtitle: string | null
+  receiveTx: number
+  payTx: number
+  loanReceive: number
+  loanPay: number
+  showLoanBreakdown: boolean
+  netBalance: number
+  itemCount: number
+  onViewItems: () => void
+}) {
+  const direction = netBalance > 0.005 ? 'receive' : netBalance < -0.005 ? 'pay' : 'even'
+  const netColor =
+    direction === 'receive'
+      ? 'text-[var(--color-success)]'
+      : direction === 'pay'
+        ? 'text-[var(--color-danger)]'
+        : 'text-gray-900 dark:text-gray-100'
+
+  return (
+    <article className={`${listPageTableSectionCls} flex flex-col overflow-hidden`}>
+      <div
+        className="relative border-b border-l-4 border-gray-200 px-5 py-4 dark:border-gray-600"
+        style={{ borderLeftColor: accentVar }}
+      >
+        <div className="flex items-start gap-3 pr-28">
+          <div
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ring-1 ring-[color-mix(in_srgb,var(--color-1)_20%,transparent)]"
+            style={{
+              color: accentVar,
+              background: `color-mix(in srgb, ${accentVar} 14%, transparent)`,
+            }}
+          >
+            <Building2 size={18} />
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white">{accountName}</h2>
+            {bankSubtitle ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">{bankSubtitle}</p>
+            ) : null}
+          </div>
+        </div>
+        <div className="absolute right-5 top-4">
+          {direction === 'receive' ? (
+            <span className="inline-flex w-[100px] items-center justify-center gap-1.5 rounded-none px-3 py-1 text-xs font-medium text-white bg-green-600">
+              <ArrowUpCircle size={12} />
+              A Receber
+            </span>
+          ) : direction === 'pay' ? (
+            <span className="inline-flex w-[100px] items-center justify-center gap-1.5 rounded-none px-3 py-1 text-xs font-medium text-white bg-red-600">
+              <ArrowDownCircle size={12} />
+              A Pagar
+            </span>
+          ) : (
+            <span className="inline-flex w-[100px] items-center justify-center gap-1.5 rounded-none px-3 py-1 text-xs font-medium text-white bg-gray-500 dark:bg-gray-600">
+              <Minus size={12} />
+              Zerado
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="grid grid-cols-1 divide-y divide-gray-200 dark:divide-gray-600 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+        <BalanceMetricCell
+          label="À receber"
+          icon={<ArrowUp size={14} className="text-[var(--color-success)]" />}
+          amount={receiveTx}
+          amountClassName="text-[var(--color-success)]"
+        />
+        <BalanceMetricCell
+          label="À pagar"
+          icon={<ArrowDown size={14} className="text-[var(--color-danger)]" />}
+          amount={payTx}
+          amountClassName="text-[var(--color-danger)]"
+        />
+      </div>
+      {showLoanBreakdown ? (
+        <>
+          <div className="flex items-center gap-2 border-t border-gray-200 bg-amber-50/80 px-5 py-2.5 dark:border-gray-600 dark:bg-amber-950/20">
+            <Banknote size={14} className="text-amber-700 dark:text-amber-400" />
+            <span className="text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">
+              Empréstimos
+            </span>
+          </div>
+          <div className="grid grid-cols-1 divide-y divide-gray-200 dark:divide-gray-600 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+            <BalanceMetricCell
+              label="Empréstimo à receber"
+              icon={<ArrowUp size={14} className="text-[var(--color-success)]" />}
+              amount={loanReceive}
+              amountClassName="text-[var(--color-success)]"
+            />
+            <BalanceMetricCell
+              label="Empréstimo à pagar"
+              icon={<ArrowDown size={14} className="text-[var(--color-danger)]" />}
+              amount={loanPay}
+              amountClassName="text-[var(--color-danger)]"
+            />
+          </div>
+        </>
+      ) : null}
+      <div className="flex items-center justify-between border-t border-gray-200 bg-gray-50 px-5 py-3 dark:border-gray-600 dark:bg-gray-900/40">
+        <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+          <Scale size={14} />
+          <span className="text-xs font-semibold uppercase tracking-wide">Saldo líquido</span>
+        </div>
+        <span className={`text-lg font-bold tabular-nums ${netColor}`}>
+          {formatPanelCurrency(Math.abs(netBalance))}
+        </span>
+      </div>
+      {itemCount > 0 ? (
+        <button
+          type="button"
+          onClick={onViewItems}
+          className="group flex w-full items-center justify-between border-t border-gray-200 px-5 py-3 text-left transition-colors hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700/40"
+        >
+          <span className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
+            <Eye size={16} className="text-gray-500 group-hover:text-[var(--color-1)]" />
+            Visualizar itens
+            <span className="text-xs font-normal tabular-nums text-gray-500 dark:text-gray-400">({itemCount})</span>
+          </span>
+          <ChevronRight size={16} className="text-gray-400 group-hover:text-[var(--color-1)]" />
+        </button>
+      ) : null}
+    </article>
+  )
+}
+
 interface BalanceClosureItem {
   id: number
   source_table: string
@@ -340,6 +671,37 @@ const calculateInterest = (
   }
 }
 
+function getLoanCorrectedAmount(loan: OpenLoanItem): number {
+  const principal = Number(loan.principal_amount) || 0
+  if (loan.interest_enabled && loan.interest_rate && loan.interest_type && loan.interest_period) {
+    return calculateInterest(
+      principal,
+      loan.loan_date,
+      Number(loan.interest_rate),
+      loan.interest_type as 'simple' | 'compound',
+      loan.interest_period as 'daily' | 'monthly' | 'yearly',
+    ).correctedAmount
+  }
+  return principal
+}
+
+/** Saldo aberto antes de aplicar o valor a quitar neste fechamento. */
+function getLoanOpenBalanceBeforeClosure(loan: OpenLoanItem): number {
+  const corrected = getLoanCorrectedAmount(loan)
+  return Math.max(0, corrected - (Number(loan.total_paid) || 0))
+}
+
+/** Saldo aberto restante após o valor informado em "Valor a Quitar". */
+function getLoanRemainingOpenBalance(loan: OpenLoanItem, closurePaymentAmount: number): number {
+  const pay = Math.max(0, Number(closurePaymentAmount) || 0)
+  return Math.max(0, getLoanOpenBalanceBeforeClosure(loan) - pay)
+}
+
+function getLoanRemainingOpenBalanceSigned(loan: OpenLoanItem, closurePaymentAmount: number): number {
+  const remaining = getLoanRemainingOpenBalance(loan, closurePaymentAmount)
+  return loan.loan_type === 'lent' ? remaining : -remaining
+}
+
 // Componente Modal de Fechamento
 interface ClosureModalProps {
   isOpen: boolean
@@ -352,9 +714,24 @@ interface ClosureModalProps {
   periodEnd: string
   lastClosureTimestamp?: string | null
   calculationTimestamp?: string | null
+  makeAnotherClosure: boolean
+  setMakeAnotherClosure: (value: boolean) => void
 }
 
-const ClosureModal = ({ isOpen, onClose, onConfirm, closureNotes, setClosureNotes, closureReferenceLabel, periodStart, periodEnd, lastClosureTimestamp, calculationTimestamp }: ClosureModalProps) => {
+const ClosureModal = ({
+  isOpen,
+  onClose,
+  onConfirm,
+  closureNotes,
+  setClosureNotes,
+  closureReferenceLabel,
+  periodStart,
+  periodEnd,
+  lastClosureTimestamp,
+  calculationTimestamp,
+  makeAnotherClosure,
+  setMakeAnotherClosure,
+}: ClosureModalProps) => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -430,6 +807,20 @@ const ClosureModal = ({ isOpen, onClose, onConfirm, closureNotes, setClosureNote
                   rows={3}
                 />
               </label>
+            </CadastroModalFieldsRow>
+            <CadastroModalFieldsRow>
+              <label className={cadastroOptionLabelCls}>
+                <input
+                  type="checkbox"
+                  checked={makeAnotherClosure}
+                  onChange={(e) => setMakeAnotherClosure(e.target.checked)}
+                  className={cadastroAccentControlCls}
+                />
+                Realizar outro fechamento em seguida
+              </label>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Se marcado, você permanece nesta página com os filtros limpos para iniciar um novo fechamento.
+              </p>
             </CadastroModalFieldsRow>
           </CadastroModalFieldsGrid>
         </CadastroFormSection>
@@ -660,6 +1051,7 @@ const SharedBalanceClosureWizardPage = () => {
   const [closureLoanPayments, setClosureLoanPayments] = useState<any[]>([])  // Pagamentos de empréstimos do fechamento
   const [isClosurePartnerView, setIsClosurePartnerView] = useState(false)  // Se estamos vendo da perspectiva da conta parceira
   const [showClosureModal, setShowClosureModal] = useState(false)
+  const [makeAnotherClosure, setMakeAnotherClosure] = useState(false)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [showSettleModal, setShowSettleModal] = useState(false)
   const [closureNotes, setClosureNotes] = useState('')
@@ -720,27 +1112,6 @@ const SharedBalanceClosureWizardPage = () => {
   const [removeLoanPaymentsClosure, setRemoveLoanPaymentsClosure] = useState<BalanceClosure | null>(null)
   const [selectedLoanIdsToRemove, setSelectedLoanIdsToRemove] = useState<Set<number>>(new Set())
   const [removingLoanPayments, setRemovingLoanPayments] = useState(false)
-
-  // Estados para modais de detalhes
-  interface ModalState {
-    isOpen: boolean
-    type: 'transactions' | 'credit_card' | 'benefit_card'
-    accountColor: 'primary' | 'secondary'
-    title: string
-    expenseItems: TransactionItem[]
-    revenueItems: TransactionItem[]
-    isPartnerAccount: boolean
-  }
-
-  const [detailsModal, setDetailsModal] = useState<ModalState>({
-    isOpen: false,
-    type: 'transactions',
-    accountColor: 'primary',
-    title: '',
-    expenseItems: [],
-    revenueItems: [],
-    isPartnerAccount: false
-  })
 
   // Estados para modal de detalhes mensais do histórico
   const [monthlyDetailsModal, setMonthlyDetailsModal] = useState<{
@@ -1024,14 +1395,35 @@ const SharedBalanceClosureWizardPage = () => {
 
   // Handler para máscara de moeda (direita→esquerda, centavos como dígitos brutos)
   const handleLoanAmountChange = (loanId: number, value: string) => {
-    const cents = value.replace(/\D/g, '')
-    const numValue = parseInt(cents || '0', 10) / 100
+    const loan = openLoans?.loans.find((l) => l.id === loanId)
+    const centsRaw = value.replace(/\D/g, '')
+    let numValue = parseInt(centsRaw || '0', 10) / 100
     if (numValue > 99999999.99) return
-    setLoanPayments(prev => prev.map(lp =>
-      lp.loan_id === loanId
-        ? { ...lp, displayAmount: cents, amount: numValue }
-        : lp
-    ))
+
+    let maxPay = 0
+    if (loan) {
+      maxPay = getLoanOpenBalanceBeforeClosure(loan)
+      if (numValue > maxPay) {
+        numValue = maxPay
+      }
+    }
+
+    const displayCents = numValue <= 0 ? '' : String(Math.round(numValue * 100))
+    const atFullSettlement =
+      Boolean(loan) && maxPay > 0.005 && Math.abs(numValue - maxPay) < 0.005
+
+    setLoanPayments((prev) =>
+      prev.map((lp) =>
+        lp.loan_id === loanId
+          ? {
+              ...lp,
+              displayAmount: displayCents,
+              amount: numValue,
+              settleInFull: atFullSettlement,
+            }
+          : lp,
+      ),
+    )
   }
 
   // Função para calcular o total dos pagamentos de empréstimos selecionados
@@ -1090,29 +1482,20 @@ const SharedBalanceClosureWizardPage = () => {
 
     const errors: string[] = []
 
-    loanPayments.forEach(lp => {
-      const loan = openLoans.loans.find(l => l.id === lp.loan_id)
+    loanPayments.forEach((lp) => {
+      const loan = openLoans.loans.find((l) => l.id === lp.loan_id)
       if (!loan) return
 
-      // Calcular saldo corrigido com juros (se habilitado)
-      let correctedBalance = loan.remaining_balance
-      if (loan.interest_enabled && loan.interest_rate && loan.interest_type && loan.interest_period) {
-        const interestInfo = calculateInterest(
-          loan.principal_amount,
-          loan.loan_date,
-          loan.interest_rate,
-          loan.interest_type as 'simple' | 'compound',
-          loan.interest_period as 'daily' | 'monthly' | 'yearly'
-        )
-        correctedBalance = interestInfo.correctedAmount - loan.total_paid
-      }
+      const maxPay = getLoanOpenBalanceBeforeClosure(loan)
 
       if (lp.amount < 0) {
         errors.push(`Empréstimo "${loan.description}": valor não pode ser negativo`)
       }
 
-      if (lp.amount > correctedBalance) {
-        errors.push(`Empréstimo "${loan.description}": valor (${formatCurrency(lp.amount)}) excede o saldo aberto (${formatCurrency(correctedBalance)})`)
+      if (lp.amount > maxPay + 0.005) {
+        errors.push(
+          `Empréstimo "${loan.description}": valor (${formatCurrency(lp.amount)}) excede o saldo aberto (${formatCurrency(maxPay)})`,
+        )
       }
     })
 
@@ -1212,11 +1595,51 @@ const SharedBalanceClosureWizardPage = () => {
     endDate !== getTodayLocalDate()
 
   const filterResultHint = useMemo(() => {
-    if (tabApplied.current && balanceData) {
-      return `${formatDateBR(balanceData.start_date)} – ${formatDateBR(balanceData.end_date)}`
+    const hints: React.ReactNode[] = []
+
+    if (selectedPartnerAccountId && lastClosureTimestamp) {
+      hints.push(
+        <Badge key="last-closure" variant="filter" icon={<Clock size={12} className="text-[var(--color-1)]" />}>
+          Último fechamento:{' '}
+          {new Date(lastClosureTimestamp).toLocaleString('pt-BR', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+          })}
+        </Badge>,
+      )
     }
-    return undefined
-  }, [tabApplied, balanceData])
+
+    if (calculationTimestamp) {
+      hints.push(
+        <Badge key="calculation" variant="filter" icon={<Clock size={12} className="text-[var(--color-1)]" />}>
+          Cálculo:{' '}
+          {new Date(calculationTimestamp.replace(' ', 'T')).toLocaleString('pt-BR', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+          })}
+        </Badge>,
+      )
+    }
+
+    if (tabApplied.current && balanceData) {
+      hints.push(
+        <Badge key="period" variant="filter">
+          {formatDateBR(balanceData.start_date)} – {formatDateBR(balanceData.end_date)}
+        </Badge>,
+      )
+    }
+
+    if (hints.length === 0) return undefined
+    return <>{hints}</>
+  }, [selectedPartnerAccountId, lastClosureTimestamp, calculationTimestamp, tabApplied, balanceData])
 
   const sortedPartners = useMemo(
     () =>
@@ -1289,92 +1712,8 @@ const SharedBalanceClosureWizardPage = () => {
         })
         .filter((lp): lp is { loan_id: number; amount: number; corrected_balance: number } => lp !== null)
 
-      // ✅ Calcular totais de empréstimos para incluir no closure_data
       const loanTotals = calculateTotalLoanPayments()
-
-      // ✅ Calcular net_amount_before_loans com sinal correto
-      // Positivo = a receber, Negativo = a pagar
-      // total_expenses = despesas que EU paguei = tenho a receber do parceiro (POSITIVO)
-      // total_revenues = despesas do PARCEIRO que eu devo = tenho a pagar (NEGATIVO)
-      const mainNetBeforeLoans = Math.abs(balanceData.main_account_card.total_expenses || 0) - Math.abs(balanceData.main_account_card.total_revenues || 0)
-      const partnerNetBeforeLoans = Math.abs(balanceData.partner_account_card.total_expenses || 0) - Math.abs(balanceData.partner_account_card.total_revenues || 0)
-
-      // ✅ Empréstimos com sinais corretos:
-      // loan_to_receive = POSITIVO (eu emprestei = tenho a receber)
-      // loan_to_pay = NEGATIVO (eu peguei = tenho a pagar)
-      const mainLoanToReceive = loanTotals.totalLent   // Positivo
-      const mainLoanToPay = -loanTotals.totalBorrowed  // Negativo
-      const partnerLoanToReceive = loanTotals.totalBorrowed  // Invertido: parceiro recebe o que eu peguei
-      const partnerLoanToPay = -loanTotals.totalLent         // Invertido: parceiro paga o que eu emprestei
-
-      // ✅ Atualizar os totais no closure_data para incluir empréstimos
-      // Assim o JSON salvo já terá os valores corretos
-      // Ordem lógica das chaves: Info da Conta → Transações → Totais Base → Empréstimos → Saldos Finais
-      const mainCard = balanceData.main_account_card
-      const partnerCard = balanceData.partner_account_card
-
-      // ✅ Estrutura JSON organizada com valores numéricos
-      // contribution_percentage removido do nível da conta (cada item já tem sua própria %)
-      // Campos renomeados para semântica clara:
-      //   - total_to_receive: despesas que EU paguei = tenho a receber (POSITIVO)
-      //   - total_to_pay: despesas do PARCEIRO que eu devo = tenho a pagar (NEGATIVO)
-      const updatedBalanceData = {
-        ...balanceData,
-        main_account_card: {
-          // 1. Info da Conta
-          account_id: mainCard.account_id,
-          account_name: mainCard.account_name,
-          account_number: mainCard.account_number,
-          bank_name: mainCard.bank_name,
-          agency: mainCard.agency,
-          // 2. Status
-          status: mainCard.status,
-          // 3. Totais Base (apenas transações) - com sinais corretos
-          total_to_receive: Math.abs(parseFloat(String(mainCard.total_expenses)) || 0),  // Positivo
-          total_to_pay: -(Math.abs(parseFloat(String(mainCard.total_revenues)) || 0)),   // Negativo
-          // 4. Saldo Antes de Empréstimos
-          net_amount_before_loans: mainNetBeforeLoans,
-          // 5. Empréstimos (com sinais corretos)
-          loan_to_receive: mainLoanToReceive,  // Positivo
-          loan_to_pay: mainLoanToPay,          // Negativo
-          // 6. Saldo Final
-          net_amount: mainNetBeforeLoans + mainLoanToReceive + mainLoanToPay,
-          // 7. Itens de Transações (cada item tem my_contribution_percentage e partner_contribution_percentage)
-          expense_items: mainCard.expense_items,
-          revenue_items: mainCard.revenue_items,
-          credit_card_expense_items: mainCard.credit_card_expense_items,
-          credit_card_revenue_items: mainCard.credit_card_revenue_items,
-          benefit_card_expense_items: mainCard.benefit_card_expense_items,
-          benefit_card_revenue_items: mainCard.benefit_card_revenue_items
-        },
-        partner_account_card: {
-          // 1. Info da Conta
-          account_id: partnerCard.account_id,
-          account_name: partnerCard.account_name,
-          account_number: partnerCard.account_number,
-          bank_name: partnerCard.bank_name,
-          agency: partnerCard.agency,
-          // 2. Status
-          status: partnerCard.status,
-          // 3. Totais Base (apenas transações) - com sinais corretos
-          total_to_receive: Math.abs(parseFloat(String(partnerCard.total_expenses)) || 0),  // Positivo
-          total_to_pay: -(Math.abs(parseFloat(String(partnerCard.total_revenues)) || 0)),   // Negativo
-          // 4. Saldo Antes de Empréstimos
-          net_amount_before_loans: partnerNetBeforeLoans,
-          // 5. Empréstimos (com sinais corretos, invertidos para o parceiro)
-          loan_to_receive: partnerLoanToReceive,  // Positivo
-          loan_to_pay: partnerLoanToPay,          // Negativo
-          // 6. Saldo Final
-          net_amount: partnerNetBeforeLoans + partnerLoanToReceive + partnerLoanToPay,
-          // 7. Itens de Transações (cada item tem my_contribution_percentage e partner_contribution_percentage)
-          expense_items: partnerCard.expense_items,
-          revenue_items: partnerCard.revenue_items,
-          credit_card_expense_items: partnerCard.credit_card_expense_items,
-          credit_card_revenue_items: partnerCard.credit_card_revenue_items,
-          benefit_card_expense_items: partnerCard.benefit_card_expense_items,
-          benefit_card_revenue_items: partnerCard.benefit_card_revenue_items
-        }
-      }
+      const updatedBalanceData = buildClosureDataSnapshot(balanceData, loanTotals)
 
       const closureRef = closureReferenceFromPeriodEnd(balanceData.end_date)
 
@@ -1396,17 +1735,19 @@ const SharedBalanceClosureWizardPage = () => {
       setClosureNotes('')
       setToast({ show: true, message: 'Fechamento realizado com sucesso!', type: 'success' })
 
-      // ✅ Limpar campos de data e dados calculados para resetar a tela
-      setEndDate(getTodayLocalDate())
-      setCalculationTimestamp(null)
-      setBalanceData(null)
-
-      // ✅ Limpar dados de empréstimos
-      setOpenLoans(null)
-      setLoanPayments([])
-      setLoansExpanded(false)
-
-      navigate(LIST_PATH)
+      if (makeAnotherClosure) {
+        setMakeAnotherClosure(false)
+        clearBalanceFilters()
+        setLoansExpanded(false)
+      } else {
+        setEndDate(getTodayLocalDate())
+        setCalculationTimestamp(null)
+        setBalanceData(null)
+        setOpenLoans(null)
+        setLoanPayments([])
+        setLoansExpanded(false)
+        navigate(LIST_PATH)
+      }
     } catch (error: any) {
       console.error('Erro ao criar fechamento:', error)
 
@@ -1460,71 +1801,14 @@ const SharedBalanceClosureWizardPage = () => {
       const response = await axios.get(`/api/balance/closures/${closure.id}`)
       setSelectedClosure(response.data.closure)
 
-      // Extrair todos os itens do JSON closure_data
       const closureData = response.data.closure.closure_data
-      const allItems: any[] = []
-
-      // Informações das contas
-      const mainAccount = closureData.main_account_card
-      const partnerAccount = closureData.partner_account_card
-
-      // Obter account_id do usuário logado
       const verifyResponse = await axios.get('/api/auth/verify')
-      const loggedAccountId = verifyResponse.data.user?.account_id
+      const loggedAccountIdFromApi = verifyResponse.data.user?.account_id
+      const partnerAccount = closureData.partner_account_card
+      const isPartnerView = loggedAccountIdFromApi === partnerAccount?.account_id
 
-      // Determinar se estamos vendo da perspectiva da conta parceira
-      // Se o account_id logado for igual ao partner_account_card.account_id, então isPartnerView = true
-      const isPartnerView = loggedAccountId === partnerAccount?.account_id
-
-      // Função helper para adicionar fonte e conta contraparte aos itens
-      const addSourceToItems = (items: any[], source: string, ownerAccount: any, counterpartAccount: any, isFromPartner: boolean) => {
-        return items.map(item => ({
-          ...item,
-          source_type: source,
-          owner_account: {
-            name: ownerAccount.account_name,
-            number: ownerAccount.account_number,
-            bank: ownerAccount.bank_name,
-            agency: ownerAccount.agency
-          },
-          counterpart_account: {
-            name: counterpartAccount.account_name,
-            number: counterpartAccount.account_number,
-            bank: counterpartAccount.bank_name,
-            agency: counterpartAccount.agency
-          },
-          // Marca se este item precisa ter o sinal invertido na visualização
-          should_invert: isPartnerView !== isFromPartner
-        }))
-      }
-
-      // Extrair itens da conta principal (isFromPartner = false)
-      if (mainAccount) {
-        allItems.push(...addSourceToItems(mainAccount.expense_items || [], 'Conta Bancária', mainAccount, partnerAccount, false))
-        allItems.push(...addSourceToItems(mainAccount.revenue_items || [], 'Conta Bancária', mainAccount, partnerAccount, false))
-        allItems.push(...addSourceToItems(mainAccount.credit_card_expense_items || [], 'Cartão de Crédito', mainAccount, partnerAccount, false))
-        allItems.push(...addSourceToItems(mainAccount.credit_card_revenue_items || [], 'Cartão de Crédito', mainAccount, partnerAccount, false))
-        allItems.push(...addSourceToItems(mainAccount.benefit_card_expense_items || [], 'Cartão Benefício', mainAccount, partnerAccount, false))
-        allItems.push(...addSourceToItems(mainAccount.benefit_card_revenue_items || [], 'Cartão Benefício', mainAccount, partnerAccount, false))
-      }
-
-      // Extrair itens da conta parceira (isFromPartner = true)
-      if (partnerAccount) {
-        allItems.push(...addSourceToItems(partnerAccount.expense_items || [], 'Conta Bancária', partnerAccount, mainAccount, true))
-        allItems.push(...addSourceToItems(partnerAccount.revenue_items || [], 'Conta Bancária', partnerAccount, mainAccount, true))
-        allItems.push(...addSourceToItems(partnerAccount.credit_card_expense_items || [], 'Cartão de Crédito', partnerAccount, mainAccount, true))
-        allItems.push(...addSourceToItems(partnerAccount.credit_card_revenue_items || [], 'Cartão de Crédito', partnerAccount, mainAccount, true))
-        allItems.push(...addSourceToItems(partnerAccount.benefit_card_expense_items || [], 'Cartão Benefício', partnerAccount, mainAccount, true))
-        allItems.push(...addSourceToItems(partnerAccount.benefit_card_revenue_items || [], 'Cartão Benefício', partnerAccount, mainAccount, true))
-      }
-
-      allItems.sort((left, right) => {
-        const byDate = String(right.date || '').localeCompare(String(left.date || ''))
-        if (byDate !== 0) return byDate
-        return String(right.id ?? '').localeCompare(String(left.id ?? ''), undefined, { numeric: true })
-      })
-      setClosureItems(allItems)
-      setIsClosurePartnerView(isPartnerView)  // Salvar perspectiva para uso nos totais
+      setClosureItems(buildAllClosureItems(closureData, isPartnerView))
+      setIsClosurePartnerView(isPartnerView)
 
       // Extrair pagamentos de empréstimos do closure_data (se existirem)
       const loanPaymentsFromClosure = closureData.loan_payments || []
@@ -2207,29 +2491,87 @@ const SharedBalanceClosureWizardPage = () => {
     return monthName.charAt(0).toUpperCase() + monthName.slice(1)
   }
 
-  const openDetailsModal = (
-    type: 'transactions' | 'credit_card' | 'benefit_card',
-    accountColor: 'primary' | 'secondary',
-    accountName: string,
-    expenseItems: TransactionItem[],
-    revenueItems: TransactionItem[],
-    isPartnerAccount: boolean = false
-  ) => {
-    const titles = {
-      transactions: 'Transações',
-      credit_card: 'Fatura de Cartão',
-      benefit_card: 'Cartão de Benefícios'
+  const openPreviewItemsModal = (accountScope: 'main' | 'partner') => {
+    if (!balanceData) return
+    const isPartnerView = accountScope === 'partner'
+
+    const loanTotals = calculateTotalLoanPayments()
+    const closureData = buildClosureDataSnapshot(balanceData, loanTotals)
+    const previewLoanPayments = loanPayments
+      .filter((lp) => lp.amount > 0)
+      .map((lp) => {
+        const loan = openLoans?.loans.find((l) => l.id === lp.loan_id)
+        if (!loan) return null
+
+        let correctedBalance: number
+        if (loan.interest_enabled && loan.interest_rate && loan.interest_type && loan.interest_period) {
+          const interestInfo = calculateInterest(
+            Number(loan.principal_amount),
+            loan.loan_date,
+            Number(loan.interest_rate),
+            loan.interest_type as 'simple' | 'compound',
+            loan.interest_period as 'daily' | 'monthly' | 'yearly',
+          )
+          correctedBalance = interestInfo.correctedAmount - Number(loan.total_paid)
+        } else {
+          correctedBalance = Number(loan.principal_amount) - Number(loan.total_paid)
+        }
+
+        const amountPaid = Number(lp.amount)
+        return {
+          loan_id: lp.loan_id,
+          loan_type: loan.loan_type,
+          description: loan.description,
+          original_amount: Number(loan.principal_amount),
+          remaining_before: correctedBalance,
+          amount_paid: amountPaid,
+          remaining_after: correctedBalance - amountPaid,
+        }
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+
+    const closureRef = closureReferenceFromPeriodEnd(balanceData.end_date)
+    const mainCard = closureData.main_account_card
+
+    const previewClosure: BalanceClosure = {
+      id: 0,
+      expense_sharing_id: 0,
+      account_id: mainCard.account_id,
+      shared_account_id: closureData.partner_account_card.account_id,
+      period_start_date: balanceData.start_date,
+      closing_date: calculationTimestamp || balanceData.end_date,
+      year: closureRef.year,
+      month: closureRef.month,
+      closing_day: balanceData.closing_day,
+      total_to_receive: 0,
+      total_to_pay: 0,
+      net_balance: 0,
+      notes: null,
+      is_settled: false,
+      settled_at: null,
+      settlement_notes: null,
+      closure_data: { ...closureData, loan_payments: previewLoanPayments },
+      created_at: '',
+      tenant_id: 0,
+      created_by: 0,
+      total_paid: 0,
+      remaining_balance: 0,
+      closure_payments: [],
     }
 
-    setDetailsModal({
-      isOpen: true,
-      type,
-      accountColor,
-      title: `${titles[type]} - ${accountName}`,
-      expenseItems,
-      revenueItems,
-      isPartnerAccount
-    })
+    setSelectedClosure(previewClosure)
+    setClosureItems(buildAllClosureItems(closureData, isPartnerView, accountScope))
+    setClosureLoanPayments(previewLoanPayments)
+    setIsClosurePartnerView(isPartnerView)
+    setShowDetailsModal(true)
+  }
+
+  const formatAccountBankSubtitle = (card: AccountBalanceCard) => {
+    if (!card.bank_name) return null
+    const parts = [card.bank_name]
+    if (card.agency) parts.push(`Ag: ${card.agency}`)
+    if (card.account_number) parts.push(`C: ${card.account_number}`)
+    return parts.join(' · ')
   }
 
   const years = Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i)
@@ -2284,7 +2626,6 @@ const SharedBalanceClosureWizardPage = () => {
             </div>
           }
           tabs={
-            <div className="space-y-4">
               <CadastroListPageFilterCard
                 hasActiveFilters={hasActiveBalanceFilters}
                 onClearFilters={clearBalanceFilters}
@@ -2334,52 +2675,19 @@ const SharedBalanceClosureWizardPage = () => {
                   />
                 </CadastroFilterField>
               </CadastroListPageFilterCard>
-              {(lastClosureTimestamp || calculationTimestamp) ? (
-                <div className="flex flex-wrap gap-x-6 gap-y-1 px-1 text-xs text-gray-500 dark:text-gray-400">
-                  {lastClosureTimestamp ? (
-                    <span className="inline-flex items-center gap-1.5">
-                      <Clock size={12} className="text-[var(--color-1)]" />
-                      Último fechamento:{' '}
-                      {new Date(lastClosureTimestamp).toLocaleString('pt-BR', {
-                        day: '2-digit',
-                        month: '2-digit',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        second: '2-digit',
-                      })}
-                    </span>
-                  ) : null}
-                  {calculationTimestamp ? (
-                    <span className="inline-flex items-center gap-1.5">
-                      <Clock size={12} className="text-[var(--color-1)]" />
-                      Cálculo:{' '}
-                      {new Date(calculationTimestamp.replace(' ', 'T')).toLocaleString('pt-BR', {
-                        day: '2-digit',
-                        month: '2-digit',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        second: '2-digit',
-                      })}
-                    </span>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
           }
         >
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+          <div>
             {/* Loading */}
             {loading && (
-              <div className="p-12 text-center">
+              <div className="rounded-xl border border-gray-200 bg-white p-12 text-center shadow-sm dark:border-gray-700 dark:bg-gray-800">
                 <LoadingSpinner message="Carregando dados..." />
               </div>
             )}
 
             {/* Tab Content: Balanço Calculado */}
             {!loading && (
-              <div className="p-6">
+              <div className="space-y-6">
                 {!tabApplied.current && !loading && (
                   <CadastroListPageEmptyCard
                     icon={<Filter size={32} className="text-gray-400" />}
@@ -2390,26 +2698,13 @@ const SharedBalanceClosureWizardPage = () => {
 
                 {/* Conteúdo do Balanço */}
                 {balanceData && (
-                  <div>
+                  <>
+                <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
                 {/* Informações do Período + Botões de Fechamento */}
-                <div
-                  className={`mb-6 flex gap-4 ${
-                    startDateLockedByClosure
-                      ? 'items-center justify-between'
-                      : 'flex-col items-center text-center'
-                  }`}
-                >
+                <div className="mb-6 flex items-center justify-between gap-4">
                   {/* Informações do Período */}
-                  <div
-                    className={`flex flex-col gap-1 ${
-                      startDateLockedByClosure ? '' : 'items-center'
-                    }`}
-                  >
-                    <div
-                      className={`flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 ${
-                        startDateLockedByClosure ? '' : 'justify-center'
-                      }`}
-                    >
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <div className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
                       <Calendar size={16} className="shrink-0 text-color-primary" />
                       <span className="font-semibold">
                         {startDateLockedByClosure ? (
@@ -2434,11 +2729,7 @@ const SharedBalanceClosureWizardPage = () => {
                   </div>
 
                   {/* Botões de Fechamento */}
-                  <div
-                    className={`flex items-center gap-3 ${
-                      startDateLockedByClosure ? '' : 'justify-center'
-                    }`}
-                  >
+                  <div className="flex shrink-0 items-center gap-3">
                     {/* Alerta de validação de empréstimos */}
                     {!loanValidation.isValid && (
                       <div className="flex items-center gap-2 px-3 py-1.5 bg-red-100 dark:bg-red-900/30 rounded-lg border border-red-300 dark:border-red-700">
@@ -2466,410 +2757,48 @@ const SharedBalanceClosureWizardPage = () => {
                 </div>
 
                 {/* Layout Principal - 2 Colunas com Header Único por Conta */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-
-                  {/* ========== COLUNA: CONTA PRINCIPAL (LOGADA) ========== */}
-                  <div className="space-y-4">
-                    {/* Header da Conta Principal */}
-                    <div className="bg-color-primary rounded-lg px-4 py-3 border border-gray-200 dark:border-gray-700">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <Building2 size={18} className="text-on-color-1" />
-                        <h3 className="text-base font-bold text-on-color-1">
-                          {balanceData.main_account_card.account_name}
-                        </h3>
-                        {balanceData.main_account_card.bank_name && (
-                          <span className="text-sm text-on-color-1 opacity-80 flex items-center gap-1">
-                            <span className="opacity-60">•</span>
-                            <Landmark size={14} />
-                            {balanceData.main_account_card.bank_name}
-                            {balanceData.main_account_card.agency && ` Ag: ${balanceData.main_account_card.agency}`}
-                            {balanceData.main_account_card.account_number && ` C: ${balanceData.main_account_card.account_number}`}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Card de Balanço - Conta Principal */}
-                    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-4 transition-all hover:border-color-primary hover:shadow-md">
-                      <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 pb-2 mb-3 border-b border-gray-200 dark:border-gray-700 flex items-center gap-2">
-                        <Scale size={16} className="text-color-primary" />
-                        Balanço
-                      </h4>
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center py-1.5">
-                          <span className="text-sm text-gray-600 dark:text-gray-400">A Receber</span>
-                          <span className="text-sm font-semibold text-green-600 dark:text-green-400">
-                            {formatCurrency(Math.abs(balanceData.main_account_card.total_expenses))}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center py-1.5">
-                          <span className="text-sm text-gray-600 dark:text-gray-400">A Pagar</span>
-                          <span className="text-sm font-semibold text-red-600 dark:text-red-400">
-                            {formatCurrency(Math.abs(balanceData.main_account_card.total_revenues))}
-                          </span>
-                        </div>
-                        {/* Linha de Empréstimo - Conta Principal */}
-                        {(() => {
-                          const loanTotals = calculateTotalLoanPayments()
-                          // Para a conta principal: totalLent = a receber, totalBorrowed = a pagar
-                          // Mostra as linhas se existirem empréstimos do tipo, mesmo que valor seja 0
-                          if (loanTotals.hasLentLoans || loanTotals.hasBorrowedLoans) {
-                            return (
-                              <>
-                                {loanTotals.hasLentLoans && (
-                                  <div className="flex justify-between items-center py-1.5">
-                                    <span className="text-sm text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                                      <Banknote size={14} />
-                                      Empréstimo a Receber
-                                    </span>
-                                    <span className="text-sm font-semibold text-green-600 dark:text-green-400">
-                                      {formatCurrency(loanTotals.totalLent)}
-                                    </span>
-                                  </div>
-                                )}
-                                {loanTotals.hasBorrowedLoans && (
-                                  <div className="flex justify-between items-center py-1.5">
-                                    <span className="text-sm text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                                      <Banknote size={14} />
-                                      Empréstimo a Pagar
-                                    </span>
-                                    <span className="text-sm font-semibold text-red-600 dark:text-red-400">
-                                      {formatCurrency(loanTotals.totalBorrowed)}
-                                    </span>
-                                  </div>
-                                )}
-                              </>
-                            )
-                          }
-                          return null
-                        })()}
-                        <div className="flex justify-between items-center pt-2 border-t border-gray-200 dark:border-gray-700">
-                          <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Saldo Líquido</span>
-                          {(() => {
-                            const loanTotals = calculateTotalLoanPayments()
-                            // Conta principal: calcula net a partir dos valores exibidos
-                            // A Receber (total_expenses) + Empréstimo a Receber (totalLent - eu emprestei, tenho a receber)
-                            // A Pagar (total_revenues) + Empréstimo a Pagar (totalBorrowed - eu peguei, tenho a pagar)
-                            // Net = Total A Receber - Total A Pagar
-                            const totalAReceber = Math.abs(balanceData.main_account_card.total_expenses || 0) + (loanTotals.totalLent || 0)
-                            const totalAPagar = Math.abs(balanceData.main_account_card.total_revenues || 0) + (loanTotals.totalBorrowed || 0)
-                            const netWithLoans = totalAReceber - totalAPagar
-                            return (
-                              <span className={`text-lg font-bold ${
-                                netWithLoans > 0
-                                  ? 'text-green-600 dark:text-green-400'
-                                  : netWithLoans < 0
-                                  ? 'text-red-600 dark:text-red-400'
-                                  : 'text-gray-600 dark:text-gray-400'
-                              }`}>
-                                {formatCurrency(Math.abs(netWithLoans))}
-                              </span>
-                            )
-                          })()}
-                        </div>
-                      </div>
-                      {/* Status Badge */}
-                      {(() => {
-                        const loanTotals = calculateTotalLoanPayments()
-                        // Mesma lógica: Net = Total A Receber - Total A Pagar
-                        const totalAReceber = Math.abs(balanceData.main_account_card.total_expenses || 0) + (loanTotals.totalLent || 0)
-                        const totalAPagar = Math.abs(balanceData.main_account_card.total_revenues || 0) + (loanTotals.totalBorrowed || 0)
-                        const totalWithLoans = totalAReceber - totalAPagar
-                        return (
-                          <div className={`mt-3 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-sm font-medium ${
-                            totalWithLoans > 0
-                              ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800'
-                              : totalWithLoans < 0
-                              ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800'
-                              : 'bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-600'
-                          }`}>
-                            {totalWithLoans > 0 ? (
-                              <><TrendingUp size={16} /> A Receber</>
-                            ) : totalWithLoans < 0 ? (
-                              <><TrendingDown size={16} /> A Pagar</>
-                            ) : (
-                              <><Minus size={16} /> Zerado</>
-                            )}
-                          </div>
-                        )
-                      })()}
-                    </div>
-
-                    {/* Card de Detalhes - Transações - Conta Principal */}
-                    {(balanceData.main_account_card.expense_items.length > 0 || balanceData.main_account_card.revenue_items.length > 0) && (
-                      <button
-                        onClick={() => openDetailsModal(
-                          'transactions',
-                          'primary',
-                          balanceData.main_account_card.account_name,
-                          balanceData.main_account_card.expense_items,
-                          balanceData.main_account_card.revenue_items
-                        )}
-                        className="w-full bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm px-4 py-3 transition-all hover:border-color-primary hover:shadow-md text-left group flex items-center justify-between"
-                      >
-                        <div className="flex items-center gap-3">
-                          <Receipt size={18} className="text-color-primary" />
-                          <span className="text-sm font-semibold text-gray-900 dark:text-white">Transações</span>
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
-                            ({balanceData.main_account_card.expense_items.length + balanceData.main_account_card.revenue_items.length})
-                          </span>
-                        </div>
-                        <Eye size={16} className="text-gray-400 group-hover:text-color-primary transition-colors" />
-                      </button>
-                    )}
-
-                    {/* Card de Detalhes - Fatura de Cartão - Conta Principal */}
-                    {(balanceData.main_account_card.credit_card_expense_items?.length > 0 || balanceData.main_account_card.credit_card_revenue_items?.length > 0) && (
-                      <button
-                        onClick={() => openDetailsModal(
-                          'credit_card',
-                          'primary',
-                          balanceData.main_account_card.account_name,
-                          balanceData.main_account_card.credit_card_expense_items || [],
-                          balanceData.main_account_card.credit_card_revenue_items || []
-                        )}
-                        className="w-full bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm px-4 py-3 transition-all hover:border-color-primary hover:shadow-md text-left group flex items-center justify-between"
-                      >
-                        <div className="flex items-center gap-3">
-                          <CreditCard size={18} className="text-color-primary" />
-                          <span className="text-sm font-semibold text-gray-900 dark:text-white">Fatura de Cartão</span>
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
-                            ({(balanceData.main_account_card.credit_card_expense_items?.length || 0) + (balanceData.main_account_card.credit_card_revenue_items?.length || 0)})
-                          </span>
-                        </div>
-                        <Eye size={16} className="text-gray-400 group-hover:text-color-primary transition-colors" />
-                      </button>
-                    )}
-
-                    {/* Card de Detalhes - Cartão de Benefícios - Conta Principal */}
-                    {(balanceData.main_account_card.benefit_card_expense_items?.length > 0 || balanceData.main_account_card.benefit_card_revenue_items?.length > 0) && (
-                      <button
-                        onClick={() => openDetailsModal(
-                          'benefit_card',
-                          'primary',
-                          balanceData.main_account_card.account_name,
-                          balanceData.main_account_card.benefit_card_expense_items || [],
-                          balanceData.main_account_card.benefit_card_revenue_items || []
-                        )}
-                        className="w-full bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm px-4 py-3 transition-all hover:border-color-primary hover:shadow-md text-left group flex items-center justify-between"
-                      >
-                        <div className="flex items-center gap-3">
-                          <Gift size={18} className="text-color-primary" />
-                          <span className="text-sm font-semibold text-gray-900 dark:text-white">Cartão de Benefícios</span>
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
-                            ({(balanceData.main_account_card.benefit_card_expense_items?.length || 0) + (balanceData.main_account_card.benefit_card_revenue_items?.length || 0)})
-                          </span>
-                        </div>
-                        <Eye size={16} className="text-gray-400 group-hover:text-color-primary transition-colors" />
-                      </button>
-                    )}
-                  </div>
-
-                  {/* ========== COLUNA: CONTA COMPARTILHADA ========== */}
-                  <div className="space-y-4">
-                    {/* Header da Conta Compartilhada */}
-                    <div className="bg-color-secondary rounded-lg px-4 py-3 border border-gray-200 dark:border-gray-700">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <Building2 size={18} className="text-on-color-2" />
-                        <h3 className="text-base font-bold text-on-color-2">
-                          {balanceData.partner_account_card.account_name}
-                        </h3>
-                        {balanceData.partner_account_card.bank_name && (
-                          <span className="text-sm text-on-color-2 opacity-80 flex items-center gap-1">
-                            <span className="opacity-60">•</span>
-                            <Landmark size={14} />
-                            {balanceData.partner_account_card.bank_name}
-                            {balanceData.partner_account_card.agency && ` Ag: ${balanceData.partner_account_card.agency}`}
-                            {balanceData.partner_account_card.account_number && ` C: ${balanceData.partner_account_card.account_number}`}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Card de Balanço - Conta Compartilhada */}
-                    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-4 transition-all hover:border-color-primary hover:shadow-md">
-                      <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 pb-2 mb-3 border-b border-gray-200 dark:border-gray-700 flex items-center gap-2">
-                        <Scale size={16} className="text-color-secondary" />
-                        Balanço
-                      </h4>
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center py-1.5">
-                          <span className="text-sm text-gray-600 dark:text-gray-400">A Receber</span>
-                          <span className="text-sm font-semibold text-green-600 dark:text-green-400">
-                            {formatCurrency(Math.abs(balanceData.partner_account_card.total_expenses))}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center py-1.5">
-                          <span className="text-sm text-gray-600 dark:text-gray-400">A Pagar</span>
-                          <span className="text-sm font-semibold text-red-600 dark:text-red-400">
-                            {formatCurrency(Math.abs(balanceData.partner_account_card.total_revenues))}
-                          </span>
-                        </div>
-                        {/* Linha de Empréstimo - Conta Parceira (invertido) */}
-                        {(() => {
-                          const loanTotals = calculateTotalLoanPayments()
-                          // Para a conta parceira: totalLent (eu emprestei) = parceiro tem a pagar
-                          // totalBorrowed (eu peguei) = parceiro tem a receber
-                          // Mostra as linhas se existirem empréstimos do tipo (invertido para o parceiro)
-                          if (loanTotals.hasLentLoans || loanTotals.hasBorrowedLoans) {
-                            return (
-                              <>
-                                {loanTotals.hasBorrowedLoans && (
-                                  <div className="flex justify-between items-center py-1.5">
-                                    <span className="text-sm text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                                      <Banknote size={14} />
-                                      Empréstimo a Receber
-                                    </span>
-                                    <span className="text-sm font-semibold text-green-600 dark:text-green-400">
-                                      {formatCurrency(loanTotals.totalBorrowed)}
-                                    </span>
-                                  </div>
-                                )}
-                                {loanTotals.hasLentLoans && (
-                                  <div className="flex justify-between items-center py-1.5">
-                                    <span className="text-sm text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                                      <Banknote size={14} />
-                                      Empréstimo a Pagar
-                                    </span>
-                                    <span className="text-sm font-semibold text-red-600 dark:text-red-400">
-                                      {formatCurrency(loanTotals.totalLent)}
-                                    </span>
-                                  </div>
-                                )}
-                              </>
-                            )
-                          }
-                          return null
-                        })()}
-                        <div className="flex justify-between items-center pt-2 border-t border-gray-200 dark:border-gray-700">
-                          <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Saldo Líquido</span>
-                          {(() => {
-                            const loanTotals = calculateTotalLoanPayments()
-                            // Conta parceira: calcula net a partir dos valores exibidos
-                            // A Receber (total_expenses) + Empréstimo a Receber (totalBorrowed)
-                            // A Pagar (total_revenues) + Empréstimo a Pagar (totalLent)
-                            // Net = Total A Receber - Total A Pagar
-                            const totalAReceber = Math.abs(balanceData.partner_account_card.total_expenses || 0) + (loanTotals.totalBorrowed || 0)
-                            const totalAPagar = Math.abs(balanceData.partner_account_card.total_revenues || 0) + (loanTotals.totalLent || 0)
-                            const netWithLoans = totalAReceber - totalAPagar
-                            return (
-                              <span className={`text-lg font-bold ${
-                                netWithLoans > 0
-                                  ? 'text-green-600 dark:text-green-400'
-                                  : netWithLoans < 0
-                                  ? 'text-red-600 dark:text-red-400'
-                                  : 'text-gray-600 dark:text-gray-400'
-                              }`}>
-                                {formatCurrency(Math.abs(netWithLoans))}
-                              </span>
-                            )
-                          })()}
-                        </div>
-                      </div>
-                      {/* Status Badge */}
-                      {(() => {
-                        const loanTotals = calculateTotalLoanPayments()
-                        // Mesma lógica: Net = Total A Receber - Total A Pagar
-                        const totalAReceber = Math.abs(balanceData.partner_account_card.total_expenses || 0) + (loanTotals.totalBorrowed || 0)
-                        const totalAPagar = Math.abs(balanceData.partner_account_card.total_revenues || 0) + (loanTotals.totalLent || 0)
-                        const totalWithLoans = totalAReceber - totalAPagar
-                        return (
-                          <div className={`mt-3 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-sm font-medium ${
-                            totalWithLoans > 0
-                              ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800'
-                              : totalWithLoans < 0
-                              ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800'
-                              : 'bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-600'
-                          }`}>
-                            {totalWithLoans > 0 ? (
-                              <><TrendingUp size={16} /> A Receber</>
-                            ) : totalWithLoans < 0 ? (
-                              <><TrendingDown size={16} /> A Pagar</>
-                            ) : (
-                              <><Minus size={16} /> Zerado</>
-                            )}
-                          </div>
-                        )
-                      })()}
-                    </div>
-
-                    {/* Card de Detalhes - Transações - Conta Compartilhada */}
-                    {(balanceData.partner_account_card.expense_items.length > 0 || balanceData.partner_account_card.revenue_items.length > 0) && (
-                      <button
-                        onClick={() => openDetailsModal(
-                          'transactions',
-                          'secondary',
-                          balanceData.partner_account_card.account_name,
-                          balanceData.partner_account_card.expense_items,
-                          balanceData.partner_account_card.revenue_items,
-                          true
-                        )}
-                        className="w-full bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm px-4 py-3 transition-all hover:border-color-secondary hover:shadow-md text-left group flex items-center justify-between"
-                      >
-                        <div className="flex items-center gap-3">
-                          <Receipt size={18} className="text-color-secondary" />
-                          <span className="text-sm font-semibold text-gray-900 dark:text-white">Transações</span>
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
-                            ({balanceData.partner_account_card.expense_items.length + balanceData.partner_account_card.revenue_items.length})
-                          </span>
-                        </div>
-                        <Eye size={16} className="text-gray-400 group-hover:text-color-secondary transition-colors" />
-                      </button>
-                    )}
-
-                    {/* Card de Detalhes - Fatura de Cartão - Conta Compartilhada */}
-                    {(balanceData.partner_account_card.credit_card_expense_items?.length > 0 || balanceData.partner_account_card.credit_card_revenue_items?.length > 0) && (
-                      <button
-                        onClick={() => openDetailsModal(
-                          'credit_card',
-                          'secondary',
-                          balanceData.partner_account_card.account_name,
-                          balanceData.partner_account_card.credit_card_expense_items || [],
-                          balanceData.partner_account_card.credit_card_revenue_items || [],
-                          true
-                        )}
-                        className="w-full bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm px-4 py-3 transition-all hover:border-color-secondary hover:shadow-md text-left group flex items-center justify-between"
-                      >
-                        <div className="flex items-center gap-3">
-                          <CreditCard size={18} className="text-color-secondary" />
-                          <span className="text-sm font-semibold text-gray-900 dark:text-white">Fatura de Cartão</span>
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
-                            ({(balanceData.partner_account_card.credit_card_expense_items?.length || 0) + (balanceData.partner_account_card.credit_card_revenue_items?.length || 0)})
-                          </span>
-                        </div>
-                        <Eye size={16} className="text-gray-400 group-hover:text-color-secondary transition-colors" />
-                      </button>
-                    )}
-
-                    {/* Card de Detalhes - Cartão de Benefícios - Conta Compartilhada */}
-                    {(balanceData.partner_account_card.benefit_card_expense_items?.length > 0 || balanceData.partner_account_card.benefit_card_revenue_items?.length > 0) && (
-                      <button
-                        onClick={() => openDetailsModal(
-                          'benefit_card',
-                          'secondary',
-                          balanceData.partner_account_card.account_name,
-                          balanceData.partner_account_card.benefit_card_expense_items || [],
-                          balanceData.partner_account_card.benefit_card_revenue_items || [],
-                          true
-                        )}
-                        className="w-full bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm px-4 py-3 transition-all hover:border-color-secondary hover:shadow-md text-left group flex items-center justify-between"
-                      >
-                        <div className="flex items-center gap-3">
-                          <Gift size={18} className="text-color-secondary" />
-                          <span className="text-sm font-semibold text-gray-900 dark:text-white">Cartão de Benefícios</span>
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
-                            ({(balanceData.partner_account_card.benefit_card_expense_items?.length || 0) + (balanceData.partner_account_card.benefit_card_revenue_items?.length || 0)})
-                          </span>
-                        </div>
-                        <Eye size={16} className="text-gray-400 group-hover:text-color-secondary transition-colors" />
-                      </button>
-                    )}
-                  </div>
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                  {(() => {
+                    const loanTotals = calculateTotalLoanPayments()
+                    const mainFlow = accountFlowTotals(balanceData.main_account_card, loanTotals, 'main')
+                    const partnerFlow = accountFlowTotals(balanceData.partner_account_card, loanTotals, 'partner')
+                    return (
+                      <>
+                        <ClosureAccountBalancePanel
+                          accentVar="var(--color-1)"
+                          accountName={balanceData.main_account_card.account_name}
+                          bankSubtitle={formatAccountBankSubtitle(balanceData.main_account_card)}
+                          receiveTx={mainFlow.receiveTx}
+                          payTx={mainFlow.payTx}
+                          loanReceive={mainFlow.loanReceive}
+                          loanPay={mainFlow.loanPay}
+                          showLoanBreakdown={mainFlow.showLoanBreakdown}
+                          netBalance={mainFlow.net}
+                          itemCount={countCardItems(balanceData.main_account_card)}
+                          onViewItems={() => openPreviewItemsModal('main')}
+                        />
+                        <ClosureAccountBalancePanel
+                          accentVar="var(--color-2)"
+                          accountName={balanceData.partner_account_card.account_name}
+                          bankSubtitle={formatAccountBankSubtitle(balanceData.partner_account_card)}
+                          receiveTx={partnerFlow.receiveTx}
+                          payTx={partnerFlow.payTx}
+                          loanReceive={partnerFlow.loanReceive}
+                          loanPay={partnerFlow.loanPay}
+                          showLoanBreakdown={partnerFlow.showLoanBreakdown}
+                          netBalance={partnerFlow.net}
+                          itemCount={countCardItems(balanceData.partner_account_card)}
+                          onViewItems={() => openPreviewItemsModal('partner')}
+                        />
+                      </>
+                    )
+                  })()}
+                </div>
                 </div>
 
                 {/* ========== CARD DE EMPRÉSTIMOS ========== */}
                 {openLoans && openLoans.loans.length > 0 && (
-                  <div className="mt-6 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                  <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
                     {/* Header do Card */}
                     <button
                       onClick={() => setLoansExpanded(!loansExpanded)}
@@ -2902,7 +2831,8 @@ const SharedBalanceClosureWizardPage = () => {
                           openLoans.loans.forEach(loan => {
                             const isLent = loan.loan_type === 'lent'
                             const principal = Number(loan.principal_amount) || 0
-                            const totalPaid = Number(loan.total_paid) || 0
+                            const payment = loanPayments.find((lp) => lp.loan_id === loan.id)
+                            const closurePay = Number(payment?.amount) || 0
 
                             // Principal com sinal
                             const principalWithSign = isLent ? -principal : principal
@@ -2924,10 +2854,7 @@ const SharedBalanceClosureWizardPage = () => {
                             const correctedWithSign = isLent ? -correctedAmount : correctedAmount
                             totalCorrectedDisplay += correctedWithSign
 
-                            // Saldo com sinal (oposto do principal)
-                            const balance = correctedAmount - totalPaid
-                            const balanceWithSign = isLent ? balance : -balance
-                            totalBalanceDisplay += balanceWithSign
+                            totalBalanceDisplay += getLoanRemainingOpenBalanceSigned(loan, closurePay)
                           })
 
                           return (
@@ -3015,26 +2942,21 @@ const SharedBalanceClosureWizardPage = () => {
                                   )
                                 }
 
-                                // Saldo aberto baseado no valor corrigido
-                                const baseAmount = interestInfo ? interestInfo.correctedAmount : Number(loan.principal_amount)
-                                const correctedBalance = baseAmount - Number(loan.total_paid)
+                                const closurePayment = Number(payment?.amount) || 0
+                                const openBeforeClosure = getLoanOpenBalanceBeforeClosure(loan)
+                                const remainingOpen = getLoanRemainingOpenBalance(loan, closurePayment)
 
                                 // TODOS OS VALORES SEMPRE POSITIVOS - badge indica a direção
                                 const principalDisplay = Math.abs(Number(loan.principal_amount))
                                 const correctedDisplay = interestInfo ? Math.abs(interestInfo.correctedAmount) : principalDisplay
-                                const balanceDisplay = Math.abs(correctedBalance)
+                                const balanceDisplay = Math.abs(remainingOpen)
 
                                 // Cor do saldo baseada na direção
-                                const balanceColor = correctedBalance <= 0.01
+                                const balanceColor = remainingOpen <= 0.01
                                   ? 'text-gray-900 dark:text-gray-100'
                                   : isLent
                                     ? 'text-green-600 dark:text-green-400'  // A receber
                                     : 'text-red-600 dark:text-red-400'       // A pagar
-
-                                // Labels dinâmicos
-                                const balanceLabel = isLent ? 'A ser Quitado' : 'A Quitar'
-                                const BalanceIcon = isLent ? ArrowUpCircle : ArrowDownCircle
-                                const balanceIconColor = isLent ? 'text-green-500' : 'text-red-500'
 
                                 return (
                                   <tr
@@ -3125,8 +3047,8 @@ const SharedBalanceClosureWizardPage = () => {
                                     <td className="px-3 py-3">
                                       <div className="flex items-center justify-start">
                                         <button
-                                          onClick={() => handleSettleInFullToggle(loan.id, correctedBalance)}
-                                          disabled={correctedBalance <= 0.01}
+                                          onClick={() => handleSettleInFullToggle(loan.id, openBeforeClosure)}
+                                          disabled={openBeforeClosure <= 0.01}
                                           className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-color-primary focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed ${
                                             !payment?.settleInFull ? 'bg-gray-200 dark:bg-gray-600' : ''
                                           }`}
@@ -3155,8 +3077,7 @@ const SharedBalanceClosureWizardPage = () => {
                     )}
                   </div>
                 )}
-
-                  </div>
+                  </>
                 )}
               </div>
             )}
@@ -3172,6 +3093,7 @@ const SharedBalanceClosureWizardPage = () => {
             onClose={() => {
               setShowClosureModal(false)
               setClosureNotes('')
+              setMakeAnotherClosure(false)
             }}
             onConfirm={handleCreateClosure}
             closureNotes={closureNotes}
@@ -3181,6 +3103,8 @@ const SharedBalanceClosureWizardPage = () => {
             periodEnd={balanceData.end_date}
             lastClosureTimestamp={lastClosureTimestamp}
             calculationTimestamp={calculationTimestamp}
+            makeAnotherClosure={makeAnotherClosure}
+            setMakeAnotherClosure={setMakeAnotherClosure}
           />
         )}
 
@@ -3506,10 +3430,10 @@ const SharedBalanceClosureWizardPage = () => {
               isEdit={false}
               title="Registrar Pagamento Parcial"
               onClose={() => { setShowPaymentModal(false); setPaymentClosure(null) }}
-              icon={<CreditCard size={18} />}
+              icon={<Banknote size={18} />}
             />
             <CadastroModalBody>
-              <CadastroFormSection title="Pagamento" icon={<CreditCard size={14} />}>
+              <CadastroFormSection title="Pagamento" icon={<Banknote size={14} />}>
                 <CadastroModalFieldsGrid>
                   <CadastroModalFieldsRow>
                     {(() => {
@@ -3591,10 +3515,10 @@ const SharedBalanceClosureWizardPage = () => {
               isEdit={true}
               title="Editar Pagamento"
               onClose={closeEditPaymentModal}
-              icon={<CreditCard size={18} />}
+              icon={<Banknote size={18} />}
             />
             <CadastroModalBody>
-              <CadastroFormSection title="Pagamento" icon={<CreditCard size={14} />}>
+              <CadastroFormSection title="Pagamento" icon={<Banknote size={14} />}>
                 <CadastroModalFieldsGrid>
                   <CadastroModalFieldsRow>
                     <label className="block min-w-0">
@@ -3736,10 +3660,10 @@ const SharedBalanceClosureWizardPage = () => {
                               return (
                                 <tr
                                   key={payment.loan_id}
-                                  className={`border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 transition-all cursor-pointer ${
+                                  className={`${listPageTableRowHoverCls} border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 cursor-pointer ${
                                     isSelected
-                                      ? 'border-l-blue-600 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30'
-                                      : 'border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                                      ? 'table-row-selected border-l-blue-600 bg-[color-mix(in_srgb,var(--color-1)_7%,transparent)]'
+                                      : 'border-l-gray-300 dark:border-l-gray-600'
                                   }`}
                                   onClick={() => toggleLoanSelection(payment.loan_id)}
                                   onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.borderLeftColor = 'var(--color-1)' }}
@@ -3845,18 +3769,6 @@ const SharedBalanceClosureWizardPage = () => {
             }}
           />
         )}
-
-        {/* Modal de Detalhes de Transações */}
-        <BalanceDetailsModal
-          isOpen={detailsModal.isOpen}
-          onClose={() => setDetailsModal({ ...detailsModal, isOpen: false })}
-          title={detailsModal.title}
-          type={detailsModal.type}
-          accountColor={detailsModal.accountColor}
-          expenseItems={detailsModal.expenseItems}
-          revenueItems={detailsModal.revenueItems}
-          isPartnerAccount={detailsModal.isPartnerAccount}
-        />
 
         {/* Modal de Detalhes Mensais do Histórico */}
         {/* Toast de notificações */}

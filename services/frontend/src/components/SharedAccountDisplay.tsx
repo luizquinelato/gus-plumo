@@ -33,13 +33,20 @@ interface SharedAccountDisplayProps {
   account: Account | null | undefined
   ownershipPercentage?: number | null
   compact?: boolean  // Se true, mostra apenas nome da conta
+  /** Classes extras no texto do nome (ex.: contraparte na lista de fechamentos) */
+  nameClassName?: string
 }
 
 /**
  * Componente para exibir conta compartilhada com ícone de informação e modal de detalhes
  * Usado em Templates, Mapeamentos e Gerenciar Cartões
  */
-const SharedAccountDisplay = ({ account, ownershipPercentage, compact = false }: SharedAccountDisplayProps) => {
+const SharedAccountDisplay = ({
+  account,
+  ownershipPercentage,
+  compact = false,
+  nameClassName = '',
+}: SharedAccountDisplayProps) => {
   const [isModalOpen, setIsModalOpen] = useState(false)
 
   // ESC para fechar o modal (com stopPropagation para não fechar modais pai)
@@ -74,7 +81,14 @@ const SharedAccountDisplay = ({ account, ownershipPercentage, compact = false }:
   return (
     <>
       <span className="inline-flex items-center gap-2">
-        <span className="text-sm text-gray-900 dark:text-white truncate" title={displayName}>
+        <span
+          className={
+            nameClassName
+              ? `text-sm truncate ${nameClassName}`
+              : 'text-sm text-gray-900 dark:text-white truncate'
+          }
+          title={displayName}
+        >
           {displayName}
         </span>
         <button

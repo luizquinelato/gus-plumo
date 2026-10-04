@@ -24,7 +24,7 @@ import {
   type DateSortDirection,
 } from '../utils/tableDateSort'
 import { useConfirm } from '../hooks/useConfirm'
-import { MultiSelectDropdown } from '../components/MultiSelectDropdown'
+import { MultiSelectDropdown, SourceMultiSelectDropdown } from '../components/MultiSelectDropdown'
 import { CreditCard, Calendar, FileText, Receipt, Filter, X, Search, Gift, Tag, Tags, Users, ArrowUp, Edit2, Trash2, CheckSquare, Square, MinusSquare, ChevronDown, ChevronRight, Landmark, Link2, Layers, Plus, ArrowRightLeft } from 'lucide-react'
 import type { InvoiceMatchPreview } from '../types/invoiceReconcile'
 
@@ -232,8 +232,8 @@ const FaturasPage = () => {
 
   // Estados de filtros
   const [selectedCardIds, setSelectedCardIds] = useState<number[]>([])
-  const [selectedYear, setSelectedYear] = useState<string>('')
-  const [selectedMonth, setSelectedMonth] = useState<string>('')
+  const [selectedYears, setSelectedYears] = useState<string[]>([])
+  const [selectedMonths, setSelectedMonths] = useState<string[]>([])
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([])
   const [selectedSubtagIds, setSelectedSubtagIds] = useState<number[]>([])
   const [selectedPartnerIds, setSelectedPartnerIds] = useState<number[]>([])
@@ -405,8 +405,8 @@ const FaturasPage = () => {
       // Aplica ano/mês se fornecido
       if (navigationState.yearMonth) {
         const [year, month] = navigationState.yearMonth.split('-')
-        setSelectedYear(year)
-        setSelectedMonth(month)
+        setSelectedYears([year])
+        setSelectedMonths([month.padStart(2, '0')])
         setActiveYear(year)
         setActiveMonth(navigationState.yearMonth)
       }
@@ -470,12 +470,11 @@ const FaturasPage = () => {
         params.card_ids = selectedCardIds.join(',')
       }
 
-      // Adiciona ano/mês se selecionados
-      if (selectedYear) {
-        params.year = selectedYear
+      if (selectedYears.length > 0) {
+        params.years = selectedYears.join(',')
       }
-      if (selectedMonth) {
-        params.month = selectedMonth
+      if (selectedMonths.length > 0) {
+        params.months = selectedMonths.join(',')
       }
 
       // Adiciona filtros de tags/subtags/parceiros
@@ -525,11 +524,11 @@ const FaturasPage = () => {
         const year = firstItem.year_month.split('-')[0]
         setActiveYear(year)
         setActiveMonth(firstItem.year_month)
-      } else if (selectedYear && selectedMonth) {
-        setActiveYear(selectedYear)
-        setActiveMonth(`${selectedYear}-${selectedMonth.padStart(2, '0')}`)
-      } else if (selectedYear) {
-        setActiveYear(selectedYear)
+      } else if (selectedYears.length === 1 && selectedMonths.length === 1) {
+        setActiveYear(selectedYears[0])
+        setActiveMonth(`${selectedYears[0]}-${selectedMonths[0].padStart(2, '0')}`)
+      } else if (selectedYears.length === 1) {
+        setActiveYear(selectedYears[0])
         setActiveMonth('')
       } else {
         setActiveYear('')
@@ -562,8 +561,8 @@ const FaturasPage = () => {
 
   const clearFilters = () => {
     setSelectedCardIds([])
-    setSelectedYear('')
-    setSelectedMonth('')
+    setSelectedYears([])
+    setSelectedMonths([])
     setSelectedTagIds([])
     setSelectedSubtagIds([])
     setSelectedPartnerIds([])
@@ -595,7 +594,7 @@ const FaturasPage = () => {
   }
 
   // Verifica se há filtros ativos
-  const hasActiveFilters = selectedCardIds.length > 0 || selectedYear !== '' || selectedMonth !== '' ||
+  const hasActiveFilters = selectedCardIds.length > 0 || selectedYears.length > 0 || selectedMonths.length > 0 ||
     selectedTagIds.length > 0 || selectedSubtagIds.length > 0 || selectedPartnerIds.length > 0 ||
     selectedIssuerIds.length > 0 ||
     searchTerm !== '' || searchAmount !== ''
@@ -1309,16 +1308,18 @@ const FaturasPage = () => {
                     <Calendar size={12} className="inline mr-1 text-color-primary" />
                     Ano
                   </label>
-                  <select
-                    value={selectedYear}
-                    onChange={(e) => setSelectedYear(e.target.value)}
-                    className="w-full px-2 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:border-color-primary focus:outline-none transition-all"
-                  >
-                    <option value="">Selecione...</option>
-                    {yearOptions.map(year => (
-                      <option key={year} value={year}>{year}</option>
-                    ))}
-                  </select>
+                  <SourceMultiSelectDropdown
+                    label="Ano"
+                    options={yearOptions.map((year) => ({
+                      id: year,
+                      name: year,
+                      icon: <Calendar size={14} />,
+                      color: 'var(--color-1)',
+                    }))}
+                    selectedIds={selectedYears}
+                    onChange={setSelectedYears}
+                    placeholder="Selecione..."
+                  />
                 </div>
 
                 {/* Mês */}
@@ -1327,16 +1328,18 @@ const FaturasPage = () => {
                     <Calendar size={12} className="inline mr-1 text-color-primary" />
                     Mês
                   </label>
-                  <select
-                    value={selectedMonth}
-                    onChange={(e) => setSelectedMonth(e.target.value)}
-                    className="w-full px-2 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:border-color-primary focus:outline-none transition-all"
-                  >
-                    <option value="">Selecione...</option>
-                    {monthOptions.map(m => (
-                      <option key={m.value} value={m.value}>{m.label}</option>
-                    ))}
-                  </select>
+                  <SourceMultiSelectDropdown
+                    label="Mês"
+                    options={monthOptions.map((m) => ({
+                      id: m.value,
+                      name: m.label,
+                      icon: <Calendar size={14} />,
+                      color: 'var(--color-1)',
+                    }))}
+                    selectedIds={selectedMonths}
+                    onChange={setSelectedMonths}
+                    placeholder="Selecione..."
+                  />
                 </div>
 
                 {/* Emissor */}

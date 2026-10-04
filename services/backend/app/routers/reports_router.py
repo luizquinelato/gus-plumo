@@ -2796,8 +2796,10 @@ class InvoiceReportResponse(BaseModel):
 @router.get("/invoices", response_model=InvoiceReportResponse)
 async def get_invoice_report(
     card_ids: str | None = Query(None, description="IDs dos cartões separados por vírgula (ex: 1,2,3)"),
-    year: str | None = Query(None, description="Ano do fechamento (ex: 2025)"),
-    month: str | None = Query(None, description="Mês do fechamento (ex: 01, 02, ..., 12)"),
+    year: str | None = Query(None, description="Ano do fechamento (ex: 2025) — use years para múltiplos"),
+    month: str | None = Query(None, description="Mês do fechamento (ex: 01) — use months para múltiplos"),
+    years: str | None = Query(None, description="Anos separados por vírgula (ex: 2024,2025)"),
+    months: str | None = Query(None, description="Meses separados por vírgula (ex: 01,02,12)"),
     tag_ids: str | None = Query(None, description="IDs das tags separados por vírgula"),
     subtag_ids: str | None = Query(None, description="IDs das subtags separados por vírgula"),
     partner_ids: str | None = Query(None, description="IDs dos parceiros separados por vírgula"),
@@ -2903,14 +2905,30 @@ async def get_invoice_report(
     if card_id_list:
         query = query.filter(CreditCardInvoice.credit_card_id.in_(card_id_list))
 
-    # Filtro por ano/mês de fechamento
-    if year and month:
-        # Filtra pelo year_month exato (ex: "2025-01")
-        year_month = f"{year}-{month.zfill(2)}"
-        query = query.filter(CreditCardInvoice.year_month == year_month)
+    # Filtro por ano/mês de fechamento (suporta múltiplos via years/months)
+    year_list: list[str] = []
+    if years:
+        year_list = [y.strip() for y in years.split(",") if y.strip()]
     elif year:
-        # Filtra por todos os meses do ano
-        query = query.filter(CreditCardInvoice.year_month.like(f"{year}-%"))
+        year_list = [year.strip()]
+
+    month_list: list[str] = []
+    if months:
+        month_list = [m.strip().zfill(2) for m in months.split(",") if m.strip()]
+    elif month:
+        month_list = [month.strip().zfill(2)]
+
+    if year_list and month_list:
+        year_month_values = [f"{y}-{m}" for y in year_list for m in month_list]
+        query = query.filter(CreditCardInvoice.year_month.in_(year_month_values))
+    elif year_list:
+        query = query.filter(
+            or_(*[CreditCardInvoice.year_month.like(f"{y}-%") for y in year_list])
+        )
+    elif month_list:
+        query = query.filter(
+            or_(*[CreditCardInvoice.year_month.like(f"%-{m}") for m in month_list])
+        )
 
     # Filtro por tags/subtags (com suporte a "Vazio")
     if subtag_id_list or tag_id_list or include_empty_tag:

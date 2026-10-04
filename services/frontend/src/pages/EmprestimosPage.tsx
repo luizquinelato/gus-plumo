@@ -12,7 +12,17 @@ import {
   cadastroFilterFieldCls,
   cadastroRowIconBtnCls,
   cadastroRowIconDangerCls,
+  listPageTableRowHoverCls,
 } from '../components/CadastroListPageLayout'
+import { ListPageNestedTable } from '../components/ListPageTable'
+import {
+  ListTableIndexCell,
+  ListTableIndexHeader,
+  ListTableSpacerCell,
+  ListTableSpacerCol,
+  ListTableSpacerHeader,
+  ListTableStaticHeader,
+} from '../components/ListTableSelectColumns'
 import {
   CadastroFieldLabel,
   CadastroFormSection,
@@ -30,7 +40,11 @@ import LoadingSpinner from '../components/LoadingSpinner'
 import Toast from '../components/Toast'
 import { DateField } from '../components/date'
 import { parseLocalDate } from '../utils/dateUtils'
-import { Wallet, Plus, Edit2, Trash2, ChevronDown, ChevronRight, Filter, Calendar, CheckCircle, Clock, AlertTriangle, Percent, DollarSign, ArrowUp, ArrowDown, Building2, UserX, Link2, Lock, HelpCircle } from 'lucide-react'
+import {
+  Wallet, Plus, Edit2, Trash2, ChevronDown, ChevronRight, Filter, Calendar, CheckCircle, Clock,
+  AlertTriangle, Percent, DollarSign, ArrowUp, ArrowDown, Building2, UserX, Link2, Lock, HelpCircle,
+  Banknote, Scale, MessageSquare, Check,
+} from 'lucide-react'
 import { useConfirm } from '../hooks/useConfirm'
 
 interface ToastState {
@@ -247,6 +261,52 @@ const dateToInputString = (date: Date | null): string => {
   return `${year}-${month}-${day}`
 }
 
+const cardListItemCls =
+  'rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800'
+const loanCardOpenCls = `${cardListItemCls} border-l-4 border-l-blue-500`
+const loanCardSettledCls =
+  `${cardListItemCls} border-l-4 border-l-green-500 bg-green-50/50 dark:bg-green-900/10`
+
+const loanPaymentColsRestOwner = (
+  <>
+    <ListTableSpacerCol />
+    <col />
+    <col />
+    <col />
+    <col />
+  </>
+)
+
+const loanPaymentColsRestViewer = (
+  <>
+    <ListTableSpacerCol />
+    <col />
+    <col />
+    <col />
+  </>
+)
+
+function getLoanSettleContext(loan: Loan) {
+  const principal = Math.abs(Number(loan.principal_amount))
+  let correctedAmount = principal
+  let remaining = Math.max(0, Math.abs(Number(loan.remaining_balance)))
+
+  if (loan.interest_enabled && loan.interest_rate && loan.interest_period && loan.interest_type) {
+    const interest = calculateInterest(
+      principal,
+      loan.loan_date,
+      Number(loan.interest_rate),
+      loan.interest_type,
+      loan.interest_period,
+    )
+    correctedAmount = interest.correctedAmount
+    const totalPaid = principal - Math.abs(Number(loan.remaining_balance))
+    remaining = Math.max(0, interest.correctedAmount - totalPaid)
+  }
+
+  return { principal, correctedAmount, remaining }
+}
+
 export default function EmprestimosPage() {
   const { showConfirm, ConfirmComponent } = useConfirm()
 
@@ -296,6 +356,10 @@ export default function EmprestimosPage() {
   const [paymentAmountCents, setPaymentAmountCents] = useState('')
   const [paymentDate, setPaymentDate] = useState(dateToInputString(new Date()))
   const [paymentNotes, setPaymentNotes] = useState('')
+  const [paymentModalMode, setPaymentModalMode] = useState<'partial' | 'settle'>('partial')
+  const [settlementDate, setSettlementDate] = useState(dateToInputString(new Date()))
+  const [settlementNotes, setSettlementNotes] = useState('')
+  const [isSettlingLoan, setIsSettlingLoan] = useState(false)
   const [editingPayment, setEditingPayment] = useState<LoanPayment | null>(null)
 
   // Form do modal de reabrir
@@ -362,6 +426,24 @@ export default function EmprestimosPage() {
     return (num / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   }
 
+  const paymentModalDateFieldWrapCls = `${cadastroFieldCls} mt-0.5 box-border !py-0 flex h-9 items-center`
+
+  const clampPaymentCents = (digits: string, maxAmount: number): string => {
+    const cents = parseInt(digits || '0', 10)
+    const maxCents = Math.max(0, Math.round(maxAmount * 100))
+    if (!cents) return ''
+    return String(Math.min(cents, maxCents))
+  }
+
+  const closePaymentModal = () => {
+    setShowPaymentModal(false)
+    setPayingLoan(null)
+    setEditingPayment(null)
+    setPaymentAmountCents('')
+    setPaymentNotes('')
+    setSettlementNotes('')
+  }
+
   // Atalhos de teclado para modais
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -370,9 +452,7 @@ export default function EmprestimosPage() {
           setShowReopenModal(false)
           setReopeningLoan(null)
         } else if (showPaymentModal) {
-          setShowPaymentModal(false)
-          setPayingLoan(null)
-          setEditingPayment(null)
+          closePaymentModal()
         } else if (showCreateModal) {
           setShowCreateModal(false)
           resetForm()
@@ -585,56 +665,108 @@ export default function EmprestimosPage() {
 
   const handleOpenPayment = (loan: Loan, payment?: LoanPayment) => {
     setPayingLoan(loan)
-    setEditingPayment(payment || null)
-    setPaymentAmountCents(payment ? String(Math.round(payment.amount * 100)) : '')
-    setPaymentDate(payment ? payment.payment_date.split('T')[0] : dateToInputString(new Date()))
-    setPaymentNotes(payment?.notes || '')
+    if (payment) {
+      setEditingPayment(payment)
+      setPaymentAmountCents(String(Math.round(payment.amount * 100)))
+      setPaymentDate(payment.payment_date.split('T')[0])
+      setPaymentNotes(payment.notes || '')
+      setShowPaymentModal(true)
+      return
+    }
+    const { remaining } = getLoanSettleContext(loan)
+    setEditingPayment(null)
+    setPaymentAmountCents('')
+    setPaymentDate(dateToInputString(new Date()))
+    setPaymentNotes('')
+    setSettlementDate(dateToInputString(new Date()))
+    setSettlementNotes('')
+    setPaymentModalMode(remaining > 0.01 ? 'partial' : 'settle')
     setShowPaymentModal(true)
   }
 
-  const handleAddPayment = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleAddPartialPayment = async () => {
     const amount = parseInt(paymentAmountCents || '0', 10) / 100
-
-    if (!payingLoan || !paymentAmountCents || amount <= 0) {
-      showToast('Informe o valor do pagamento', 'warning')
+    if (!payingLoan || !paymentAmountCents || amount <= 0 || !paymentDate) {
+      showToast('Informe valor e data do pagamento', 'warning')
       return
     }
 
-    // Validação: para novo pagamento, não pode exceder o saldo restante
-    if (!editingPayment && amount > payingLoan.remaining_balance) {
-      showToast(`O valor não pode ser maior que o saldo restante (${formatCurrency(payingLoan.remaining_balance)})`, 'warning')
+    const { remaining } = getLoanSettleContext(payingLoan)
+    if (amount > remaining + 0.001) {
+      showToast(`O valor não pode ser maior que o saldo restante (${formatCurrency(remaining)})`, 'warning')
       return
     }
 
     setIsSubmitting(true)
     try {
-      if (editingPayment) {
-        // Atualizar pagamento existente
-        await axios.patch(`/api/loans/${payingLoan.id}/payments/${editingPayment.id}`, {
-          amount: amount,
-          payment_date: paymentDate || null,  // Enviar como string YYYY-MM-DD
-          notes: paymentNotes || null
-        })
-        showToast('Pagamento atualizado com sucesso!', 'success')
-      } else {
-        // Criar novo pagamento
-        await axios.post(`/api/loans/${payingLoan.id}/pay`, {
-          amount: amount,
-          payment_date: paymentDate || null,  // Enviar como string YYYY-MM-DD
-          notes: paymentNotes || null
-        })
-        showToast('Pagamento registrado com sucesso!', 'success')
-      }
-      setShowPaymentModal(false)
-      setPayingLoan(null)
-      setEditingPayment(null)
+      await axios.post(`/api/loans/${payingLoan.id}/pay`, {
+        amount,
+        payment_date: paymentDate || null,
+        notes: paymentNotes || null,
+      })
+      showToast('Pagamento registrado com sucesso!', 'success')
+      setExpandedLoans((prev) => new Set(prev).add(payingLoan.id))
+      closePaymentModal()
+      refreshLoansIfApplied()
+    } catch (error: any) {
+      showToast(error.response?.data?.detail || 'Erro ao registrar pagamento', 'error')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleSaveEditPayment = async () => {
+    const amount = parseInt(paymentAmountCents || '0', 10) / 100
+    if (!payingLoan || !editingPayment || !paymentAmountCents || amount <= 0) {
+      showToast('Informe o valor do pagamento', 'warning')
+      return
+    }
+
+    setIsSubmitting(true)
+    try {
+      await axios.patch(`/api/loans/${payingLoan.id}/payments/${editingPayment.id}`, {
+        amount,
+        payment_date: paymentDate || null,
+        notes: paymentNotes || null,
+      })
+      showToast('Pagamento atualizado com sucesso!', 'success')
+      closePaymentModal()
       refreshLoansIfApplied()
     } catch (error: any) {
       showToast(error.response?.data?.detail || 'Erro ao salvar pagamento', 'error')
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  const handleSettleLoanFromModal = async () => {
+    if (!payingLoan) return
+    const { correctedAmount } = getLoanSettleContext(payingLoan)
+
+    setIsSettlingLoan(true)
+    try {
+      await axios.post(`/api/loans/${payingLoan.id}/settle`, {
+        notes: settlementNotes.trim() || 'Quitação manual',
+        corrected_amount: correctedAmount,
+      })
+      showToast('Empréstimo quitado com sucesso!', 'success')
+      closePaymentModal()
+      refreshLoansIfApplied()
+    } catch (error: any) {
+      showToast(error.response?.data?.detail || 'Erro ao quitar empréstimo', 'error')
+    } finally {
+      setIsSettlingLoan(false)
+    }
+  }
+
+  const handlePaymentAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const digits = e.target.value.replace(/\D/g, '')
+    if (!payingLoan) {
+      setPaymentAmountCents(digits)
+      return
+    }
+    const { remaining } = getLoanSettleContext(payingLoan)
+    setPaymentAmountCents(clampPaymentCents(digits, remaining))
   }
 
   const handleDeletePayment = (loan: Loan, payment: LoanPayment) => {
@@ -657,71 +789,6 @@ export default function EmprestimosPage() {
         }
       },
       'Excluir',
-      'Cancelar'
-    )
-  }
-
-  const handleSettle = (loan: Loan) => {
-    // Calcular valor corrigido com juros se habilitado
-    const principal = Math.abs(Number(loan.principal_amount))
-    let correctedAmount = principal
-    let balanceToSettle = Math.abs(Number(loan.remaining_balance))
-    let interestDetails: { interestAmount: number; description: string; rate: number; period: string; type: string } | null = null
-
-    if (loan.interest_enabled && loan.interest_rate && loan.interest_period) {
-      const interest = calculateInterest(
-        principal,
-        loan.loan_date,
-        Number(loan.interest_rate),
-        loan.interest_type as 'simple' | 'compound',
-        loan.interest_period as 'daily' | 'monthly' | 'yearly'
-      )
-      correctedAmount = interest.correctedAmount
-      // Saldo corrigido = valor corrigido - total já pago
-      const totalPaid = principal - Math.abs(Number(loan.remaining_balance))
-      balanceToSettle = interest.correctedAmount - totalPaid
-
-      const periodLabel = loan.interest_period === 'daily' ? 'ao dia' : loan.interest_period === 'monthly' ? 'ao mês' : 'ao ano'
-      const typeLabel = loan.interest_type === 'compound' ? 'composto' : 'simples'
-
-      interestDetails = {
-        interestAmount: interest.interestAmount,
-        description: interest.description,
-        rate: Number(loan.interest_rate),
-        period: periodLabel,
-        type: typeLabel
-      }
-    }
-
-    // Montar mensagem com detalhes
-    let message = `Deseja quitar completamente o empréstimo "${loan.description}"?\n\n`
-    message += `📌 Principal: ${formatCurrency(principal)}\n`
-
-    if (interestDetails) {
-      message += `📈 Juros (${interestDetails.rate.toFixed(2)}% ${interestDetails.period}, ${interestDetails.type}):\n`
-      message += `     ${interestDetails.description}\n`
-      message += `     +${formatCurrency(interestDetails.interestAmount)}\n`
-      message += `💰 Valor Corrigido: ${formatCurrency(correctedAmount)}\n`
-    }
-
-    message += `\n✅ Saldo a quitar: ${formatCurrency(balanceToSettle)}`
-
-    showConfirm(
-      'Quitar Empréstimo',
-      message,
-      async () => {
-        try {
-          await axios.post(`/api/loans/${loan.id}/settle`, {
-            notes: 'Quitação manual',
-            corrected_amount: correctedAmount
-          })
-          showToast('Empréstimo quitado com sucesso!', 'success')
-          refreshLoansIfApplied()
-        } catch (error: any) {
-          showToast(error.response?.data?.detail || 'Erro ao quitar empréstimo', 'error')
-        }
-      },
-      'Quitar',
       'Cancelar'
     )
   }
@@ -782,6 +849,87 @@ export default function EmprestimosPage() {
       </span>
     )
   }
+
+  const renderLoanPaymentHistory = (loan: Loan) => (
+    <div className="mt-4 ml-10">
+      <h4 className="mb-3 text-sm font-medium text-gray-900 dark:text-white">Histórico de Pagamentos</h4>
+      {loan.payments.length === 0 ? (
+        <p className="text-sm italic text-gray-500 dark:text-gray-400">Nenhum pagamento registrado</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <ListPageNestedTable
+            alignWithListLeading
+            leadingMode="index-only"
+            colsRest={loan.is_owner ? loanPaymentColsRestOwner : loanPaymentColsRestViewer}
+            head={
+              <tr>
+                <ListTableIndexHeader />
+                <ListTableSpacerHeader />
+                <ListTableStaticHeader label="Data" className="px-3 py-2" />
+                <ListTableStaticHeader label="Observações" className="px-3 py-2" />
+                <ListTableStaticHeader label="Valor" className="px-3 py-2 text-right" />
+                {loan.is_owner && <ListTableStaticHeader label="Ações" className="px-2 py-2" />}
+              </tr>
+            }
+          >
+            {loan.payments.map((payment, payIdx) => (
+              <tr key={payment.id} className={listPageTableRowHoverCls}>
+                <ListTableIndexCell index={payIdx + 1} />
+                <ListTableSpacerCell />
+                <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-900 dark:text-white">
+                  {formatDateTime(payment.payment_date)}
+                </td>
+                <td className="max-w-0 truncate px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
+                  {payment.notes || '—'}
+                </td>
+                <td className="whitespace-nowrap px-3 py-2 text-right text-sm font-semibold text-green-600 dark:text-green-400">
+                  {formatCurrency(payment.amount)}
+                </td>
+                {loan.is_owner && (
+                  <td className="whitespace-nowrap px-2 py-2 text-right">
+                    {payment.balance_closure_id ? (
+                      <div
+                        className="inline-flex cursor-help items-center gap-1.5 rounded bg-gray-100 px-2 py-1 dark:bg-gray-700"
+                        title="Este pagamento está vinculado a um fechamento de balanço. Para editar ou excluir, vá até a página de Balanço > aba Fechamentos e exclua o fechamento ou remova as liquidações de empréstimos."
+                      >
+                        <Lock size={12} className="text-gray-500 dark:text-gray-400" />
+                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Fechamento</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-end gap-1">
+                        {loan.status !== 'settled' && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenPayment(loan, payment)}
+                            className={cadastroRowIconBtnCls}
+                            title="Editar pagamento"
+                          >
+                            <Edit2 size={14} />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePayment(loan, payment)}
+                          className={cadastroRowIconDangerCls}
+                          title={
+                            loan.status === 'settled'
+                              ? 'Excluir pagamento (reabre o empréstimo)'
+                              : 'Excluir pagamento'
+                          }
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    )}
+                  </td>
+                )}
+              </tr>
+            ))}
+          </ListPageNestedTable>
+        </div>
+      )}
+    </div>
+  )
 
   // Labels dinâmicos baseados na direção do empréstimo
   return (
@@ -915,10 +1063,7 @@ export default function EmprestimosPage() {
                 const isLent = effectiveType === 'lent'
 
                 return (
-                <div
-                  key={loan.id}
-                  className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 border-l-4 border-l-blue-500"
-                >
+                <div key={loan.id} className={loanCardOpenCls}>
                   {/* Header do empréstimo */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4 flex-1">
@@ -1049,11 +1194,13 @@ export default function EmprestimosPage() {
                           {/* Ações apenas para empréstimos não quitados */}
                           {loan.status !== 'settled' && (
                             <>
-                              <button type="button" onClick={() => handleOpenPayment(loan)} className={cadastroRowIconBtnCls} title="Registrar Pagamento">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenPayment(loan)}
+                                className={cadastroRowIconBtnCls}
+                                title="Registrar pagamento ou quitar"
+                              >
                                 <Plus size={18} />
-                              </button>
-                              <button type="button" onClick={() => handleSettle(loan)} className={cadastroRowIconBtnCls} title="Quitar">
-                                <CheckCircle size={18} />
                               </button>
                               <button type="button" onClick={() => handleEdit(loan)} className={cadastroRowIconBtnCls} title="Editar">
                                 <Edit2 size={18} />
@@ -1069,80 +1216,7 @@ export default function EmprestimosPage() {
                     </div>
                   </div>
 
-                  {/* Detalhes expandidos */}
-                  {expandedLoans.has(loan.id) && (
-                    <div className="mt-4 ml-10 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-                      <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
-                        <h4 className="font-medium text-gray-900 dark:text-white">Histórico de Pagamentos</h4>
-                      </div>
-                      {loan.payments.length === 0 ? (
-                        <p className="text-sm text-gray-500 dark:text-gray-400 italic p-4">Nenhum pagamento registrado</p>
-                      ) : (
-                        <table className="w-full">
-                          <thead className="border-b border-gray-200 dark:border-gray-700">
-                            <tr>
-                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Data</th>
-                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Observações</th>
-                              <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Valor</th>
-                              {loan.is_owner && <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-20">Ações</th>}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {loan.payments.map(payment => (
-                              <tr
-                                key={payment.id}
-                                className="border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all"
-                                onMouseEnter={(e) => { e.currentTarget.style.borderLeftColor = 'var(--color-1)' }}
-                                onMouseLeave={(e) => { e.currentTarget.style.borderLeftColor = '' }}
-                              >
-                                <td className="px-4 py-3 text-sm text-gray-900 dark:text-white whitespace-nowrap">
-                                  {formatDateTime(payment.payment_date)}
-                                </td>
-                                <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
-                                  {payment.notes || '-'}
-                                </td>
-                                <td className="px-4 py-3 text-sm font-medium text-green-600 dark:text-green-400 text-right whitespace-nowrap">
-                                  {formatCurrency(payment.amount)}
-                                </td>
-                                {loan.is_owner && (
-                                  <td className="px-4 py-3 text-right">
-                                    {payment.balance_closure_id ? (
-                                      <div
-                                        className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 cursor-help"
-                                        title="Este pagamento está vinculado a um fechamento de balanço. Para editar ou excluir, vá até a página de Balanço > aba Fechamentos e exclua o fechamento ou remova as liquidações de empréstimos."
-                                      >
-                                        <Lock size={12} className="text-gray-500 dark:text-gray-400" />
-                                        <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">Fechamento</span>
-                                      </div>
-                                    ) : (
-                                      <div className="flex items-center justify-end gap-1">
-                                        <button
-                                          type="button"
-                                          onClick={() => handleOpenPayment(loan, payment)}
-                                          className={cadastroRowIconBtnCls}
-                                          title="Editar Pagamento"
-                                        >
-                                          <Edit2 size={14} />
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleDeletePayment(loan, payment)}
-                                          className={cadastroRowIconDangerCls}
-                                          title="Excluir Pagamento"
-                                        >
-                                          <Trash2 size={14} />
-                                        </button>
-                                      </div>
-                                    )}
-                                  </td>
-                                )}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      )}
-                    </div>
-                  )}
+                  {expandedLoans.has(loan.id) && renderLoanPaymentHistory(loan)}
                 </div>
               )})}
             </div>
@@ -1154,10 +1228,7 @@ export default function EmprestimosPage() {
                     const isLent = effectiveType === 'lent'
 
                     return (
-                    <div
-                      key={loan.id}
-                      className="p-4 bg-green-50/50 dark:bg-green-900/10 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 border-l-4 border-l-green-500"
-                    >
+                    <div key={loan.id} className={loanCardSettledCls}>
                       {/* Header do empréstimo */}
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4 flex-1">
@@ -1291,70 +1362,7 @@ export default function EmprestimosPage() {
                         </div>
                       </div>
 
-                      {/* Detalhes expandidos */}
-                      {expandedLoans.has(loan.id) && (
-                        <div className="mt-4 ml-10 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-                          <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
-                            <h4 className="font-medium text-gray-900 dark:text-white">Histórico de Pagamentos</h4>
-                          </div>
-                          {loan.payments.length === 0 ? (
-                            <p className="text-sm text-gray-500 dark:text-gray-400 italic p-4">Nenhum pagamento registrado</p>
-                          ) : (
-                            <table className="w-full">
-                              <thead className="border-b border-gray-200 dark:border-gray-700">
-                                <tr>
-                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Data</th>
-                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Observações</th>
-                                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Valor</th>
-                                  {loan.is_owner && <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-20">Ações</th>}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {loan.payments.map(payment => (
-                                  <tr
-                                    key={payment.id}
-                                    className="border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all"
-                                    onMouseEnter={(e) => { e.currentTarget.style.borderLeftColor = 'var(--color-1)' }}
-                                    onMouseLeave={(e) => { e.currentTarget.style.borderLeftColor = '' }}
-                                  >
-                                    <td className="px-4 py-3 text-sm text-gray-900 dark:text-white whitespace-nowrap">
-                                      {formatDateTime(payment.payment_date)}
-                                    </td>
-                                    <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
-                                      {payment.notes || '-'}
-                                    </td>
-                                    <td className="px-4 py-3 text-sm font-medium text-green-600 dark:text-green-400 text-right whitespace-nowrap">
-                                      {formatCurrency(payment.amount)}
-                                    </td>
-                                    {loan.is_owner && (
-                                      <td className="px-4 py-3 text-right">
-                                        {payment.balance_closure_id ? (
-                                          <div
-                                            className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 cursor-help"
-                                            title="Este pagamento está vinculado a um fechamento de balanço. Para editar ou excluir, vá até a página de Balanço > aba Fechamentos e exclua o fechamento ou remova as liquidações de empréstimos."
-                                          >
-                                            <Lock size={12} className="text-gray-500 dark:text-gray-400" />
-                                            <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">Fechamento</span>
-                                          </div>
-                                        ) : (
-                                          <button
-                                            type="button"
-                                            onClick={() => handleDeletePayment(loan, payment)}
-                                            className={cadastroRowIconDangerCls}
-                                            title="Excluir pagamento (reabre o empréstimo)"
-                                          >
-                                            <Trash2 size={14} />
-                                          </button>
-                                        )}
-                                      </td>
-                                    )}
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          )}
-                        </div>
-                      )}
+                      {expandedLoans.has(loan.id) && renderLoanPaymentHistory(loan)}
                     </div>
               )})}
             </div>
@@ -1614,90 +1622,254 @@ export default function EmprestimosPage() {
           </CadastroModalShell>
         )}
 
-        {/* Modal de Pagamento */}
-        {showPaymentModal && payingLoan && (
-          <CadastroModalShell
-            maxWidth="max-w-md"
-            onBackdropClick={() => { setShowPaymentModal(false); setEditingPayment(null) }}
-            zClass="z-50"
-          >
+        {/* Modal: pagamento parcial / quitação (novo) ou edição de pagamento */}
+        {showPaymentModal && payingLoan && editingPayment && (
+          <CadastroModalShell maxWidth="max-w-2xl" onBackdropClick={closePaymentModal} zClass="z-50">
             <CadastroModalHeader
-              isEdit={!!editingPayment}
-              title={editingPayment ? 'Editar Pagamento' : 'Registrar Pagamento'}
-              subtitle={`${payingLoan.description} · saldo restante ${formatCurrency(payingLoan.remaining_balance)}`}
-              onClose={() => { setShowPaymentModal(false); setEditingPayment(null) }}
-              icon={<DollarSign size={18} />}
+              isEdit
+              title="Editar pagamento"
+              subtitle={payingLoan.description}
+              onClose={closePaymentModal}
+              icon={<Banknote size={18} />}
             />
-            <form onSubmit={handleAddPayment} className="flex min-h-0 flex-1 flex-col" id="emprestimo-pagamento-form">
-              <CadastroModalBody>
-                <CadastroFormSection title="Pagamento" icon={<DollarSign size={14} />}>
-                  <CadastroModalFieldsGrid>
-                    <CadastroModalFieldsRow cols={2}>
-                      <label className="block min-w-0">
-                        <CadastroFieldLabel required>Valor</CadastroFieldLabel>
-                        <div className="relative mt-0.5">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 font-semibold text-green-600 dark:text-green-400">
-                            R$
-                          </span>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            value={formatAmountMask(paymentAmountCents)}
-                            onChange={(e) => {
-                              let cents = e.target.value.replace(/\D/g, '')
-                              const amountValue = parseInt(cents || '0', 10) / 100
-                              if (!editingPayment && amountValue > payingLoan.remaining_balance) {
-                                cents = String(Math.round(payingLoan.remaining_balance * 100))
-                              }
-                              setPaymentAmountCents(cents)
-                            }}
-                            placeholder="0,00"
-                            required
-                            className={`${cadastroFieldCls} pl-12 font-semibold text-green-600 dark:text-green-400`}
-                          />
-                        </div>
-                        {!editingPayment && (
-                          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                            Máx: {formatCurrency(payingLoan.remaining_balance)}
-                          </p>
-                        )}
-                      </label>
-                      <label className="block min-w-0">
-                        <CadastroFieldLabel required>Data</CadastroFieldLabel>
+            <CadastroModalBody>
+              <CadastroFormSection title="Dados" icon={<Banknote size={14} />} bodyClassName="p-0">
+                <CadastroModalFieldsGrid>
+                  <CadastroModalFieldsRow cols={2}>
+                    <label className="block min-w-0">
+                      <CadastroFieldLabel required>Data</CadastroFieldLabel>
+                      <div className={paymentModalDateFieldWrapCls}>
                         <DateField
                           value={paymentDate}
                           onChange={setPaymentDate}
                           maxDate={new Date()}
-                          className={`${cadastroFieldCls} mt-0.5`}
+                          className="min-h-0 w-full border-0 bg-transparent p-0 shadow-none"
                         />
-                      </label>
-                    </CadastroModalFieldsRow>
-                    <CadastroModalFieldsRow>
-                      <label className="block min-w-0">
-                        <CadastroFieldLabel>Observações</CadastroFieldLabel>
+                      </div>
+                    </label>
+                    <label className="block min-w-0">
+                      <CadastroFieldLabel required>Valor</CadastroFieldLabel>
+                      <div className="relative mt-0.5">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-green-600 dark:text-green-400">
+                          R$
+                        </span>
                         <input
                           type="text"
-                          value={paymentNotes}
-                          onChange={(e) => setPaymentNotes(e.target.value)}
-                          className={`${cadastroFieldCls} mt-0.5`}
+                          inputMode="numeric"
+                          value={formatAmountMask(paymentAmountCents)}
+                          onChange={(e) => setPaymentAmountCents(e.target.value.replace(/\D/g, ''))}
+                          className={`${cadastroFieldCls} h-9 w-full py-0 pl-9 font-semibold text-green-700 dark:text-green-300`}
+                          placeholder="0,00"
                         />
-                      </label>
+                      </div>
+                    </label>
+                  </CadastroModalFieldsRow>
+                </CadastroModalFieldsGrid>
+              </CadastroFormSection>
+              <CadastroFormSection title="Observações" icon={<MessageSquare size={14} />} bodyClassName="p-0">
+                <CadastroModalFieldsGrid>
+                  <CadastroModalFieldsRow>
+                    <label className="block min-w-0">
+                      <span className="sr-only">Observações</span>
+                      <textarea
+                        value={paymentNotes}
+                        onChange={(e) => setPaymentNotes(e.target.value)}
+                        className={`${cadastroFieldCls} min-h-[2.75rem] resize-y`}
+                        placeholder="Ex: PIX, transferência…"
+                        rows={2}
+                      />
+                    </label>
+                  </CadastroModalFieldsRow>
+                </CadastroModalFieldsGrid>
+              </CadastroFormSection>
+            </CadastroModalBody>
+            <CadastroModalFooter
+              onClose={closePaymentModal}
+              onSave={() => void handleSaveEditPayment()}
+              saving={isSubmitting}
+              disabled={!paymentAmountCents || parseInt(paymentAmountCents, 10) <= 0 || !paymentDate}
+              saveLabel="Salvar"
+              saveIcon={<Check size={15} />}
+            />
+          </CadastroModalShell>
+        )}
+        {showPaymentModal && payingLoan && !editingPayment && (() => {
+          const { remaining } = getLoanSettleContext(payingLoan)
+          const canRegisterPayment = remaining > 0.01
+          const mode = canRegisterPayment ? paymentModalMode : 'settle'
+          const partialValid =
+            Boolean(paymentAmountCents) &&
+            parseInt(paymentAmountCents, 10) > 0 &&
+            Boolean(paymentDate)
+          const settleValid = Boolean(settlementDate)
+          const saving = mode === 'partial' ? isSubmitting : isSettlingLoan
+          const saveDisabled = mode === 'partial' ? !partialValid : !settleValid
+
+          return (
+            <CadastroModalShell maxWidth="max-w-2xl" onBackdropClick={closePaymentModal} zClass="z-50">
+              <CadastroModalHeader
+                isEdit={false}
+                title="Pagamento do empréstimo"
+                subtitle={payingLoan.description}
+                onClose={closePaymentModal}
+                icon={<Banknote size={18} />}
+              />
+              <CadastroModalBody>
+                <CadastroFormSection title="Resumo" icon={<Scale size={14} />} bodyClassName="p-0">
+                  <CadastroModalFieldsGrid>
+                    <CadastroModalFieldsRow>
+                      <div
+                        className={`w-full rounded-lg border px-4 py-3 ${
+                          canRegisterPayment
+                            ? 'border-red-200 bg-red-50 dark:border-red-800/60 dark:bg-red-900/20'
+                            : 'border-green-200 bg-green-50 dark:border-green-800/60 dark:bg-green-900/20'
+                        }`}
+                      >
+                        <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                          Saldo restante
+                        </p>
+                        <p
+                          className={`mt-1 text-2xl font-bold tabular-nums ${
+                            canRegisterPayment
+                              ? 'text-red-600 dark:text-red-400'
+                              : 'text-green-600 dark:text-green-400'
+                          }`}
+                        >
+                          {canRegisterPayment ? formatCurrency(remaining) : formatCurrency(0)}
+                        </p>
+                        {!canRegisterPayment && (
+                          <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                            Sem saldo pendente — marque como quitado.
+                          </p>
+                        )}
+                      </div>
+                    </CadastroModalFieldsRow>
+                    <CadastroModalFieldsRow>
+                      <div>
+                        <CadastroFieldLabel>O que deseja fazer?</CadastroFieldLabel>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-6">
+                          <label
+                            className={`${cadastroOptionLabelCls} ${!canRegisterPayment ? 'cursor-not-allowed opacity-50' : ''}`}
+                          >
+                            <input
+                              type="radio"
+                              name="loan-payment-mode"
+                              checked={mode === 'partial'}
+                              disabled={!canRegisterPayment}
+                              onChange={() => setPaymentModalMode('partial')}
+                              className={cadastroAccentControlCls}
+                            />
+                            Pagamento parcial
+                          </label>
+                          <label className={cadastroOptionLabelCls}>
+                            <input
+                              type="radio"
+                              name="loan-payment-mode"
+                              checked={mode === 'settle'}
+                              onChange={() => setPaymentModalMode('settle')}
+                              className={cadastroAccentControlCls}
+                            />
+                            Quitar empréstimo
+                          </label>
+                        </div>
+                      </div>
                     </CadastroModalFieldsRow>
                   </CadastroModalFieldsGrid>
                 </CadastroFormSection>
+                {((mode === 'partial' && canRegisterPayment) || mode === 'settle') && (
+                  <CadastroFormSection title="Dados" icon={<Banknote size={14} />} bodyClassName="p-0">
+                    <CadastroModalFieldsGrid>
+                      <CadastroModalFieldsRow cols={2}>
+                        <label className="block min-w-0">
+                          <CadastroFieldLabel required>Data</CadastroFieldLabel>
+                          <div className={paymentModalDateFieldWrapCls}>
+                            <DateField
+                              value={mode === 'partial' ? paymentDate : settlementDate}
+                              onChange={mode === 'partial' ? setPaymentDate : setSettlementDate}
+                              maxDate={new Date()}
+                              className="min-h-0 w-full border-0 bg-transparent p-0 shadow-none"
+                            />
+                          </div>
+                        </label>
+                        {mode === 'partial' && canRegisterPayment ? (
+                          <label className="block min-w-0">
+                            <CadastroFieldLabel required>Valor</CadastroFieldLabel>
+                            <div className="relative mt-0.5">
+                              <span
+                                className={`absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold ${
+                                  parseInt(paymentAmountCents || '0', 10) > 0
+                                    ? 'text-green-600 dark:text-green-400'
+                                    : 'text-gray-400 dark:text-gray-500'
+                                }`}
+                              >
+                                R$
+                              </span>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                value={formatAmountMask(paymentAmountCents)}
+                                onChange={handlePaymentAmountChange}
+                                className={`${cadastroFieldCls} h-9 w-full py-0 pl-9 ${
+                                  parseInt(paymentAmountCents || '0', 10) > 0
+                                    ? 'border-green-400 font-semibold text-green-700 dark:border-green-600 dark:text-green-300'
+                                    : ''
+                                }`}
+                                placeholder="0,00"
+                              />
+                            </div>
+                            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                              Máx. {formatCurrency(remaining)}
+                            </p>
+                          </label>
+                        ) : (
+                          <div aria-hidden />
+                        )}
+                      </CadastroModalFieldsRow>
+                    </CadastroModalFieldsGrid>
+                  </CadastroFormSection>
+                )}
+                {((mode === 'partial' && canRegisterPayment) || mode === 'settle') && (
+                  <CadastroFormSection title="Observações" icon={<MessageSquare size={14} />} bodyClassName="p-0">
+                    <CadastroModalFieldsGrid>
+                      <CadastroModalFieldsRow>
+                        <label className="block min-w-0">
+                          <span className="sr-only">Observações</span>
+                          <textarea
+                            value={mode === 'partial' ? paymentNotes : settlementNotes}
+                            onChange={(e) =>
+                              mode === 'partial'
+                                ? setPaymentNotes(e.target.value)
+                                : setSettlementNotes(e.target.value)
+                            }
+                            className={`${cadastroFieldCls} min-h-[2.75rem] resize-y`}
+                            placeholder={
+                              mode === 'partial'
+                                ? 'Ex: PIX, transferência…'
+                                : 'Ex: acordo final, comprovante…'
+                            }
+                            rows={2}
+                          />
+                        </label>
+                      </CadastroModalFieldsRow>
+                    </CadastroModalFieldsGrid>
+                  </CadastroFormSection>
+                )}
               </CadastroModalBody>
               <CadastroModalFooter
-                onClose={() => { setShowPaymentModal(false); setEditingPayment(null) }}
+                onClose={closePaymentModal}
                 onSave={() => {
-                  const form = document.getElementById('emprestimo-pagamento-form') as HTMLFormElement | null
-                  form?.requestSubmit()
+                  if (mode === 'partial') void handleAddPartialPayment()
+                  else void handleSettleLoanFromModal()
                 }}
-                saving={isSubmitting}
-                saveLabel={editingPayment ? 'Salvar' : 'Registrar'}
+                saving={saving}
+                disabled={saveDisabled || saving}
+                saveLabel={mode === 'partial' ? 'Registrar pagamento' : 'Quitar empréstimo'}
+                saveIcon={mode === 'partial' ? <Check size={15} /> : <CheckCircle size={15} />}
+                saveTone={mode === 'settle' ? 'success' : 'default'}
               />
-            </form>
-          </CadastroModalShell>
-        )}
+            </CadastroModalShell>
+          )
+        })()}
 
         {/* Modal de Reabrir Empréstimo */}
         {showReopenModal && reopeningLoan && (

@@ -6,20 +6,65 @@ import {
   listPageTableSectionCls,
 } from './CadastroListPageLayout'
 import {
+  ListTableCheckboxCell,
   ListTableDragCol,
+  ListTableExpandCell,
+  ListTableIndexReserveCell,
   ListTableLeadingCols,
+  ListTableSpacerCell,
   ListTableSpacerCol,
   type ListTableLeadingMode,
 } from './ListTableSelectColumns'
 
-export function ListPageExpandRow({ colSpan, children }: { colSpan: number; children: ReactNode }) {
+export function ListPageExpandRow({
+  colSpan,
+  children,
+  insetClassName = 'px-5 py-4',
+  lineInsetClassName = 'left-6 right-6',
+  preserveLeadingColCount = 0,
+}: {
+  colSpan: number
+  children: ReactNode
+  /** Padding do conteúdo — use `pl-0 pr-5 py-4` com {@link ListPageNestedTable} `alignWithListLeading`. */
+  insetClassName?: string
+  lineInsetClassName?: string
+  /**
+   * Reserva células líderes (checkbox / # / spacer / expand) em vez de um único colspan —
+   * evita que as colunas 40px estiquem na tabela pai.
+   */
+  preserveLeadingColCount?: 0 | 3 | 4
+}) {
+  const contentColSpan = colSpan - preserveLeadingColCount
+  const inset = (
+    <div className="relative">
+      <div
+        className={`absolute top-0 h-px border-t border-dashed border-[color-mix(in_srgb,var(--color-1)_40%,transparent)] ${lineInsetClassName}`}
+      />
+      <div className={`bg-slate-100 dark:bg-gray-900/60 ${insetClassName}`}>{children}</div>
+    </div>
+  )
+
+  if (preserveLeadingColCount === 0) {
+    return (
+      <tr>
+        <td colSpan={colSpan} className="border-b border-gray-200 p-0 dark:border-gray-700">
+          {inset}
+        </td>
+      </tr>
+    )
+  }
+
   return (
     <tr>
-      <td colSpan={colSpan} className="border-b border-gray-200 p-0 dark:border-gray-700">
-        <div className="relative">
-          <div className="absolute left-6 right-6 top-0 h-px border-t border-dashed border-[color-mix(in_srgb,var(--color-1)_40%,transparent)]" />
-          <div className="bg-slate-100 px-5 py-4 dark:bg-gray-900/60">{children}</div>
-        </div>
+      {preserveLeadingColCount >= 1 ? <ListTableCheckboxCell reserveOnly /> : null}
+      {preserveLeadingColCount >= 2 ? <ListTableIndexReserveCell /> : null}
+      {preserveLeadingColCount >= 3 ? <ListTableSpacerCell /> : null}
+      {preserveLeadingColCount >= 4 ? <ListTableExpandCell /> : null}
+      <td
+        colSpan={contentColSpan}
+        className="border-b border-gray-200 bg-slate-100 p-0 dark:border-gray-700 dark:bg-gray-900/60"
+      >
+        {inset}
       </td>
     </tr>
   )
@@ -30,6 +75,7 @@ export function ListPageNestedTable({
   children,
   empty,
   alignWithListLeading = false,
+  leadingMode = 'bulk',
   colsRest,
 }: {
   head: ReactNode
@@ -37,6 +83,8 @@ export function ListPageNestedTable({
   empty?: ReactNode
   /** Checkbox 40px + `#` 40px + spacer 4px — igual à {@link ListPageTable} principal. */
   alignWithListLeading?: boolean
+  /** Colunas líderes quando `alignWithListLeading` (ex.: só `#` em históricos). */
+  leadingMode?: ListTableLeadingMode
   /** Colunas após checkbox/#/spacer — apenas `<col>`. */
   colsRest?: ReactNode
 }) {
@@ -50,10 +98,14 @@ export function ListPageNestedTable({
 
   return (
     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-      <table className={tableCls} data-leading={alignWithListLeading ? 'bulk' : undefined}>
+      <table
+        className={tableCls}
+        data-leading={alignWithListLeading ? leadingMode : undefined}
+        style={alignWithListLeading ? { tableLayout: 'fixed', width: '100%' } : undefined}
+      >
         {alignWithListLeading ? (
           <colgroup>
-            <ListTableLeadingCols mode="bulk" />
+            <ListTableLeadingCols mode={leadingMode} />
             {colsRest ?? <ListTableSpacerCol />}
           </colgroup>
         ) : null}
