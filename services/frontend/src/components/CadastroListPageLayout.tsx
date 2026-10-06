@@ -203,16 +203,37 @@ export function CadastroFilterField({
   icon,
   children,
   className,
+  inline = false,
 }: {
   label: string
   icon?: ReactNode
   children: ReactNode
   className?: string
+  /** Rótulo à esquerda do controle (ex.: linhas compactas na curadoria). */
+  inline?: boolean
 }) {
+  const labelCls =
+    'flex shrink-0 items-center gap-1 text-xs font-medium text-gray-600 dark:text-gray-400'
+  const iconWrap = icon ? (
+    <span className="inline-flex shrink-0 text-[var(--color-1)]">{icon}</span>
+  ) : null
+
+  if (inline) {
+    return (
+      <div className={`flex min-w-0 items-center gap-2 ${className ?? ''}`.trim()}>
+        <span className={`${labelCls} whitespace-nowrap`}>
+          {iconWrap}
+          {label}
+        </span>
+        <div className="min-w-0 flex-1">{children}</div>
+      </div>
+    )
+  }
+
   return (
     <div className={className}>
-      <label className="mb-1 flex items-center gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-        {icon ? <span className="inline-flex shrink-0 text-[var(--color-1)]">{icon}</span> : null}
+      <label className={`mb-1 ${labelCls}`}>
+        {iconWrap}
         {label}
       </label>
       {children}
@@ -306,7 +327,7 @@ export function CadastroListPageSearchField({
   onEnter?: () => void
 }) {
   return (
-    <div className="relative">
+    <div className="relative w-full min-w-0">
       <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
       <input
         type="text"
@@ -316,7 +337,7 @@ export function CadastroListPageSearchField({
           if (e.key === 'Enter') onEnter?.()
         }}
         placeholder={placeholder}
-        className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-9 text-sm text-gray-800 outline-none transition-all focus:border-[var(--color-1)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--color-1)_25%,transparent)] dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+        className="box-border h-9 w-full rounded-lg border border-gray-300 bg-white py-0 pl-9 pr-9 text-sm leading-normal text-gray-800 shadow-sm outline-none transition-all focus:border-[var(--color-1)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--color-1)_25%,transparent)] dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
       />
       {value ? (
         <button

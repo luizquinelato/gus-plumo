@@ -189,11 +189,15 @@ class MappingHelper:
             elif mapping_type == "regex":
                 regex_mappings.append(mapping)
 
+        from app.utils.sensitive_mapping import decrypt_field, decrypt_pattern_for_match, decrypt_regex_for_match
+
         # 1️⃣ EXACT MATCH (mais rápido)
         desc_lower = description.lower().strip()
         for mapping in exact_mappings:
             # Usa "or ''" porque dict.get() retorna None se a chave existe com valor None
-            original_desc = (mapping.get("descrição") or "").lower().strip()
+            raw_original = mapping.get("descrição")
+            is_sensitive = mapping.get("is_sensitive", False)
+            original_desc = (decrypt_field(raw_original, is_sensitive) or "").lower().strip()
             if original_desc == desc_lower:
                 return {
                     "subtag_id": mapping.get("subtag_id"),
@@ -214,7 +218,11 @@ class MappingHelper:
         )
 
         for mapping in pattern_mappings_sorted:
-            pattern = mapping.get("pattern")
+            raw_pattern = mapping.get("pattern")
+            if not raw_pattern:
+                continue
+            is_sensitive = mapping.get("is_sensitive", False)
+            pattern = decrypt_pattern_for_match(raw_pattern, is_sensitive)
             if not pattern:
                 continue
 
@@ -240,7 +248,11 @@ class MappingHelper:
         )
 
         for mapping in regex_mappings_sorted:
-            regex_pattern = mapping.get("regex_pattern")
+            raw_regex = mapping.get("regex_pattern")
+            if not raw_regex:
+                continue
+            is_sensitive = mapping.get("is_sensitive", False)
+            regex_pattern = decrypt_regex_for_match(raw_regex, is_sensitive)
             if not regex_pattern:
                 continue
 

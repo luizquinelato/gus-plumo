@@ -45,7 +45,7 @@ import IconPicker from '../components/IconPicker'
 import Toast from '../components/Toast'
 import {
   Plus, Edit2, Trash2, Tag, ChevronDown, ChevronRight, ArrowDownCircle, ArrowUpCircle, ArrowUp, X,
-  ChevronsDown, ChevronsUp,
+  ChevronsDown, ChevronsUp, GripVertical, Save,
 } from 'lucide-react'
 import { getIconComponent } from '../utils/iconMapper'
 import { selectionHeaderState } from '../utils/listTableSelection'
@@ -85,6 +85,24 @@ interface ToastState {
 
 const TAG_TABLE_COL_SPAN = 7
 
+const SUBTAG_DRAG_MIME = 'application/x-plumo-subtag-ids'
+
+type SubtagDragMeta = {
+  ids: number[]
+}
+
+function subtagTagDropZoneKey(tagId: number) {
+  return `tag:${tagId}`
+}
+
+function parseSubtagDragIds(raw: string): number[] {
+  if (!raw.trim()) return []
+  return raw
+    .split(',')
+    .map((part) => Number(part.trim()))
+    .filter((id) => Number.isFinite(id))
+}
+
 function SubtagAreaCard({
   kind,
   rows,
@@ -96,6 +114,14 @@ function SubtagAreaCard({
   onCreate,
   onEdit,
   onDelete,
+  dropZoneKey,
+  isDropTarget,
+  onDragOverZone,
+  onDragLeaveZone,
+  onDropOnZone,
+  pendingMovedSubtagIds,
+  dragMeta,
+  onDragStartSubtag,
 }: {
   kind: 'despesa' | 'receita'
   rows: SubtagItem[]
@@ -107,6 +133,14 @@ function SubtagAreaCard({
   onCreate: (tagId: number, type: 'despesa' | 'receita') => void
   onEdit: (subtag: SubtagItem) => void
   onDelete: (id: number) => void
+  dropZoneKey: string
+  isDropTarget: boolean
+  onDragOverZone: (key: string) => void
+  onDragLeaveZone: (key: string) => void
+  onDropOnZone: (subtagIds: number[], targetTagId: number) => void
+  pendingMovedSubtagIds: Set<number>
+  dragMeta: SubtagDragMeta | null
+  onDragStartSubtag: (e: React.DragEvent, subtagId: number) => void
 }) {
   const title = kind === 'despesa' ? 'Despesas' : 'Receitas'
   const toneCls =
@@ -114,7 +148,26 @@ function SubtagAreaCard({
   const Icon = kind === 'despesa' ? ArrowDownCircle : ArrowUpCircle
 
   return (
-    <div className="min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-colors hover:border-[color-mix(in_srgb,var(--color-1)_35%,#d1d5db)] dark:border-gray-700 dark:bg-gray-800 dark:hover:border-[color-mix(in_srgb,var(--color-1)_40%,#4b5563)]">
+    <div
+      className={`min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-colors dark:border-gray-700 dark:bg-gray-800 ${
+        isDropTarget
+          ? 'border-[var(--color-1)] ring-2 ring-[color-mix(in_srgb,var(--color-1)_35%,transparent)]'
+          : 'hover:border-[color-mix(in_srgb,var(--color-1)_35%,#d1d5db)] dark:hover:border-[color-mix(in_srgb,var(--color-1)_40%,#4b5563)]'
+      }`}
+      onDragOver={(e) => {
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+        onDragOverZone(dropZoneKey)
+      }}
+      onDragLeave={() => onDragLeaveZone(dropZoneKey)}
+      onDrop={(e) => {
+        e.preventDefault()
+        const raw = e.dataTransfer.getData(SUBTAG_DRAG_MIME)
+        const subtagIds = parseSubtagDragIds(raw)
+        if (subtagIds.length === 0) return
+        onDropOnZone(subtagIds, tagId)
+      }}
+    >
       <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-4 py-3 dark:border-gray-700">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           {rows.length > 0 && (
@@ -140,23 +193,46 @@ function SubtagAreaCard({
         </button>
       </div>
       {rows.length === 0 ? (
-        <p className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">Nenhuma subtag</p>
+        <p className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
+          {dragMeta ? 'Solte aqui para mover' : 'Nenhuma subtag'}
+        </p>
       ) : (
         <ul className="divide-y divide-gray-100 dark:divide-gray-700">
           {rows.map((subtag) => {
             const SubIcon = getIconComponent(subtag.icon || 'Tags')
+            const isPendingMove = pendingMovedSubtagIds.has(subtag.id)
             return (
               <li
                 key={subtag.id}
                 className={`group flex items-center gap-2 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700/40 ${
                   selectedSubtagIds.has(subtag.id) ? 'bg-[color-mix(in_srgb,var(--color-1)_6%,transparent)]' : ''
+                } ${isPendingMove ? 'bg-amber-50/80 dark:bg-amber-900/15' : ''} ${
+                  dragMeta?.ids.includes(subtag.id) ? 'opacity-50' : ''
                 }`}
                 title={subtag.description || undefined}
               >
-                <BulkSelectCheckbox
-                  checked={selectedSubtagIds.has(subtag.id)}
-                  onClick={() => onToggleSubtag(subtag.id)}
-                />
+                <span
+                  draggable
+                  onDragStart={(e) => {
+                    e.stopPropagation()
+                    onDragStartSubtag(e, subtag.id)
+                  }}
+                  className="cursor-grab text-gray-400 active:cursor-grabbing dark:text-gray-500"
+                  title={
+                    selectedSubtagIds.has(subtag.id) && selectedSubtagIds.size > 1
+                      ? 'Arrastar subtags selecionadas (mesmo tipo)'
+                      : 'Arrastar para outra tag'
+                  }
+                  aria-hidden
+                >
+                  <GripVertical size={14} />
+                </span>
+                <span onMouseDown={(e) => e.stopPropagation()}>
+                  <BulkSelectCheckbox
+                    checked={selectedSubtagIds.has(subtag.id)}
+                    onClick={() => onToggleSubtag(subtag.id)}
+                  />
+                </span>
                 <SubIcon size={14} className={`shrink-0 ${toneCls}`} />
                 <span
                   className={`min-w-0 flex-1 truncate text-sm font-medium ${
@@ -167,11 +243,26 @@ function SubtagAreaCard({
                 >
                   {subtag.name}
                 </span>
+                {isPendingMove ? (
+                  <Badge variant="statusCompact" tone="warning" label="Movida" />
+                ) : null}
                 <div className="flex shrink-0 items-center">
-                  <button type="button" onClick={() => onEdit(subtag)} className={cadastroRowIconBtnCls} title="Editar">
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={() => onEdit(subtag)}
+                    className={cadastroRowIconBtnCls}
+                    title="Editar"
+                  >
                     <Edit2 size={13} />
                   </button>
-                  <button type="button" onClick={() => onDelete(subtag.id)} className={cadastroRowIconDangerCls} title="Excluir">
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={() => onDelete(subtag.id)}
+                    className={cadastroRowIconDangerCls}
+                    title="Excluir"
+                  >
                     <Trash2 size={13} />
                   </button>
                 </div>
@@ -203,6 +294,10 @@ const TagsSubtagsPage = () => {
   const [selectedTagIds, setSelectedTagIds] = useState<Set<number>>(() => new Set())
   const [selectedSubtagIds, setSelectedSubtagIds] = useState<Set<number>>(() => new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [pendingSubtagMoves, setPendingSubtagMoves] = useState<Record<number, number>>({})
+  const [dragOverDropKey, setDragOverDropKey] = useState<string | null>(null)
+  const [dragMeta, setDragMeta] = useState<SubtagDragMeta | null>(null)
+  const [savingSubtagMoves, setSavingSubtagMoves] = useState(false)
   const [showBackToTop, setShowBackToTop] = useState(false)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   
@@ -532,11 +627,154 @@ const TagsSubtagsPage = () => {
     }
   }
 
+  const serverSubtagsById = useMemo(() => {
+    const map = new Map<number, SubtagItem>()
+    for (const row of hierarchicalData) {
+      for (const st of row.subtags) map.set(st.id, st)
+    }
+    return map
+  }, [hierarchicalData])
+
+  const displayHierarchicalData = useMemo((): HierarchicalData[] => {
+    if (Object.keys(pendingSubtagMoves).length === 0) return hierarchicalData
+
+    const remapped: SubtagItem[] = []
+    for (const row of hierarchicalData) {
+      for (const st of row.subtags) {
+        const tagId = pendingSubtagMoves[st.id] ?? st.tag_id
+        const tagName = hierarchicalData.find((r) => r.tag.id === tagId)?.tag.name ?? st.tag_name
+        remapped.push({ ...st, tag_id: tagId, tag_name: tagName })
+      }
+    }
+
+    return hierarchicalData.map((row) => {
+      const tagSubtags = remapped
+        .filter((st) => st.tag_id === row.tag.id)
+        .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
+      return { tag: row.tag, subtags: tagSubtags, subtagsCount: tagSubtags.length }
+    })
+  }, [hierarchicalData, pendingSubtagMoves])
+
+  const pendingMovedSubtagIds = useMemo(() => {
+    const set = new Set<number>()
+    for (const [idStr, tagId] of Object.entries(pendingSubtagMoves)) {
+      const id = Number(idStr)
+      const original = serverSubtagsById.get(id)?.tag_id
+      if (original != null && tagId !== original) set.add(id)
+    }
+    return set
+  }, [pendingSubtagMoves, serverSubtagsById])
+
+  const pendingMoveCount = pendingMovedSubtagIds.size
+
+  const handleSubtagDragStart = useCallback(
+    (e: React.DragEvent, subtagId: number) => {
+      const ids =
+        selectedSubtagIds.has(subtagId) && selectedSubtagIds.size > 1
+          ? [...selectedSubtagIds]
+          : [subtagId]
+      e.dataTransfer.setData(SUBTAG_DRAG_MIME, ids.join(','))
+      e.dataTransfer.effectAllowed = 'move'
+      setDragMeta({ ids })
+    },
+    [selectedSubtagIds],
+  )
+
+  const applySubtagMovesToTag = useCallback(
+    (subtagIds: number[], targetTagId: number) => {
+      let moved = 0
+      for (const subtagId of subtagIds) {
+        const subtag = serverSubtagsById.get(subtagId)
+        if (!subtag) continue
+        const originalTagId = subtag.tag_id
+        setPendingSubtagMoves((prev) => {
+          const next = { ...prev }
+          if (targetTagId === originalTagId) delete next[subtagId]
+          else next[subtagId] = targetTagId
+          return next
+        })
+        moved += 1
+      }
+      if (moved === 0) {
+        showToast('Nenhuma subtag válida para mover.', 'warning')
+        return
+      }
+      setExpandedTags((prev) => new Set(prev).add(targetTagId))
+      setDragOverDropKey(null)
+      setDragMeta(null)
+    },
+    [serverSubtagsById],
+  )
+
+  const discardSubtagMoves = useCallback(() => {
+    setPendingSubtagMoves({})
+    setDragOverDropKey(null)
+    setDragMeta(null)
+  }, [])
+
+  const handleSaveSubtagMoves = async () => {
+    const moves = [...pendingMovedSubtagIds].map((id) => ({
+      id,
+      tag_id: pendingSubtagMoves[id]!,
+    }))
+    if (moves.length === 0) return
+
+    setSavingSubtagMoves(true)
+    try {
+      await Promise.all(
+        moves.map(({ id, tag_id }) => axios.put(`/api/expenses/subtags/${id}`, { tag_id })),
+      )
+      setPendingSubtagMoves({})
+      await loadAllData()
+      showToast(
+        moves.length === 1 ? 'Subtag movida com sucesso.' : `${moves.length} subtags movidas com sucesso.`,
+        'success',
+      )
+    } catch (error: unknown) {
+      console.error('Erro ao salvar movimentação de subtags:', error)
+      const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      showToast(typeof detail === 'string' ? detail : 'Não foi possível salvar as alterações.', 'error')
+    } finally {
+      setSavingSubtagMoves(false)
+    }
+  }
+
+  useEffect(() => {
+    const endDrag = () => {
+      setDragMeta(null)
+      setDragOverDropKey(null)
+    }
+    window.addEventListener('dragend', endDrag)
+    return () => window.removeEventListener('dragend', endDrag)
+  }, [])
+
+  const handleTagRowDragOver = useCallback(
+    (e: React.DragEvent, tagId: number) => {
+      if (!dragMeta?.ids.length) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      setDragOverDropKey(subtagTagDropZoneKey(tagId))
+    },
+    [dragMeta],
+  )
+
+  const handleTagRowDrop = useCallback(
+    (e: React.DragEvent, tagId: number) => {
+      e.preventDefault()
+      e.stopPropagation()
+      const raw = e.dataTransfer.getData(SUBTAG_DRAG_MIME)
+      const subtagIds = parseSubtagDragIds(raw)
+      if (subtagIds.length === 0) return
+      applySubtagMovesToTag(subtagIds, tagId)
+    },
+    [applySubtagMovesToTag],
+  )
+
   // Filtro de busca
-  const filteredData = hierarchicalData.filter(item => {
+  const filteredData = displayHierarchicalData.filter((item) => {
     const tagMatch = item.tag.name.toLowerCase().includes(searchTerm.toLowerCase())
-    const subtagMatch = item.subtags.some(st =>
-      st.name.toLowerCase().includes(searchTerm.toLowerCase())
+    const subtagMatch = item.subtags.some((st) =>
+      st.name.toLowerCase().includes(searchTerm.toLowerCase()),
     )
     return tagMatch || subtagMatch
   })
@@ -771,6 +1009,7 @@ const TagsSubtagsPage = () => {
               description="Tente outro termo de busca."
             />
           ) : (
+            <div className={pendingMoveCount > 0 || bulkSelectionCount > 0 || showBackToTop ? 'pb-20' : ''}>
             <ListPageTable
               leadingMode="bulk"
               colsRest={
@@ -810,7 +1049,18 @@ const TagsSubtagsPage = () => {
                     <tr
                       className={`${listPageTableRowHoverCls} ${
                         isExpanded ? 'bg-[color-mix(in_srgb,var(--color-1)_4%,transparent)] [&>td]:border-b-0' : ''
-                      } ${rowSelected && !isExpanded ? 'table-row-selected bg-[color-mix(in_srgb,var(--color-1)_7%,transparent)]' : ''}`}
+                      } ${rowSelected && !isExpanded ? 'table-row-selected bg-[color-mix(in_srgb,var(--color-1)_7%,transparent)]' : ''} ${
+                        dragOverDropKey === subtagTagDropZoneKey(item.tag.id)
+                          ? 'bg-[color-mix(in_srgb,var(--color-1)_10%,transparent)] ring-2 ring-inset ring-[var(--color-1)]'
+                          : ''
+                      }`}
+                      onDragOver={(e) => handleTagRowDragOver(e, item.tag.id)}
+                      onDragLeave={() =>
+                        setDragOverDropKey((prev) =>
+                          prev === subtagTagDropZoneKey(item.tag.id) ? null : prev,
+                        )
+                      }
+                      onDrop={(e) => handleTagRowDrop(e, item.tag.id)}
                     >
                       <ListTableCheckboxCell
                         checked={tagSelected}
@@ -891,13 +1141,18 @@ const TagsSubtagsPage = () => {
                     {isExpanded && (
                       <ListPageExpandRow colSpan={TAG_TABLE_COL_SPAN}>
                         {item.subtags.length > 0 && (
-                          <div className="mb-3 flex items-center gap-2">
-                            <BulkSelectCheckbox
-                              state={tagSubtagsState}
-                              onClick={() => toggleAllSubtagsForTag(item.tag.id)}
-                            />
-                            <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
-                              Selecionar todas as subtags desta tag
+                          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <BulkSelectCheckbox
+                                state={tagSubtagsState}
+                                onClick={() => toggleAllSubtagsForTag(item.tag.id)}
+                              />
+                              <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                                Selecionar todas as subtags desta tag
+                              </span>
+                            </div>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              Arraste subtags e solte na linha da tag de destino
                             </span>
                           </div>
                         )}
@@ -916,6 +1171,16 @@ const TagsSubtagsPage = () => {
                             onCreate={handleCreateSubtag}
                             onEdit={handleEditSubtag}
                             onDelete={handleDeleteSubtag}
+                            dropZoneKey={subtagTagDropZoneKey(item.tag.id)}
+                            isDropTarget={dragOverDropKey === subtagTagDropZoneKey(item.tag.id)}
+                            onDragOverZone={setDragOverDropKey}
+                            onDragLeaveZone={(key) =>
+                              setDragOverDropKey((prev) => (prev === key ? null : prev))
+                            }
+                            onDropOnZone={applySubtagMovesToTag}
+                            pendingMovedSubtagIds={pendingMovedSubtagIds}
+                            dragMeta={dragMeta}
+                            onDragStartSubtag={handleSubtagDragStart}
                           />
                           <SubtagAreaCard
                             kind="receita"
@@ -931,6 +1196,16 @@ const TagsSubtagsPage = () => {
                             onCreate={handleCreateSubtag}
                             onEdit={handleEditSubtag}
                             onDelete={handleDeleteSubtag}
+                            dropZoneKey={subtagTagDropZoneKey(item.tag.id)}
+                            isDropTarget={dragOverDropKey === subtagTagDropZoneKey(item.tag.id)}
+                            onDragOverZone={setDragOverDropKey}
+                            onDragLeaveZone={(key) =>
+                              setDragOverDropKey((prev) => (prev === key ? null : prev))
+                            }
+                            onDropOnZone={applySubtagMovesToTag}
+                            pendingMovedSubtagIds={pendingMovedSubtagIds}
+                            dragMeta={dragMeta}
+                            onDragStartSubtag={handleSubtagDragStart}
                           />
                         </div>
                       </ListPageExpandRow>
@@ -939,11 +1214,58 @@ const TagsSubtagsPage = () => {
                 )
               })}
             </ListPageTable>
+            </div>
           )}
         </CadastroListPageBody>
       </CadastroListPageShell>
 
-      {bulkSelectionCount > 0 && (
+      {pendingMoveCount > 0 && (
+        <FloatingFooterBar>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-4">
+              <span className="font-medium text-color-primary">
+                {pendingMoveCount}{' '}
+                {pendingMoveCount === 1 ? 'subtag movida (não salva)' : 'subtags movidas (não salvas)'}
+              </span>
+              <button
+                type="button"
+                onClick={discardSubtagMoves}
+                disabled={savingSubtagMoves}
+                className="flex items-center gap-1 text-sm font-semibold transition-all hover:opacity-80 disabled:opacity-50"
+                style={{ color: 'var(--color-1)' }}
+              >
+                <X size={14} />
+                Descartar
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void handleSaveSubtagMoves()}
+                disabled={savingSubtagMoves}
+                className="flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                style={{ backgroundColor: 'var(--crud-create)' }}
+              >
+                <Save size={16} />
+                {savingSubtagMoves ? 'Salvando…' : 'Salvar'}
+              </button>
+              {showBackToTop ? (
+                <button
+                  type="button"
+                  onClick={scrollToTop}
+                  className="flex items-center gap-1.5 rounded-lg bg-color-primary px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90"
+                  title="Voltar ao topo"
+                >
+                  <ArrowUp size={14} />
+                  Topo
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </FloatingFooterBar>
+      )}
+
+      {bulkSelectionCount > 0 && pendingMoveCount === 0 && (
         <FloatingFooterBar>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -988,7 +1310,7 @@ const TagsSubtagsPage = () => {
         </FloatingFooterBar>
       )}
 
-      {showBackToTop && bulkSelectionCount === 0 && (
+      {showBackToTop && bulkSelectionCount === 0 && pendingMoveCount === 0 && (
         <FloatingFooterBar>
           <div className="flex items-center justify-end">
             <button
@@ -1006,7 +1328,7 @@ const TagsSubtagsPage = () => {
 
       {/* Modal de Tag */}
       {showTagModal && (
-        <CadastroModalShell maxWidth="max-w-lg" onBackdropClick={() => setShowTagModal(false)}>
+        <CadastroModalShell maxWidth="max-w-lg">
           <CadastroModalHeader
             isEdit={!!editingTag}
             title={editingTag ? 'Editar Tag' : 'Nova Tag'}
@@ -1082,7 +1404,7 @@ const TagsSubtagsPage = () => {
 
         {/* Modal de Subtag */}
         {showSubtagModal && (
-        <CadastroModalShell maxWidth="max-w-lg" onBackdropClick={() => setShowSubtagModal(false)}>
+        <CadastroModalShell maxWidth="max-w-lg">
           <CadastroModalHeader
             isEdit={!!editingSubtag}
             title={editingSubtag ? 'Editar Subtag' : 'Nova Subtag'}

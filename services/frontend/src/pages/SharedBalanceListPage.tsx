@@ -64,10 +64,11 @@ import {
   signedLoanFieldValue,
 } from '../utils/closureCreditUtils'
 import { useConfirm } from '../hooks/useConfirm'
-import { Scale, Calendar, Building2, TrendingUp, TrendingDown, Minus, Receipt, Archive, Eye, Lock, Unlock, ChevronDown, ChevronUp, Landmark, Gift, FileJson, Braces, Copy, Check, CheckCircle, Clock, Trash2, ChevronRight, AlertTriangle, X, Download, Filter, Search, Banknote, HelpCircle, ArrowUpCircle, ArrowDownCircle, ArrowUp, ArrowDown, ArrowLeftRight, UnfoldVertical, FoldVertical, CheckSquare, Square, MinusSquare, Plus, MessageSquare, Pencil } from 'lucide-react'
+import { Scale, Calendar, Building2, TrendingUp, TrendingDown, Minus, Receipt, Archive, Eye, Lock, Unlock, ChevronDown, ChevronUp, Landmark, Gift, FileJson, Braces, Copy, Check, CheckCircle, Clock, Trash2, ChevronRight, AlertTriangle, X, Download, Filter, Search, Banknote, HelpCircle, ArrowUpCircle, ArrowDownCircle, ArrowUp, ArrowDown, ArrowLeftRight, UnfoldVertical, FoldVertical, CheckSquare, Square, MinusSquare, Plus, MessageSquare, Pencil, RefreshCw } from 'lucide-react'
 import { exportBalanceClosureToPDF } from '../utils/pdfExport'
 import { exportBalanceClosureToExcel } from '../utils/exportToExcel'
 import { ExportClosureModal } from '../components/ExportClosureModal'
+import ClosureRecalculateModal from '../components/ClosureRecalculateModal'
 
 interface ToastState {
   show: boolean
@@ -664,6 +665,7 @@ const SharedBalanceListPage = () => {
   const closuresScrollContainerRef = useRef<HTMLDivElement>(null)  // Ref para scroll container
   const [showExportModal, setShowExportModal] = useState(false)  // Modal de exportação
   const [exportTargetClosure, setExportTargetClosure] = useState<BalanceClosure | null>(null)  // Fechamento a exportar
+  const [recalcClosure, setRecalcClosure] = useState<BalanceClosure | null>(null)
 
   // Estados para modal de sugestão de datas
   const [showDateSuggestionModal, setShowDateSuggestionModal] = useState(false)
@@ -681,6 +683,8 @@ const SharedBalanceListPage = () => {
   const [showUnsettleModal, setShowUnsettleModal] = useState(false)
   const [unsettleClosure, setUnsettleClosure] = useState<BalanceClosure | null>(null)
   const [unsettleClearingAll, setUnsettleClearingAll] = useState(false)
+  const [unsettleClearPayments, setUnsettleClearPayments] = useState(true)
+  const [unsettleClearLoans, setUnsettleClearLoans] = useState(true)
   const [unsettleClearError, setUnsettleClearError] = useState<{
     message: string
     loans: { id: number; description: string }[]
@@ -712,6 +716,10 @@ const SharedBalanceListPage = () => {
   const [reopenClearPayments, setReopenClearPayments] = useState(true)
   const [reopenClearLoans, setReopenClearLoans] = useState(true)
   const [reopenExecuting, setReopenExecuting] = useState(false)
+
+  const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false)
+  const [bulkDeleteClearPayments, setBulkDeleteClearPayments] = useState(true)
+  const [bulkDeleteClearLoans, setBulkDeleteClearLoans] = useState(true)
 
   // Estados para modais de detalhes
   interface ModalState {
@@ -1027,6 +1035,10 @@ const SharedBalanceListPage = () => {
   }
 
   const handleUnsettleClosure = (closure: BalanceClosure) => {
+    const activePayments = (closure.closure_payments || []).filter((p) => p.active !== false)
+    const loanLiq = filterRegularLoanPayments(getClosureLoanPaymentsList(closure))
+    setUnsettleClearPayments(activePayments.length > 0)
+    setUnsettleClearLoans(loanLiq.length > 0)
     setUnsettleClosure(closure)
     setUnsettleClearError(null)
     setShowUnsettleModal(true)
@@ -1099,6 +1111,29 @@ const SharedBalanceListPage = () => {
       await axios.delete(`/api/balance/closures/${closure.id}/payments`)
     }
     await axios.delete(`/api/balance/closures/${closure.id}`)
+  }
+
+  const deleteClosureIncludingSettled = async (
+    closure: BalanceClosure,
+    options: { clearPayments: boolean; clearLoans: boolean },
+  ) => {
+    if (closure.is_settled) {
+      if (options.clearLoans) {
+        const loanIds = filterRegularLoanPayments(getClosureLoanPaymentsList(closure)).map(
+          (lp: { loan_id: number }) => lp.loan_id,
+        )
+        if (loanIds.length > 0) {
+          await axios.delete(`/api/balance/closures/${closure.id}/loan-payments`, {
+            data: { loan_ids: loanIds },
+          })
+        }
+      }
+      if (options.clearPayments) {
+        await axios.delete(`/api/balance/closures/${closure.id}/payments`)
+      }
+      await axios.delete(`/api/balance/closures/${closure.id}/settle`)
+    }
+    await executeDeleteClosure(closure, options)
   }
 
   const handleReopenClosure = (closure: BalanceClosure) => {
@@ -1509,63 +1544,82 @@ const SharedBalanceListPage = () => {
     }
   }
 
-  // Reabrir fechamentos selecionados (deletar)
-  const handleBulkReopen = () => {
-    const selectedCount = selectedClosureIds.size
-    if (selectedCount === 0) return
+  const selectedClosuresForBulk = useMemo(
+    () => closures.filter((c) => selectedClosureIds.has(c.id)),
+    [closures, selectedClosureIds],
+  )
 
-    // Verificar se algum fechamento está quitado
-    const settledClosures = closures.filter(c => selectedClosureIds.has(c.id) && c.is_settled)
-    if (settledClosures.length > 0) {
-      setToast({
-        show: true,
-        message: `${settledClosures.length} fechamento(s) selecionado(s) estão quitados. Remova a quitação primeiro.`,
-        type: 'warning'
-      })
+  const runBulkDeleteClosures = async (options: { clearPayments: boolean; clearLoans: boolean }) => {
+    setBulkActionLoading(true)
+    try {
+      let successCount = 0
+      let errorCount = 0
+
+      for (const closure of selectedClosuresForBulk) {
+        try {
+          await deleteClosureIncludingSettled(closure, options)
+          successCount++
+        } catch {
+          errorCount++
+        }
+      }
+
+      if (errorCount === 0) {
+        setToast({ show: true, message: `${successCount} fechamento(s) excluído(s)!`, type: 'success' })
+      } else {
+        setToast({
+          show: true,
+          message: `${successCount} excluído(s), ${errorCount} erro(s)`,
+          type: 'warning',
+        })
+      }
+
+      setSelectedClosureIds(new Set())
+      if (appliedYear != null) void loadClosures(appliedYear)
+
+      const sharing = partners.find((p) => p.shared_account_id === appliedPartnerAccountId)
+      if (sharing) {
+        await loadLastClosureAndSetDates(sharing.id)
+      }
+    } catch {
+      setToast({ show: true, message: 'Erro ao excluir fechamentos', type: 'error' })
+    } finally {
+      setBulkActionLoading(false)
+    }
+  }
+
+  const handleBulkReopen = () => {
+    if (selectedClosureIds.size === 0) return
+
+    const selected = selectedClosuresForBulk
+    const anyPayments = selected.some(
+      (c) => (c.closure_payments || []).filter((p) => p.active !== false).length > 0,
+    )
+    const anyLoans = selected.some((c) => filterRegularLoanPayments(getClosureLoanPaymentsList(c)).length > 0)
+    const anySettled = selected.some((c) => c.is_settled)
+
+    if (anyPayments || anyLoans || anySettled) {
+      setBulkDeleteClearPayments(anyPayments)
+      setBulkDeleteClearLoans(anyLoans)
+      setBulkDeleteModalOpen(true)
       return
     }
 
     showConfirm(
-      'Reabrir Fechamentos em Massa',
-      `Deseja realmente reabrir ${selectedCount} fechamento(s)? Esta ação não pode ser desfeita.`,
-      async () => {
-        setBulkActionLoading(true)
-        try {
-          let successCount = 0
-          let errorCount = 0
-
-          for (const closureId of selectedClosureIds) {
-            try {
-              await axios.delete(`/api/balance/closures/${closureId}`)
-              successCount++
-            } catch {
-              errorCount++
-            }
-          }
-
-          if (errorCount === 0) {
-            setToast({ show: true, message: `${successCount} fechamento(s) reaberto(s) com sucesso!`, type: 'success' })
-          } else {
-            setToast({ show: true, message: `${successCount} reaberto(s), ${errorCount} erro(s)`, type: 'warning' })
-          }
-
-          setSelectedClosureIds(new Set())
-          if (appliedYear != null) void loadClosures(appliedYear)
-
-          // Recarregar último fechamento para atualizar datas mínimas
-          const sharing = partners.find(p => p.shared_account_id === appliedPartnerAccountId)
-          if (sharing) {
-            await loadLastClosureAndSetDates(sharing.id)
-          }
-        } catch (error: any) {
-          setToast({ show: true, message: 'Erro ao reabrir fechamentos', type: 'error' })
-        } finally {
-          setBulkActionLoading(false)
-        }
-      },
-      'Reabrir Todos',
-      'Cancelar'
+      'Excluir fechamentos',
+      `Excluir ${selected.length} fechamento(s)? Os períodos poderão ser fechados novamente.`,
+      () => void runBulkDeleteClosures({ clearPayments: false, clearLoans: false }),
+      'Excluir',
+      'Cancelar',
     )
+  }
+
+  const handleConfirmBulkDelete = () => {
+    setBulkDeleteModalOpen(false)
+    void runBulkDeleteClosures({
+      clearPayments: bulkDeleteClearPayments,
+      clearLoans: bulkDeleteClearLoans,
+    })
   }
 
   // Remover quitação dos fechamentos selecionados (abrir quitados)
@@ -2210,6 +2264,14 @@ const SharedBalanceListPage = () => {
                                 </button>
                                 <button
                                   type="button"
+                                  onClick={() => setRecalcClosure(closure)}
+                                  className={cadastroRowIconBtnCls}
+                                  title="Recalcular fechamento (comparar com lançamentos atuais)"
+                                >
+                                  <RefreshCw size={15} />
+                                </button>
+                                <button
+                                  type="button"
                                   onClick={() => {
                                     setJsonClosureData(closure.closure_data)
                                     setShowJsonModal(true)
@@ -2586,6 +2648,16 @@ const SharedBalanceListPage = () => {
         )}
 
         {/* Modals */}
+        <ClosureRecalculateModal
+          closure={recalcClosure}
+          loggedAccountId={loggedAccountId}
+          onClose={() => setRecalcClosure(null)}
+          onApplied={() => {
+            setToast({ show: true, message: 'Fechamento atualizado com recálculo.', type: 'success' })
+            if (appliedYear != null) void loadClosures(appliedYear)
+          }}
+        />
+
         {/* Modal: Detalhes do Fechamento - Itens */}
         {showDetailsModal && selectedClosure && (
           <SharedClosureItemsModal
@@ -2649,14 +2721,6 @@ const SharedBalanceListPage = () => {
           const unsettleLoans = filterRegularLoanPayments(getClosureLoanPaymentsList(unsettleClosure))
           const hasPayments = activePayments.length > 0
           const hasLoans = unsettleLoans.length > 0
-          const unsettleSaveLabel =
-            hasPayments && hasLoans
-              ? 'Remover quitação e limpar pagamentos e empréstimos'
-              : hasPayments
-                ? 'Remover quitação e limpar pagamentos'
-                : hasLoans
-                  ? 'Remover quitação e limpar empréstimos'
-                  : 'Remover quitação'
           return (
           <CadastroModalShell
             maxWidth="max-w-3xl"
@@ -2711,6 +2775,48 @@ const SharedBalanceListPage = () => {
                   <p className="px-3 py-3 text-sm italic text-gray-500 dark:text-gray-400">Nenhuma liquidação de empréstimo.</p>
                 )}
               </CadastroFormSection>
+              {(hasPayments || hasLoans) && (
+                <CadastroFormSection title="O que limpar" icon={<Trash2 size={14} />} bodyClassName="p-0">
+                  <CadastroModalFieldsGrid>
+                    {hasPayments && (
+                      <CadastroModalFieldsRow>
+                        <label className={`${cadastroOptionLabelCls} items-start`}>
+                          <input
+                            type="checkbox"
+                            checked={unsettleClearPayments}
+                            onChange={(e) => setUnsettleClearPayments(e.target.checked)}
+                            className={`${cadastroAccentControlCls} mt-0.5 h-4 w-4 rounded border-gray-300`}
+                          />
+                          <span>
+                            <span className="block text-sm font-medium">Limpar pagamentos parciais</span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              {activePayments.length} pagamento(s) registrado(s)
+                            </span>
+                          </span>
+                        </label>
+                      </CadastroModalFieldsRow>
+                    )}
+                    {hasLoans && (
+                      <CadastroModalFieldsRow>
+                        <label className={`${cadastroOptionLabelCls} items-start`}>
+                          <input
+                            type="checkbox"
+                            checked={unsettleClearLoans}
+                            onChange={(e) => setUnsettleClearLoans(e.target.checked)}
+                            className={`${cadastroAccentControlCls} mt-0.5 h-4 w-4 rounded border-gray-300`}
+                          />
+                          <span>
+                            <span className="block text-sm font-medium">Limpar liquidações de empréstimo</span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              {unsettleLoans.length} liquidação(ões) — empréstimos serão reabertos
+                            </span>
+                          </span>
+                        </label>
+                      </CadastroModalFieldsRow>
+                    )}
+                  </CadastroModalFieldsGrid>
+                </CadastroFormSection>
+              )}
               {unsettleClearError && (
                 <CadastroFormSection title="Não é possível limpar os pagamentos" icon={<AlertTriangle size={14} />} bodyClassName="p-0">
                   <CadastroModalFieldsGrid>
@@ -2743,31 +2849,108 @@ const SharedBalanceListPage = () => {
               saving={unsettleClearingAll}
               onSave={() =>
                 handleConfirmUnsettle({
-                  clearPayments: hasPayments,
-                  clearLoanLiquidations: hasLoans,
+                  clearPayments: unsettleClearPayments,
+                  clearLoanLiquidations: unsettleClearLoans,
                 })
               }
-              saveLabel={unsettleSaveLabel}
+              saveLabel="Remover quitação"
               saveTone={hasPayments || hasLoans ? 'danger' : 'default'}
               saveIcon={hasPayments || hasLoans ? <Trash2 size={15} /> : <Unlock size={15} />}
-              secondaryActions={
-                hasPayments || hasLoans ? (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleConfirmUnsettle({ clearPayments: false, clearLoanLiquidations: false })
-                    }
-                    disabled={unsettleClearingAll}
-                    className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-                    style={{ background: 'var(--color-edit)', color: 'var(--on-color-edit)' }}
-                  >
-                    <Unlock size={15} />
-                    Remover quitação sem limpar
-                  </button>
-                ) : null
-              }
             />
           </CadastroModalShell>
+          )
+        })()}
+        {/* Modal: Excluir fechamentos em massa */}
+        {bulkDeleteModalOpen && (() => {
+          const selected = selectedClosuresForBulk
+          const settledCount = selected.filter((c) => c.is_settled).length
+          const withPayments = selected.filter(
+            (c) => (c.closure_payments || []).filter((p) => p.active !== false).length > 0,
+          ).length
+          const withLoans = selected.filter(
+            (c) => filterRegularLoanPayments(getClosureLoanPaymentsList(c)).length > 0,
+          ).length
+          const showPaymentOpt = withPayments > 0
+          const showLoanOpt = withLoans > 0
+          return (
+            <CadastroModalShell
+              maxWidth="max-w-lg"
+              onBackdropClick={() => setBulkDeleteModalOpen(false)}
+              zClass="z-50"
+            >
+              <CadastroModalHeader
+                isEdit={true}
+                title="Excluir fechamentos"
+                subtitle={`${selected.length} selecionado(s) — os períodos poderão ser fechados novamente.`}
+                onClose={() => setBulkDeleteModalOpen(false)}
+                icon={<Trash2 size={18} />}
+                iconStyle={{ backgroundColor: 'var(--crud-delete)', color: '#fff' }}
+              />
+              <CadastroModalBody>
+                <CadastroFormSection title="Resumo" icon={<Scale size={14} />} bodyClassName="p-0">
+                  <CadastroModalFieldsGrid>
+                    <CadastroModalFieldsRow>
+                      <p className="text-sm text-gray-600 dark:text-gray-300">
+                        {settledCount > 0
+                          ? `${settledCount} quitado(s): a quitação será removida antes de excluir. `
+                          : null}
+                        A mesma opção abaixo vale para todos os selecionados.
+                      </p>
+                    </CadastroModalFieldsRow>
+                  </CadastroModalFieldsGrid>
+                </CadastroFormSection>
+                {(showPaymentOpt || showLoanOpt) && (
+                  <CadastroFormSection title="O que limpar" icon={<Trash2 size={14} />} bodyClassName="p-0">
+                    <CadastroModalFieldsGrid>
+                      {showPaymentOpt && (
+                        <CadastroModalFieldsRow>
+                          <label className={`${cadastroOptionLabelCls} items-start`}>
+                            <input
+                              type="checkbox"
+                              checked={bulkDeleteClearPayments}
+                              onChange={(e) => setBulkDeleteClearPayments(e.target.checked)}
+                              className={`${cadastroAccentControlCls} mt-0.5 h-4 w-4 rounded border-gray-300`}
+                            />
+                            <span>
+                              <span className="block text-sm font-medium">Limpar pagamentos parciais</span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
+                                Em {withPayments} fechamento(s) com pagamento
+                              </span>
+                            </span>
+                          </label>
+                        </CadastroModalFieldsRow>
+                      )}
+                      {showLoanOpt && (
+                        <CadastroModalFieldsRow>
+                          <label className={`${cadastroOptionLabelCls} items-start`}>
+                            <input
+                              type="checkbox"
+                              checked={bulkDeleteClearLoans}
+                              onChange={(e) => setBulkDeleteClearLoans(e.target.checked)}
+                              className={`${cadastroAccentControlCls} mt-0.5 h-4 w-4 rounded border-gray-300`}
+                            />
+                            <span>
+                              <span className="block text-sm font-medium">Limpar liquidações de empréstimo</span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
+                                Em {withLoans} fechamento(s) — empréstimos reabertos
+                              </span>
+                            </span>
+                          </label>
+                        </CadastroModalFieldsRow>
+                      )}
+                    </CadastroModalFieldsGrid>
+                  </CadastroFormSection>
+                )}
+              </CadastroModalBody>
+              <CadastroModalFooter
+                onClose={() => setBulkDeleteModalOpen(false)}
+                saving={bulkActionLoading}
+                onSave={handleConfirmBulkDelete}
+                saveLabel={`Excluir ${selected.length} fechamento(s)`}
+                saveTone="danger"
+                saveIcon={<Trash2 size={15} />}
+              />
+            </CadastroModalShell>
           )
         })()}
         {/* Modal: Excluir fechamento (com opção de limpar vínculos) */}

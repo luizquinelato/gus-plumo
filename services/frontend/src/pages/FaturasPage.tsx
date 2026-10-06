@@ -27,6 +27,7 @@ import { useConfirm } from '../hooks/useConfirm'
 import { MultiSelectDropdown, SourceMultiSelectDropdown } from '../components/MultiSelectDropdown'
 import { CreditCard, Calendar, FileText, Receipt, Filter, X, Search, Gift, Tag, Tags, Users, ArrowUp, Edit2, Trash2, CheckSquare, Square, MinusSquare, ChevronDown, ChevronRight, Landmark, Link2, Layers, Plus, ArrowRightLeft } from 'lucide-react'
 import type { InvoiceMatchPreview } from '../types/invoiceReconcile'
+import { descriptionMatchesSearch, resolveDescriptionSearchState } from '../utils/descriptionSearch'
 
 // Interface para state de navegação
 interface NavigationState {
@@ -614,11 +615,13 @@ const FaturasPage = () => {
     setShowToast(true)
   }
 
+  const descriptionSearch = useMemo(() => resolveDescriptionSearchState(searchTerm), [searchTerm])
+
   const filteredItems = useMemo(() => {
     if (!invoiceData?.items) return []
 
     return invoiceData.items.filter(item => {
-      const matchesText = !searchTerm || item.description.toLowerCase().includes(searchTerm.toLowerCase())
+      const matchesText = descriptionMatchesSearch(item.description, searchTerm)
 
       let matchesAmount = true
       if (searchAmount && searchAmount.trim() !== '') {
@@ -1450,41 +1453,53 @@ const FaturasPage = () => {
 
           {/* Barra de Busca - 2 campos lado a lado */}
           <div className="mt-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="flex flex-col gap-4 md:flex-row md:items-start">
               {/* Busca por Descrição */}
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-                <input
-                  type="text"
-                  placeholder="Buscar por descrição..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-10 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:border-color-primary focus:outline-none"
-                />
-                {searchTerm && (
-                  <button
-                    onClick={() => setSearchTerm('')}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                  >
-                    <X size={20} />
-                  </button>
-                )}
+              <div className="min-w-0 flex-1">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                  <input
+                    type="text"
+                    placeholder="Buscar descrição (texto ou regex)…"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-10 pr-10 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:border-color-primary focus:outline-none"
+                  />
+                  {searchTerm && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchTerm('')}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                    >
+                      <X size={20} />
+                    </button>
+                  )}
+                </div>
+                {searchTerm.trim() ? (
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {descriptionSearch.mode === 'pattern' ? 'Busca por texto (contém)' : 'Busca por regex'}
+                    {descriptionSearch.regexError ? ` — ${descriptionSearch.regexError}` : ''}
+                  </p>
+                ) : null}
               </div>
 
               {/* Busca por Valor Exato */}
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 font-semibold text-sm">R$</span>
+              <div className="relative w-full shrink-0 md:w-[8.75rem]">
+                <span className="pointer-events-none absolute inset-y-0 left-0 flex w-8 items-center justify-center text-xs font-semibold leading-none text-gray-400">
+                  R$
+                </span>
                 <input
                   type="text"
-                  placeholder="Buscar por valor exato (ex: 109,70)..."
+                  placeholder="0,00"
                   value={searchAmount}
                   onChange={(e) => setSearchAmount(e.target.value)}
-                  className="w-full pl-10 pr-10 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:border-color-primary focus:outline-none"
+                  className="h-[38px] w-full rounded-lg border border-gray-300 bg-white py-2 pl-8 pr-8 text-sm text-gray-900 focus:border-color-primary focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-white"
                 />
                 {searchAmount && (
                   <button
+                    type="button"
                     onClick={() => setSearchAmount('')}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                    className="absolute inset-y-0 right-0 flex w-8 items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                   >
                     <X size={20} />
                   </button>

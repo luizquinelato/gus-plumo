@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy import and_, desc, or_, func
-from typing import List
+from typing import List, Literal, Any
 from decimal import Decimal
 from datetime import datetime, timedelta
 from pydantic import BaseModel
@@ -1603,6 +1603,282 @@ def _convert_to_closure_item(item_data: dict, closure_id: int) -> BalanceClosure
         item_data=item_data,
         created_at=datetime.now()
     )
+
+
+def _format_closure_ts(value: datetime | Any) -> str:
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d %H:%M:%S")
+    raw = str(value).replace("T", " ")[:19]
+    return raw
+
+
+def _partner_account_id_for_closure(closure: BalanceClosure, logged_account_id: int) -> int:
+    if int(logged_account_id) == int(closure.account_id):
+        return int(closure.shared_account_id)
+    if int(logged_account_id) == int(closure.shared_account_id):
+        return int(closure.account_id)
+    raise HTTPException(status_code=403, detail="Conta sem acesso a este fechamento")
+
+
+def _mandante_card(closure: BalanceClosure, closure_data: dict) -> dict:
+    main = closure_data.get("main_account_card") or {}
+    if int(main.get("account_id") or 0) == int(closure.account_id):
+        return main
+    return closure_data.get("partner_account_card") or {}
+
+
+def _sync_closure_totals(closure: BalanceClosure, closure_data: dict) -> None:
+    card = _mandante_card(closure, closure_data)
+    net_amount = Decimal(str(card.get("net_amount", 0)))
+    closure.net_balance = net_amount
+    if net_amount >= 0:
+        closure.total_to_receive = abs(net_amount)
+        closure.total_to_pay = Decimal("0")
+    else:
+        closure.total_to_receive = Decimal("0")
+        closure.total_to_pay = abs(net_amount)
+
+
+async def _build_recalc_preview(
+    closure: BalanceClosure,
+    db: Session,
+    current_user: dict,
+) -> dict[str, Any]:
+    from app.routers.balance_router import calculate_balance
+    from app.services.closure_recalc_service import diff_closure_against_fresh, debt_remaining
+
+    account_id = current_user.get("account_id")
+    if not account_id:
+        raise HTTPException(status_code=400, detail="account_id não encontrado no token")
+
+    partner_id = _partner_account_id_for_closure(closure, int(account_id))
+    period_start = closure.period_start_date
+    period_end = closure.closing_date
+    if not isinstance(period_start, datetime):
+        period_start = datetime.combine(period_start, datetime.min.time())
+    if not isinstance(period_end, datetime):
+        period_end = datetime.combine(period_end, datetime.max.time()).replace(
+            microsecond=0,
+            hour=23,
+            minute=59,
+            second=59,
+        )
+
+    fresh = await calculate_balance(
+        partner_account_id=partner_id,
+        year=int(closure.year),
+        period_start_at=_format_closure_ts(period_start),
+        period_end_at=_format_closure_ts(period_end),
+        db=db,
+        current_user=current_user,
+    )
+
+    diff = diff_closure_against_fresh(closure.closure_data or {}, fresh)
+    summary = diff["summary"]
+    has_item_changes = (
+        summary["new_count"]
+        + summary["removed_count"]
+        + summary["altered_count"]
+        + summary["tag_only_count"]
+    ) > 0
+    has_net_change = abs(float(summary.get("net_delta") or 0)) > 0.01
+    diff["has_changes"] = has_item_changes or has_net_change
+
+    total_paid, payments = get_closure_payment_totals(closure.id, db)
+    old_remaining = debt_remaining(Decimal(str(closure.net_balance)), total_paid)
+    new_remaining = debt_remaining(Decimal(str(summary["new_net_amount"])), total_paid)
+
+    settlement: dict[str, Any] = {
+        "is_settled": bool(closure.is_settled),
+        "total_paid": float(total_paid),
+        "old_remaining": float(old_remaining),
+        "new_remaining": float(new_remaining),
+        "auto_reopen": False,
+        "requires_resolution": False,
+        "overpayment_amount": 0.0,
+    }
+
+    new_net = Decimal(str(summary.get("new_net_amount") or 0))
+    new_debt = abs(new_net)
+
+    if closure.is_settled and new_debt > total_paid + Decimal("0.01"):
+        settlement["auto_reopen"] = True
+
+    # Mesma regra do POST /payments: excesso só vira empréstimo se mandante a receber (net > 0)
+    if total_paid > Decimal("0") and new_net > Decimal("0") and total_paid > new_debt + Decimal("0.01"):
+        settlement["requires_resolution"] = True
+        settlement["overpayment_amount"] = float(total_paid - new_debt)
+
+    diff["settlement"] = settlement
+    diff["period"] = {
+        "start": _format_closure_ts(period_start),
+        "end": _format_closure_ts(period_end),
+        "partner_account_id": partner_id,
+    }
+    return diff
+
+
+def _reduce_closure_payments(
+    closure: BalanceClosure,
+    db: Session,
+    amount: Decimal,
+    user_id: int | None,
+) -> None:
+    if amount <= Decimal("0.01"):
+        return
+    remaining = amount
+    payments = db.query(BalanceClosurePayment).filter(
+        BalanceClosurePayment.balance_closure_id == closure.id,
+        BalanceClosurePayment.active == True,
+    ).order_by(desc(BalanceClosurePayment.payment_date), desc(BalanceClosurePayment.id)).all()
+
+    for payment in payments:
+        if remaining <= Decimal("0.01"):
+            break
+        current = Decimal(str(payment.amount))
+        credit_loan = find_credit_loan_for_closure_payment(closure, payment.id, db)
+        if credit_loan:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Pagamento #{payment.id} possui empréstimo de crédito vinculado; "
+                    "ajuste manualmente antes de recalcular."
+                ),
+            )
+        if current <= remaining:
+            payment.active = False
+            remaining -= current
+        else:
+            payment.amount = current - remaining
+            remaining = Decimal("0")
+
+    purge_orphan_settlement_credit_loans(closure, db)
+    reconcile_closure_credit_loans(closure, db, created_by=user_id)
+
+
+def _create_recalc_adjustment_loan(
+    closure: BalanceClosure,
+    db: Session,
+    amount: Decimal,
+    loan_date: datetime,
+    created_by: int | None,
+) -> Loan:
+    if amount <= Decimal("0.01"):
+        raise HTTPException(status_code=400, detail="Valor do empréstimo inválido")
+    loan = Loan(
+        loan_type="borrowed",
+        principal_amount=amount,
+        description=(
+            f"Ajuste recálculo fechamento #{closure.id} "
+            f"({closure.month:02d}/{closure.year})"
+        ),
+        loan_date=loan_date,
+        interest_enabled=False,
+        counterpart_account_id=closure.shared_account_id,
+        external_name=None,
+        external_description=None,
+        source_table="balance_closures",
+        source_id=closure.id,
+        status="open",
+        account_id=closure.account_id,
+        tenant_id=closure.tenant_id,
+        created_by=created_by,
+        active=True,
+    )
+    db.add(loan)
+    db.flush()
+    return loan
+
+
+class ClosureRecalcApplyRequest(BaseModel):
+    """none = não reconciliar créditos; reconcile_credit_loans = mesma lógica do pagamento a maior."""
+
+    settlement_resolution: Literal["none", "reconcile_credit_loans"] = "none"
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/{closure_id}/recalculate/preview")
+async def preview_closure_recalculation(
+    closure_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Recalcula o período do fechamento e retorna diff vs snapshot salvo."""
+    tenant_id = current_user["tenant_id"]
+    account_id = current_user.get("account_id")
+    if not account_id:
+        raise HTTPException(status_code=400, detail="account_id não encontrado no token")
+
+    closure = db.query(BalanceClosure).filter(
+        BalanceClosure.id == closure_id,
+        BalanceClosure.tenant_id == tenant_id,
+        or_(
+            BalanceClosure.account_id == account_id,
+            BalanceClosure.shared_account_id == account_id,
+        ),
+    ).first()
+    if not closure:
+        raise HTTPException(status_code=404, detail="Fechamento não encontrado")
+
+    return await _build_recalc_preview(closure, db, current_user)
+
+
+@router.post("/{closure_id}/recalculate/apply", response_model=BalanceClosureResponse)
+async def apply_closure_recalculation(
+    closure_id: int,
+    request: ClosureRecalcApplyRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Aplica recálculo ao fechamento (itens + totais), com regras de quitação."""
+    tenant_id = current_user["tenant_id"]
+    account_id = current_user.get("account_id")
+    user_id = current_user.get("id")
+    if not account_id:
+        raise HTTPException(status_code=400, detail="account_id não encontrado no token")
+
+    closure = db.query(BalanceClosure).filter(
+        BalanceClosure.id == closure_id,
+        BalanceClosure.tenant_id == tenant_id,
+        or_(
+            BalanceClosure.account_id == account_id,
+            BalanceClosure.shared_account_id == account_id,
+        ),
+    ).first()
+    if not closure:
+        raise HTTPException(status_code=404, detail="Fechamento não encontrado")
+
+    preview = await _build_recalc_preview(closure, db, current_user)
+    if not preview.get("has_changes"):
+        raise HTTPException(status_code=400, detail="Nenhuma alteração detectada para aplicar.")
+
+    settlement = preview["settlement"]
+    proposed = preview["proposed_closure_data"]
+    old_data = dict(closure.closure_data or {})
+    if "loan_payments" in old_data:
+        proposed["loan_payments"] = old_data.get("loan_payments")
+
+    closure.closure_data = proposed
+    flag_modified(closure, "closure_data")
+    _sync_closure_totals(closure, proposed)
+
+    if settlement.get("auto_reopen"):
+        closure.is_settled = False
+        closure.settled_at = None
+        closure.settled_by = None
+        closure.settlement_notes = None
+
+    if settlement.get("requires_resolution"):
+        if request.settlement_resolution == "reconcile_credit_loans":
+            reconcile_closure_credit_loans(closure, db, created_by=user_id)
+    else:
+        reconcile_closure_credit_loans(closure, db, created_by=user_id)
+
+    db.commit()
+    db.refresh(closure)
+    return enrich_closure_response(closure, db)
 
 
 @router.put("/{closure_id}/settle", response_model=BalanceClosureResponse)

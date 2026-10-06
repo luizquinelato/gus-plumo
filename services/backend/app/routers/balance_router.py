@@ -1116,6 +1116,14 @@ async def calculate_balance(
     custom_start_date: str | None = Query(None, description="Data inicial customizada (YYYY-MM-DD). Se não fornecida, usa dia após último fechamento ou início do ano."),
     custom_end_date: str | None = Query(None, description="Data final customizada (YYYY-MM-DD). Se não fornecida, usa hoje."),
     last_closure_timestamp: str | None = Query(None, description="Timestamp completo do último fechamento (YYYY-MM-DD HH:MM:SS). Usado para filtrar transações após esse momento exato."),
+    period_start_at: str | None = Query(
+        None,
+        description="Início exato do período (YYYY-MM-DD HH:MM:SS). Com period_end_at, ignora custom_start/end.",
+    ),
+    period_end_at: str | None = Query(
+        None,
+        description="Fim exato do período (YYYY-MM-DD HH:MM:SS). Com period_start_at, ignora custom_start/end.",
+    ),
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
@@ -1192,68 +1200,68 @@ async def calculate_balance(
     partner_contribution_pct = Decimal(100) - my_contribution_pct
 
     # ========== NOVA LÓGICA DE CÁLCULO DE PERÍODO ==========
-    # 1. Define data de início
-    if custom_start_date:
-        # Se fornecida data customizada, usa ela
+    if period_start_at and period_end_at:
         try:
-            start_date = datetime.strptime(custom_start_date, "%Y-%m-%d")
+            start_date = datetime.strptime(period_start_at.replace("T", " ")[:19], "%Y-%m-%d %H:%M:%S")
+            end_date = datetime.strptime(period_end_at.replace("T", " ")[:19], "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail="period_start_at e period_end_at devem usar YYYY-MM-DD HH:MM:SS",
+            )
+        if end_date < start_date:
+            raise HTTPException(status_code=400, detail="period_end_at não pode ser anterior a period_start_at")
+    else:
+        # 1. Define data de início
+        if custom_start_date:
+            try:
+                start_date = datetime.strptime(custom_start_date, "%Y-%m-%d")
 
-            # Se houver timestamp do último fechamento, usar ele como filtro mínimo
-            if last_closure_timestamp:
-                try:
-                    # ✅ Normalizar formato: substituir 'T' por espaço (aceita ISO 8601)
-                    normalized_timestamp = last_closure_timestamp.replace('T', ' ')
+                if last_closure_timestamp:
+                    try:
+                        normalized_timestamp = last_closure_timestamp.replace('T', ' ')
+                        if '.' in normalized_timestamp:
+                            closure_dt = datetime.strptime(normalized_timestamp, "%Y-%m-%d %H:%M:%S.%f")
+                        else:
+                            closure_dt = datetime.strptime(normalized_timestamp, "%Y-%m-%d %H:%M:%S")
 
-                    # Parse do timestamp completo (pode vir com ou sem microsegundos)
-                    if '.' in normalized_timestamp:
-                        closure_dt = datetime.strptime(normalized_timestamp, "%Y-%m-%d %H:%M:%S.%f")
-                    else:
-                        closure_dt = datetime.strptime(normalized_timestamp, "%Y-%m-%d %H:%M:%S")
-
-                    # ✅ Se a data de início for o mesmo dia do fechamento, usar closing_date + 1 segundo
-                    # Isso garante que o novo período comece APÓS o último fechamento
-                    if start_date.date() == closure_dt.date():
-                        start_date = closure_dt + timedelta(seconds=1)
-                    else:
-                        # Se for dia diferente, usar meia-noite
+                        if start_date.date() == closure_dt.date():
+                            start_date = closure_dt + timedelta(seconds=1)
+                        else:
+                            start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                    except ValueError:
                         start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-                except ValueError as e:
-                    # Se falhar o parse, ignora o timestamp e usa meia-noite
+                else:
                     start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-            else:
-                start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Formato de custom_start_date inválido. Use YYYY-MM-DD")
-    else:
-        # Sem data inicial explícita: último fechamento do par ou histórico completo até a data fim
-        last_closure = db.query(BalanceClosure).filter(
-            BalanceClosure.tenant_id == tenant_id,
-            BalanceClosure.expense_sharing_id.in_(sharing_ids),
-        ).order_by(BalanceClosure.closing_date.desc()).first()
-
-        if last_closure:
-            from app.utils.card_invoice_calendar import period_open_start_after
-
-            period_end = last_closure.closing_date
-            if not isinstance(period_end, datetime):
-                period_end = datetime.combine(period_end, datetime.max.time()).replace(
-                    hour=23, minute=59, second=59, microsecond=0
-                )
-            start_date = period_open_start_after(period_end)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Formato de custom_start_date inválido. Use YYYY-MM-DD")
         else:
-            start_date = datetime(1970, 1, 1, 0, 0, 0)
+            last_closure = db.query(BalanceClosure).filter(
+                BalanceClosure.tenant_id == tenant_id,
+                BalanceClosure.expense_sharing_id.in_(sharing_ids),
+            ).order_by(BalanceClosure.closing_date.desc()).first()
 
-    # 2. Define data de fim
-    if custom_end_date:
-        # Se fornecida data customizada, usa ela
-        try:
-            end_date = datetime.strptime(custom_end_date, "%Y-%m-%d")
-            end_date = end_date.replace(hour=23, minute=59, second=59)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Formato de custom_end_date inválido. Use YYYY-MM-DD")
-    else:
-        # Se não fornecida, usa hoje
-        end_date = datetime.now().replace(hour=23, minute=59, second=59, microsecond=0)
+            if last_closure:
+                from app.utils.card_invoice_calendar import period_open_start_after
+
+                period_end = last_closure.closing_date
+                if not isinstance(period_end, datetime):
+                    period_end = datetime.combine(period_end, datetime.max.time()).replace(
+                        hour=23, minute=59, second=59, microsecond=0
+                    )
+                start_date = period_open_start_after(period_end)
+            else:
+                start_date = datetime(1970, 1, 1, 0, 0, 0)
+
+        # 2. Define data de fim
+        if custom_end_date:
+            try:
+                end_date = datetime.strptime(custom_end_date, "%Y-%m-%d")
+                end_date = end_date.replace(hour=23, minute=59, second=59)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Formato de custom_end_date inválido. Use YYYY-MM-DD")
+        else:
+            end_date = datetime.now().replace(hour=23, minute=59, second=59, microsecond=0)
 
     # ========== CONTA LOGADA (Main Account) ==========
     # Busca transações onde a conta LOGADA pagou e está vinculada ao sharing

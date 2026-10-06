@@ -16,6 +16,7 @@ interface ConfirmDialogProps {
   confirmText?: string
   cancelText?: string
   type?: 'danger' | 'warning' | 'info'
+  zClass?: string
 }
 
 const ConfirmDialog = ({
@@ -27,6 +28,7 @@ const ConfirmDialog = ({
   confirmText = 'Confirmar',
   cancelText = 'Cancelar',
   type = 'warning',
+  zClass = 'z-[110]',
 }: ConfirmDialogProps) => {
   const handleConfirm = () => {
     onConfirm()
@@ -60,7 +62,7 @@ const ConfirmDialog = ({
         : { backgroundColor: 'var(--color-warning)', color: 'var(--on-color-warning)' }
 
   return (
-    <CadastroModalShell maxWidth="max-w-md" onBackdropClick={onClose}>
+    <CadastroModalShell maxWidth="max-w-md" onBackdropClick={onClose} zClass={zClass}>
       <CadastroModalHeader
         isEdit={false}
         title={title}

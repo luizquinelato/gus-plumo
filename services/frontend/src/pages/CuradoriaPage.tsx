@@ -5,7 +5,13 @@ import {
   CadastroListPageBody,
   CadastroListPageHero,
   CadastroListPageShell,
+  CadastroListPageSearchField,
+  CadastroListPageTabs,
+  cadastroFilterFieldCls,
 } from '../components/CadastroListPageLayout'
+import CuradoriaBulkApplyPanel from '../components/curadoria/CuradoriaBulkApplyPanel'
+import CuradoriaGroupCard from '../components/curadoria/CuradoriaGroupCard'
+import { cadastroAccentControlCls, cadastroOptionLabelCls } from '../components/CadastroFormLayout'
 import {
   CadastroFormSection,
   CadastroModalBody,
@@ -16,10 +22,25 @@ import {
 import FloatingFooterBar from '../components/FloatingFooterBar'
 import Toast from '../components/Toast'
 import LoadingSpinner from '../components/LoadingSpinner'
-import { Check, Loader2, Copy, FileText, ArrowDownCircle, ArrowUpCircle, Save, ArrowUpDown, ArrowUp, ArrowDown, X, AlertTriangle, Search, Landmark, CreditCard, Gift, Sparkles, Users, Tag as TagIcon, Tags as TagsIcon } from 'lucide-react'
-import { formatCurrencyWithColor } from '../utils/currency'
+import {
+  Check,
+  Loader2,
+  Save,
+  ArrowUp,
+  ArrowDown,
+  X,
+  AlertTriangle,
+  Sparkles,
+  Link2,
+  Unlink,
+} from 'lucide-react'
 import GroupDetailsModal from '../components/GroupDetailsModal.tsx'
-import { sharingPartnerLabel, sharingPercentForKind } from '../utils/accountFormatter'
+import { sharingPercentForKind } from '../utils/accountFormatter'
+import {
+  DESCRIPTION_START_FILTER_DIGITS,
+  DESCRIPTION_START_FILTER_LETTERS,
+  descriptionMatchesStartFilter,
+} from '../utils/descriptionSearch'
 
 // ==================== INTERFACES ====================
 
@@ -92,9 +113,65 @@ interface TransactionMapping {
   subtag_name: string | null
   subtag_type: string | null  // 'receita' ou 'despesa'
   tag_name: string | null
+  mapping_type?: string  // 'exact' | 'pattern' | 'regex'
+  pattern?: string | null
+  regex_pattern?: string | null
   active: boolean
   created_at: string | null
   last_updated_at: string | null
+}
+
+type CuradoriaGroupBaseline = {
+  tag_id: number | null
+  subtag_id: number | null
+  expense_sharing_id: number | null
+  ownership_percentage: number | null
+  createMapping: boolean
+  overwriteSharing: boolean
+  recordTags: string
+}
+
+function buildCuradoriaGroupBaseline(
+  group: GroupedRecord,
+  createMapping: boolean,
+  overwrite: boolean,
+): CuradoriaGroupBaseline {
+  const recordTags = group.records
+    .map(
+      (r) =>
+        `${r.id}:${r.tag_id ?? ''}:${r.subtag_id ?? ''}:${r.expense_sharing_id ?? ''}:${r.ownership_percentage ?? ''}`,
+    )
+    .sort()
+    .join('|')
+  return {
+    tag_id: group.tag_id,
+    subtag_id: group.subtag_id,
+    expense_sharing_id: group.expense_sharing_id,
+    ownership_percentage: group.ownership_percentage,
+    createMapping,
+    overwriteSharing: overwrite,
+    recordTags,
+  }
+}
+
+function curadoriaGroupHasPendingSave(
+  group: GroupedRecord,
+  baseline: CuradoriaGroupBaseline | undefined,
+  createMapping: boolean,
+  overwrite: boolean,
+): boolean {
+  if (!group.tag_id || !group.subtag_id) return false
+  if (!baseline) return true
+  const current = buildCuradoriaGroupBaseline(group, createMapping, overwrite)
+  return (
+    current.tag_id !== baseline.tag_id ||
+    current.subtag_id !== baseline.subtag_id ||
+    current.expense_sharing_id !== baseline.expense_sharing_id ||
+    current.ownership_percentage !== baseline.ownership_percentage ||
+    current.createMapping !== baseline.createMapping ||
+    current.overwriteSharing !== baseline.overwriteSharing ||
+    current.recordTags !== baseline.recordTags
+  )
 }
 
 // ==================== COMPONENTE PRINCIPAL ====================
@@ -128,9 +205,9 @@ const CuradoriaPage = () => {
 
   // Estados globais de compartilhamento
   const [globalReceitaSharing, setGlobalReceitaSharing] = useState<number | null>(null)
-  const [globalReceitaPercentage, setGlobalReceitaPercentage] = useState<string>('')
+  const [, setGlobalReceitaPercentage] = useState<string>('')
   const [globalDespesaSharing, setGlobalDespesaSharing] = useState<number | null>(null)
-  const [globalDespesaPercentage, setGlobalDespesaPercentage] = useState<string>('')
+  const [, setGlobalDespesaPercentage] = useState<string>('')
 
   // Modal de detalhes
   const [detailsModalGroup, setDetailsModalGroup] = useState<GroupedRecord | null>(null)
@@ -147,8 +224,12 @@ const CuradoriaPage = () => {
   // Estado do modal de confirmação de reordenação
   const [showReorderConfirmation, setShowReorderConfirmation] = useState(false)
 
+  type CuradoriaTab = 'receita' | 'despesa'
+  const [activeCuradoriaTab, setActiveCuradoriaTab] = useState<CuradoriaTab>('despesa')
+
   // Estado de busca
   const [searchTerm, setSearchTerm] = useState('')
+  const [startsWithFilter, setStartsWithFilter] = useState<string | null>(null)
   const [detectedMode, setDetectedMode] = useState<'pattern' | 'regex'>('pattern')
   const [regexError, setRegexError] = useState<string | null>(null)
 
@@ -175,6 +256,7 @@ const CuradoriaPage = () => {
   // Estado para botão Back to Top
   const [showBackToTop, setShowBackToTop] = useState(false)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const groupBaselinesRef = useRef<Record<string, CuradoriaGroupBaseline>>({})
 
   const showSuccess = useCallback((message: string) => {
     setToast({ show: true, message, type: 'success' })
@@ -337,6 +419,12 @@ const CuradoriaPage = () => {
     setCreateMappings(initialMappings)
     setOverwriteSharing(initialOverwriteSharing)
 
+    const baselines: Record<string, CuradoriaGroupBaseline> = {}
+    groupedArray.forEach((group) => {
+      baselines[group.groupKey] = buildCuradoriaGroupBaseline(group, false, false)
+    })
+    groupBaselinesRef.current = baselines
+
     // Limpar estados de avisos e "precisando aplicar" ao recarregar
     setGroupsNeedingApply(new Set())
     setGroupsWithWarning(new Set())
@@ -356,54 +444,60 @@ const CuradoriaPage = () => {
     return subtags.filter(s => s.tag_id === tagId && s.type === tipo)
   }, [subtags])
 
+  /** Regra de mapeamento **exata** no cadastro (transaction_mappings), não indica subtag nos lançamentos. */
   const getExistingMapping = useCallback((description: string, tipo?: 'receita' | 'despesa') => {
     const normalizedDesc = description.toLowerCase().trim()
 
-    // Se tipo foi fornecido, verifica compatibilidade
+    const isExactMapping = (m: TransactionMapping) => {
+      const kind = m.mapping_type ?? 'exact'
+      return kind === 'exact'
+    }
+
+    const descriptionMatches = (m: TransactionMapping) =>
+      Boolean(m.original_description) &&
+      m.original_description.toLowerCase() === normalizedDesc
+
     if (tipo) {
-      return mappings.find(m =>
-        m.original_description && m.original_description.toLowerCase() === normalizedDesc &&
-        m.subtag_type === tipo
+      return mappings.find(
+        (m) => isExactMapping(m) && descriptionMatches(m) && m.subtag_type === tipo,
       )
     }
 
-    // Se tipo não foi fornecido, retorna qualquer mapeamento (compatibilidade)
-    return mappings.find(m => m.original_description && m.original_description.toLowerCase() === normalizedDesc)
+    return mappings.find((m) => isExactMapping(m) && descriptionMatches(m))
   }, [mappings])
 
-  const hasReceitas = useMemo(() =>
-    groupedRecords.some(g => !savedGroups.has(g.groupKey) && g.tipo === 'receita'),
-    [groupedRecords, savedGroups]
+  const receitaGroupsCount = useMemo(
+    () => groupedRecords.filter((g) => g.tipo === 'receita').length,
+    [groupedRecords],
   )
 
-  const hasDespesas = useMemo(() =>
-    groupedRecords.some(g => !savedGroups.has(g.groupKey) && g.tipo === 'despesa'),
-    [groupedRecords, savedGroups]
+  const despesaGroupsCount = useMemo(
+    () => groupedRecords.filter((g) => g.tipo === 'despesa').length,
+    [groupedRecords],
   )
 
-  // Aplicar filtro de busca aos grupos (com suporte a regex)
+  // Filtro por inicial + busca (pattern / regex)
   const filteredGroups = useMemo(() => {
-    if (!searchTerm.trim()) return groupedRecords
+    let list = groupedRecords
+    if (startsWithFilter) {
+      list = list.filter((group) => descriptionMatchesStartFilter(group.description, startsWithFilter))
+    }
+
+    if (!searchTerm.trim()) return list
 
     if (detectedMode === 'pattern') {
       // Busca simples por substring (case-insensitive)
       const lowerSearch = searchTerm.toLowerCase().trim()
-      return groupedRecords.filter(group =>
-        group.description.toLowerCase().includes(lowerSearch)
-      )
-    } else {
-      // Busca com regex
-      try {
-        const regex = new RegExp(searchTerm, 'i')
-        return groupedRecords.filter(group =>
-          regex.test(group.description)
-        )
-      } catch (e) {
-        // Regex inválido - retorna vazio
-        return []
-      }
+      return list.filter((group) => group.description.toLowerCase().includes(lowerSearch))
     }
-  }, [groupedRecords, searchTerm, detectedMode])
+
+    try {
+      const regex = new RegExp(searchTerm, 'i')
+      return list.filter((group) => regex.test(group.description))
+    } catch {
+      return []
+    }
+  }, [groupedRecords, searchTerm, detectedMode, startsWithFilter])
 
   // Aplicar ordenação aos grupos filtrados
   const sortedGroups = useMemo(() => {
@@ -494,24 +588,63 @@ const CuradoriaPage = () => {
     return virtualGroups
   }, [isRegrouped, filteredGroups, sortedGroups, searchTerm, detectedMode, virtualGroupTag, virtualGroupSubtag, virtualReceitaTag, virtualReceitaSubtag, virtualGroupSharing, virtualGroupPercentage, virtualReceitaSharing, virtualReceitaPercentage])
 
+  const tabDisplayGroups = useMemo(
+    () => displayGroups.filter((g) => g.tipo === activeCuradoriaTab),
+    [displayGroups, activeCuradoriaTab],
+  )
+
   // Calcular grupos paginados (após ordenação)
   const paginatedGroups = useMemo(() => {
-    if (itemsPerPage === 0) return displayGroups
+    if (itemsPerPage === 0) return tabDisplayGroups
     const startIndex = (currentPage - 1) * itemsPerPage
     const endIndex = startIndex + itemsPerPage
-    return displayGroups.slice(startIndex, endIndex)
-  }, [displayGroups, currentPage, itemsPerPage])
+    return tabDisplayGroups.slice(startIndex, endIndex)
+  }, [tabDisplayGroups, currentPage, itemsPerPage])
 
   // Calcular total de páginas
   const totalPages = useMemo(() => {
     if (itemsPerPage === 0) return 1
-    return Math.ceil(displayGroups.length / itemsPerPage)
-  }, [displayGroups.length, itemsPerPage])
+    return Math.ceil(tabDisplayGroups.length / itemsPerPage)
+  }, [tabDisplayGroups.length, itemsPerPage])
+
+  /** Grupos com tag/subtag completos e estado diferente do carregamento (alinhado ao "Salvar todos"). */
+  const savePendingCount = useMemo(() => {
+    if (isRegrouped && (virtualGroupSubtag || virtualReceitaSubtag)) {
+      return (virtualGroupSubtag ? 1 : 0) + (virtualReceitaSubtag ? 1 : 0)
+    }
+    const baselines = groupBaselinesRef.current
+    return groupedRecords.reduce((count, group) => {
+      if (group.groupKey.startsWith('virtual_')) return count
+      const createMapping = createMappings[group.groupKey] ?? false
+      const overwrite = overwriteSharing[group.groupKey] ?? false
+      if (
+        curadoriaGroupHasPendingSave(group, baselines[group.groupKey], createMapping, overwrite)
+      ) {
+        return count + 1
+      }
+      return count
+    }, 0)
+  }, [
+    groupedRecords,
+    createMappings,
+    overwriteSharing,
+    isRegrouped,
+    virtualGroupSubtag,
+    virtualReceitaSubtag,
+  ])
 
   // Resetar para página 1 quando filtros mudarem ou dados recarregarem
   useEffect(() => {
     setCurrentPage(1)
-  }, [groupedRecords.length, itemsPerPage, sortColumn, sortDirection])
+  }, [
+    groupedRecords.length,
+    itemsPerPage,
+    sortColumn,
+    sortDirection,
+    activeCuradoriaTab,
+    searchTerm,
+    startsWithFilter,
+  ])
 
   // Detecta scroll para mostrar botão "Voltar ao Topo"
   useEffect(() => {
@@ -539,20 +672,28 @@ const CuradoriaPage = () => {
   // Função para limpar todas as seleções
   const handleClearAllSelections = useCallback(() => {
     // Resetar todos os grupos para valores originais (sem tag/subtag/compartilhamento)
-    setGroupedRecords(prev => prev.map(group => ({
-      ...group,
-      tag_id: null,
-      subtag_id: null,
-      expense_sharing_id: null,
-      ownership_percentage: null,
-      records: group.records.map(record => ({
-        ...record,
+    setGroupedRecords(prev => {
+      const next = prev.map(group => ({
+        ...group,
         tag_id: null,
         subtag_id: null,
         expense_sharing_id: null,
-        ownership_percentage: null
+        ownership_percentage: null,
+        records: group.records.map(record => ({
+          ...record,
+          tag_id: null,
+          subtag_id: null,
+          expense_sharing_id: null,
+          ownership_percentage: null
+        }))
       }))
-    })))
+      const baselines: Record<string, CuradoriaGroupBaseline> = {}
+      next.forEach((group) => {
+        baselines[group.groupKey] = buildCuradoriaGroupBaseline(group, false, false)
+      })
+      groupBaselinesRef.current = baselines
+      return next
+    })
 
     // Limpar todos os estados relacionados
     setCreateMappings({})
@@ -759,6 +900,7 @@ const CuradoriaPage = () => {
       ...prev,
       [groupKey]: !prev[groupKey]
     }))
+    setHasAnyChanges(true)
   }, [])
 
   // Handler para alternar "Sobrescrever Compartilhamento"
@@ -767,6 +909,7 @@ const CuradoriaPage = () => {
       ...prev,
       [groupKey]: !prev[groupKey]
     }))
+    setHasAnyChanges(true)
   }, [])
 
   // Handler para mudança de compartilhamento no grupo
@@ -1165,18 +1308,18 @@ const CuradoriaPage = () => {
     showSuccess(`Tags aplicadas a ${countGroups} grupo(s) e ${totalRecords} registro(s) da página atual: ${tagName} / ${subtagName}. Clique em "Salvar Todos" para confirmar.`)
   }, [globalDespesaTag, globalDespesaSubtag, paginatedGroups, savedGroups, tags, subtags, showWarning, showSuccess, isRegrouped, filteredGroups])
 
-  const handleSetAllMappings = useCallback((value: boolean) => {
+  const handleSetAllMappings = useCallback((value: boolean, tab: CuradoriaTab) => {
     const updatedMappings: Record<string, boolean> = { ...createMappings }
     groupedRecords.forEach(group => {
-      if (!savedGroups.has(group.groupKey)) {
+      if (!savedGroups.has(group.groupKey) && group.tipo === tab) {
         updatedMappings[group.groupKey] = value
       }
     })
 
-    // Atualizar também o checkbox do grupo virtual se existir
-    if (isRegrouped) {
-      const virtualGroupKey = `virtual_${searchTerm}`
-      updatedMappings[virtualGroupKey] = value
+    if (isRegrouped && searchTerm.trim()) {
+      const virtualKey =
+        tab === 'receita' ? `virtual_receita_${searchTerm}` : `virtual_despesa_${searchTerm}`
+      updatedMappings[virtualKey] = value
     }
 
     setCreateMappings(updatedMappings)
@@ -1995,11 +2138,6 @@ const CuradoriaPage = () => {
     )
   }
 
-  // Conta grupos não salvos + grupos virtuais (despesa e/ou receita, se existirem e tiverem subtag selecionada)
-  const unsavedCount = groupedRecords.filter(g => !savedGroups.has(g.groupKey)).length +
-    (isRegrouped && virtualGroupSubtag ? 1 : 0) +
-    (isRegrouped && virtualReceitaSubtag ? 1 : 0)
-
   return (
     <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900">
       <Sidebar />
@@ -2010,993 +2148,336 @@ const CuradoriaPage = () => {
           contentOverflow="auto"
           header={
             <CadastroListPageHero
-              icon={<Sparkles className="w-8 h-8" />}
+              icon={<Sparkles className="h-8 w-8" />}
               title="Curadoria de Registros"
-              subtitle="Categorize registros não mapeados e crie mapeamentos automáticos"
+              subtitle="Categorize lançamentos não mapeados e crie regras automáticas"
             />
           }
         >
           {groupedRecords.length === 0 ? (
-            <div className="rounded-lg border border-gray-200 bg-white p-12 text-center dark:border-gray-700 dark:bg-gray-800">
+            <div className="rounded-xl border border-gray-200 bg-white p-12 text-center shadow-sm dark:border-gray-700 dark:bg-gray-800">
               <Check className="mx-auto mb-4 h-16 w-16 text-green-600 dark:text-green-400" />
-              <h3 className="mb-2 text-xl font-semibold text-gray-900 dark:text-white">
-                Tudo Categorizado!
-              </h3>
-              <p className="text-gray-600 dark:text-gray-400">
-                Não há registros pendentes de categorização.
-              </p>
+              <h3 className="mb-2 text-xl font-semibold text-gray-900 dark:text-white">Tudo categorizado</h3>
+              <p className="text-gray-600 dark:text-gray-400">Não há registros pendentes.</p>
             </div>
           ) : (
-              <div className="space-y-4">
-              {(hasReceitas || hasDespesas) && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                  {/* Seção Global de Receitas */}
-                  {hasReceitas && (
-                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700 hover:border-color-primary transition-colors">
-                      <div className="flex items-center gap-2 mb-3">
-                        <ArrowUpCircle className="text-green-600 dark:text-green-400" size={20} />
-                        <span className="text-sm font-semibold text-gray-900 dark:text-white">Receitas</span>
-                      </div>
-                      <div className="flex items-end gap-3">
-                        <div className="flex-1">
-                          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                            <TagIcon size={12} className="inline mr-1 text-color-primary" />
-                            Tag
-                          </label>
-                          <select
-                            value={globalReceitaTag ?? ''}
-                            onChange={(e) => {
-                              const value = e.target.value
-                              setGlobalReceitaTag(value === '' ? null : Number(value))
-                              setGlobalReceitaSubtag(null)
-                            }}
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          >
-                            <option value="">Selecione...</option>
-                            {getFilteredTags('receita').map(tag => (
-                              <option key={tag.id} value={tag.id}>{tag.name}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="flex-1">
-                          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                            <TagsIcon size={12} className="inline mr-1 text-color-primary" />
-                            Subtag
-                          </label>
-                          <select
-                            value={globalReceitaSubtag ?? ''}
-                            onChange={(e) => {
-                              const value = e.target.value
-                              setGlobalReceitaSubtag(value === '' ? null : Number(value))
-                            }}
-                            disabled={!globalReceitaTag}
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:cursor-not-allowed"
-                          >
-                            <option value="">Selecione...</option>
-                            {getFilteredSubtags(globalReceitaTag, 'receita').map(subtag => (
-                              <option key={subtag.id} value={subtag.id}>{subtag.name}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="flex-1">
-                          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                            <Users size={12} className="inline mr-1 text-color-primary" />
-                            Compartilhamento
-                          </label>
-                          <select
-                            value={globalReceitaSharing ?? ''}
-                            onChange={(e) => {
-                              const value = e.target.value
-                              const sharingId = value ? Number(value) : null
-                              setGlobalReceitaSharing(sharingId)
-                              if (sharingId) {
-                                const partner = partners.find(p => p.id === sharingId)
-                                setGlobalReceitaPercentage(partner ? String(sharingPercentForKind(partner, 'revenue')) : '50')
-                              } else {
-                                setGlobalReceitaPercentage('')
-                              }
-                            }}
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          >
-                            <option value="">Selecione...</option>
-                            {partners.filter(p => p.active).map(partner => (
-                              <option key={partner.id} value={partner.id}>
-                                {sharingPartnerLabel(partner)}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <button
-                          onClick={applyGlobalReceitas}
-                          disabled={!globalReceitaTag || !globalReceitaSubtag}
-                          className="px-4 py-2 text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm whitespace-nowrap"
-                          style={{ backgroundColor: 'var(--crud-create)' }}
-                        >
-                          Aplicar
-                        </button>
-                      </div>
-                    </div>
-                  )}
+            <div className={`overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800 ${hasAnyChanges ? 'pb-20' : ''}`}>
+              <div className="px-4 pt-3">
+                <CadastroListPageTabs
+                  tabs={[
+                    {
+                      key: 'despesa',
+                      label: 'Despesas',
+                      count: despesaGroupsCount,
+                      icon: <ArrowDown size={16} className="text-[var(--color-danger)]" aria-hidden />,
+                    },
+                    {
+                      key: 'receita',
+                      label: 'Receitas',
+                      count: receitaGroupsCount,
+                      icon: <ArrowUp size={16} className="text-[var(--color-success)]" aria-hidden />,
+                    },
+                  ]}
+                  active={activeCuradoriaTab}
+                  onChange={setActiveCuradoriaTab}
+                />
+              </div>
 
-                  {/* Seção Global de Despesas */}
-                  {hasDespesas && (
-                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700 hover:border-color-primary transition-colors">
-                      <div className="flex items-center gap-2 mb-3">
-                        <ArrowDownCircle className="text-red-600 dark:text-red-400" size={20} />
-                        <span className="text-sm font-semibold text-gray-900 dark:text-white">Despesas</span>
-                      </div>
-                      <div className="flex items-end gap-3">
-                        <div className="flex-1">
-                          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                            <TagIcon size={12} className="inline mr-1 text-color-primary" />
-                            Tag
-                          </label>
-                          <select
-                            value={globalDespesaTag ?? ''}
-                            onChange={(e) => {
-                              const value = e.target.value
-                              setGlobalDespesaTag(value === '' ? null : Number(value))
-                              setGlobalDespesaSubtag(null)
-                            }}
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          >
-                            <option value="">Selecione...</option>
-                            {getFilteredTags('despesa').map(tag => (
-                              <option key={tag.id} value={tag.id}>{tag.name}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="flex-1">
-                          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                            <TagsIcon size={12} className="inline mr-1 text-color-primary" />
-                            Subtag
-                          </label>
-                          <select
-                            value={globalDespesaSubtag ?? ''}
-                            onChange={(e) => {
-                              const value = e.target.value
-                              setGlobalDespesaSubtag(value === '' ? null : Number(value))
-                            }}
-                            disabled={!globalDespesaTag}
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:cursor-not-allowed"
-                          >
-                            <option value="">Selecione...</option>
-                            {getFilteredSubtags(globalDespesaTag, 'despesa').map(subtag => (
-                              <option key={subtag.id} value={subtag.id}>{subtag.name}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="flex-1">
-                          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                            <Users size={12} className="inline mr-1 text-color-primary" />
-                            Compartilhamento
-                          </label>
-                          <select
-                            value={globalDespesaSharing ?? ''}
-                            onChange={(e) => {
-                              const value = e.target.value
-                              const sharingId = value ? Number(value) : null
-                              setGlobalDespesaSharing(sharingId)
-                              if (sharingId) {
-                                const partner = partners.find(p => p.id === sharingId)
-                                setGlobalDespesaPercentage(partner ? String(sharingPercentForKind(partner, 'expense')) : '50')
-                              } else {
-                                setGlobalDespesaPercentage('')
-                              }
-                            }}
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          >
-                            <option value="">Selecione...</option>
-                            {partners.filter(p => p.active).map(partner => (
-                              <option key={partner.id} value={partner.id}>
-                                {sharingPartnerLabel(partner)}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <button
-                          onClick={applyGlobalDespesas}
-                          disabled={!globalDespesaTag || !globalDespesaSubtag}
-                          className="px-4 py-2 text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm whitespace-nowrap"
-                          style={{ backgroundColor: 'var(--crud-create)' }}
-                        >
-                          Aplicar
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
+              <CuradoriaBulkApplyPanel
+                tipo={activeCuradoriaTab}
+                tagId={activeCuradoriaTab === 'receita' ? globalReceitaTag : globalDespesaTag}
+                subtagId={activeCuradoriaTab === 'receita' ? globalReceitaSubtag : globalDespesaSubtag}
+                sharingId={activeCuradoriaTab === 'receita' ? globalReceitaSharing : globalDespesaSharing}
+                onTagChange={(id) => {
+                  if (activeCuradoriaTab === 'receita') {
+                    setGlobalReceitaTag(id)
+                    setGlobalReceitaSubtag(null)
+                  } else {
+                    setGlobalDespesaTag(id)
+                    setGlobalDespesaSubtag(null)
+                  }
+                }}
+                onSubtagChange={
+                  activeCuradoriaTab === 'receita' ? setGlobalReceitaSubtag : setGlobalDespesaSubtag
+                }
+                onSharingChange={(id, pct) => {
+                  if (activeCuradoriaTab === 'receita') {
+                    setGlobalReceitaSharing(id)
+                    setGlobalReceitaPercentage(pct)
+                  } else {
+                    setGlobalDespesaSharing(id)
+                    setGlobalDespesaPercentage(pct)
+                  }
+                }}
+                onApply={activeCuradoriaTab === 'receita' ? applyGlobalReceitas : applyGlobalDespesas}
+                partners={partners}
+                getFilteredTags={getFilteredTags}
+                getFilteredSubtags={getFilteredSubtags}
+              />
 
-              {/* Barra de Busca + Controles */}
-              <div>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-                  <input
-                    type="text"
-                    placeholder="Buscar por descrição... (suporta regex)"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-10 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:border-color-primary focus:outline-none"
-                  />
-                  {searchTerm && (
-                    <button
-                      onClick={() => setSearchTerm('')}
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                    >
-                      <X size={20} />
-                    </button>
-                  )}
-                </div>
-
-                {/* Feedback de detecção de modo */}
-                {searchTerm && (
-                  <div className="flex items-center justify-between mt-3">
-                    <div className="flex items-center gap-2 text-sm">
-                      {detectedMode === 'pattern' ? (
-                        <span className="text-blue-600 dark:text-blue-400 font-medium">
-                          🔍 Modo: Padrão (contém texto)
-                        </span>
-                      ) : (
-                        <>
-                          <span className="text-purple-600 dark:text-purple-400 font-medium">
-                            🔍 Modo: Regex
-                          </span>
-                          {regexError ? (
-                            <span className="text-red-600 dark:text-red-400">
-                              ❌ {regexError}
-                            </span>
-                          ) : (
-                            <span className="text-green-600 dark:text-green-400">
-                              ✅ Regex válido
-                            </span>
-                          )}
-                        </>
-                      )}
-                      <span className="text-gray-500 dark:text-gray-400">
-                        • {filteredGroups.length} grupo(s) encontrado(s)
-                      </span>
-                    </div>
-
-                    {/* Botão Reagrupar / Desfazer */}
-                    {filteredGroups.length > 0 && (
-                      isRegrouped ? (
-                        <button
-                          onClick={handleUndoRegroup}
-                          className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
-                        >
-                          ❌ Desfazer Reagrupamento
-                        </button>
-                      ) : (
-                        <button
-                          onClick={handleRegroup}
-                          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium"
-                        >
-                          🔗 Reagrupar Todos
-                        </button>
-                      )
-                    )}
+              <div className="px-4 pt-1">
+                <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                  <div className="min-w-0 flex-1 basis-0 sm:min-w-[12rem]">
+                    <CadastroListPageSearchField
+                      value={searchTerm}
+                      onChange={setSearchTerm}
+                      placeholder="Buscar descrição…"
+                    />
                   </div>
-                )}
-
-                {/* Controles da Tabela */}
-                <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mt-4 border border-gray-200 dark:border-gray-700 hover:border-color-primary transition-colors">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                      <input
-                        type="checkbox"
-                        checked={globalCreateMapping}
-                        onChange={(e) => handleSetAllMappings(e.target.checked)}
-                        className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
-                      />
-                      Marcar/Desmarcar Todos os Mapeamentos
-                    </label>
-                  </div>
-
-                  {/* Botões de Ação - Lado Direito */}
-                  <div className="flex items-center gap-3">
-                    {/* Botão Limpar Seleções - Visível APENAS quando há mudanças pendentes */}
-                    {hasAnyChanges && (
+                  <select
+                    value={`${sortColumn ?? 'count'}:${sortDirection}`}
+                    onChange={(e) => {
+                      const [col, dir] = e.target.value.split(':') as [
+                        'count' | 'tipo' | 'totalAmount' | 'description',
+                        'asc' | 'desc',
+                      ]
+                      if (hasAnyChanges) {
+                        handleSort(col)
+                        return
+                      }
+                      setSortColumn(col)
+                      setSortDirection(dir)
+                    }}
+                    className={`${cadastroFilterFieldCls} !w-full shrink-0 px-1.5 text-xs sm:!w-[7rem]`}
+                    title="Ordenação"
+                    aria-label="Ordenação"
+                  >
+                    <option value="count:desc">Qtd ↓</option>
+                    <option value="count:asc">Qtd ↑</option>
+                    <option value="totalAmount:desc">Valor ↓</option>
+                    <option value="totalAmount:asc">Valor ↑</option>
+                    <option value="description:asc">A–Z</option>
+                    <option value="description:desc">Z–A</option>
+                  </select>
+                  {searchTerm.trim() && filteredGroups.length > 0 ? (
+                    isRegrouped ? (
                       <button
-                        onClick={handleClearAllSelections}
-                        className="px-4 py-2 text-sm text-white rounded-lg hover:opacity-90 transition-opacity font-medium flex items-center gap-2"
-                        style={{ backgroundColor: 'var(--crud-cancel)' }}
+                        type="button"
+                        onClick={handleUndoRegroup}
+                        className="inline-flex h-9 w-full shrink-0 items-center justify-center gap-1 rounded-lg px-2.5 text-xs font-medium text-white sm:w-auto"
+                        style={{ backgroundColor: 'var(--crud-delete)' }}
                       >
-                        <X size={16} />
-                        Limpar Seleções
+                        <Unlink size={14} /> Desfazer
                       </button>
-                    )}
-
-                    {/* Botão Salvar Todos */}
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleRegroup}
+                        className="inline-flex h-9 w-full shrink-0 items-center justify-center gap-1 rounded-lg px-2.5 text-xs font-medium text-white sm:w-auto"
+                        style={{ backgroundColor: 'var(--color-2)' }}
+                      >
+                        <Link2 size={14} /> Reagrupar
+                      </button>
+                    )
+                  ) : null}
+                </div>
+                <div className="mb-3 -mx-1 overflow-x-auto px-1 pb-0.5">
+                  <div className="flex w-max min-w-full flex-wrap items-center gap-1">
                     <button
-                      onClick={handleSaveAll}
-                      disabled={!hasAnyChanges || unsavedCount === 0 || isSavingAll}
-                      className="px-4 py-2 text-sm text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed font-medium flex items-center gap-2"
-                      style={{ backgroundColor: 'var(--crud-create)' }}
+                      type="button"
+                      onClick={() => setStartsWithFilter(null)}
+                      className={`shrink-0 rounded-md border px-2 py-1 text-xs font-medium transition-colors ${
+                        startsWithFilter === null
+                          ? 'border-[var(--color-1)] bg-[color-mix(in_srgb,var(--color-1)_12%,transparent)] text-[var(--color-1)]'
+                          : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300'
+                      }`}
                     >
-                      {isSavingAll ? (
-                        <>
-                          <Loader2 className="animate-spin" size={16} />
-                          Salvando...
-                        </>
-                      ) : (
-                        <>
-                          <Save size={16} />
-                          Salvar Todos ({unsavedCount})
-                        </>
-                      )}
+                      Todos
                     </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setStartsWithFilter((prev) =>
+                          prev === DESCRIPTION_START_FILTER_DIGITS ? null : DESCRIPTION_START_FILTER_DIGITS,
+                        )
+                      }
+                      className={`shrink-0 rounded-md border px-2 py-1 text-xs font-medium tabular-nums transition-colors ${
+                        startsWithFilter === DESCRIPTION_START_FILTER_DIGITS
+                          ? 'border-[var(--color-1)] bg-[color-mix(in_srgb,var(--color-1)_12%,transparent)] text-[var(--color-1)]'
+                          : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300'
+                      }`}
+                      title="Descrições que começam com número"
+                    >
+                      0–9
+                    </button>
+                    {DESCRIPTION_START_FILTER_LETTERS.map((letter) => (
+                      <button
+                        key={letter}
+                        type="button"
+                        onClick={() =>
+                          setStartsWithFilter((prev) => (prev === letter ? null : letter))
+                        }
+                        className={`shrink-0 rounded-md border px-2 py-1 text-xs font-medium transition-colors ${
+                          startsWithFilter === letter
+                            ? 'border-[var(--color-1)] bg-[color-mix(in_srgb,var(--color-1)_12%,transparent)] text-[var(--color-1)]'
+                            : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300'
+                        }`}
+                        title={`Começa com ${letter}`}
+                      >
+                        {letter}
+                      </button>
+                    ))}
                   </div>
                 </div>
+                {searchTerm.trim() || startsWithFilter ? (
+                  <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
+                    {startsWithFilter
+                      ? startsWithFilter === DESCRIPTION_START_FILTER_DIGITS
+                        ? 'Início: número (0–9)'
+                        : `Início: ${startsWithFilter}`
+                      : null}
+                    {startsWithFilter && searchTerm.trim() ? ' · ' : ''}
+                    {searchTerm.trim() ? (
+                      <>
+                        {detectedMode === 'pattern' ? 'Busca por texto' : 'Regex'}
+                        {regexError ? ` — ${regexError}` : ''}
+                      </>
+                    ) : null}
+                    {' · '}
+                    {tabDisplayGroups.length} grupo(s) nesta aba
+                  </p>
+                ) : null}
               </div>
-              </div>
 
-                <div className="rounded-lg border border-gray-200 bg-white dark:bg-gray-800">
-                <div style={{ overflowX: 'clip' }}>
-                  <table className="w-full table-auto">
-                    <thead className="border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-                      <tr>
-                        {/* Coluna de Número - COMPACTA */}
-                        <th className="px-1 py-3 text-center text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap w-10 bg-gray-50 dark:bg-gray-700">
-                          #
-                        </th>
-                        {/* Coluna Qtd - COMPACTA */}
-                        <th
-                          className="px-2 py-3 text-center text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap w-14 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors bg-gray-50 dark:bg-gray-700"
-                          onClick={() => handleSort('count')}
-                        >
-                          <div className="flex items-center justify-center gap-0.5">
-                            <span>Qtd</span>
-                            {sortColumn === 'count' ? (
-                              sortDirection === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />
-                            ) : (
-                              <ArrowUpDown size={12} className="opacity-40" />
-                            )}
-                          </div>
-                        </th>
-                        {/* Coluna Tipo - COMPACTA */}
-                        <th
-                          className="px-1 py-3 text-center text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap w-12 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors bg-gray-50 dark:bg-gray-700"
-                          onClick={() => handleSort('tipo')}
-                        >
-                          <div className="flex items-center justify-center gap-0.5">
-                            <span>Tipo</span>
-                            {sortColumn === 'tipo' ? (
-                              sortDirection === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />
-                            ) : (
-                              <ArrowUpDown size={12} className="opacity-40" />
-                            )}
-                          </div>
-                        </th>
-                        {/* Fontes - FIXA (ao lado de Tipo, antes de Valor) */}
-                        <th className="px-2 py-3 text-center text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap w-32 bg-gray-50 dark:bg-gray-700">
-                          Fontes
-                        </th>
-                        {/* Coluna Valor - FIXA (comporta -R$ 111.058.744,71) */}
-                        <th
-                          className="px-2 py-3 text-center text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap w-40 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors bg-gray-50 dark:bg-gray-700"
-                          onClick={() => handleSort('totalAmount')}
-                        >
-                          <div className="flex items-center justify-center gap-0.5">
-                            <span>Valor</span>
-                            {sortColumn === 'totalAmount' ? (
-                              sortDirection === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />
-                            ) : (
-                              <ArrowUpDown size={12} className="opacity-40" />
-                            )}
-                          </div>
-                        </th>
-                        {/* Coluna Descrição - FLEXÍVEL */}
-                        <th
-                          className="px-2 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors bg-gray-50 dark:bg-gray-700"
-                          onClick={() => handleSort('description')}
-                        >
-                          <div className="flex items-center gap-1">
-                            <span>Descrição</span>
-                            {sortColumn === 'description' ? (
-                              sortDirection === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />
-                            ) : (
-                              <ArrowUpDown size={12} className="opacity-40" />
-                            )}
-                          </div>
-                        </th>
-                        {/* Tag - FLEXÍVEL proporcional (15% cada) */}
-                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider min-w-[180px] w-[15%] bg-gray-50 dark:bg-gray-700">
-                          Tag
-                        </th>
-                        {/* Subtag - FLEXÍVEL proporcional (15% cada) */}
-                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider min-w-[180px] w-[15%] bg-gray-50 dark:bg-gray-700">
-                          Subtag
-                        </th>
-                        {/* Compartilhamento - FLEXÍVEL proporcional (15% cada) */}
-                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider min-w-[180px] w-[15%] bg-gray-50 dark:bg-gray-700">
-                          Compartilhamento
-                        </th>
-                        {/* % - COMPACTA */}
-                        <th className="px-1 py-3 text-center text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap w-16 bg-gray-50 dark:bg-gray-700">
-                          %
-                        </th>
-                        {/* Mapear - COMPACTA */}
-                        <th className="px-1 py-3 text-center text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap w-14 bg-gray-50 dark:bg-gray-700">
-                          Mapear
-                        </th>
-                        {/* Sobrescrever Compartilhamento - COMPACTA */}
-                        <th className="px-1 py-3 text-center text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap w-14 bg-gray-50 dark:bg-gray-700" title="Sobrescrever Compartilhamento">
-                          Sobr.
-                        </th>
-                        {/* Ações - COMPACTA */}
-                        <th className="px-1 py-3 text-center text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap w-14 bg-gray-50 dark:bg-gray-700">
-                          Ações
-                        </th>
-                        {/* Detalhes - COMPACTA */}
-                        <th className="px-1 py-3 text-center text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap w-14 bg-gray-50 dark:bg-gray-700">
-                          Detalhes
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {paginatedGroups.map((group, index) => {
-                        const isVirtualGroup = group.groupKey.startsWith('virtual_')
-                        const isSaved = savedGroups.has(group.groupKey)
-                        const isCurrentlySaving = isSaving === group.groupKey
-                        const existingMapping = isVirtualGroup ? null : getExistingMapping(group.description, group.tipo)
-
-                        // ✅ FIX: Determinar qual subtag usar baseado no tipo do grupo virtual
-                        const isVirtualReceita = isVirtualGroup && group.tipo === 'receita'
-                        const canSave = isVirtualGroup
-                          ? (isVirtualReceita ? virtualReceitaSubtag : virtualGroupSubtag)
-                          : (group.tag_id && group.subtag_id)
-
-                        const createMapping = createMappings[group.groupKey] ?? false
-                        const needsApply = groupsNeedingApply.has(group.groupKey)
-
-                        // LÓGICA CRÍTICA: Se createMapping está marcado, os dropdowns devem estar DESABILITADOS
-                        // Dropdowns só ficam desabilitados se o grupo já foi salvo
-                        const dropdownsDisabled = isSaved
-
-                        const hasWarning = groupsWithWarning.has(group.groupKey)
-
-                        // Calcular número da linha (considerando paginação)
-                        const lineNumber = (currentPage - 1) * itemsPerPage + index + 1
-
-                        return (
-                          <tr
-                            key={group.groupKey}
-                            className={`border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all ${
-                              isSaved ? 'border-l-green-500 bg-green-50 dark:bg-green-900/20' : 'border-l-gray-300 dark:border-l-gray-600'
-                            }`}
-                            style={{
-                              ['--hover-border-color' as any]: 'var(--color-1)',
-                            }}
-                            onMouseEnter={(e) => {
-                              if (!isSaved) {
-                                e.currentTarget.style.borderLeftColor = 'var(--color-1)'
-                              }
-                            }}
-                            onMouseLeave={(e) => {
-                              if (!isSaved) {
-                                e.currentTarget.style.borderLeftColor = ''
-                              }
-                            }}
-                          >
-                            {/* Número da Linha - COMPACTA */}
-                            <td className="px-1 py-3 text-center whitespace-nowrap w-10">
-                              <span className="text-xs font-mono text-gray-500 dark:text-gray-400">{lineNumber}</span>
-                            </td>
-
-                            {/* Quantidade - COMPACTA */}
-                            <td className="px-2 py-3 text-center whitespace-nowrap w-14">
-                              <span className="text-xs font-medium text-gray-900 dark:text-white">{group.count}</span>
-                            </td>
-
-                            {/* Tipo - COMPACTA */}
-                            <td className="px-1 py-3 text-center whitespace-nowrap w-12">
-                              {group.tipo === 'receita' ? (
-                                <ArrowUpCircle className="inline text-green-600 dark:text-green-400" size={16} />
-                              ) : (
-                                <ArrowDownCircle className="inline text-red-600 dark:text-red-400" size={16} />
-                              )}
-                            </td>
-
-                            {/* Fontes (Badges) - FIXA (ao lado de Tipo, antes de Valor) */}
-                            <td className="px-2 py-3 whitespace-nowrap w-32">
-                              <div className="flex items-center justify-center gap-1">
-                                {/* Contar quantos registros de cada fonte */}
-                                {(() => {
-                                  const sourceCounts = group.records.reduce((acc, r) => {
-                                    acc[r.source] = (acc[r.source] || 0) + 1
-                                    return acc
-                                  }, {} as Record<string, number>)
-
-                                  return (
-                                    <>
-                                      {sourceCounts['bank'] && (
-                                        <div className="flex items-center gap-1" title={`${sourceCounts['bank']} extrato(s) bancário(s)`}>
-                                          <Landmark size={16} style={{ color: 'var(--color-1)' }} />
-                                          <span className="text-xs font-medium" style={{ color: 'var(--color-1)' }}>
-                                            {sourceCounts['bank']}
-                                          </span>
-                                        </div>
-                                      )}
-                                      {sourceCounts['card'] && (
-                                        <div className="flex items-center gap-1" title={`${sourceCounts['card']} fatura(s) de cartão`}>
-                                          <CreditCard size={16} style={{ color: 'var(--color-2)' }} />
-                                          <span className="text-xs font-medium" style={{ color: 'var(--color-2)' }}>
-                                            {sourceCounts['card']}
-                                          </span>
-                                        </div>
-                                      )}
-                                      {sourceCounts['benefit'] && (
-                                        <div className="flex items-center gap-1" title={`${sourceCounts['benefit']} benefício(s)`}>
-                                          <Gift size={16} style={{ color: 'var(--color-3)' }} />
-                                          <span className="text-xs font-medium" style={{ color: 'var(--color-3)' }}>
-                                            {sourceCounts['benefit']}
-                                          </span>
-                                        </div>
-                                      )}
-                                    </>
-                                  )
-                                })()}
-                              </div>
-                            </td>
-
-                            {/* Valor - FIXA (comporta -R$ 111.058.744,71) */}
-                            <td className="px-2 py-3 text-center whitespace-nowrap w-40">
-                              <span className="text-xs font-medium">
-                                {formatCurrencyWithColor(group.totalAmount, false)}
-                              </span>
-                            </td>
-
-                            {/* Descrição - FLEXÍVEL */}
-                            <td className="px-2 py-3">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm text-gray-900 dark:text-white">{group.description}</span>
-                                {existingMapping && (
-                                  <span className="px-1.5 py-0.5 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 rounded whitespace-nowrap">
-                                    Mapeado
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-
-                            {/* Tag Dropdown - FLEXÍVEL proporcional (15% cada) */}
-                            <td className="px-2 py-3 min-w-[180px] w-[15%]">
-                              {(() => {
-                                // Determinar qual estado usar baseado no tipo do grupo virtual
-                                const isVirtualReceita = isVirtualGroup && group.tipo === 'receita'
-                                const currentTag = isVirtualGroup
-                                  ? (isVirtualReceita ? virtualReceitaTag : virtualGroupTag)
-                                  : group.tag_id
-
-                                return (
-                                  <select
-                                    value={currentTag || ''}
-                                    onChange={(e) => {
-                                      const value = e.target.value
-                                      if (isVirtualGroup) {
-                                        if (isVirtualReceita) {
-                                          setVirtualReceitaTag(value ? Number(value) : null)
-                                          setVirtualReceitaSubtag(null)
-                                        } else {
-                                          setVirtualGroupTag(value ? Number(value) : null)
-                                          setVirtualGroupSubtag(null)
-                                        }
-                                        // Marcar que houve mudanças
-                                        setHasAnyChanges(true)
-                                      } else {
-                                        if (value) {
-                                          handleGroupTagChange(group.groupKey, Number(value))
-                                        } else {
-                                          handleGroupTagChange(group.groupKey, null)
-                                        }
-                                      }
-                                    }}
-                                    disabled={!isVirtualGroup && dropdownsDisabled}
-                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:cursor-not-allowed"
-                                  >
-                                    <option value="">Selecione...</option>
-                                    {getFilteredTags(group.tipo).map(tag => (
-                                      <option key={tag.id} value={tag.id}>{tag.name}</option>
-                                    ))}
-                                  </select>
-                                )
-                              })()}
-                            </td>
-
-                            {/* Subtag Dropdown - FLEXÍVEL proporcional (15% cada) */}
-                            <td className="px-2 py-3 min-w-[180px] w-[15%]">
-                              {(() => {
-                                // Determinar qual estado usar baseado no tipo do grupo virtual
-                                const isVirtualReceita = isVirtualGroup && group.tipo === 'receita'
-                                const currentTag = isVirtualGroup
-                                  ? (isVirtualReceita ? virtualReceitaTag : virtualGroupTag)
-                                  : group.tag_id
-                                const currentSubtag = isVirtualGroup
-                                  ? (isVirtualReceita ? virtualReceitaSubtag : virtualGroupSubtag)
-                                  : group.subtag_id
-
-                                return (
-                                  <select
-                                    value={currentSubtag || ''}
-                                    onChange={(e) => {
-                                      const value = e.target.value
-                                      if (isVirtualGroup) {
-                                        if (isVirtualReceita) {
-                                          setVirtualReceitaSubtag(value ? Number(value) : null)
-                                        } else {
-                                          setVirtualGroupSubtag(value ? Number(value) : null)
-                                        }
-                                        // Marcar que houve mudanças
-                                        setHasAnyChanges(true)
-                                        // Marcar grupo virtual como precisando aplicar
-                                        setGroupsNeedingApply(prev => {
-                                          const newSet = new Set(prev)
-                                          newSet.add(group.groupKey)
-                                          return newSet
-                                        })
-                                        setGroupsWithWarning(prev => {
-                                          const newSet = new Set(prev)
-                                          newSet.add(group.groupKey)
-                                          return newSet
-                                        })
-                                      } else {
-                                        handleGroupSubtagChange(group.groupKey, Number(value) || null)
-                                      }
-                                    }}
-                                    disabled={isVirtualGroup ? !currentTag : (!group.tag_id || dropdownsDisabled)}
-                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:cursor-not-allowed"
-                                  >
-                                    <option value="">Selecione...</option>
-                                    {isVirtualGroup
-                                      ? (currentTag && getFilteredSubtags(currentTag, group.tipo).map(subtag => (
-                                          <option key={subtag.id} value={subtag.id}>{subtag.name}</option>
-                                        )))
-                                      : getFilteredSubtags(group.tag_id, group.tipo).map(subtag => (
-                                          <option key={subtag.id} value={subtag.id}>{subtag.name}</option>
-                                        ))
-                                    }
-                                  </select>
-                                )
-                              })()}
-                            </td>
-
-                            {/* Compartilhamento Dropdown - FLEXÍVEL proporcional (15% cada) */}
-                            <td className="px-2 py-3 min-w-[180px] w-[15%]">
-                              {(() => {
-                                const currentSharing = isVirtualGroup
-                                  ? (isVirtualReceita ? virtualReceitaSharing : virtualGroupSharing)
-                                  : group.expense_sharing_id
-
-                                return (
-                                  <select
-                                    value={currentSharing || ''}
-                                    onChange={(e) => {
-                                      const value = e.target.value
-                                      const sharingId = value ? Number(value) : null
-                                      if (isVirtualGroup) {
-                                        if (isVirtualReceita) {
-                                          setVirtualReceitaSharing(sharingId)
-                                          // Definir porcentagem padrão do parceiro
-                                          if (sharingId) {
-                                            const partner = partners.find(p => p.id === sharingId)
-                                            setVirtualReceitaPercentage(
-                                              partner
-                                                ? String(sharingPercentForKind(partner, 'revenue'))
-                                                : '50'
-                                            )
-                                          } else {
-                                            setVirtualReceitaPercentage('')
-                                          }
-                                        } else {
-                                          setVirtualGroupSharing(sharingId)
-                                          if (sharingId) {
-                                            const partner = partners.find(p => p.id === sharingId)
-                                            setVirtualGroupPercentage(
-                                              partner
-                                                ? String(sharingPercentForKind(partner, 'expense'))
-                                                : '50'
-                                            )
-                                          } else {
-                                            setVirtualGroupPercentage('')
-                                          }
-                                        }
-                                        // Se preencheu compartilhamento, marca automaticamente "Sobrescrever Compartilhamento"
-                                        if (sharingId !== null) {
-                                          setOverwriteSharing(prev => ({ ...prev, [group.groupKey]: true }))
-                                        }
-                                        setHasAnyChanges(true)
-                                        setGroupsNeedingApply(prev => new Set(prev).add(group.groupKey))
-                                        setGroupsWithWarning(prev => new Set(prev).add(group.groupKey))
-                                      } else {
-                                        handleGroupSharingChange(group.groupKey, sharingId)
-                                      }
-                                    }}
-                                    disabled={dropdownsDisabled}
-                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:cursor-not-allowed"
-                                  >
-                                    <option value="">Selecione...</option>
-                                    {partners.filter(p => p.active).map(partner => (
-                                      <option key={partner.id} value={partner.id}>
-                                        {sharingPartnerLabel(partner)}
-                                      </option>
-                                    ))}
-                                  </select>
-                                )
-                              })()}
-                            </td>
-
-                            {/* Porcentagem Input - COMPACTA */}
-                            <td className="px-1 py-3 text-center whitespace-nowrap w-16">
-                              {(() => {
-                                const currentSharing = isVirtualGroup
-                                  ? (isVirtualReceita ? virtualReceitaSharing : virtualGroupSharing)
-                                  : group.expense_sharing_id
-                                const currentPercentage = isVirtualGroup
-                                  ? (isVirtualReceita ? virtualReceitaPercentage : virtualGroupPercentage)
-                                  : (group.ownership_percentage?.toString() || '')
-
-                                return (
-                                  <input
-                                    type="text"
-                                    inputMode="decimal"
-                                    value={currentPercentage}
-                                    onChange={(e) => {
-                                      const value = e.target.value
-                                      if (isVirtualGroup) {
-                                        if (isVirtualReceita) {
-                                          setVirtualReceitaPercentage(value)
-                                        } else {
-                                          setVirtualGroupPercentage(value)
-                                        }
-                                        setHasAnyChanges(true)
-                                        setGroupsNeedingApply(prev => new Set(prev).add(group.groupKey))
-                                        setGroupsWithWarning(prev => new Set(prev).add(group.groupKey))
-                                      } else {
-                                        handleGroupPercentageChange(group.groupKey, value)
-                                      }
-                                    }}
-                                    disabled={!currentSharing || dropdownsDisabled}
-                                    placeholder="50"
-                                    className="w-full px-2 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-center bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:cursor-not-allowed"
-                                  />
-                                )
-                              })()}
-                            </td>
-
-                            {/* Mapear Checkbox - COMPACTA */}
-                            <td className="px-1 py-3 text-center whitespace-nowrap w-14">
-                              <input
-                                type="checkbox"
-                                checked={isVirtualGroup ? (createMappings[group.groupKey] ?? globalCreateMapping) : createMapping}
-                                onChange={() => handleToggleMapping(group.groupKey)}
-                                disabled={isSaved}
-                                className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 disabled:cursor-not-allowed"
-                              />
-                            </td>
-
-                            {/* Sobrescrever Compartilhamento Checkbox - COMPACTA */}
-                            <td className="px-1 py-3 text-center whitespace-nowrap w-14">
-                              {(() => {
-                                const currentSharing = isVirtualGroup
-                                  ? (isVirtualReceita ? virtualReceitaSharing : virtualGroupSharing)
-                                  : group.expense_sharing_id
-                                const isOverwriteEnabled = overwriteSharing[group.groupKey] ?? false
-                                // Checkbox desabilitado se compartilhamento está preenchido (sempre true) ou se grupo já foi salvo
-                                const isDisabled = currentSharing !== null || isSaved
-
-                                return (
-                                  <input
-                                    type="checkbox"
-                                    checked={isOverwriteEnabled || currentSharing !== null}
-                                    onChange={() => handleToggleOverwriteSharing(group.groupKey)}
-                                    disabled={isDisabled}
-                                    title={currentSharing !== null
-                                      ? "Sobrescrever ativado automaticamente (compartilhamento preenchido)"
-                                      : isOverwriteEnabled
-                                        ? "Clique para NÃO sobrescrever compartilhamento existente"
-                                        : "Clique para sobrescrever/limpar compartilhamento existente"
-                                    }
-                                    className="w-4 h-4 text-orange-600 bg-gray-100 border-gray-300 rounded focus:ring-orange-500 disabled:cursor-not-allowed"
-                                  />
-                                )
-                              })()}
-                            </td>
-
-                            {/* Ações - COMPACTA */}
-                            <td className="px-1 py-3 whitespace-nowrap w-14">
-                              <div className="flex items-center justify-center gap-0.5">
-                                {isVirtualGroup ? (
-                                  <>
-                                    {/* Botão Aplicar para Grupo Virtual com Badge de Alerta */}
-                                    <div className="relative group">
-                                      <button
-                                        onClick={() => handleApplyGroupToRecords(group.groupKey)}
-                                        disabled={!needsApply || isSaved}
-                                        className={`p-1.5 rounded-lg transition-colors ${
-                                          hasWarning
-                                            ? 'text-amber-500 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20'
-                                            : 'text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20'
-                                        } disabled:text-gray-300 dark:disabled:text-gray-600 disabled:cursor-not-allowed`}
-                                        title="Aplicar tag/subtag a todos os registros"
-                                      >
-                                        <Copy size={18} />
-                                      </button>
-
-                                      {/* Badge de Alerta no Canto Superior Direito */}
-                                      {hasWarning && (
-                                        <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                                          <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
-                                        </span>
-                                      )}
-
-                                      {/* Tooltip - posicionado acima para evitar scroll horizontal */}
-                                      {hasWarning && (
-                                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block z-[9999] whitespace-nowrap">
-                                          <div className="bg-gray-900 dark:bg-gray-700 text-white text-xs rounded-lg py-2 px-3 shadow-lg">
-                                            <div className="absolute top-full left-1/2 transform -translate-x-1/2">
-                                              <div className="border-4 border-transparent border-t-gray-900 dark:border-t-gray-700"></div>
-                                            </div>
-                                            Tags alteradas! Clique para atualizar.
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
-
-                                    {/* Botão Salvar Mapeamento */}
-                                    <button
-                                      onClick={() => handleSaveSpecificVirtualGroup(group.groupKey)}
-                                      disabled={!canSave || isCurrentlySaving}
-                                      className="p-1.5 text-gray-600 dark:text-gray-400 hover:text-green-600 dark:hover:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 disabled:text-gray-300 dark:disabled:text-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors"
-                                      title={`Salvar mapeamento ${detectedMode === 'pattern' ? 'padrão' : 'regex'}`}
-                                    >
-                                      {isCurrentlySaving ? (
-                                        <Loader2 className="animate-spin" size={18} />
-                                      ) : (
-                                        <Save size={18} />
-                                      )}
-                                    </button>
-                                  </>
-                                ) : (
-                                  <>
-                                    {/* Botão Aplicar com Badge de Alerta */}
-                                    <div className="relative group">
-                                      <button
-                                        onClick={() => handleApplyGroupToRecords(group.groupKey)}
-                                        disabled={!needsApply || isSaved}
-                                        className={`p-1.5 rounded-lg transition-colors ${
-                                          hasWarning
-                                            ? 'text-amber-500 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20'
-                                            : 'text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20'
-                                        } disabled:text-gray-300 dark:disabled:text-gray-600 disabled:cursor-not-allowed`}
-                                        title="Aplicar ao grupo"
-                                      >
-                                        <Copy size={18} />
-                                      </button>
-
-                                      {/* Badge de Alerta no Canto Superior Direito */}
-                                      {hasWarning && (
-                                        <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                                          <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
-                                        </span>
-                                      )}
-
-                                      {/* Tooltip - posicionado acima, alinhado à direita para evitar scroll */}
-                                      {hasWarning && (
-                                        <div className="absolute bottom-full right-0 mb-2 hidden group-hover:block z-[9999] whitespace-nowrap pointer-events-none">
-                                          <div className="bg-gray-900 dark:bg-gray-700 text-white text-xs rounded-lg py-2 px-3 shadow-lg">
-                                            Clique para aplicar alterações
-                                            <div className="absolute top-full right-2">
-                                              <div className="border-4 border-transparent border-t-gray-900 dark:border-t-gray-700"></div>
-                                            </div>
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
-
-                                    {/* Botão Salvar */}
-                                    <button
-                                      onClick={() => handleSaveGroup(group.groupKey)}
-                                      disabled={!canSave || isSaved || isCurrentlySaving}
-                                      className="p-1.5 text-gray-600 dark:text-gray-400 hover:text-green-600 dark:hover:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 disabled:text-gray-300 dark:disabled:text-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors"
-                                      title="Salvar grupo"
-                                    >
-                                      {isCurrentlySaving ? (
-                                        <Loader2 className="animate-spin" size={18} />
-                                      ) : isSaved ? (
-                                        <Check size={18} className="text-green-600 dark:text-green-400" />
-                                      ) : (
-                                        <Save size={18} />
-                                      )}
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-                            </td>
-
-                            {/* Detalhes - COMPACTA */}
-                            <td className="px-1 py-3 text-center whitespace-nowrap w-14">
-                              <button
-                                onClick={() => setDetailsModalGroup(group)}
-                                className="p-1.5 text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                                title="Ver detalhes"
-                              >
-                                <FileText size={18} />
-                              </button>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-
-                    {/* Rodapé com Totais e Paginação */}
-                    <tfoot className="bg-gray-50 dark:bg-gray-700 border-t-2 border-gray-300 dark:border-gray-600">
-                      <tr>
-                        <td colSpan={14} className="px-6 py-4">
-                          {/* Layout: Esquerda | Centro | Direita */}
-                          <div className="grid grid-cols-3 items-center gap-4">
-                            {/* ESQUERDA: Seletor de itens por página */}
-                            <div className="flex items-center gap-2 text-sm justify-start">
-                              <label className="text-gray-600 dark:text-gray-400">Grupos por página:</label>
-                              <select
-                                value={itemsPerPage}
-                                onChange={(e) => setItemsPerPage(Number(e.target.value))}
-                                className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                              >
-                                <option value={50}>50</option>
-                                <option value={100}>100</option>
-                                <option value={200}>200</option>
-                                <option value={500}>500</option>
-                                <option value={0}>Todos</option>
-                              </select>
-                            </div>
-
-                            {/* CENTRO: Informações de totais */}
-                            <div className="flex items-center justify-center gap-3 text-sm text-gray-600 dark:text-gray-400">
-                              <div>
-                                Mostrando <span className="font-semibold text-gray-900 dark:text-white">{paginatedGroups.length}</span> de <span className="font-semibold text-gray-900 dark:text-white">{groupedRecords.length}</span> {groupedRecords.length === 1 ? 'grupo' : 'grupos'}
-                              </div>
-                              <div className="h-4 w-px bg-gray-300 dark:bg-gray-600"></div>
-                              <div>
-                                <span className="font-semibold text-orange-600 dark:text-orange-400">{unsavedCount}</span> {unsavedCount === 1 ? 'pendente' : 'pendentes'} de categorização
-                              </div>
-                            </div>
-
-                            {/* DIREITA: Navegação de páginas */}
-                            <div className="flex items-center justify-end">
-                              {itemsPerPage > 0 && totalPages > 1 && (
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                                    disabled={currentPage === 1}
-                                    className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                  >
-                                    Anterior
-                                  </button>
-                                  <span className="text-sm text-gray-600 dark:text-gray-400">
-                                    Página <span className="font-semibold text-gray-900 dark:text-white">{currentPage}</span> de <span className="font-semibold text-gray-900 dark:text-white">{totalPages}</span>
-                                  </span>
-                                  <button
-                                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                                    disabled={currentPage === totalPages}
-                                    className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                  >
-                                    Próxima
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
+              <div className="border-t border-gray-100 px-4 py-3 dark:border-gray-700">
+                <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                  <label className={`${cadastroOptionLabelCls} min-w-0`}>
+                    <input
+                      type="checkbox"
+                      checked={globalCreateMapping}
+                      onChange={(e) => handleSetAllMappings(e.target.checked, activeCuradoriaTab)}
+                      className={`h-4 w-4 rounded ${cadastroAccentControlCls}`}
+                    />
+                    Marcar &quot;Criar mapeamento&quot; em todos os grupos desta aba
+                  </label>
+                  {hasAnyChanges ? (
+                    <button
+                      type="button"
+                      onClick={handleClearAllSelections}
+                      className="flex shrink-0 items-center gap-1.5 text-sm font-semibold transition-all hover:opacity-80"
+                      style={{ color: 'var(--color-1)' }}
+                    >
+                      <X size={14} /> Limpar seleções
+                    </button>
+                  ) : null}
                 </div>
+              </div>
 
+              <div className="space-y-3 p-4 pt-0">
+                {paginatedGroups.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-gray-500">
+                    {activeCuradoriaTab === 'receita'
+                      ? 'Nenhum grupo de receitas pendente.'
+                      : 'Nenhum grupo de despesas pendente.'}
+                  </p>
+                ) : (
+                  paginatedGroups.map((group, index) => {
+                    const isVirtualGroup = group.groupKey.startsWith('virtual_')
+                    const isSaved = savedGroups.has(group.groupKey)
+                    const isCurrentlySaving = isSaving === group.groupKey
+                    const createMappingChecked = isVirtualGroup
+                      ? (createMappings[group.groupKey] ?? globalCreateMapping)
+                      : (createMappings[group.groupKey] ?? false)
+                    const needsApply = groupsNeedingApply.has(group.groupKey)
+                    const dropdownsDisabled = isSaved
+                    const hasWarning = groupsWithWarning.has(group.groupKey)
+                    const lineNumber = (currentPage - 1) * itemsPerPage + index + 1
+
+                    return (
+                      <CuradoriaGroupCard
+                        key={group.groupKey}
+                        group={group}
+                        lineNumber={lineNumber}
+                        isSaved={isSaved}
+                        isCurrentlySaving={isCurrentlySaving}
+                        createMappingChecked={createMappingChecked}
+                        needsApply={needsApply}
+                        hasWarning={hasWarning}
+                        dropdownsDisabled={dropdownsDisabled}
+                        detectedMode={detectedMode}
+                        partners={partners}
+                        virtualGroupTag={virtualGroupTag}
+                        virtualGroupSubtag={virtualGroupSubtag}
+                        virtualReceitaTag={virtualReceitaTag}
+                        virtualReceitaSubtag={virtualReceitaSubtag}
+                        virtualGroupSharing={virtualGroupSharing}
+                        virtualGroupPercentage={virtualGroupPercentage}
+                        virtualReceitaSharing={virtualReceitaSharing}
+                        virtualReceitaPercentage={virtualReceitaPercentage}
+                        overwriteSharing={overwriteSharing}
+                        getFilteredTags={getFilteredTags}
+                        getFilteredSubtags={getFilteredSubtags}
+                        onGroupTagChange={handleGroupTagChange}
+                        onGroupSubtagChange={handleGroupSubtagChange}
+                        onGroupSharingChange={handleGroupSharingChange}
+                        onGroupPercentageChange={handleGroupPercentageChange}
+                        onToggleMapping={handleToggleMapping}
+                        onToggleOverwriteSharing={handleToggleOverwriteSharing}
+                        onApplyGroupToRecords={handleApplyGroupToRecords}
+                        onSaveGroup={handleSaveGroup}
+                        onSaveVirtualGroup={handleSaveSpecificVirtualGroup}
+                        onOpenDetails={setDetailsModalGroup}
+                        setVirtualGroupTag={setVirtualGroupTag}
+                        setVirtualGroupSubtag={setVirtualGroupSubtag}
+                        setVirtualReceitaTag={setVirtualReceitaTag}
+                        setVirtualReceitaSubtag={setVirtualReceitaSubtag}
+                        setVirtualGroupSharing={setVirtualGroupSharing}
+                        setVirtualGroupPercentage={setVirtualGroupPercentage}
+                        setVirtualReceitaSharing={setVirtualReceitaSharing}
+                        setVirtualReceitaPercentage={setVirtualReceitaPercentage}
+                        setOverwriteSharing={setOverwriteSharing}
+                        setHasAnyChanges={setHasAnyChanges}
+                        setGroupsNeedingApply={setGroupsNeedingApply}
+                        setGroupsWithWarning={setGroupsWithWarning}
+                      />
+                    )
+                  })
+                )}
               </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 px-4 py-3 text-sm dark:border-gray-700">
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-500">Por página</span>
+                  <select
+                    value={itemsPerPage}
+                    onChange={(e) => setItemsPerPage(Number(e.target.value))}
+                    className={cadastroFilterFieldCls}
+                  >
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                    <option value={200}>200</option>
+                    <option value={500}>500</option>
+                    <option value={0}>Todos</option>
+                  </select>
+                </div>
+                <span className="text-gray-600 dark:text-gray-400">
+                  {paginatedGroups.length} / {tabDisplayGroups.length} grupos nesta aba
+                </span>
+                {itemsPerPage > 0 && totalPages > 1 ? (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={currentPage === 1}
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      className="rounded-lg border border-gray-300 px-3 py-1 disabled:opacity-50 dark:border-gray-600"
+                    >
+                      Anterior
+                    </button>
+                    <span>
+                      {currentPage}/{totalPages}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={currentPage === totalPages}
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      className="rounded-lg border border-gray-300 px-3 py-1 disabled:opacity-50 dark:border-gray-600"
+                    >
+                      Próxima
+                    </button>
+                  </div>
+                ) : null}
               </div>
+            </div>
           )}
         </CadastroListPageBody>
       </CadastroListPageShell>
@@ -3023,9 +2504,6 @@ const CuradoriaPage = () => {
             setDetailsModalGroup(prev => prev ? { ...prev, records: updatedRecords } : null)
             // Marcar que houve mudanças
             setHasAnyChanges(true)
-          }}
-          onApply={() => {
-            showSuccess('Tags/subtags/compartilhamento sincronizados. Clique em "Salvar" para persistir no banco.')
           }}
         />
       )}
@@ -3071,17 +2549,45 @@ const CuradoriaPage = () => {
       )}
 
       {/* Barra Flutuante Back to Top */}
-      {showBackToTop && (
+      {(showBackToTop || (hasAnyChanges && savePendingCount > 0)) && (
         <FloatingFooterBar>
-          <div className="flex items-center justify-end">
-            <button
-              onClick={scrollToTop}
-              className="px-3 py-1.5 bg-color-primary text-white rounded-lg transition-colors flex items-center gap-1.5 hover:opacity-90 text-sm font-semibold"
-              title="Voltar ao topo"
-            >
-              <ArrowUp size={14} />
-              Voltar ao Topo
-            </button>
+          <div className="flex w-full flex-wrap items-center justify-between gap-3">
+            <span className="text-sm text-gray-600 dark:text-gray-400">
+              {savePendingCount > 0 ? (
+                <>
+                  <span className="font-semibold text-orange-600 dark:text-orange-400">{savePendingCount}</span>
+                  {' '}
+                  grupo(s) prontos para salvar
+                </>
+              ) : (
+                'Role a lista para ver mais grupos'
+              )}
+            </span>
+            <div className="flex items-center gap-2">
+              {hasAnyChanges && savePendingCount > 0 ? (
+                <button
+                  type="button"
+                  onClick={handleSaveAll}
+                  disabled={isSavingAll}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                  style={{ background: 'var(--color-create)', color: 'var(--on-color-create)' }}
+                >
+                  {isSavingAll ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
+                  Salvar todos ({savePendingCount})
+                </button>
+              ) : null}
+              {showBackToTop ? (
+                <button
+                  type="button"
+                  onClick={scrollToTop}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-color-primary px-3 py-1.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+                  title="Voltar ao topo"
+                >
+                  <ArrowUp size={14} />
+                  Topo
+                </button>
+              ) : null}
+            </div>
           </div>
         </FloatingFooterBar>
       )}

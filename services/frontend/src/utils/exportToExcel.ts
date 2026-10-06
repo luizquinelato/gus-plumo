@@ -618,3 +618,102 @@ export function exportToExcelSeparado(expenses: ExpenseExportData[], options: Ex
   }
 }
 
+// ─── Exportação de mapeamentos de transação ───────────────────────────────────
+
+export interface TransactionMappingExportItem {
+  id: number
+  mapping_type: string
+  original_description: string | null
+  pattern: string | null
+  regex_pattern: string | null
+  mapped_description: string | null
+  priority: number
+  subtag_type: string | null
+  tag_name: string | null
+  subtag_name: string | null
+  shared_partner_name: string | null
+  my_contribution_percentage: number | null
+  revenue_contribution_percentage: number | null
+  is_sensitive: boolean
+}
+
+export interface TransactionMappingExportOptions {
+  filterSummary?: string
+  searchTerm?: string
+}
+
+const mappingExportMatchLabel = (mappingType: string): string => {
+  if (mappingType === 'exact') return 'Exato'
+  if (mappingType === 'pattern') return 'Padrão'
+  return 'Regex'
+}
+
+const mappingExportPriorityLabel = (priority: number): string => {
+  if (priority === 0) return 'Alta'
+  if (priority === 1) return 'Média'
+  return 'Baixa'
+}
+
+const mappingExportCriterion = (item: TransactionMappingExportItem): string => {
+  if (item.is_sensitive) return '(conteúdo sensível)'
+  if (item.mapping_type === 'exact') return item.original_description ?? ''
+  if (item.mapping_type === 'pattern') return item.pattern ?? ''
+  return item.regex_pattern ?? ''
+}
+
+const mappingExportMappedDescription = (item: TransactionMappingExportItem): string => {
+  if (item.is_sensitive && item.mapped_description) return '(conteúdo sensível)'
+  return item.mapped_description ?? ''
+}
+
+const mappingExportContribution = (item: TransactionMappingExportItem): number | '' => {
+  const pct =
+    item.subtag_type === 'receita'
+      ? (item.revenue_contribution_percentage ?? item.my_contribution_percentage)
+      : item.my_contribution_percentage
+  if (pct == null || Number.isNaN(Number(pct))) return ''
+  return Number(pct)
+}
+
+export function exportTransactionMappingsToExcel(
+  items: TransactionMappingExportItem[],
+  options: TransactionMappingExportOptions = {},
+): void {
+  if (!items.length) return
+
+  const wb = XLSX.utils.book_new()
+  const now = new Date()
+
+  const rows = items.map((item) => ({
+    ID: item.id,
+    Match: mappingExportMatchLabel(item.mapping_type),
+    Critério: mappingExportCriterion(item),
+    Prioridade: mappingExportPriorityLabel(item.priority ?? 2),
+    'Descrição mapeada': mappingExportMappedDescription(item),
+    Tipo: item.subtag_type === 'receita' ? 'Receita' : 'Despesa',
+    Tag: item.tag_name ?? '',
+    Subtag: item.subtag_name ?? '',
+    'Conta parceira': item.shared_partner_name ?? '',
+    'Contribuição (%)': mappingExportContribution(item),
+    Sensível: item.is_sensitive ? 'Sim' : 'Não',
+  }))
+
+  const ws = XLSX.utils.json_to_sheet(rows)
+  XLSX.utils.book_append_sheet(wb, ws, 'Mapeamentos')
+
+  const metaRows: { Campo: string; Valor: string }[] = [
+    { Campo: 'Gerado em', Valor: now.toLocaleString('pt-BR') },
+    { Campo: 'Total', Valor: String(items.length) },
+  ]
+  if (options.filterSummary?.trim()) {
+    metaRows.push({ Campo: 'Filtros', Valor: options.filterSummary.trim() })
+  }
+  if (options.searchTerm?.trim()) {
+    metaRows.push({ Campo: 'Busca', Valor: options.searchTerm.trim() })
+  }
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(metaRows), 'Info')
+
+  const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
+  XLSX.writeFile(wb, `mapeamentos_${dateStr}_${items.length}.xlsx`)
+}
+

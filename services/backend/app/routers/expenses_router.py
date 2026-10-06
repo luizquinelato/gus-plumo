@@ -20,6 +20,7 @@ from app.services.account_period_closure_service import (
     AccountPeriodClosedError,
     ensure_period_open,
 )
+from app.services.mapping_remap_service import apply_mapping_remap, sort_mappings_for_remap
 import json
 import re
 from datetime import datetime
@@ -305,68 +306,118 @@ async def list_subtags(
     return result
 
 
+def _transaction_mapping_to_response(db: Session, mapping: TransactionMapping) -> TransactionMappingResponse:
+    subtag = db.query(Subtag).filter(Subtag.id == mapping.subtag_id).first()
+    tag = db.query(Tag).filter(Tag.id == subtag.tag_id).first() if subtag else None
+
+    expense_sharing = None
+    if mapping.expense_sharing_id:
+        expense_sharing = db.query(ExpenseSharingSetting).filter(
+            ExpenseSharingSetting.id == mapping.expense_sharing_id
+        ).first()
+
+    from app.utils.sensitive_mapping import MASK
+
+    original_desc = mapping.original_description
+    mapped_desc = mapping.mapped_description
+    pattern = mapping.pattern
+    regex_pattern = mapping.regex_pattern
+    if mapping.is_sensitive:
+        if original_desc:
+            original_desc = MASK
+        if mapped_desc:
+            mapped_desc = MASK
+        if pattern:
+            pattern = MASK
+        if regex_pattern:
+            regex_pattern = MASK
+
+    return TransactionMappingResponse(
+        id=mapping.id,
+        original_description=original_desc,
+        mapped_description=mapped_desc,
+        subtag_id=mapping.subtag_id,
+        subtag_name=subtag.name if subtag else None,
+        subtag_icon=subtag.icon if subtag else None,
+        subtag_type=subtag.type if subtag else None,
+        tag_name=tag.name if tag else None,
+        tag_icon=tag.icon if tag else None,
+        shared_partner_id=mapping.expense_sharing_id,
+        shared_partner_name=expense_sharing.shared_account.name if expense_sharing and expense_sharing.shared_account else None,
+        shared_partner_bank=expense_sharing.shared_account.bank.name if expense_sharing and expense_sharing.shared_account and expense_sharing.shared_account.bank else None,
+        shared_partner_agency=str(expense_sharing.shared_account.agency) if expense_sharing and expense_sharing.shared_account and expense_sharing.shared_account.agency else None,
+        shared_partner_account_number=str(expense_sharing.shared_account.account_number) if expense_sharing and expense_sharing.shared_account and expense_sharing.shared_account.account_number else None,
+        my_contribution_percentage=float(mapping.my_contribution_percentage) if mapping.my_contribution_percentage is not None else None,
+        revenue_contribution_percentage=float(mapping.revenue_contribution_percentage) if mapping.revenue_contribution_percentage is not None else None,
+        mapping_type=mapping.mapping_type,
+        pattern=pattern,
+        regex_pattern=regex_pattern,
+        priority=mapping.priority,
+        is_sensitive=mapping.is_sensitive,
+        created_at=mapping.created_at.isoformat() if mapping.created_at else None,
+        last_updated_at=mapping.last_updated_at.isoformat() if mapping.last_updated_at else None,
+    )
+
+
+def _parse_csv_ints(value: str | None) -> list[int]:
+    if not value or not value.strip():
+        return []
+    out: list[int] = []
+    for part in value.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            out.append(int(part))
+        except ValueError:
+            continue
+    return out
+
+
+def _parse_csv_strings(value: str | None) -> list[str]:
+    if not value or not value.strip():
+        return []
+    return [part.strip() for part in value.split(",") if part.strip()]
+
+
 @router.get("/mappings", response_model=List[TransactionMappingResponse])
 async def list_mappings(
+    tag_ids: str | None = None,
+    subtag_ids: str | None = None,
+    subtag_types: str | None = None,
+    mapping_types: str | None = None,
+    expense_sharing_ids: str | None = None,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_account)
+    current_user: dict = Depends(require_account),
 ):
-    """Lista todos os mapeamentos de transações da conta."""
+    """Lista mapeamentos da conta, com filtros opcionais (CSV = multi-select)."""
     account_id = current_user.get("account_id")
 
-    mappings = db.query(TransactionMapping).filter(
-        TransactionMapping.account_id == account_id
-    ).order_by(TransactionMapping.original_description).all()
+    parsed_tag_ids = _parse_csv_ints(tag_ids)
+    parsed_subtag_ids = _parse_csv_ints(subtag_ids)
+    parsed_subtag_types = _parse_csv_strings(subtag_types)
+    parsed_mapping_types = _parse_csv_strings(mapping_types)
+    parsed_sharing_ids = _parse_csv_ints(expense_sharing_ids)
 
-    # Adicionar informações de subtag, tag, parceiro e terceiro
-    result = []
-    for mapping in mappings:
-        subtag = db.query(Subtag).filter(Subtag.id == mapping.subtag_id).first()
-        tag = db.query(Tag).filter(Tag.id == subtag.tag_id).first() if subtag else None
+    query = db.query(TransactionMapping).filter(TransactionMapping.account_id == account_id)
 
-        # Buscar compartilhamento se existir
-        expense_sharing = None
-        if mapping.expense_sharing_id:
-            expense_sharing = db.query(ExpenseSharingSetting).filter(ExpenseSharingSetting.id == mapping.expense_sharing_id).first()
+    if parsed_subtag_ids:
+        query = query.filter(TransactionMapping.subtag_id.in_(parsed_subtag_ids))
+    if parsed_mapping_types:
+        query = query.filter(TransactionMapping.mapping_type.in_(parsed_mapping_types))
+    if parsed_sharing_ids:
+        query = query.filter(TransactionMapping.expense_sharing_id.in_(parsed_sharing_ids))
 
-        # Ofuscar original_description E mapped_description se for sensível
-        original_desc = mapping.original_description
-        mapped_desc = mapping.mapped_description
+    if parsed_tag_ids or parsed_subtag_types:
+        query = query.join(Subtag, TransactionMapping.subtag_id == Subtag.id)
+        query = query.filter(Subtag.account_id == account_id)
+        if parsed_tag_ids:
+            query = query.filter(Subtag.tag_id.in_(parsed_tag_ids))
+        if parsed_subtag_types:
+            query = query.filter(Subtag.type.in_(parsed_subtag_types))
 
-        if mapping.is_sensitive:
-            # Ofuscar original_description
-            if original_desc:
-                original_desc = "********"
-            # Ofuscar mapped_description
-            if mapped_desc:
-                mapped_desc = "********"
-
-        result.append(TransactionMappingResponse(
-            id=mapping.id,
-            original_description=original_desc,
-            mapped_description=mapped_desc,
-            subtag_id=mapping.subtag_id,
-            subtag_name=subtag.name if subtag else None,
-            subtag_icon=subtag.icon if subtag else None,  # ← ADICIONADO
-            subtag_type=subtag.type if subtag else None,
-            tag_name=tag.name if tag else None,
-            tag_icon=tag.icon if tag else None,  # ← ADICIONADO
-            shared_partner_id=mapping.expense_sharing_id,
-            shared_partner_name=expense_sharing.shared_account.name if expense_sharing and expense_sharing.shared_account else None,
-            shared_partner_bank=expense_sharing.shared_account.bank.name if expense_sharing and expense_sharing.shared_account and expense_sharing.shared_account.bank else None,
-            shared_partner_agency=str(expense_sharing.shared_account.agency) if expense_sharing and expense_sharing.shared_account and expense_sharing.shared_account.agency else None,
-            shared_partner_account_number=str(expense_sharing.shared_account.account_number) if expense_sharing and expense_sharing.shared_account and expense_sharing.shared_account.account_number else None,
-            my_contribution_percentage=float(mapping.my_contribution_percentage) if mapping.my_contribution_percentage is not None else None,
-            revenue_contribution_percentage=float(mapping.revenue_contribution_percentage) if mapping.revenue_contribution_percentage is not None else None,
-            mapping_type=mapping.mapping_type,
-            pattern=mapping.pattern,
-            regex_pattern=mapping.regex_pattern,
-            priority=mapping.priority,
-            is_sensitive=mapping.is_sensitive,
-            created_at=mapping.created_at.isoformat() if mapping.created_at else None,
-            last_updated_at=mapping.last_updated_at.isoformat() if mapping.last_updated_at else None
-        ))
-
-    return result
+    mappings = query.order_by(TransactionMapping.original_description).all()
+    return [_transaction_mapping_to_response(db, mapping) for mapping in mappings]
 
 
 @router.get("/mappings/{mapping_id}/reveal")
@@ -391,20 +442,34 @@ async def reveal_mapping(
     if not mapping.is_sensitive:
         return {
             "revealed_original": mapping.original_description,
-            "revealed_mapped": mapping.mapped_description
+            "revealed_mapped": mapping.mapped_description,
+            "revealed_pattern": mapping.pattern if mapping.mapping_type == "pattern" else None,
+            "revealed_regex": mapping.regex_pattern if mapping.mapping_type == "regex" else None,
         }
 
-    # Descriptografar os valores
-    from app.utils.crypto_helper import get_crypto_helper
-    crypto = get_crypto_helper()
+    from app.utils.sensitive_mapping import decrypt_field, decrypt_pattern_for_match, decrypt_regex_for_match
 
     try:
-        revealed_original = crypto.decrypt(mapping.original_description) if mapping.original_description else None
-        revealed_mapped = crypto.decrypt(mapping.mapped_description) if mapping.mapped_description else None
+        revealed_original = (
+            decrypt_field(mapping.original_description, True) if mapping.original_description else None
+        )
+        revealed_mapped = decrypt_field(mapping.mapped_description, True) if mapping.mapped_description else None
+        revealed_pattern = (
+            decrypt_pattern_for_match(mapping.pattern, True)
+            if mapping.mapping_type == "pattern" and mapping.pattern
+            else None
+        )
+        revealed_regex = (
+            decrypt_regex_for_match(mapping.regex_pattern, True)
+            if mapping.mapping_type == "regex" and mapping.regex_pattern
+            else None
+        )
 
         return {
             "revealed_original": revealed_original,
-            "revealed_mapped": revealed_mapped
+            "revealed_mapped": revealed_mapped,
+            "revealed_pattern": revealed_pattern,
+            "revealed_regex": revealed_regex,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao descriptografar: {str(e)}")
@@ -520,22 +585,32 @@ async def create_mapping(
     # Normalizar campos para lowercase (garantir busca case-insensitive)
     # NOTA: Salvamos em lowercase no banco para otimização, mas o MappingHelper
     # também aplica .lower() na busca (defesa em profundidade caso alguém edite direto no banco)
-    original_desc_normalized = mapping_data.original_description.lower() if mapping_data.original_description else None
-    pattern_normalized = mapping_data.pattern.lower() if mapping_data.pattern else None
+    from app.utils.sensitive_mapping import (
+        encrypt_field,
+        original_for_storage,
+        pattern_for_storage,
+        regex_for_storage,
+    )
 
-    # Criptografar original_description E mapped_description se for sensível
+    original_desc_normalized = (
+        original_for_storage(mapping_data.original_description, mapping_data.is_sensitive)
+        if mapping_data.mapping_type == "exact"
+        else None
+    )
+    pattern_normalized = (
+        pattern_for_storage(mapping_data.pattern, mapping_data.is_sensitive)
+        if mapping_data.mapping_type == "pattern"
+        else (mapping_data.pattern.lower() if mapping_data.pattern else None)
+    )
+    regex_pattern_stored = (
+        regex_for_storage(mapping_data.regex_pattern, mapping_data.is_sensitive)
+        if mapping_data.mapping_type == "regex"
+        else mapping_data.regex_pattern
+    )
+
     mapped_desc = mapping_data.mapped_description
-    if mapping_data.is_sensitive:
-        from app.utils.crypto_helper import get_crypto_helper
-        crypto = get_crypto_helper()
-
-        # Criptografar original_description (se existir)
-        if original_desc_normalized:
-            original_desc_normalized = crypto.encrypt(original_desc_normalized)
-
-        # Criptografar mapped_description
-        if mapped_desc:
-            mapped_desc = crypto.encrypt(mapped_desc)
+    if mapping_data.is_sensitive and mapped_desc:
+        mapped_desc = encrypt_field(mapped_desc)
 
     # Criar mapeamento (APENAS INSERE, NÃO ATUALIZA REGISTROS)
     new_mapping = TransactionMapping(
@@ -550,7 +625,7 @@ async def create_mapping(
         revenue_contribution_percentage=mapping_data.revenue_contribution_percentage,
         mapping_type=mapping_data.mapping_type,
         pattern=pattern_normalized,
-        regex_pattern=mapping_data.regex_pattern,
+        regex_pattern=regex_pattern_stored,
         priority=mapping_data.priority,
         is_sensitive=mapping_data.is_sensitive
     )
@@ -635,27 +710,33 @@ async def create_mapping(
 
         elif mapping_data.mapping_type == 'pattern' and new_mapping.pattern:
             # TIPO PADRÃO: Busca todos e testa se pattern está contido
-            pattern_lower = new_mapping.pattern.lower()
+            from app.utils.sensitive_mapping import decrypt_pattern_for_match
 
-            all_bank = db.query(BankStatement).filter(BankStatement.tenant_id == tenant_id).all()
-            all_cc = db.query(CreditCardInvoice).filter(CreditCardInvoice.tenant_id == tenant_id).all()
-            all_benefit = db.query(BenefitCardStatement).filter(BenefitCardStatement.tenant_id == tenant_id).all()
+            plain_pattern = decrypt_pattern_for_match(new_mapping.pattern, new_mapping.is_sensitive)
+            pattern_lower = plain_pattern.lower() if plain_pattern else None
+            if pattern_lower:
+                all_bank = db.query(BankStatement).filter(BankStatement.tenant_id == tenant_id).all()
+                all_cc = db.query(CreditCardInvoice).filter(CreditCardInvoice.tenant_id == tenant_id).all()
+                all_benefit = db.query(BenefitCardStatement).filter(BenefitCardStatement.tenant_id == tenant_id).all()
 
-            matching_bank_ids = [r.id for r in all_bank if r.description and pattern_lower in r.description.lower() and matches_type(r.amount)]
-            matching_cc_ids = [r.id for r in all_cc if r.description and pattern_lower in r.description.lower() and matches_type(r.amount)]
-            matching_benefit_ids = [r.id for r in all_benefit if r.description and pattern_lower in r.description.lower() and matches_type(r.amount)]
+                matching_bank_ids = [r.id for r in all_bank if r.description and pattern_lower in r.description.lower() and matches_type(r.amount)]
+                matching_cc_ids = [r.id for r in all_cc if r.description and pattern_lower in r.description.lower() and matches_type(r.amount)]
+                matching_benefit_ids = [r.id for r in all_benefit if r.description and pattern_lower in r.description.lower() and matches_type(r.amount)]
 
-            if matching_bank_ids:
-                db.query(BankStatement).filter(BankStatement.id.in_(matching_bank_ids)).update(update_values, synchronize_session=False)
-            if matching_cc_ids:
-                db.query(CreditCardInvoice).filter(CreditCardInvoice.id.in_(matching_cc_ids)).update(update_values, synchronize_session=False)
-            if matching_benefit_ids:
-                db.query(BenefitCardStatement).filter(BenefitCardStatement.id.in_(matching_benefit_ids)).update(update_values, synchronize_session=False)
+                if matching_bank_ids:
+                    db.query(BankStatement).filter(BankStatement.id.in_(matching_bank_ids)).update(update_values, synchronize_session=False)
+                if matching_cc_ids:
+                    db.query(CreditCardInvoice).filter(CreditCardInvoice.id.in_(matching_cc_ids)).update(update_values, synchronize_session=False)
+                if matching_benefit_ids:
+                    db.query(BenefitCardStatement).filter(BenefitCardStatement.id.in_(matching_benefit_ids)).update(update_values, synchronize_session=False)
 
         elif mapping_data.mapping_type == 'regex' and new_mapping.regex_pattern:
             # TIPO REGEX: Busca todos e testa regex
+            from app.utils.sensitive_mapping import decrypt_regex_for_match
+
+            plain_regex = decrypt_regex_for_match(new_mapping.regex_pattern, new_mapping.is_sensitive)
             try:
-                compiled_regex = re.compile(new_mapping.regex_pattern, re.IGNORECASE)
+                compiled_regex = re.compile(plain_regex or "", re.IGNORECASE)
 
                 all_bank = db.query(BankStatement).filter(BankStatement.tenant_id == tenant_id).all()
                 all_cc = db.query(CreditCardInvoice).filter(CreditCardInvoice.tenant_id == tenant_id).all()
@@ -942,8 +1023,8 @@ async def update_mapping(
         # Cenário 1: Não estava sensível e marca como sensível → criptografa
         if not old_is_sensitive and new_is_sensitive and original_desc:
             original_desc = crypto.encrypt(original_desc)
-
-        # Cenário 2: Estava sensível e desmarca → descriptografa o valor atual do banco
+        elif old_is_sensitive and new_is_sensitive and original_desc:
+            original_desc = crypto.encrypt(original_desc)
         elif old_is_sensitive and not new_is_sensitive:
             if mapping.original_description:
                 try:
@@ -959,12 +1040,10 @@ async def update_mapping(
     if 'mapped_description' in fields_set:
         mapped_desc = mapping_data.mapped_description
 
-        # Cenário 1: Estava sensível e continua sensível → mantém criptografado (não faz nada)
-        # Cenário 2: Não estava sensível e marca como sensível → criptografa
         if not old_is_sensitive and new_is_sensitive and mapped_desc:
             mapped_desc = crypto.encrypt(mapped_desc)
-
-        # Cenário 3: Estava sensível e desmarca → descriptografa o valor atual do banco
+        elif old_is_sensitive and new_is_sensitive and mapped_desc:
+            mapped_desc = crypto.encrypt(mapped_desc)
         elif old_is_sensitive and not new_is_sensitive:
             # Descriptografa o valor atual do banco (não o que veio do frontend)
             if mapping.mapped_description:
@@ -1008,11 +1087,31 @@ async def update_mapping(
     if 'mapping_type' in fields_set and mapping_data.mapping_type is not None:
         mapping.mapping_type = mapping_data.mapping_type
 
-    if 'pattern' in fields_set:
-        mapping.pattern = mapping_data.pattern.lower() if mapping_data.pattern else None
+    from app.utils.sensitive_mapping import resolve_pattern_update, resolve_regex_update
 
-    if 'regex_pattern' in fields_set:
-        mapping.regex_pattern = mapping_data.regex_pattern
+    if mapping.mapping_type == "pattern" and (
+        "pattern" in fields_set
+        or ("is_sensitive" in fields_set and mapping_data.is_sensitive is not None)
+    ):
+        mapping.pattern = resolve_pattern_update(
+            fields_set=fields_set,
+            mapping_data_pattern=mapping_data.pattern if "pattern" in fields_set else None,
+            stored_pattern=mapping.pattern,
+            old_is_sensitive=old_is_sensitive,
+            new_is_sensitive=new_is_sensitive,
+        )
+
+    if mapping.mapping_type == "regex" and (
+        "regex_pattern" in fields_set
+        or ("is_sensitive" in fields_set and mapping_data.is_sensitive is not None)
+    ):
+        mapping.regex_pattern = resolve_regex_update(
+            fields_set=fields_set,
+            mapping_data_regex=mapping_data.regex_pattern if "regex_pattern" in fields_set else None,
+            stored_regex=mapping.regex_pattern,
+            old_is_sensitive=old_is_sensitive,
+            new_is_sensitive=new_is_sensitive,
+        )
 
     if 'priority' in fields_set and mapping_data.priority is not None:
         mapping.priority = mapping_data.priority
@@ -1104,32 +1203,34 @@ async def update_mapping(
 
         elif mapping.mapping_type == 'pattern' and mapping.pattern:
             # TIPO PADRÃO: Busca todos e testa se pattern está contido (O(n))
-            pattern_lower = mapping.pattern.lower()
+            from app.utils.sensitive_mapping import decrypt_pattern_for_match
 
-            # Buscar todos os registros do tenant
-            all_bank = db.query(BankStatement).filter(BankStatement.tenant_id == tenant_id).all()
-            all_cc = db.query(CreditCardInvoice).filter(CreditCardInvoice.tenant_id == tenant_id).all()
-            all_benefit = db.query(BenefitCardStatement).filter(BenefitCardStatement.tenant_id == tenant_id).all()
+            plain_pattern = decrypt_pattern_for_match(mapping.pattern, mapping.is_sensitive)
+            pattern_lower = plain_pattern.lower() if plain_pattern else None
+            if pattern_lower:
+                all_bank = db.query(BankStatement).filter(BankStatement.tenant_id == tenant_id).all()
+                all_cc = db.query(CreditCardInvoice).filter(CreditCardInvoice.tenant_id == tenant_id).all()
+                all_benefit = db.query(BenefitCardStatement).filter(BenefitCardStatement.tenant_id == tenant_id).all()
 
-            # Filtrar IDs que batem com o pattern E com o tipo (receita/despesa)
-            matching_bank_ids = [r.id for r in all_bank if r.description and pattern_lower in r.description.lower() and matches_type(r.amount)]
-            matching_cc_ids = [r.id for r in all_cc if r.description and pattern_lower in r.description.lower() and matches_type(r.amount)]
-            matching_benefit_ids = [r.id for r in all_benefit if r.description and pattern_lower in r.description.lower() and matches_type(r.amount)]
+                matching_bank_ids = [r.id for r in all_bank if r.description and pattern_lower in r.description.lower() and matches_type(r.amount)]
+                matching_cc_ids = [r.id for r in all_cc if r.description and pattern_lower in r.description.lower() and matches_type(r.amount)]
+                matching_benefit_ids = [r.id for r in all_benefit if r.description and pattern_lower in r.description.lower() and matches_type(r.amount)]
 
-            # Atualizar em batch
-            if matching_bank_ids:
-                updated_bank = db.query(BankStatement).filter(BankStatement.id.in_(matching_bank_ids)).update(update_values, synchronize_session=False)
-            if matching_cc_ids:
-                updated_cc = db.query(CreditCardInvoice).filter(CreditCardInvoice.id.in_(matching_cc_ids)).update(update_values, synchronize_session=False)
-            if matching_benefit_ids:
-                updated_benefit = db.query(BenefitCardStatement).filter(BenefitCardStatement.id.in_(matching_benefit_ids)).update(update_values, synchronize_session=False)
+                if matching_bank_ids:
+                    updated_bank = db.query(BankStatement).filter(BankStatement.id.in_(matching_bank_ids)).update(update_values, synchronize_session=False)
+                if matching_cc_ids:
+                    updated_cc = db.query(CreditCardInvoice).filter(CreditCardInvoice.id.in_(matching_cc_ids)).update(update_values, synchronize_session=False)
+                if matching_benefit_ids:
+                    updated_benefit = db.query(BenefitCardStatement).filter(BenefitCardStatement.id.in_(matching_benefit_ids)).update(update_values, synchronize_session=False)
 
         elif mapping.mapping_type == 'regex' and mapping.regex_pattern:
             # TIPO REGEX: Busca todos e testa regex (O(n))
-            regex_pattern = mapping.regex_pattern
+            from app.utils.sensitive_mapping import decrypt_regex_for_match
+
+            regex_pattern = decrypt_regex_for_match(mapping.regex_pattern, mapping.is_sensitive)
 
             try:
-                compiled_regex = re.compile(regex_pattern, re.IGNORECASE)
+                compiled_regex = re.compile(regex_pattern or "", re.IGNORECASE)
 
                 # Buscar todos os registros do tenant
                 all_bank = db.query(BankStatement).filter(BankStatement.tenant_id == tenant_id).all()
@@ -1225,6 +1326,161 @@ class RemapOptionsRequest(BaseModel):
     skip_sharing_if_null: bool = True  # Por padrão, NÃO sobrescrever compartilhamento se mapeamento não tem
 
 
+class RemapAllResponse(BaseModel):
+    mappings_processed: int
+    mappings_failed: int
+    bank_statements: int
+    credit_card_invoices: int
+    benefit_statements: int
+    total_records_updated: int
+    errors: List[str] = []
+
+
+def _remap_options_for_mapping(mapping: TransactionMapping, options: RemapOptionsRequest) -> RemapOptionsRequest:
+    """Mapeamentos sem compartilhamento respeitam skip_sharing_if_null; com sharing, sempre aplicam."""
+    if mapping.expense_sharing_id is not None:
+        return RemapOptionsRequest(
+            skip_subtag_if_null=options.skip_subtag_if_null,
+            skip_sharing_if_null=False,
+        )
+    return options
+
+
+@router.post("/mappings/remap-all", response_model=RemapAllResponse)
+async def remap_all_mappings(
+    options: RemapOptionsRequest = None,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    """
+    Aplica todos os mapeamentos da conta às transações (extrato, fatura, benefício).
+    Ordem: regex → pattern → exact (exato por último, alinhado à prioridade da importação).
+    """
+    account_id = current_user.get("account_id")
+    tenant_id = current_user.get("tenant_id")
+
+    if options is None:
+        options = RemapOptionsRequest()
+
+    mappings = db.query(TransactionMapping).filter(
+        TransactionMapping.account_id == account_id
+    ).all()
+    ordered = sort_mappings_for_remap(mappings)
+
+    total_bank = 0
+    total_cc = 0
+    total_benefit = 0
+    processed = 0
+    failed = 0
+    errors: List[str] = []
+
+    for mapping in ordered:
+        try:
+            per_mapping_options = _remap_options_for_mapping(mapping, options)
+            bank, cc, benefit = apply_mapping_remap(
+                db, tenant_id, mapping, per_mapping_options, _mapping_apply_percentage
+            )
+            total_bank += bank
+            total_cc += cc
+            total_benefit += benefit
+            processed += 1
+        except HTTPException as e:
+            failed += 1
+            errors.append(f"Mapeamento #{mapping.id}: {e.detail}")
+        except Exception as e:
+            failed += 1
+            errors.append(f"Mapeamento #{mapping.id}: {str(e)}")
+
+    db.commit()
+
+    total = total_bank + total_cc + total_benefit
+    return RemapAllResponse(
+        mappings_processed=processed,
+        mappings_failed=failed,
+        bank_statements=total_bank,
+        credit_card_invoices=total_cc,
+        benefit_statements=total_benefit,
+        total_records_updated=total,
+        errors=errors,
+    )
+
+
+class ClearTransactionClassificationsResponse(BaseModel):
+    bank_statements: int
+    credit_card_invoices: int
+    benefit_statements: int
+    total_records_updated: int
+
+
+@router.post("/mappings/clear-transaction-classifications", response_model=ClearTransactionClassificationsResponse)
+async def clear_transaction_classifications(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    """
+    Remove subtag_id de extrato, fatura e benefício da conta logada.
+    Não apaga tags/subtags do cadastro nem os mapeamentos de transação.
+    """
+    account_id = current_user.get("account_id")
+    tenant_id = current_user.get("tenant_id")
+
+    updated_bank = (
+        db.query(BankStatement)
+        .filter(
+            BankStatement.tenant_id == tenant_id,
+            BankStatement.account_id == account_id,
+            BankStatement.subtag_id.isnot(None),
+        )
+        .update({"subtag_id": None}, synchronize_session=False)
+    )
+
+    updated_cc = (
+        db.query(CreditCardInvoice)
+        .filter(
+            CreditCardInvoice.tenant_id == tenant_id,
+            CreditCardInvoice.account_id == account_id,
+            CreditCardInvoice.subtag_id.isnot(None),
+        )
+        .update({"subtag_id": None}, synchronize_session=False)
+    )
+
+    benefit_ids = [
+        row[0]
+        for row in db.query(BenefitCardStatement.id)
+        .join(Cartao, BenefitCardStatement.credit_card_id == Cartao.id)
+        .filter(
+            BenefitCardStatement.tenant_id == tenant_id,
+            Cartao.account_id == account_id,
+            BenefitCardStatement.subtag_id.isnot(None),
+        )
+        .all()
+    ]
+    updated_benefit = 0
+    if benefit_ids:
+        updated_benefit = db.query(BenefitCardStatement).filter(
+            BenefitCardStatement.id.in_(benefit_ids)
+        ).update({"subtag_id": None}, synchronize_session=False)
+
+    db.commit()
+
+    total = updated_bank + updated_cc + updated_benefit
+    logger.info(
+        "Classificações removidas conta=%s tenant=%s: bank=%s cc=%s benefit=%s",
+        account_id,
+        tenant_id,
+        updated_bank,
+        updated_cc,
+        updated_benefit,
+    )
+
+    return ClearTransactionClassificationsResponse(
+        bank_statements=updated_bank,
+        credit_card_invoices=updated_cc,
+        benefit_statements=updated_benefit,
+        total_records_updated=total,
+    )
+
+
 @router.post("/mappings/{mapping_id}/remap", response_model=RemapSingleResponse)
 async def remap_single_mapping(
     mapping_id: int,
@@ -1259,141 +1515,10 @@ async def remap_single_mapping(
     if not mapping:
         raise HTTPException(status_code=404, detail="Mapeamento não encontrado")
 
-    updated_bank = 0
-    updated_cc = 0
-    updated_benefit = 0
-
-    # Buscar o tipo da subtag para filtrar por receita/despesa
-    subtag = db.query(Subtag).filter(Subtag.id == mapping.subtag_id).first()
-    subtag_type = subtag.type if subtag else 'despesa'
-    is_receita = subtag_type == 'receita'
-
-    # Valores a serem aplicados
-    update_values = {
-        'subtag_id': mapping.subtag_id
-    }
-
-    # Só atualiza compartilhamento se:
-    # 1. O mapeamento TEM compartilhamento definido, OU
-    # 2. O usuário NÃO marcou skip_sharing_if_null (ou seja, quer limpar mesmo)
-    if mapping.expense_sharing_id is not None or not options.skip_sharing_if_null:
-        update_values['expense_sharing_id'] = mapping.expense_sharing_id
-        update_values['ownership_percentage'] = _mapping_apply_percentage(db, mapping, is_receita)
-
-    # Função auxiliar para verificar se o registro é do tipo correto
-    def matches_type(amount) -> bool:
-        if amount is None:
-            return False
-        amount_float = float(amount)
-        return amount_float > 0 if is_receita else amount_float < 0
-
-    if mapping.mapping_type == 'exact':
-        # TIPO EXATO: Comparação direta (O(1) no banco)
-        search_description = mapping.original_description
-        if mapping.is_sensitive and search_description:
-            try:
-                search_description = crypto.decrypt(search_description)
-            except Exception as e:
-                logger.warning(f"Erro ao descriptografar original_description: {e}")
-                search_description = None
-
-        if search_description:
-            # Filtro base por descrição + tipo
-            base_filter_bank = [
-                BankStatement.tenant_id == tenant_id,
-                func.lower(BankStatement.description) == search_description.lower()
-            ]
-            base_filter_cc = [
-                CreditCardInvoice.tenant_id == tenant_id,
-                func.lower(CreditCardInvoice.description) == search_description.lower()
-            ]
-            base_filter_benefit = [
-                BenefitCardStatement.tenant_id == tenant_id,
-                func.lower(BenefitCardStatement.description) == search_description.lower()
-            ]
-
-            # Adicionar filtro por tipo
-            if is_receita:
-                base_filter_bank.append(BankStatement.amount > 0)
-                base_filter_cc.append(CreditCardInvoice.amount > 0)
-                base_filter_benefit.append(BenefitCardStatement.amount > 0)
-            else:
-                base_filter_bank.append(BankStatement.amount < 0)
-                base_filter_cc.append(CreditCardInvoice.amount < 0)
-                base_filter_benefit.append(BenefitCardStatement.amount < 0)
-
-            updated_bank = db.query(BankStatement).filter(*base_filter_bank).update(update_values, synchronize_session=False)
-            updated_cc = db.query(CreditCardInvoice).filter(*base_filter_cc).update(update_values, synchronize_session=False)
-            updated_benefit = db.query(BenefitCardStatement).filter(*base_filter_benefit).update(update_values, synchronize_session=False)
-
-    elif mapping.mapping_type == 'pattern' and mapping.pattern:
-        # TIPO PADRÃO: Busca com LIKE %pattern%
-        pattern_lower = mapping.pattern.lower()
-        like_pattern = f'%{pattern_lower}%'
-
-        # Filtro base por padrão + tipo
-        base_filter_bank = [
-            BankStatement.tenant_id == tenant_id,
-            func.lower(BankStatement.description).like(like_pattern)
-        ]
-        base_filter_cc = [
-            CreditCardInvoice.tenant_id == tenant_id,
-            func.lower(CreditCardInvoice.description).like(like_pattern)
-        ]
-        base_filter_benefit = [
-            BenefitCardStatement.tenant_id == tenant_id,
-            func.lower(BenefitCardStatement.description).like(like_pattern)
-        ]
-
-        # Adicionar filtro por tipo
-        if is_receita:
-            base_filter_bank.append(BankStatement.amount > 0)
-            base_filter_cc.append(CreditCardInvoice.amount > 0)
-            base_filter_benefit.append(BenefitCardStatement.amount > 0)
-        else:
-            base_filter_bank.append(BankStatement.amount < 0)
-            base_filter_cc.append(CreditCardInvoice.amount < 0)
-            base_filter_benefit.append(BenefitCardStatement.amount < 0)
-
-        updated_bank = db.query(BankStatement).filter(*base_filter_bank).update(update_values, synchronize_session=False)
-        updated_cc = db.query(CreditCardInvoice).filter(*base_filter_cc).update(update_values, synchronize_session=False)
-        updated_benefit = db.query(BenefitCardStatement).filter(*base_filter_benefit).update(update_values, synchronize_session=False)
-
-    elif mapping.mapping_type == 'regex' and mapping.regex_pattern:
-        # TIPO REGEX: Usa operador ~* do PostgreSQL para busca direta
-        regex_pattern = mapping.regex_pattern
-
-        try:
-            # Usar operador regex do PostgreSQL (~* = case insensitive)
-            base_filter_bank = [
-                BankStatement.tenant_id == tenant_id,
-                BankStatement.description.op('~*')(regex_pattern)
-            ]
-            base_filter_cc = [
-                CreditCardInvoice.tenant_id == tenant_id,
-                CreditCardInvoice.description.op('~*')(regex_pattern)
-            ]
-            base_filter_benefit = [
-                BenefitCardStatement.tenant_id == tenant_id,
-                BenefitCardStatement.description.op('~*')(regex_pattern)
-            ]
-
-            # Adicionar filtro por tipo
-            if is_receita:
-                base_filter_bank.append(BankStatement.amount > 0)
-                base_filter_cc.append(CreditCardInvoice.amount > 0)
-                base_filter_benefit.append(BenefitCardStatement.amount > 0)
-            else:
-                base_filter_bank.append(BankStatement.amount < 0)
-                base_filter_cc.append(CreditCardInvoice.amount < 0)
-                base_filter_benefit.append(BenefitCardStatement.amount < 0)
-
-            updated_bank = db.query(BankStatement).filter(*base_filter_bank).update(update_values, synchronize_session=False)
-            updated_cc = db.query(CreditCardInvoice).filter(*base_filter_cc).update(update_values, synchronize_session=False)
-            updated_benefit = db.query(BenefitCardStatement).filter(*base_filter_benefit).update(update_values, synchronize_session=False)
-        except Exception as e:
-            logger.warning(f"Erro ao executar regex '{regex_pattern}': {e}")
-            raise HTTPException(status_code=400, detail=f"Expressão regex inválida: {str(e)}")
+    per_mapping_options = _remap_options_for_mapping(mapping, options)
+    updated_bank, updated_cc, updated_benefit = apply_mapping_remap(
+        db, tenant_id, mapping, per_mapping_options, _mapping_apply_percentage
+    )
 
     db.commit()
 
@@ -1722,6 +1847,20 @@ async def update_subtag(
         subtag.type = subtag_data.type
     if subtag_data.icon is not None:
         subtag.icon = subtag_data.icon
+
+    # Conflito de nome/tipo dentro da tag (ex.: mover subtag para outra tag)
+    duplicate = db.query(Subtag).filter(
+        Subtag.account_id == account_id,
+        Subtag.tag_id == subtag.tag_id,
+        Subtag.name == subtag.name,
+        Subtag.type == subtag.type,
+        Subtag.id != subtag_id,
+    ).first()
+    if duplicate:
+        raise HTTPException(
+            status_code=400,
+            detail="Já existe uma subtag com esse nome e tipo nesta tag",
+        )
 
     db.commit()
     db.refresh(subtag)

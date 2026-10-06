@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react'
+import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
 import BulkSelectCheckbox from './BulkSelectCheckbox'
 import type { HeaderCheckState } from './BulkSelectCheckbox'
 
@@ -307,6 +308,54 @@ export function ListTableStaticHeader({
       className={`px-4 py-3 text-left align-middle text-[11px] font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300 ${className}`.trim()}
     >
       {label}
+    </th>
+  )
+}
+
+export type ListTableSortDirection = 'asc' | 'desc'
+
+export function ListTableSortableHeader({
+  label,
+  className = '',
+  align = 'left',
+  active,
+  direction,
+  onToggle,
+  title,
+}: {
+  label: string
+  className?: string
+  align?: 'left' | 'center' | 'right'
+  active: boolean
+  direction: ListTableSortDirection
+  onToggle: () => void
+  title?: string
+}) {
+  const alignCls =
+    align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left'
+  const flexCls =
+    align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : 'justify-start'
+
+  return (
+    <th
+      scope="col"
+      title={title ?? label}
+      aria-sort={active ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+      className={`cursor-pointer select-none px-4 py-3 align-middle text-[11px] font-semibold uppercase tracking-wider text-gray-600 transition-colors hover:bg-gray-200/80 dark:text-gray-300 dark:hover:bg-gray-700/50 ${alignCls} ${className}`.trim()}
+      onClick={onToggle}
+    >
+      <span className={`inline-flex items-center gap-1 ${flexCls}`}>
+        {label}
+        {active ? (
+          direction === 'asc' ? (
+            <ArrowUp size={14} className="shrink-0 text-[var(--color-1)]" aria-hidden />
+          ) : (
+            <ArrowDown size={14} className="shrink-0 text-[var(--color-1)]" aria-hidden />
+          )
+        ) : (
+          <ArrowUpDown size={14} className="shrink-0 text-gray-400 opacity-60" aria-hidden />
+        )}
+      </span>
     </th>
   )
 }

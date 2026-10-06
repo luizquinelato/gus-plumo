@@ -243,7 +243,7 @@ const BatchEditExpenseModal = ({ isOpen, onClose, selectedItems, expenseType, on
         />
       )}
 
-      <CadastroModalShell maxWidth="max-w-2xl" onBackdropClick={onClose}>
+      <CadastroModalShell maxWidth="max-w-2xl">
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           {isLoadingData && (
             <div className="absolute inset-0 z-50 flex items-center justify-center rounded-xl bg-white/80 backdrop-blur-sm dark:bg-gray-800/80">

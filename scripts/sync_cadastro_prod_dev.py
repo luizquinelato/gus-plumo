@@ -1,4 +1,4 @@
-code#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Copia cadastros entre PROD e DEV (upsert). Opcionalmente copia lançamentos de fatura
 (`credit_card_invoices`) e de benefícios (`benefit_card_statements`) com FKs remapeadas.

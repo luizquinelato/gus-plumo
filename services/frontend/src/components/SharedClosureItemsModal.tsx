@@ -22,6 +22,12 @@ import {
   getSettlementCreditSignedForViewer,
   signedLoanFieldValue,
 } from '../utils/closureCreditUtils'
+import {
+  computeClosureBalanceBySource,
+  type ClosureSourceBalanceRow,
+  type ClosureSourceKey,
+} from '../utils/closureBalanceBySource'
+import type { SourceMovementTotals } from '../utils/closureRecalcDiff'
 
 const headCls =
   'bg-gray-100 dark:bg-gray-800/80 [&_th]:border-b-2 [&_th]:border-gray-200 dark:[&_th]:border-gray-600'
@@ -152,7 +158,7 @@ function FlowSummaryTable({ receitas, despesas }: { receitas: Totals; despesas: 
   )
 }
 
-function ItemsTable({ items, showCard }: { items: any[]; showCard: boolean }) {
+export function ItemsTable({ items, showCard }: { items: any[]; showCard: boolean }) {
   const [dateSort, setDateSort] = useState<DateSortDirection>('desc')
   const sortedItems = useMemo(
     () =>
@@ -253,6 +259,295 @@ function ItemsTable({ items, showCard }: { items: any[]; showCard: boolean }) {
             <td className={`${footTdCls} text-center text-gray-500 dark:text-gray-400`}>—</td>
             <td className={`${footTdCls} text-right tabular-nums ${moneyCls(totals.mine)}`}>{formatSigned(totals.mine)}</td>
             <td className={`${footTdCls} text-right tabular-nums ${moneyCls(totals.partner)}`}>{formatSigned(totals.partner)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  )
+}
+
+function tagLabel(item: Record<string, unknown>) {
+  if (!item.tag_name && !item.subtag_name) return '—'
+  return `${item.tag_name ?? ''}${item.subtag_name ? ` > ${item.subtag_name}` : ''}`
+}
+
+export function AlteredClosureItemsTable({
+  rows,
+}: {
+  rows: Array<{
+    key: string
+    source_label: string
+    before: Record<string, unknown>
+    after: Record<string, unknown>
+  }>
+}) {
+  const [dateSort, setDateSort] = useState<DateSortDirection>('desc')
+  const sorted = useMemo(
+    () =>
+      sortRowsByDate(
+        rows,
+        (row) => String(row.after.date ?? row.before.date ?? ''),
+        dateSort,
+        (a, b) => a.key.localeCompare(b.key),
+      ),
+    [rows, dateSort],
+  )
+
+  if (rows.length === 0) {
+    return <p className="px-3 py-4 text-center text-sm text-gray-500">Nenhum lançamento alterado.</p>
+  }
+
+  const deParaSubTh = `${thLeftCls} !text-[10px] !font-semibold !normal-case !tracking-normal text-gray-500 dark:text-gray-400`
+  const deParaSubThR = `${thRightCls} !text-[10px] !font-semibold !normal-case !tracking-normal text-gray-500 dark:text-gray-400`
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[1280px] text-sm">
+        <thead className={headCls}>
+          <tr>
+            <th className={`${thCenterCls} w-12`} rowSpan={2}>
+              #
+            </th>
+            <th className={thLeftCls} rowSpan={2}>
+              Tipo
+            </th>
+            <th className={`${thLeftCls} align-bottom`} rowSpan={2}>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 hover:text-[var(--color-1)]"
+                onClick={() => setDateSort((prev) => toggleDateSortDirection(prev))}
+              >
+                Data
+                {dateSort === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
+              </button>
+            </th>
+            <th className={`${thLeftCls} text-center`} colSpan={2}>
+              Descrição
+            </th>
+            <th className={`${thRightCls} text-center`} colSpan={2}>
+              Valor total
+            </th>
+            <th className={`${thLeftCls} text-center`} colSpan={2}>
+              Tag / subtag
+            </th>
+            <th className={`${thCenterCls} text-center`} colSpan={2}>
+              %
+            </th>
+            <th className={`${thCenterCls} text-center`} colSpan={2}>
+              Parcelas
+            </th>
+          </tr>
+          <tr>
+            <th className={deParaSubTh}>De</th>
+            <th className={deParaSubTh}>Para</th>
+            <th className={deParaSubThR}>De</th>
+            <th className={deParaSubThR}>Para</th>
+            <th className={deParaSubTh}>De</th>
+            <th className={deParaSubTh}>Para</th>
+            <th className={deParaSubTh}>De</th>
+            <th className={deParaSubTh}>Para</th>
+            <th className={deParaSubTh}>De</th>
+            <th className={deParaSubTh}>Para</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((row, index) => {
+            const b = row.before
+            const a = row.after
+            const bAmt = parseFloat(String(b.amount ?? 0))
+            const aAmt = parseFloat(String(a.amount ?? 0))
+            const bPct = parseFloat(String(b.my_contribution_percentage ?? 0))
+            const aPct = parseFloat(String(a.my_contribution_percentage ?? 0))
+            const bInst =
+              b.current_installment && b.total_installments
+                ? `${b.current_installment}/${b.total_installments}`
+                : '—'
+            const aInst =
+              a.current_installment && a.total_installments
+                ? `${a.current_installment}/${a.total_installments}`
+                : '—'
+            const cellChanged = (changed: boolean) =>
+              changed ? 'bg-amber-50/80 dark:bg-amber-900/15' : ''
+
+            const descChanged = String(b.description ?? '') !== String(a.description ?? '')
+            const tagChanged = tagLabel(b) !== tagLabel(a)
+            const amtChanged = Math.abs(bAmt - aAmt) > 0.005
+            const pctChanged = Math.abs(bPct - aPct) > 0.05
+            const instChanged = bInst !== aInst
+
+            return (
+              <tr key={row.key} className={listPageTableRowHoverCls}>
+                <td className={`${tdCls} text-center text-sm text-gray-500 dark:text-gray-400`}>{index + 1}</td>
+                <td className={`${tdCls} text-gray-700 dark:text-gray-200`}>{row.source_label}</td>
+                <td className={`${tdCls} whitespace-nowrap text-gray-600 dark:text-gray-400`}>
+                  {formatItemDate(String(a.date ?? b.date ?? ''))}
+                </td>
+                <td className={`${tdCls} text-gray-600 dark:text-gray-400 ${cellChanged(descChanged)}`}>
+                  {String(b.description ?? '—')}
+                </td>
+                <td className={`${tdCls} font-medium text-gray-900 dark:text-white ${cellChanged(descChanged)}`}>
+                  {String(a.description ?? '—')}
+                </td>
+                <td className={`${tdCls} text-right tabular-nums ${moneyCls(bAmt)} ${cellChanged(amtChanged)}`}>
+                  {formatSigned(bAmt)}
+                </td>
+                <td className={`${tdCls} text-right tabular-nums font-semibold ${moneyCls(aAmt)} ${cellChanged(amtChanged)}`}>
+                  {formatSigned(aAmt)}
+                </td>
+                <td className={`${tdCls} text-gray-500 dark:text-gray-400 ${cellChanged(tagChanged)}`}>{tagLabel(b)}</td>
+                <td className={`${tdCls} text-gray-800 dark:text-gray-200 ${cellChanged(tagChanged)}`}>{tagLabel(a)}</td>
+                <td className={`${tdCls} text-center tabular-nums text-gray-600 dark:text-gray-400 ${cellChanged(pctChanged)}`}>
+                  {bPct.toFixed(0)}%
+                </td>
+                <td className={`${tdCls} text-center tabular-nums font-medium text-gray-800 dark:text-gray-200 ${cellChanged(pctChanged)}`}>
+                  {aPct.toFixed(0)}%
+                </td>
+                <td className={`${tdCls} text-center text-gray-500 dark:text-gray-400 ${cellChanged(instChanged)}`}>{bInst}</td>
+                <td className={`${tdCls} text-center text-gray-800 dark:text-gray-200 ${cellChanged(instChanged)}`}>{aInst}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function sourceMeta(key: ClosureSourceKey) {
+  return SOURCES.find((s) => s.key === key)!
+}
+
+function formatQty(n: number) {
+  if (n === 0) return '—'
+  return String(n)
+}
+
+function SourceSummaryDeltaTable({
+  savedRows,
+  proposedRows,
+  movementBySource,
+  expectedNewCount,
+  expectedRemovedCount,
+}: {
+  savedRows: ClosureSourceBalanceRow[]
+  proposedRows: ClosureSourceBalanceRow[]
+  movementBySource?: Record<ClosureSourceKey, SourceMovementTotals>
+  expectedNewCount?: number
+  expectedRemovedCount?: number
+}) {
+  const totalViewerDelta = proposedRows.reduce((acc, row, index) => {
+    const saved = savedRows[index]
+    return acc + (row.viewerNet - saved.viewerNet)
+  }, 0)
+
+  let totalNewQtd = 0
+  let totalRemovedQtd = 0
+  if (movementBySource) {
+    for (const key of Object.keys(movementBySource) as ClosureSourceKey[]) {
+      const mov = movementBySource[key]
+      totalNewQtd += mov.newCount
+      totalRemovedQtd += mov.removedCount
+    }
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-[960px] w-full text-sm">
+        <thead className={headCls}>
+          <tr>
+            <th className={thLeftCls} rowSpan={2}>
+              Tipo
+            </th>
+            <th className={`${thCenterCls} border-b border-gray-200 dark:border-gray-600`} colSpan={2}>
+              Novos (qtd)
+            </th>
+            <th className={`${thCenterCls} border-b border-gray-200 dark:border-gray-600`} colSpan={2}>
+              Removidos (qtd)
+            </th>
+            <th className={`${thCenterCls} border-b border-gray-200 dark:border-gray-600`} colSpan={2}>
+              Δ no seu saldo (R$)
+            </th>
+            <th className={`${thCenterCls} border-b border-gray-200 dark:border-gray-600`} colSpan={3}>
+              Fechamento salvo → proposta (R$)
+            </th>
+          </tr>
+          <tr>
+            <th className={thRightCls}>Sua conta</th>
+            <th className={thRightCls}>Contraparte</th>
+            <th className={thRightCls}>Sua conta</th>
+            <th className={thRightCls}>Contraparte</th>
+            <th className={thRightCls}>Novos</th>
+            <th className={thRightCls}>Removidos</th>
+            <th className={thRightCls}>Δ sua conta</th>
+            <th className={thRightCls}>Δ contraparte</th>
+            <th className={thRightCls}>Δ no saldo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {proposedRows.map((row, index) => {
+            const saved = savedRows[index]
+            const meta = sourceMeta(row.key)
+            const mov = movementBySource?.[row.key]
+            const deltaMyAccount = row.myAccountNet - saved.myAccountNet
+            const deltaPartner = row.partnerAccountNet - saved.partnerAccountNet
+            const deltaViewer = row.viewerNet - saved.viewerNet
+            return (
+              <tr key={row.key}>
+                <td className={`${tdCls} font-medium text-gray-700 dark:text-gray-200`}>
+                  <span className="inline-flex items-center gap-2">
+                    {meta.icon}
+                    {meta.label}
+                  </span>
+                </td>
+                <td className={`${tdCls} text-right tabular-nums font-semibold text-gray-800 dark:text-gray-100`}>
+                  {formatQty(mov?.newCountMine ?? 0)}
+                </td>
+                <td className={`${tdCls} text-right tabular-nums font-semibold text-gray-800 dark:text-gray-100`}>
+                  {formatQty(mov?.newCountOther ?? 0)}
+                </td>
+                <td className={`${tdCls} text-right tabular-nums font-semibold text-gray-800 dark:text-gray-100`}>
+                  {formatQty(mov?.removedCountMine ?? 0)}
+                </td>
+                <td className={`${tdCls} text-right tabular-nums font-semibold text-gray-800 dark:text-gray-100`}>
+                  {formatQty(mov?.removedCountOther ?? 0)}
+                </td>
+                <MoneyCell value={mov?.newImpact ?? 0} bold blankZero />
+                <MoneyCell value={mov?.removedImpact ?? 0} bold blankZero />
+                <MoneyCell value={deltaMyAccount} bold blankZero />
+                <MoneyCell value={deltaPartner} bold blankZero />
+                <MoneyCell value={deltaViewer} bold blankZero />
+              </tr>
+            )
+          })}
+        </tbody>
+        <tfoot className={footCls}>
+          <tr>
+            <td className={`${footTdCls} text-gray-800 dark:text-gray-100`}>Totais (qtd)</td>
+            <td colSpan={2} className={`${footTdCls} text-right tabular-nums text-gray-700 dark:text-gray-200`}>
+              {totalNewQtd}
+              {expectedNewCount != null && totalNewQtd !== expectedNewCount ? (
+                <span className="ml-1 text-xs text-amber-600 dark:text-amber-400">
+                  (scorecard: {expectedNewCount})
+                </span>
+              ) : null}
+            </td>
+            <td colSpan={2} className={`${footTdCls} text-right tabular-nums text-gray-700 dark:text-gray-200`}>
+              {totalRemovedQtd}
+              {expectedRemovedCount != null && totalRemovedQtd !== expectedRemovedCount ? (
+                <span className="ml-1 text-xs text-amber-600 dark:text-amber-400">
+                  (scorecard: {expectedRemovedCount})
+                </span>
+              ) : null}
+            </td>
+            <td colSpan={5} />
+          </tr>
+          <tr>
+            <td colSpan={9} className={`${footTdCls} text-gray-800 dark:text-gray-100`}>
+              Soma Δ no saldo (itens)
+            </td>
+            <td className={`${footTdCls} text-right tabular-nums ${moneyCls(totalViewerDelta)}`}>
+              {formatSigned(totalViewerDelta)}
+            </td>
           </tr>
         </tfoot>
       </table>
@@ -666,23 +961,8 @@ function LoansTable({ loans, isPartnerView }: { loans: any[]; isPartnerView: boo
   )
 }
 
-export default function SharedClosureItemsModal({
-  closure,
-  items,
-  loanPayments,
-  isPartnerView,
-  onClose,
-}: {
-  closure: any
-  items: any[]
-  loanPayments: any[]
-  isPartnerView: boolean
-  onClose: () => void
-}) {
-  const [activeTab, setActiveTab] = useState<TabKey>('geral')
-  const regularLoans = filterRegularLoanPayments(loanPayments)
-
-  const bySource = useMemo(() => SOURCES.map((source) => {
+export function closureItemsBySource(items: any[]) {
+  return SOURCES.map((source) => {
     const sourceItems = items.filter((item) => item.source_type === source.sourceType)
     const receitas = sourceItems.filter((item) => parseFloat(String(item.amount)) >= 0)
     const despesas = sourceItems.filter((item) => parseFloat(String(item.amount)) < 0)
@@ -693,37 +973,85 @@ export default function SharedClosureItemsModal({
       despesas,
       totals: sumItems(sourceItems),
     }
-  }), [items])
+  })
+}
 
+function useClosureItemsBySource(items: any[]) {
+  return useMemo(() => closureItemsBySource(items), [items])
+}
+
+export function SharedClosureItemsTabs({
+  items,
+  activeTab,
+  onTabChange,
+}: {
+  items: any[]
+  activeTab: TabKey
+  onTabChange: (tab: TabKey) => void
+}) {
+  const bySource = useClosureItemsBySource(items)
   const visibleSources = bySource.filter((source) => source.items.length > 0)
+  return (
+    <CadastroListPageTabs<TabKey>
+      tabs={[
+        { key: 'geral', label: 'Geral', icon: <Scale size={14} /> },
+        ...visibleSources.map((source) => ({
+          key: source.key,
+          label: source.label,
+          icon: source.icon,
+          count: source.items.length,
+        })),
+      ]}
+      active={activeTab}
+      onChange={onTabChange}
+    />
+  )
+}
+
+export function SharedClosureItemsView({
+  closure,
+  items,
+  loanPayments,
+  isPartnerView,
+  intro,
+  activeTab,
+  hideClosureBalanceSection = false,
+  compareSavedClosureData,
+  recalcMovementBySource,
+  recalcExpectedNewCount,
+  recalcExpectedRemovedCount,
+}: {
+  closure: any
+  items: any[]
+  loanPayments: any[]
+  isPartnerView: boolean
+  intro?: ReactNode
+  activeTab: TabKey
+  /** Recálculo: saldo já exibido no bloco comparativo acima */
+  hideClosureBalanceSection?: boolean
+  /** Recálculo: Δ por tipo com a mesma regra do balanço compartilhado */
+  compareSavedClosureData?: Record<string, unknown>
+  recalcMovementBySource?: Record<ClosureSourceKey, SourceMovementTotals>
+  recalcExpectedNewCount?: number
+  recalcExpectedRemovedCount?: number
+}) {
+  const regularLoans = filterRegularLoanPayments(loanPayments)
+  const bySource = useClosureItemsBySource(items)
+  const proposedBalanceBySource = useMemo(
+    () =>
+      compareSavedClosureData
+        ? computeClosureBalanceBySource(closure?.closure_data, isPartnerView)
+        : [],
+    [compareSavedClosureData, closure?.closure_data, isPartnerView],
+  )
+  const savedBalanceBySource = useMemo(
+    () => (compareSavedClosureData ? computeClosureBalanceBySource(compareSavedClosureData, isPartnerView) : []),
+    [compareSavedClosureData, isPartnerView],
+  )
   const activeSource = activeTab === 'geral' ? null : bySource.find((source) => source.key === activeTab) ?? null
 
   return (
-    <CadastroModalShell maxWidth="max-w-[95vw] xl:max-w-[90rem]" maxHeight="max-h-[90vh]" zClass="z-50">
-      <CadastroModalHeader
-        isEdit={false}
-        title={`Itens do Fechamento - ${String(closure.month).padStart(2, '0')}/${closure.year}`}
-        subtitle={`${items.length} itens • ${formatDateTimeBR(closure.period_start_date)} a ${formatDateTimeBR(closure.closing_date)}`}
-        onClose={onClose}
-        icon={<Receipt size={18} />}
-      />
-      <CadastroModalBody
-        chrome={
-          <CadastroListPageTabs<TabKey>
-            tabs={[
-              { key: 'geral', label: 'Geral', icon: <Scale size={14} /> },
-              ...visibleSources.map((source) => ({
-                key: source.key,
-                label: source.label,
-                icon: source.icon,
-                count: source.items.length,
-              })),
-            ]}
-            active={activeTab}
-            onChange={setActiveTab}
-          />
-        }
-      >
+    <>
         {activeSource ? (
           activeSource.key === 'card' ? (
             <CardSourceTabContent
@@ -750,16 +1078,38 @@ export default function SharedClosureItemsModal({
           )
         ) : (
           <>
+            {intro}
+            {!hideClosureBalanceSection && (
+              <CadastroFormSection
+                title="Saldo do fechamento"
+                hint="Valores gravados no fechamento, na perspectiva da conta logada."
+                icon={<Scale size={14} />}
+                bodyClassName="p-0"
+              >
+                <ClosureBalanceTable closure={closure} isPartnerView={isPartnerView} />
+              </CadastroFormSection>
+            )}
             <CadastroFormSection
-              title="Saldo do fechamento"
-              hint="Valores gravados no fechamento, na perspectiva da conta logada."
-              icon={<Scale size={14} />}
+              title={compareSavedClosureData ? 'Variação por tipo' : 'Resumo por tipo'}
+              hint={
+                compareSavedClosureData
+                  ? 'Qtd alinhada aos scorecards; valores em R$ refletem salvo → proposta (alterados só nessa parte).'
+                  : undefined
+              }
+              icon={<Receipt size={14} />}
               bodyClassName="p-0"
             >
-              <ClosureBalanceTable closure={closure} isPartnerView={isPartnerView} />
-            </CadastroFormSection>
-            <CadastroFormSection title="Resumo por tipo" icon={<Receipt size={14} />} bodyClassName="p-0">
-              <SourceSummaryTable bySource={bySource} />
+              {compareSavedClosureData ? (
+                <SourceSummaryDeltaTable
+                  savedRows={savedBalanceBySource}
+                  proposedRows={proposedBalanceBySource}
+                  movementBySource={recalcMovementBySource}
+                  expectedNewCount={recalcExpectedNewCount}
+                  expectedRemovedCount={recalcExpectedRemovedCount}
+                />
+              ) : (
+                <SourceSummaryTable bySource={bySource} />
+              )}
             </CadastroFormSection>
             {regularLoans.length > 0 && (
               <CadastroFormSection title="Empréstimos" icon={<Banknote size={14} />} bodyClassName="p-0">
@@ -768,6 +1118,46 @@ export default function SharedClosureItemsModal({
             )}
           </>
         )}
+    </>
+  )
+}
+
+export default function SharedClosureItemsModal({
+  closure,
+  items,
+  loanPayments,
+  isPartnerView,
+  onClose,
+}: {
+  closure: any
+  items: any[]
+  loanPayments: any[]
+  isPartnerView: boolean
+  onClose: () => void
+}) {
+  const [activeTab, setActiveTab] = useState<TabKey>('geral')
+
+  return (
+    <CadastroModalShell maxWidth="max-w-[95vw] xl:max-w-[90rem]" maxHeight="max-h-[90vh]" zClass="z-50">
+      <CadastroModalHeader
+        isEdit={false}
+        title={`Itens do Fechamento - ${String(closure.month).padStart(2, '0')}/${closure.year}`}
+        subtitle={`${items.length} itens • ${formatDateTimeBR(closure.period_start_date)} a ${formatDateTimeBR(closure.closing_date)}`}
+        onClose={onClose}
+        icon={<Receipt size={18} />}
+      />
+      <CadastroModalBody
+        chrome={
+          <SharedClosureItemsTabs items={items} activeTab={activeTab} onTabChange={setActiveTab} />
+        }
+      >
+        <SharedClosureItemsView
+          closure={closure}
+          items={items}
+          loanPayments={loanPayments}
+          isPartnerView={isPartnerView}
+          activeTab={activeTab}
+        />
       </CadastroModalBody>
       <CadastroModalFooter hideSave closeLabel="Fechar" onClose={onClose} />
     </CadastroModalShell>

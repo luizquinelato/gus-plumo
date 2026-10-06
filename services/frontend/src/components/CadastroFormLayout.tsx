@@ -431,7 +431,13 @@ export function CadastroModalShell({
   return createPortal(
     <div
       className={`fixed inset-0 ${zClass} flex items-center justify-center bg-black/40 p-4`}
-      onClick={onBackdropClick}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) e.preventDefault()
+      }}
+      onClick={(e) => {
+        if (e.target !== e.currentTarget) return
+        onBackdropClick?.()
+      }}
     >
       <div
         className={`flex ${maxHeight} w-full ${maxWidth} flex-col overflow-hidden rounded-xl bg-white shadow-xl dark:bg-gray-800`}
