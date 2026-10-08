@@ -704,6 +704,7 @@ def invoice_detail_for_bank_statement(
     rows = (
         db.query(
             CreditCardInvoice.id,
+            CreditCardInvoice.credit_card_id,
             CreditCardInvoice.date,
             CreditCardInvoice.description,
             CreditCardInvoice.amount,
@@ -733,6 +734,7 @@ def invoice_detail_for_bank_statement(
         items_total += amount
         items.append({
             "id": int(row.id),
+            "credit_card_id": int(row.credit_card_id),
             "date": row.date.isoformat() if hasattr(row.date, "isoformat") else str(row.date),
             "description": row.description,
             "amount": float(amount),

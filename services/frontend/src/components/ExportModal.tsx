@@ -23,7 +23,7 @@ interface ExportModalProps {
 
 export default function ExportModal({ isOpen, onClose, expenses, onSuccess, onError }: ExportModalProps) {
   const [exportMode, setExportMode] = useState<'single' | 'separate'>('single')
-  const [includeSharing, setIncludeSharing] = useState(false)
+  const [includeSharing, setIncludeSharing] = useState(true)
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

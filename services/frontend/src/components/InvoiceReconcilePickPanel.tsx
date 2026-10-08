@@ -58,20 +58,25 @@ export function InvoiceReconcilePickPanel({
   busy,
   inline,
   stagedCandidate,
+  stagedSkip = false,
   onClose,
   onConfirm,
   onUnmatch,
   onSkip,
+  onCancelDraft,
 }: {
   cycle: InvoiceMatchCycle
   busy?: boolean
   inline?: boolean
   /** Vínculo preparado (busca automática ou rascunho) — exibe candidato já selecionado. */
   stagedCandidate?: InvoiceMatchCandidate | null
+  /** Marcado para não vincular (rascunho — salvar no rodapé). */
+  stagedSkip?: boolean
   onClose?: () => void
   onConfirm: (bankStatementId: number, candidate: InvoiceMatchCandidate) => void
   onUnmatch: () => void
   onSkip?: () => void
+  onCancelDraft?: () => void
 }) {
   const [selectedId, setSelectedId] = useState<number | undefined>()
   const [startDate, setStartDate] = useState('')
@@ -217,6 +222,29 @@ export function InvoiceReconcilePickPanel({
               {busy ? <Loader2 size={12} className="animate-spin" /> : <Unlink size={12} />}
               Desfazer vínculo
             </button>
+          </div>
+        ) : stagedSkip ? (
+          <div className="rounded-lg px-3 py-3" style={{ background: 'color-mix(in srgb, var(--color-info) 12%, transparent)' }}>
+            <div className="flex items-start gap-2 text-sm text-gray-800 dark:text-gray-200">
+              <Ban size={16} className="mt-0.5 shrink-0" style={{ color: 'var(--color-info)' }} />
+              <div>
+                <p className="font-medium">Não vincular (preparado)</p>
+                <p className="mt-0.5 text-xs text-gray-600 dark:text-gray-400">
+                  Este ciclo será marcado sem débito no extrato ao salvar no rodapé, junto com os demais.
+                </p>
+              </div>
+            </div>
+            {onCancelDraft ? (
+              <button
+                type="button"
+                onClick={onCancelDraft}
+                disabled={busy}
+                className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-1)] hover:underline disabled:opacity-50"
+              >
+                {busy ? <Loader2 size={12} className="animate-spin" /> : <Unlink size={12} />}
+                Desfazer preparação
+              </button>
+            ) : null}
           </div>
         ) : (
           <>
@@ -409,7 +437,7 @@ export function InvoiceReconcilePickPanel({
         )}
       </div>
 
-      {cycle.status !== 'matched' && cycle.status !== 'unlinked' && (
+      {cycle.status !== 'matched' && cycle.status !== 'unlinked' && !stagedSkip && (
         <div className="shrink-0 border-t border-gray-200 px-4 py-3 dark:border-gray-700">
           <div className="flex items-stretch gap-2">
             <button
@@ -431,7 +459,7 @@ export function InvoiceReconcilePickPanel({
                 style={{ backgroundColor: 'var(--color-delete)', color: 'var(--on-color-delete)' }}
               >
                 {busy ? <Loader2 size={14} className="animate-spin" /> : <Ban size={14} />}
-                Não vincular
+                Preparar não vincular
               </button>
             ) : null}
           </div>

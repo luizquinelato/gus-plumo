@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Copia cadastros entre PROD e DEV (upsert). Opcionalmente copia lançamentos de fatura
-(`credit_card_invoices`) e de benefícios (`benefit_card_statements`) com FKs remapeadas.
-Não sincroniza extrato (`bank_statements`).
+Copia cadastros entre PROD e DEV (upsert). Opcionalmente copia lançamentos de extrato
+(`bank_statements`), fatura (`credit_card_invoices`) e benefícios
+(`benefit_card_statements`) com FKs remapeadas.
 
 Conexão: .env.prod e .env.dev na raiz do monorepo
 (DATABASE_URL ou DB_HOST / DB_PORT / DB_NAME / DB_USER / DB_PASSWORD).
@@ -13,14 +13,17 @@ Uso:
     python scripts/sync_cadastro_prod_dev.py -db dev --all
     python scripts/sync_cadastro_prod_dev.py -db prod --cartoes --mapeamentos
     python scripts/sync_cadastro_prod_dev.py -db prod --all -x templates mapeamentos
+    python scripts/sync_cadastro_prod_dev.py -db prod --extratos
     python scripts/sync_cadastro_prod_dev.py -db prod --faturas
     python scripts/sync_cadastro_prod_dev.py -db prod --cartoes --faturas
     python scripts/sync_cadastro_prod_dev.py -db prod --beneficios
 
 -db prod|dev — banco de origem; destino é o outro automaticamente.
-Faturas e benefícios rodam por último; exigem cartões/tags/compartilhamentos mapeados.
-Sem domínio `mapeamentos` na execução (ou com `-x mapeamentos`), faturas e benefícios
-gravam `subtag_id` NULL — importação limpa, com compartilhamento/ownership preservados.
+Extratos, faturas e benefícios rodam por último. Extrato antes da fatura, para
+preencher `credit_card_invoices.bank_statement_id` quando os dois entram juntos.
+Sem domínio `mapeamentos` na execução (ou com `-x mapeamentos`), extratos, faturas
+e benefícios gravam `subtag_id` NULL — importação limpa, com compartilhamento/ownership
+preservados.
 Cartões: normaliza participação na cópia (% ou legado `is_account_card` na origem → 100/0);
 SELECT adapta-se a colunas presentes na origem (ex.: coluna legada ou % ausentes).
 Se --all aparecer junto com outras flags de domínio, sincroniza tudo (menos -x) e ignora as demais.
@@ -50,6 +53,7 @@ ALL_DOMAINS = (
     "cartoes",
     "mapeamentos",
     "templates",
+    "extratos",
     "faturas",
     "beneficios",
 )
@@ -62,6 +66,9 @@ DOMAIN_ALIASES = {
     "cartoes": "cartoes",
     "mapeamentos": "mapeamentos",
     "templates": "templates",
+    "extratos": "extratos",
+    "extrato": "extratos",
+    "statements": "extratos",
     "faturas": "faturas",
     "invoices": "faturas",
     "beneficios": "beneficios",
@@ -76,6 +83,7 @@ DOMAIN_DEPS: Dict[str, Set[str]] = {
     "cartoes": {"contas", "compartilhamentos"},
     "mapeamentos": {"contas", "compartilhamentos", "tags"},
     "templates": {"contas", "compartilhamentos", "tags"},
+    "extratos": {"contas", "compartilhamentos", "tags"},
     "faturas": {"contas", "compartilhamentos", "tags", "cartoes"},
     "beneficios": {"contas", "compartilhamentos", "tags", "cartoes"},
 }
@@ -94,6 +102,7 @@ class SyncContext:
     credit_card_map: Dict[int, int] = field(default_factory=dict)
     template_map: Dict[int, int] = field(default_factory=dict)
     invoice_map: Dict[int, int] = field(default_factory=dict)
+    statement_map: Dict[int, int] = field(default_factory=dict)
     benefit_statement_map: Dict[int, int] = field(default_factory=dict)
     # True só se `mapeamentos` estiver entre os domínios desta execução
     apply_transaction_subtags: bool = False
@@ -157,7 +166,7 @@ def map_transaction_subtag(
     ctx: SyncContext, prod_subtag_id: Optional[int]
 ) -> tuple[Optional[int], bool]:
     """
-    Subtag em faturas/benefícios só quando `mapeamentos` entra na sync.
+    Subtag em extratos, faturas e benefícios só quando `mapeamentos` entra na sync.
     Retorna (dev_subtag_id, skip_row) — skip_row se prod tinha subtag sem mapa no destino.
     """
     if not ctx.apply_transaction_subtags:
@@ -1177,7 +1186,7 @@ def sync_templates(prod_conn, dev_conn, ctx: SyncContext) -> None:
 def sync_faturas(source_conn, dest_conn, ctx: SyncContext) -> None:
     """
     Copia credit_card_invoices com FKs remapeadas (cartão, subtag, compartilhamento, conta).
-    bank_statement_id fica NULL (extrato não é sincronizado por este script).
+    bank_statement_id aponta para o extrato copiado nesta execução; senão fica NULL.
     """
     inserted = 0
     updated = 0
@@ -1190,7 +1199,7 @@ def sync_faturas(source_conn, dest_conn, ctx: SyncContext) -> None:
             SELECT id, credit_card_id, year_month, date, description, amount,
                    current_installment, total_installments, subtag_id,
                    ownership_percentage, expense_sharing_id, adjustment_notes,
-                   account_id, issuer, created_by
+                   account_id, issuer, bank_statement_id, created_by
             FROM credit_card_invoices
             WHERE tenant_id = %s
             ORDER BY id
@@ -1231,6 +1240,12 @@ def sync_faturas(source_conn, dest_conn, ctx: SyncContext) -> None:
                 skipped_bad_fk += 1
                 continue
 
+            dev_statement = (
+                ctx.statement_map.get(row["bank_statement_id"])
+                if row["bank_statement_id"]
+                else None
+            )
+
             dest_cur.execute(
                 """
                 SELECT id FROM credit_card_invoices
@@ -1264,7 +1279,7 @@ def sync_faturas(source_conn, dest_conn, ctx: SyncContext) -> None:
                         adjustment_notes = %s,
                         account_id = %s,
                         issuer = %s,
-                        bank_statement_id = NULL,
+                        bank_statement_id = %s,
                         created_by = %s,
                         last_updated_at = NOW()
                     WHERE id = %s
@@ -1276,6 +1291,7 @@ def sync_faturas(source_conn, dest_conn, ctx: SyncContext) -> None:
                         row["adjustment_notes"],
                         dev_account,
                         row["issuer"],
+                        dev_statement,
                         created_by,
                         dev_id,
                     ),
@@ -1291,7 +1307,7 @@ def sync_faturas(source_conn, dest_conn, ctx: SyncContext) -> None:
                         account_id, issuer, bank_statement_id,
                         tenant_id, created_by, created_at, last_updated_at
                     ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NULL,
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                         %s, %s, NOW(), NOW()
                     )
                     RETURNING id
@@ -1310,6 +1326,7 @@ def sync_faturas(source_conn, dest_conn, ctx: SyncContext) -> None:
                         row["adjustment_notes"],
                         dev_account,
                         row["issuer"],
+                        dev_statement,
                         ctx.tenant_id,
                         created_by,
                     ),
@@ -1465,6 +1482,163 @@ def sync_beneficios(source_conn, dest_conn, ctx: SyncContext) -> None:
     )
 
 
+def sync_extratos(source_conn, dest_conn, ctx: SyncContext) -> None:
+    """
+    Copia bank_statements com FKs remapeadas (conta, subtag, compartilhamento).
+    Identidade no destino: conta + data + descrição + valor + categoria + transação.
+    """
+    inserted = 0
+    updated = 0
+    skipped_no_account = 0
+    skipped_bad_fk = 0
+    used_dest_ids: List[int] = []
+
+    with source_conn.cursor() as src_cur, dest_conn.cursor() as dest_cur:
+        src_cur.execute(
+            """
+            SELECT id, category, transaction, description, date, amount,
+                   subtag_id, account_id, ownership_percentage, expense_sharing_id,
+                   adjustment_notes, migrated_from_account_id, migrated_from_table,
+                   created_by
+            FROM bank_statements
+            WHERE tenant_id = %s
+            ORDER BY id
+            """,
+            (ctx.tenant_id,),
+        )
+        rows = src_cur.fetchall()
+
+        for row in rows:
+            dev_account = ctx.account_map.get(row["account_id"]) if row["account_id"] else None
+            if row["account_id"] and dev_account is None:
+                skipped_no_account += 1
+                continue
+            if dev_account is None:
+                skipped_no_account += 1
+                continue
+
+            dev_subtag, skip_subtag = map_transaction_subtag(ctx, row["subtag_id"])
+            if skip_subtag:
+                skipped_bad_fk += 1
+                continue
+
+            dev_sharing = (
+                ctx.sharing_map.get(row["expense_sharing_id"])
+                if row["expense_sharing_id"]
+                else None
+            )
+            if row["expense_sharing_id"] and dev_sharing is None:
+                skipped_bad_fk += 1
+                continue
+
+            dev_migrated_from = (
+                ctx.account_map.get(row["migrated_from_account_id"])
+                if row["migrated_from_account_id"]
+                else None
+            )
+
+            created_by = map_user_id(ctx, row["created_by"])
+            if created_by is None:
+                skipped_bad_fk += 1
+                continue
+
+            dest_cur.execute(
+                """
+                SELECT id FROM bank_statements
+                WHERE tenant_id = %s AND account_id = %s
+                  AND date = %s AND description = %s AND amount = %s
+                  AND COALESCE(category, '') = COALESCE(%s, '')
+                  AND COALESCE(transaction, '') = COALESCE(%s, '')
+                  AND NOT (id = ANY(%s))
+                ORDER BY id
+                LIMIT 1
+                """,
+                (
+                    ctx.tenant_id,
+                    dev_account,
+                    row["date"],
+                    row["description"],
+                    row["amount"],
+                    row["category"],
+                    row["transaction"],
+                    used_dest_ids or [-1],
+                ),
+            )
+            existing = dest_cur.fetchone()
+
+            if existing:
+                dev_id = existing["id"]
+                dest_cur.execute(
+                    """
+                    UPDATE bank_statements SET
+                        category = %s,
+                        transaction = %s,
+                        subtag_id = %s,
+                        ownership_percentage = %s,
+                        expense_sharing_id = %s,
+                        adjustment_notes = %s,
+                        migrated_from_account_id = %s,
+                        migrated_from_table = %s,
+                        created_by = %s,
+                        last_updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (
+                        row["category"],
+                        row["transaction"],
+                        dev_subtag,
+                        row["ownership_percentage"],
+                        dev_sharing,
+                        row["adjustment_notes"],
+                        dev_migrated_from,
+                        row["migrated_from_table"],
+                        created_by,
+                        dev_id,
+                    ),
+                )
+                updated += 1
+            else:
+                dest_cur.execute(
+                    """
+                    INSERT INTO bank_statements (
+                        category, transaction, description, date, amount,
+                        subtag_id, account_id, ownership_percentage, expense_sharing_id,
+                        adjustment_notes, migrated_from_account_id, migrated_from_table,
+                        tenant_id, created_by, created_at, last_updated_at
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW()
+                    )
+                    RETURNING id
+                    """,
+                    (
+                        row["category"],
+                        row["transaction"],
+                        row["description"],
+                        row["date"],
+                        row["amount"],
+                        dev_subtag,
+                        dev_account,
+                        row["ownership_percentage"],
+                        dev_sharing,
+                        row["adjustment_notes"],
+                        dev_migrated_from,
+                        row["migrated_from_table"],
+                        ctx.tenant_id,
+                        created_by,
+                    ),
+                )
+                dev_id = dest_cur.fetchone()["id"]
+                inserted += 1
+
+            used_dest_ids.append(dev_id)
+            ctx.statement_map[row["id"]] = dev_id
+
+    print(
+        f"  extratos: {inserted} inserido(s), {updated} atualizado(s), "
+        f"ignorados (conta): {skipped_no_account}, ignorados (FK): {skipped_bad_fk}"
+    )
+
+
 SYNC_HANDLERS = {
     "contas": sync_contas,
     "compartilhamentos": sync_compartilhamentos,
@@ -1472,6 +1646,7 @@ SYNC_HANDLERS = {
     "cartoes": sync_cartoes,
     "mapeamentos": sync_mapeamentos,
     "templates": sync_templates,
+    "extratos": sync_extratos,
     "faturas": sync_faturas,
     "beneficios": sync_beneficios,
 }
@@ -1698,9 +1873,9 @@ def main() -> None:
 
     exclude_note = f", excl.: {', '.join(args.exclude)}" if args.exclude else ""
     subtag_note = (
-        " | subtags em faturas/benefícios: sim"
+        " | subtags em extratos/faturas/benefícios: sim"
         if ctx.apply_transaction_subtags
-        else " | subtags em faturas/benefícios: omitidas (sem mapeamentos)"
+        else " | subtags em extratos/faturas/benefícios: omitidas (sem mapeamentos)"
     )
     print(
         f"\n🔄 {source_label} → {dest_label} | "
@@ -1713,11 +1888,18 @@ def main() -> None:
             preload_account_map(source_conn, dest_conn, ctx)
         if "compartilhamentos" not in domains and any(
             d in domains
-            for d in ("cartoes", "mapeamentos", "templates", "faturas", "beneficios")
+            for d in (
+                "cartoes",
+                "mapeamentos",
+                "templates",
+                "extratos",
+                "faturas",
+                "beneficios",
+            )
         ):
             preload_sharing_map(source_conn, dest_conn, ctx)
         if "tags" not in domains and any(
-            d in domains for d in ("mapeamentos", "templates")
+            d in domains for d in ("mapeamentos", "templates", "extratos", "faturas", "beneficios")
         ):
             preload_tag_maps(source_conn, dest_conn, ctx)
         if "cartoes" not in domains and any(

@@ -61,6 +61,23 @@ export const deleteTemplate = async (templateId: number): Promise<void> => {
   await axios.delete(`${BASE_URL}/${templateId}`)
 }
 
+export type BulkDeleteTemplatesPayload = {
+  template_ids: number[]
+  items: { template_id: number; item_id: number }[]
+}
+
+export type BulkDeleteResult = {
+  deleted: number
+  skipped: number
+}
+
+export const bulkDeleteTemplates = async (
+  payload: BulkDeleteTemplatesPayload,
+): Promise<BulkDeleteResult> => {
+  const response = await axios.post<BulkDeleteResult>(`${BASE_URL}/bulk-delete`, payload)
+  return response.data
+}
+
 /**
  * Aplica um template criando bank_statements
  */
@@ -114,5 +131,17 @@ export const deleteTemplateItem = async (
   itemId: number
 ): Promise<void> => {
   await axios.delete(`${BASE_URL}/${templateId}/items/${itemId}`)
+}
+
+/** Atualiza display_order de cada item conforme a posição na lista (0 = primeiro). */
+export const updateTemplateItemsDisplayOrder = async (
+  templateId: number,
+  itemIdsInOrder: number[],
+): Promise<void> => {
+  await Promise.all(
+    itemIdsInOrder.map((itemId, index) =>
+      updateTemplateItem(templateId, itemId, { display_order: index }),
+    ),
+  )
 }
 

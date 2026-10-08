@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Sidebar from '../components/Sidebar'
 import {
   CadastroListCreateButton,
@@ -48,6 +49,8 @@ import { maskPercentInput, finalizePercentInput } from '../utils/percentInput'
 import { ArrowUp, Edit2, Trash2, Users, Lock, X } from 'lucide-react'
 import axios from 'axios'
 import { useConfirm } from '../hooks/useConfirm'
+import { CadastroListHeaderActions } from '../components/CadastroExcelMenu'
+import { exportCompartilhamentosToExcel } from '../utils/exportCadastroExcel'
 import { formatAccountDisplay } from '../utils/accountFormatter'
 
 function percentageTone(percentage: number): BadgeTone {
@@ -93,6 +96,7 @@ interface ToastState {
 }
 
 const CompartilhamentosPage = () => {
+  const navigate = useNavigate()
   const [compartilhamentos, setCompartilhamentos] = useState<ExpenseSharing[]>([])
   const [minhasOutrasContas, setMinhasOutrasContas] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
@@ -108,6 +112,15 @@ const CompartilhamentosPage = () => {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('active')
   const [selectedSharingIds, setSelectedSharingIds] = useState<Set<number>>(() => new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [showBulkEditModal, setShowBulkEditModal] = useState(false)
+  const [bulkEditing, setBulkEditing] = useState(false)
+  const [bulkEditData, setBulkEditData] = useState({
+    applyExpense: true,
+    applyRevenue: true,
+    my_contribution_percentage: '50.00',
+    revenue_contribution_percentage: '50.00',
+    active: true,
+  })
   const [showBackToTop, setShowBackToTop] = useState(false)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const { showConfirm, ConfirmComponent } = useConfirm()
@@ -372,6 +385,64 @@ const CompartilhamentosPage = () => {
 
   const clearBulkSelection = useCallback(() => setSelectedSharingIds(new Set()), [])
 
+  const openBulkEditModal = () => {
+    const selectedRows = compartilhamentos.filter((c) => selectedSharingIds.has(c.id) && !c.is_inverse)
+    const activeSet = new Set(selectedRows.map((c) => c.active))
+    const initialActive = activeSet.size === 1 ? selectedRows[0]!.active : true
+    setBulkEditData({
+      applyExpense: true,
+      applyRevenue: true,
+      my_contribution_percentage: '50.00',
+      revenue_contribution_percentage: '50.00',
+      active: initialActive,
+    })
+    setShowBulkEditModal(true)
+  }
+
+  const handleBulkEdit = async () => {
+    const ids = [...selectedSharingIds]
+    if (ids.length === 0) return
+    const { applyExpense, applyRevenue } = bulkEditData
+    if (applyExpense && !bulkEditData.my_contribution_percentage.trim()) {
+      showToast('Informe o percentual de despesa.', 'warning')
+      return
+    }
+    if (applyRevenue && !bulkEditData.revenue_contribution_percentage.trim()) {
+      showToast('Informe o percentual de receita.', 'warning')
+      return
+    }
+    setBulkEditing(true)
+    try {
+      const response = await axios.patch<{ updated?: number; skipped?: number }>(
+        '/api/expense-sharing/bulk-update',
+        {
+          ids,
+          update_expense_pct: applyExpense,
+          update_revenue_pct: applyRevenue,
+          update_active: true,
+          my_contribution_percentage: applyExpense
+            ? parseFloat(finalizePercentInput(bulkEditData.my_contribution_percentage))
+            : null,
+          revenue_contribution_percentage: applyRevenue
+            ? parseFloat(finalizePercentInput(bulkEditData.revenue_contribution_percentage))
+            : null,
+          active: bulkEditData.active,
+        },
+      )
+      const updated = response.data?.updated ?? ids.length
+      setShowBulkEditModal(false)
+      clearBulkSelection()
+      await carregarCompartilhamentos()
+      showToast(`${updated} compartilhamento(s) atualizado(s).`, 'success')
+    } catch (error: unknown) {
+      console.error('Erro na edição em massa:', error)
+      const detail = axios.isAxiosError(error) ? error.response?.data?.detail : null
+      showToast(typeof detail === 'string' ? detail : 'Erro ao atualizar compartilhamentos', 'error')
+    } finally {
+      setBulkEditing(false)
+    }
+  }
+
   const handleBulkDelete = () => {
     const ids = [...selectedSharingIds]
     if (ids.length === 0) return
@@ -381,12 +452,17 @@ const CompartilhamentosPage = () => {
       async () => {
         setBulkDeleting(true)
         try {
-          for (const id of ids) {
-            await axios.delete(`/api/expense-sharing/${id}`)
-          }
+          const { data } = await axios.post<{ deleted: number; skipped: number }>(
+            '/api/expense-sharing/bulk-delete',
+            { ids },
+          )
           clearBulkSelection()
           await carregarCompartilhamentos()
-          showToast('Compartilhamentos excluídos com sucesso.', 'success')
+          const msg =
+            data.skipped > 0
+              ? `${data.deleted} compartilhamento(s) excluído(s); ${data.skipped} ignorado(s).`
+              : 'Compartilhamentos excluídos com sucesso.'
+          showToast(msg, data.deleted > 0 ? 'success' : 'warning')
         } catch (error) {
           console.error('Erro na exclusão em massa:', error)
           showToast('Não foi possível excluir todos os compartilhamentos selecionados.', 'error')
@@ -417,7 +493,17 @@ const CompartilhamentosPage = () => {
               icon={<Users className="w-8 h-8" />}
               title="Configurações de Compartilhamento"
               subtitle="Configure como dividir despesas com outras contas"
-              actions={<CadastroListCreateButton label="Novo Compartilhamento" onClick={abrirModalNovo} />}
+              actions={
+                <CadastroListHeaderActions
+                  menu={{
+                    exportDisabled: compartilhamentosFiltrados.length === 0,
+                    onImportExcel: () => navigate('/importar'),
+                    onExportExcel: () => exportCompartilhamentosToExcel(compartilhamentosFiltrados),
+                  }}
+                >
+                  <CadastroListCreateButton label="Novo Compartilhamento" onClick={abrirModalNovo} />
+                </CadastroListHeaderActions>
+              }
             />
           }
           tabs={
@@ -442,7 +528,6 @@ const CompartilhamentosPage = () => {
               icon={<Users size={32} className="text-gray-400" />}
               title="Nenhum compartilhamento cadastrado"
               description="Comece adicionando seu primeiro compartilhamento de despesas"
-              action={<CadastroListCreateButton label="Adicionar Compartilhamento" onClick={abrirModalNovo} />}
             />
           ) : compartilhamentosFiltrados.length === 0 ? (
             <CadastroListPageEmptyCard
@@ -611,8 +696,18 @@ const CompartilhamentosPage = () => {
             <div className="flex items-center gap-2">
               <button
                 type="button"
+                onClick={openBulkEditModal}
+                disabled={bulkDeleting || bulkEditing}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
+                style={{ backgroundColor: 'var(--crud-edit)' }}
+              >
+                <Edit2 size={14} />
+                Editar
+              </button>
+              <button
+                type="button"
                 onClick={handleBulkDelete}
-                disabled={bulkDeleting}
+                disabled={bulkDeleting || bulkEditing}
                 className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
                 style={{ backgroundColor: 'var(--crud-delete)' }}
               >
@@ -651,8 +746,106 @@ const CompartilhamentosPage = () => {
         </FloatingFooterBar>
       )}
 
+      {showBulkEditModal && selectedSharingIds.size > 0 && (
+        <CadastroModalShell maxWidth="max-w-lg">
+          <CadastroModalHeader
+            isEdit
+            title="Editar selecionados"
+            subtitle={`${selectedSharingIds.size} compartilhamento(s)`}
+            onClose={() => setShowBulkEditModal(false)}
+            icon={<Edit2 size={18} />}
+          />
+          <CadastroModalBody>
+            <CadastroFormSection title="Campos a aplicar" icon={<Edit2 size={14} />}>
+              <CadastroModalFieldsGrid>
+                <CadastroModalFieldsRow>
+                  <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+                    <input
+                      type="checkbox"
+                      checked={bulkEditData.applyExpense}
+                      onChange={(e) => setBulkEditData((p) => ({ ...p, applyExpense: e.target.checked }))}
+                      className="rounded border-gray-300"
+                    />
+                    Atualizar % despesa (sua parte)
+                  </label>
+                </CadastroModalFieldsRow>
+                {bulkEditData.applyExpense ? (
+                  <CadastroModalFieldsRow>
+                    <OwnershipPercentField
+                      context="sharingDefaultExpense"
+                      required
+                      value={bulkEditData.my_contribution_percentage}
+                      onChange={(raw) =>
+                        setBulkEditData((p) => ({ ...p, my_contribution_percentage: maskPercentInput(raw) }))
+                      }
+                      onBlur={() =>
+                        setBulkEditData((p) => ({
+                          ...p,
+                          my_contribution_percentage: finalizePercentInput(p.my_contribution_percentage),
+                        }))
+                      }
+                    />
+                  </CadastroModalFieldsRow>
+                ) : null}
+                <CadastroModalFieldsRow>
+                  <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+                    <input
+                      type="checkbox"
+                      checked={bulkEditData.applyRevenue}
+                      onChange={(e) => setBulkEditData((p) => ({ ...p, applyRevenue: e.target.checked }))}
+                      className="rounded border-gray-300"
+                    />
+                    Atualizar % receita (sua parte)
+                  </label>
+                </CadastroModalFieldsRow>
+                {bulkEditData.applyRevenue ? (
+                  <CadastroModalFieldsRow>
+                    <OwnershipPercentField
+                      context="sharingDefaultRevenue"
+                      required
+                      value={bulkEditData.revenue_contribution_percentage}
+                      onChange={(raw) =>
+                        setBulkEditData((p) => ({ ...p, revenue_contribution_percentage: maskPercentInput(raw) }))
+                      }
+                      onBlur={() =>
+                        setBulkEditData((p) => ({
+                          ...p,
+                          revenue_contribution_percentage: finalizePercentInput(p.revenue_contribution_percentage),
+                        }))
+                      }
+                    />
+                  </CadastroModalFieldsRow>
+                ) : null}
+                <CadastroModalFieldsRow>
+                  <div className="block min-w-0">
+                    <CadastroFieldLabel>Status</CadastroFieldLabel>
+                    <div className="mt-2">
+                      <StatusSwitch
+                        checked={bulkEditData.active}
+                        onChange={() => setBulkEditData((p) => ({ ...p, active: !p.active }))}
+                        size="sm"
+                        labelOn="Ativo"
+                        labelOff="Inativo"
+                        showLabel
+                      />
+                    </div>
+                  </div>
+                </CadastroModalFieldsRow>
+              </CadastroModalFieldsGrid>
+            </CadastroFormSection>
+          </CadastroModalBody>
+          <CadastroModalFooter
+            onClose={() => setShowBulkEditModal(false)}
+            onSave={() => void handleBulkEdit()}
+            saving={bulkEditing}
+            saveLabel="Aplicar"
+            saveIcon={<Edit2 size={15} />}
+          />
+        </CadastroModalShell>
+      )}
+
       {showModal && (
-        <CadastroModalShell maxWidth="max-w-2xl" onBackdropClick={fecharModal}>
+        <CadastroModalShell maxWidth="max-w-2xl">
           <CadastroModalHeader
             isEdit={!!editingCompartilhamento}
             title={editingCompartilhamento ? 'Editar Compartilhamento' : 'Novo Compartilhamento'}

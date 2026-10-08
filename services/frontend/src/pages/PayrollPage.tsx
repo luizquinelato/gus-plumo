@@ -471,9 +471,16 @@ const PayrollPage = () => {
     }
   }
 
+  const initialPayrollLoadDone = useRef(false)
   useEffect(() => {
-    loadFilterOptions()
+    void loadFilterOptions()
   }, [])
+
+  useEffect(() => {
+    if (filtersLoading || initialPayrollLoadDone.current) return
+    initialPayrollLoadDone.current = true
+    void loadData()
+  }, [filtersLoading])
 
   useEffect(() => {
     clearSelection()
@@ -496,11 +503,9 @@ const PayrollPage = () => {
     setSelectedYear('')
     setSelectedMonth('')
     setSelectedEmployer('')
-    setPayslips([])
-    setIncomeReports([])
-    setFiltersApplied(false)
     setError(null)
     clearSelection()
+    void loadData()
   }
 
   const openPayslip = async (payslip: Payslip) => {
@@ -594,7 +599,7 @@ const PayrollPage = () => {
                       onChange={(e) => setSelectedYear(e.target.value)}
                       className="w-full rounded-lg border border-gray-300 bg-white px-2 py-2 text-sm text-gray-900 transition-all focus:border-color-primary focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                     >
-                      <option value="">Selecione...</option>
+                      <option value="">Todos</option>
                       {yearOptions.map((year) => (
                         <option key={year} value={year}>
                           {year}
@@ -614,7 +619,7 @@ const PayrollPage = () => {
                       disabled={activeTab === 'income-reports'}
                       className="w-full rounded-lg border border-gray-300 bg-white px-2 py-2 text-sm text-gray-900 transition-all focus:border-color-primary focus:outline-none disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                     >
-                      <option value="">Selecione...</option>
+                      <option value="">Todos</option>
                       {MONTH_OPTIONS.map((m) => (
                         <option key={m.value} value={m.value}>
                           {m.label}
@@ -633,7 +638,7 @@ const PayrollPage = () => {
                       onChange={(e) => setSelectedEmployer(e.target.value)}
                       className="w-full rounded-lg border border-gray-300 bg-white px-2 py-2 text-sm text-gray-900 transition-all focus:border-color-primary focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                     >
-                      <option value="">Selecione...</option>
+                      <option value="">Todos</option>
                       {employerOptions.map((name) => (
                         <option key={name} value={name}>
                           {name}
@@ -672,9 +677,9 @@ const PayrollPage = () => {
           {!loading && !error && !filtersApplied && (
             <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-12 text-center">
               <Filter size={48} className="mx-auto text-gray-300 dark:text-gray-600 mb-4" />
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Nenhum filtro aplicado</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Não foi possível carregar</h3>
               <p className="text-gray-600 dark:text-gray-400">
-                Selecione ano, mês e empregador (opcional) e clique em Aplicar para visualizar os documentos.
+                Recarregue a página ou clique em Aplicar nos filtros acima.
               </p>
             </div>
           )}

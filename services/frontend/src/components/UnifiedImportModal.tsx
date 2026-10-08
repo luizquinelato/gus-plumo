@@ -77,6 +77,106 @@ function appendPdfPasswords(formData: FormData, configs: FileConfig[]) {
   configs.forEach((config) => formData.append('passwords', config.pdfPassword ?? ''))
 }
 
+type ImportProgressState = {
+  jobId: string
+  fileIndex: number
+  fileCount: number
+  fileName: string
+  processed: number
+  total: number
+  /** 0–1 do arquivo corrente, somando leitura, transformação e gravação. */
+  fraction: number
+}
+
+/** Cada arquivo vale 1/N. ``fraction`` já reparte as etapas dentro do arquivo. */
+function importBatchPercent(fileIndex: number, fileCount: number, fraction: number): number {
+  if (fileCount <= 0) return 0
+  const within = Math.min(Math.max(fraction, 0), 1)
+  return Math.min(100, ((fileIndex + within) / fileCount) * 100)
+}
+
+function ImportProgressBar({ progress }: { progress: ImportProgressState }) {
+  const percent = importBatchPercent(
+    progress.fileIndex,
+    progress.fileCount,
+    progress.fraction,
+  )
+  const percentLabel = percent.toLocaleString('pt-BR', {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  })
+  return (
+    <div
+      className="mb-4"
+      role="progressbar"
+      aria-valuenow={Math.round(percent)}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-label="Progresso da importação"
+    >
+      <div className="mb-1.5 flex items-baseline justify-between gap-3">
+        <p className="min-w-0 truncate text-sm font-medium text-gray-800 dark:text-gray-100">
+          Arquivo {progress.fileIndex + 1} de {progress.fileCount}
+          <span className="font-normal text-gray-500 dark:text-gray-400"> · {progress.fileName}</span>
+        </p>
+        <span className="shrink-0 text-sm font-semibold tabular-nums text-[var(--color-1)]">{percentLabel}%</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+        <div
+          className="h-full rounded-full transition-[width] duration-150 ease-linear"
+          style={{ width: `${percent}%`, backgroundColor: 'var(--color-1)' }}
+        />
+      </div>
+      <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+        {progress.total > 0
+          ? `Linha ${progress.processed.toLocaleString('pt-BR')} de ${progress.total.toLocaleString('pt-BR')}`
+          : 'Preparando arquivo…'}
+      </p>
+    </div>
+  )
+}
+
+async function postImportWithProgress<T>(
+  url: string,
+  formData: FormData,
+  jobId: string,
+  onProgress: (update: { processed: number; total: number; fraction: number }) => void,
+) {
+  formData.append('progress_job_id', jobId)
+  let stopped = false
+  const poll = async () => {
+    if (stopped) return
+    try {
+      const { data } = await axios.get<{ processed: number; total: number; fraction?: number }>(
+        `/api/import/progress/${jobId}`,
+      )
+      if (stopped) return
+      const processed = Number(data.processed) || 0
+      const total = Number(data.total) || 0
+      const fraction = Number.isFinite(data.fraction)
+        ? Number(data.fraction)
+        : total > 0
+          ? processed / total
+          : 0
+      onProgress({ processed, total, fraction })
+    } catch {
+      // O job só existe enquanto o POST está processando.
+    }
+  }
+  const timer = window.setInterval(() => {
+    void poll()
+  }, 200)
+  void poll()
+  try {
+    return await axios.post<T>(url, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  } finally {
+    stopped = true
+    window.clearInterval(timer)
+  }
+}
+
 interface PayrollClassifyResult {
   filename: string
   status: string
@@ -165,6 +265,7 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
   const [fileConfigs, setFileConfigs] = useState<FileConfig[]>([])
   const [isDetecting, setIsDetecting] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [importProgress, setImportProgress] = useState<ImportProgressState | null>(null)
   const [results, setResults] = useState<ImportResult[]>([])
   const [error, setError] = useState<string | null>(null)
 
@@ -598,58 +699,65 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
     let totalUnmappedCount = 0
 
     try {
-      const payrollConfigs = fileConfigs.filter(config => isPayrollType(config.detectedType))
-      const payrollResultsByName = new Map<string, ImportResult>()
+      for (let fileIndex = 0; fileIndex < fileConfigs.length; fileIndex++) {
+        const config = fileConfigs[fileIndex]
+        const jobId = crypto.randomUUID()
+        const onProgress = (update: { processed: number; total: number; fraction: number }) => {
+          setImportProgress((current) => {
+            if (!current || current.jobId !== jobId) return current
+            if (update.fraction + 1e-6 < current.fraction) return current
+            return { ...current, ...update }
+          })
+        }
+        setImportProgress({
+          jobId,
+          fileIndex,
+          fileCount: fileConfigs.length,
+          fileName: config.file.name,
+          processed: 0,
+          total: 0,
+          fraction: 0,
+        })
 
-      if (payrollConfigs.length > 0) {
-        try {
-          const formData = new FormData()
-          payrollConfigs.forEach((config) => formData.append('files', config.file))
-          appendPdfPasswords(formData, payrollConfigs)
-          const response = await axios.post<{ results: PayrollImportFileResult[] }>(
-            '/api/payroll/import-pdfs',
-            formData,
-            { headers: { 'Content-Type': 'multipart/form-data' } },
-          )
-          const imported = response.data.results || []
-          payrollConfigs.forEach((config, index) => {
-            const hit = imported.find(item => item.filename === config.file.name) || imported[index]
+        if (isPayrollType(config.detectedType)) {
+          try {
+            const formData = new FormData()
+            formData.append('files', config.file)
+            formData.append('passwords', config.pdfPassword ?? '')
+            const response = await postImportWithProgress<{ results: PayrollImportFileResult[] }>(
+              '/api/payroll/import-pdfs',
+              formData,
+              jobId,
+              onProgress,
+            )
+            const hit = (response.data.results || [])[0]
             if (!hit || hit.status !== 'ok') {
-              payrollResultsByName.set(config.file.name, {
+              uploadResults.push({
                 fileName: config.file.name,
                 success: false,
                 created: 0,
                 skipped: 0,
                 errors: [hit?.message || 'Erro ao importar PDF'],
               })
-              return
+            } else {
+              uploadResults.push({
+                fileName: config.file.name,
+                success: true,
+                created: hit.action === 'created' ? 1 : 0,
+                skipped: 0,
+                duplicates: hit.action === 'updated' ? 1 : 0,
+                errors: [],
+              })
             }
-            payrollResultsByName.set(config.file.name, {
-              fileName: config.file.name,
-              success: true,
-              created: hit.action === 'created' ? 1 : 0,
-              skipped: 0,
-              duplicates: hit.action === 'updated' ? 1 : 0,
-              errors: [],
-            })
-          })
-        } catch (err: any) {
-          payrollConfigs.forEach(config => {
-            payrollResultsByName.set(config.file.name, {
+          } catch (err: any) {
+            uploadResults.push({
               fileName: config.file.name,
               success: false,
               created: 0,
               skipped: 0,
               errors: formatImportApiError(err.response?.data?.detail ?? 'Erro ao importar holerites e informes'),
             })
-          })
-        }
-      }
-
-      for (const config of fileConfigs) {
-        if (isPayrollType(config.detectedType)) {
-          const payrollResult = payrollResultsByName.get(config.file.name)
-          if (payrollResult) uploadResults.push(payrollResult)
+          }
           continue
         }
         if (config.detectedType === 'pdf_unknown') {
@@ -674,9 +782,7 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
             formData.append('enable_tracing', enableTracing ? 'true' : 'false')
             // account_id vem do JWT automaticamente
 
-            const response = await axios.post('/api/import/extrato', formData, {
-              headers: { 'Content-Type': 'multipart/form-data' }
-            })
+            const response = await postImportWithProgress<any>('/api/import/extrato', formData, jobId, onProgress)
 
             result = {
               fileName: config.file.name,
@@ -715,9 +821,7 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
             formData.append('save_conversion_txt', saveConversionTxt ? 'true' : 'false')
             // Não envia account_id - os cartões são identificados automaticamente do PDF
 
-            const response = await axios.post('/api/import/cartao', formData, {
-              headers: { 'Content-Type': 'multipart/form-data' }
-            })
+            const response = await postImportWithProgress<any>('/api/import/cartao', formData, jobId, onProgress)
 
             const conversionTxt = response.data?.conversion_txt?.[0]
 
@@ -755,10 +859,11 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
             formData.append('file', config.file)
             // account_id vem automaticamente do JWT (não precisa enviar)
 
-            const response = await axios.post(
+            const response = await postImportWithProgress<any>(
               `/api/benefit-card-statements/importar-csv?credit_card_id=${config.credit_card_id}`,
               formData,
-              { headers: { 'Content-Type': 'multipart/form-data' } }
+              jobId,
+              onProgress,
             )
 
             result = {
@@ -821,6 +926,7 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
     } catch (err: any) {
       setError('Erro ao processar arquivos')
     } finally {
+      setImportProgress(null)
       setIsProcessing(false)
     }
   }
@@ -986,7 +1092,9 @@ const UnifiedImportModal = ({ isOpen, onClose }: UnifiedImportModalProps) => {
           onClose={handleClose}
           icon={<Upload size={18} />}
         />
-        <CadastroModalBody>
+        <CadastroModalBody
+          chrome={isProcessing && importProgress ? <ImportProgressBar progress={importProgress} /> : undefined}
+        >
           <CadastroFormSection title="Selecionar Arquivos" icon={<Upload size={14} />}>
             <div className="rounded-lg border-2 border-dashed border-gray-300 p-6 text-center dark:border-gray-600">
               <input

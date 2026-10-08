@@ -19,6 +19,7 @@ from app.utils.mapping_helper import MappingHelper
 from app.utils.sharing_percentage import resolve_ownership_percentage
 from app.converters.fatura_pdf import normalize_invoice_issuer
 from app.database import DATABASE_URL
+from app.utils.import_progress import report_row_progress
 
 logger = logging.getLogger(__name__)
 
@@ -636,6 +637,8 @@ class FaturaService:
 
         # Converte DataFrame para lista de dicts (muito mais rápido que iterrows)
         records = df.to_dict('records')
+        total_rows = len(records)
+        report_row_progress(0, total_rows, phase=2)
 
         for idx, row in enumerate(records):
             try:
@@ -862,6 +865,8 @@ class FaturaService:
             except Exception as e:
                 logger.error(f"❌ Erro ao processar fatura: {e}", exc_info=True)
                 continue
+            finally:
+                report_row_progress(idx + 1, total_rows, phase=2)
 
         # ========================================
         # ETAPA 5: BULK INSERT/UPDATE (2 OPERAÇÕES)

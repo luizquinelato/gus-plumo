@@ -326,7 +326,7 @@ const TemplateFormModal = ({ isOpen, onClose, onSuccess, template, availableIcon
   if (!isOpen) return null
 
   return (
-    <CadastroModalShell maxWidth="max-w-[1600px]" onBackdropClick={onClose}>
+    <CadastroModalShell maxWidth="max-w-[1600px]">
       <CadastroModalHeader
         isEdit={!!template}
         title={template ? 'Editar Template' : 'Novo Template'}

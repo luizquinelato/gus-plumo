@@ -815,6 +815,14 @@ const SharedBalanceListPage = () => {
     loadInitialData()
   }, [])
 
+  const initialClosuresLoadDone = useRef(false)
+  useEffect(() => {
+    if (initialLoading || initialClosuresLoadDone.current) return
+    initialClosuresLoadDone.current = true
+    applyListFilters()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- auto-aplicar Todos na abertura
+  }, [initialLoading])
+
   useEffect(() => {
     const container = closuresScrollContainerRef.current
     if (!container) return
@@ -888,14 +896,17 @@ const SharedBalanceListPage = () => {
     setDraftPartnerAccountId(null)
     setAppliedPartnerAccountId(null)
     setDraftYear('')
-    setAppliedYear(null)
-    setFiltersApplied(false)
-    setClosures([])
+    setAppliedYear('all')
     setSelectedClosureIds(new Set())
+    setFiltersApplied(true)
+    void loadClosures('all', null)
   }
 
   const hasActiveListFilters =
-    Boolean(draftPartnerAccountId) || filtersApplied || draftYear !== ''
+    Boolean(draftPartnerAccountId) ||
+    draftYear !== '' ||
+    Boolean(appliedPartnerAccountId) ||
+    (appliedYear !== null && appliedYear !== 'all')
 
   const closureSelectHeaderState = useMemo(
     () => selectionHeaderState(
@@ -1896,8 +1907,8 @@ const SharedBalanceListPage = () => {
             {!closuresLoading && !filtersApplied && (
               <CadastroListPageEmptyCard
                 icon={<Filter size={32} className="text-gray-400" />}
-                title="Nenhum filtro aplicado"
-                description="Escolha parceiro e ano (ou Todos em cada campo) e clique em Aplicar para listar os fechamentos."
+                title="Não foi possível carregar"
+                description="Recarregue a página ou clique em Aplicar nos filtros acima."
               />
             )}
 

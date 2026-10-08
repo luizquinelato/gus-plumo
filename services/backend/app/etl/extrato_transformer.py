@@ -8,6 +8,7 @@ from datetime import datetime
 import pandas as pd
 from ..utils.mapping_helper import MappingHelper
 from ..utils.datetime_helper import DatetimeHelper
+from ..utils.import_progress import report_row_progress
 
 # Transações do extrato bruto que não devem ser importadas (comparação case-insensitive).
 IGNORED_RAW_TRANSACTIONS = frozenset({"saque negado"})
@@ -70,7 +71,9 @@ class ExtratoTransformer:
         
         transformed_records = []
         ignored_records: List[Dict[str, Any]] = []
-        
+        total_rows = len(raw_records)
+        report_row_progress(0, total_rows, phase=3)
+
         for idx, raw_record in enumerate(raw_records, 1):
             try:
                 if is_ignored_extrato_transaction(raw_record.get("transacao")):
@@ -86,6 +89,8 @@ class ExtratoTransformer:
                 print(f"   ❌ Erro ao transformar registro {idx}: {e}")
                 print(f"      Registro: {raw_record}")
                 continue
+            finally:
+                report_row_progress(idx, total_rows, phase=3)
         
         if ignored_records:
             print(f"⏭️ [TRANSFORMER] Ignorados (política): {len(ignored_records)} registros")

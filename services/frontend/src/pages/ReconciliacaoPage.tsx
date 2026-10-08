@@ -12,6 +12,7 @@ import {
   CadastroListPageShell,
   CadastroListPageTabs,
   cadastroFilterFieldCls,
+  cadastroRowIconDangerCls,
   listPageTableRowHoverCls,
   listPageTableSectionCls,
   listPageTableTdCls,
@@ -56,16 +57,22 @@ import {
   Link2,
   Loader2,
   Save,
+  Trash2,
   Unlink,
   X,
 } from 'lucide-react'
 
 type ReconcileTab = 'pending' | 'matched' | 'unlinked'
 
-type ReconcileDraftLink = {
-  candidate: InvoiceMatchCandidate
-  match_method: 'auto' | 'manual'
-}
+type ReconcileDraftLink =
+  | {
+      kind: 'link'
+      candidate: InvoiceMatchCandidate
+      match_method: 'auto' | 'manual'
+    }
+  | {
+      kind: 'skip'
+    }
 
 const DESKTOP_INSPECTOR_MQ = '(min-width: 1024px)'
 
@@ -149,6 +156,9 @@ const isPendingCycle = (cycle: InvoiceMatchCycle) =>
 const isMatchedCycle = (cycle: InvoiceMatchCycle) =>
   cycle.status === 'matched' && cycle.match != null
 
+const isRemovableReconcileCycle = (cycle: InvoiceMatchCycle) =>
+  (cycle.status === 'matched' || cycle.status === 'unlinked') && cycle.match != null
+
 const cycleMatchesQuery = (cycle: InvoiceMatchCycle, raw: string) => {
   if (!raw.trim()) return true
   const q = raw.trim().toLowerCase()
@@ -221,7 +231,7 @@ const ReconciliacaoPage = () => {
     setSelectedKey(null)
   }, [])
 
-  useEscapeKey(closeInspector, selectedKey != null)
+  useEscapeKey(closeInspector, selectedKey != null && tab === 'pending')
 
   useEffect(() => {
     const mq = window.matchMedia(DESKTOP_INSPECTOR_MQ)
@@ -254,6 +264,7 @@ const ReconciliacaoPage = () => {
       const suggestion = suggestionByKey.get(cycle.key)
       if (suggestion) {
         nextDrafts.set(cycle.key, {
+          kind: 'link',
           candidate: suggestion.candidate,
           match_method: 'auto',
         })
@@ -388,6 +399,9 @@ const ReconciliacaoPage = () => {
 
   useEffect(() => {
     setSelectedRowKeys(new Set())
+    if (tab !== 'pending') {
+      setSelectedKey(null)
+    }
   }, [tab])
 
   const sortedRows = useMemo(
@@ -418,7 +432,7 @@ const ReconciliacaoPage = () => {
   ) => {
     setDraftLinks((prev) => {
       const next = new Map(prev)
-      next.set(cycle.key, { candidate, match_method: matchMethod })
+      next.set(cycle.key, { kind: 'link', candidate, match_method: matchMethod })
       return next
     })
     setSelectedRowKeys((prev) => new Set(prev).add(cycle.key))
@@ -428,6 +442,34 @@ const ReconciliacaoPage = () => {
       return next
     })
     showToast('Vínculo preparado. Use Salvar vínculos no rodapé para gravar.', 'success', 4000)
+  }
+
+  const stageDraftSkip = (cycle: InvoiceMatchCycle) => {
+    setDraftLinks((prev) => {
+      const next = new Map(prev)
+      next.set(cycle.key, { kind: 'skip' })
+      return next
+    })
+    setSelectedRowKeys((prev) => new Set(prev).add(cycle.key))
+    setSuggestNotFoundKeys((prev) => {
+      const next = new Set(prev)
+      next.delete(cycle.key)
+      return next
+    })
+    showToast('Não vincular preparado. Use Salvar vínculos no rodapé para gravar.', 'success', 4000)
+  }
+
+  const clearDraftForCycle = (cycle: InvoiceMatchCycle) => {
+    setDraftLinks((prev) => {
+      const next = new Map(prev)
+      next.delete(cycle.key)
+      return next
+    })
+    setSelectedRowKeys((prev) => {
+      const next = new Set(prev)
+      next.delete(cycle.key)
+      return next
+    })
   }
 
   const unmatch = async (cycle: InvoiceMatchCycle) => {
@@ -449,28 +491,6 @@ const ReconciliacaoPage = () => {
     }
   }
 
-  const skipMatch = async (cycle: InvoiceMatchCycle) => {
-    setWorkingKey(cycle.key)
-    try {
-      await axios.post('/api/invoice-payment-matches/skip', {
-        year_month: cycle.year_month,
-        invoice_group_id: cycle.invoice_group_id,
-        credit_card_id: cycle.credit_card_id,
-      })
-      showToast('Marcado como não vinculado', 'success')
-      setDraftLinks((prev) => {
-        const next = new Map(prev)
-        next.delete(cycle.key)
-        return next
-      })
-      await loadHistory({ silent: true })
-    } catch (err: any) {
-      showToast(err.response?.data?.detail || 'Erro ao marcar como não vinculado', 'error')
-    } finally {
-      setWorkingKey(null)
-    }
-  }
-
   const saveSelectedDrafts = async () => {
     const keysToSave = [...selectedRowKeys].filter((key) => draftLinks.has(key))
     if (keysToSave.length === 0) {
@@ -486,13 +506,21 @@ const ReconciliacaoPage = () => {
         const cycle = allCycles.find((item) => item.key === key)
         if (!draft || !cycle) continue
         try {
-          await axios.post('/api/invoice-payment-matches/', {
-            year_month: cycle.year_month,
-            bank_statement_id: draft.candidate.bank_statement_id,
-            invoice_group_id: cycle.invoice_group_id,
-            credit_card_id: cycle.credit_card_id,
-            match_method: draft.match_method,
-          })
+          if (draft.kind === 'skip') {
+            await axios.post('/api/invoice-payment-matches/skip', {
+              year_month: cycle.year_month,
+              invoice_group_id: cycle.invoice_group_id,
+              credit_card_id: cycle.credit_card_id,
+            })
+          } else {
+            await axios.post('/api/invoice-payment-matches/', {
+              year_month: cycle.year_month,
+              bank_statement_id: draft.candidate.bank_statement_id,
+              invoice_group_id: cycle.invoice_group_id,
+              credit_card_id: cycle.credit_card_id,
+              match_method: draft.match_method,
+            })
+          }
           saved += 1
         } catch {
           failed += 1
@@ -500,7 +528,7 @@ const ReconciliacaoPage = () => {
       }
       if (saved > 0) {
         showToast(
-          `${saved} ${saved === 1 ? 'vínculo salvo' : 'vínculos salvos'}${failed > 0 ? `. ${failed} falhou(aram).` : ''}`,
+          `${saved} ${saved === 1 ? 'alteração salva' : 'alterações salvas'}${failed > 0 ? `. ${failed} falhou(aram).` : ''}`,
           failed > 0 ? 'warning' : 'success',
         )
       } else {
@@ -586,16 +614,28 @@ const ReconciliacaoPage = () => {
   const clearFilters = () => {
     setDraftYear('')
     setAppliedYear('')
-    setFiltersApplied(false)
     setSearch('')
     setSelectedKey(null)
     clearDraftState()
+    setFiltersApplied(true)
+    void loadHistoryWithSuggestions('', { silent: true })
   }
 
-  const hasActiveFilters = filtersApplied || draftYear !== appliedYear
+  useEffect(() => {
+    setAppliedYear('')
+    setFiltersApplied(true)
+    setLoading(true)
+    void loadHistoryWithSuggestions('', { silent: true }).finally(() => setLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- carga inicial única
+  }, [])
+
+  const hasActiveFilters = draftYear !== appliedYear || appliedYear !== ''
   const showQueue = filtersApplied && !loading
-  const showDesktopInspector = Boolean(selected) && isDesktop
-  const showMobileInspector = Boolean(selected) && !isDesktop
+  const inspectorCycle =
+    selected && tab === 'pending' && isPendingCycle(selected) ? selected : null
+  const showDesktopInspector = Boolean(inspectorCycle) && isDesktop
+  const showMobileInspector = Boolean(inspectorCycle) && !isDesktop
+  const showRowActions = tab === 'matched' || tab === 'unlinked'
   const emptyTab = emptyCopyForTab(tab)
   const yearHint = appliedYear || 'Todos'
 
@@ -622,11 +662,13 @@ const ReconciliacaoPage = () => {
     const matchedRow = isMatchedCycle(cycle)
     const rowChecked = selectedRowKeys.has(cycle.key)
     const linkNotFound = suggestNotFoundKeys.has(cycle.key) && pendingRow && !draft
+    const opensInspector = tab === 'pending' && pendingRow
+    const removable = isRemovableReconcileCycle(cycle)
     return (
       <tr
         key={cycle.key}
-        className={`${listPageTableRowHoverCls} cursor-pointer ${
-          selectedRow
+        className={`${listPageTableRowHoverCls} ${opensInspector ? 'cursor-pointer' : ''} ${
+          opensInspector && selectedRow
             ? 'table-row-selected bg-[color-mix(in_srgb,var(--color-1)_7%,transparent)]'
             : rowChecked && bulkSelectTab
               ? 'bg-[color-mix(in_srgb,var(--color-1)_6%,transparent)]'
@@ -636,7 +678,11 @@ const ReconciliacaoPage = () => {
                   ? 'bg-[color-mix(in_srgb,var(--color-warning)_12%,transparent)]'
                   : ''
         }`}
-        onClick={() => setSelectedKey(selectedRow ? null : cycle.key)}
+        onClick={
+          opensInspector
+            ? () => setSelectedKey(selectedRow ? null : cycle.key)
+            : undefined
+        }
       >
         {bulkSelectTab ? (
           <ListTableCheckboxCell
@@ -698,7 +744,16 @@ const ReconciliacaoPage = () => {
               label={meta.label}
             />
             {draft ? (
-              <Badge variant="count" tone="brand3" label="A salvar" title="Vínculo preparado — use Salvar no rodapé" />
+              <Badge
+                variant="count"
+                tone="brand3"
+                label={draft.kind === 'skip' ? 'Não vincular' : 'A salvar'}
+                title={
+                  draft.kind === 'skip'
+                    ? 'Marcado para não vincular — use Salvar no rodapé'
+                    : 'Vínculo preparado — use Salvar no rodapé'
+                }
+              />
             ) : null}
             {linkNotFound ? (
               <Badge
@@ -711,7 +766,9 @@ const ReconciliacaoPage = () => {
           </div>
         </td>
         <td className={listPageTableTdCls}>
-          {draft ? (
+          {draft?.kind === 'skip' ? (
+            <span className="text-gray-600 dark:text-gray-300">Sem débito no extrato (a salvar)</span>
+          ) : draft?.kind === 'link' ? (
             <span className="text-gray-800 dark:text-gray-100">
               {formatDate(draft.candidate.date)} · {draft.candidate.description || '—'}
             </span>
@@ -725,20 +782,50 @@ const ReconciliacaoPage = () => {
             <span className="text-gray-400">—</span>
           )}
         </td>
+        {showRowActions ? (
+          <td className={`${listPageTableTdCls} text-right`}>
+            {removable ? (
+              <button
+                type="button"
+                className={cadastroRowIconDangerCls}
+                title={
+                  cycle.status === 'unlinked'
+                    ? 'Remover marca de não vinculado'
+                    : 'Excluir vínculo com o extrato'
+                }
+                disabled={workingKey === cycle.key}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  void unmatch(cycle)
+                }}
+              >
+                {workingKey === cycle.key ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <Trash2 size={16} />
+                )}
+              </button>
+            ) : (
+              <span className="text-gray-400">—</span>
+            )}
+          </td>
+        ) : null}
       </tr>
     )
   }
 
-  const pickPanel = selected ? (
+  const pickPanel = inspectorCycle ? (
     <InvoiceReconcilePickPanel
       inline
-      cycle={selected}
-      stagedCandidate={selectedDraft?.candidate ?? null}
-      busy={workingKey === selected.key}
+      cycle={inspectorCycle}
+      stagedCandidate={selectedDraft?.kind === 'link' ? selectedDraft.candidate : null}
+      stagedSkip={selectedDraft?.kind === 'skip'}
+      busy={workingKey === inspectorCycle.key}
       onClose={closeInspector}
-      onConfirm={(_id, candidate) => stageDraftLink(selected, candidate, 'manual')}
-      onUnmatch={() => unmatch(selected)}
-      onSkip={() => skipMatch(selected)}
+      onConfirm={(_id, candidate) => stageDraftLink(inspectorCycle, candidate, 'manual')}
+      onUnmatch={() => unmatch(inspectorCycle)}
+      onSkip={() => stageDraftSkip(inspectorCycle)}
+      onCancelDraft={() => clearDraftForCycle(inspectorCycle)}
     />
   ) : null
 
@@ -747,8 +834,8 @@ const ReconciliacaoPage = () => {
   ) : !filtersApplied ? (
     <CadastroListPageEmptyCard
       icon={<Filter size={32} className="text-gray-400" />}
-      title="Nenhum filtro aplicado"
-      description="Selecione o ano (ou Todos) e clique em Aplicar para carregar ciclos e sugerir vínculos no extrato."
+      title="Não foi possível carregar"
+      description="Recarregue a página ou clique em Aplicar nos filtros acima."
     />
   ) : allCycles.length === 0 ? (
     <CadastroListPageEmptyCard
@@ -778,7 +865,12 @@ const ReconciliacaoPage = () => {
     <div className={listPageTableSectionCls}>
       <ListPageTable
         leadingMode={bulkSelectTab ? 'bulk' : 'index-only'}
-        colsRest={<ListTableSpacerCol />}
+        colsRest={
+          <>
+            <ListTableSpacerCol />
+            {showRowActions ? <col style={{ width: 72, minWidth: 72, maxWidth: 72 }} /> : null}
+          </>
+        }
         head={
           <tr>
             {bulkSelectTab ? (
@@ -795,6 +887,9 @@ const ReconciliacaoPage = () => {
             <ListTableStaticHeader label="Líquido" className="w-[7rem]" />
             <ListTableStaticHeader label="Status" className="w-[11rem]" />
             <ListTableStaticHeader label="Extrato vinculado" />
+            {showRowActions ? (
+              <ListTableStaticHeader label="Ações" className="w-[72px] text-right" />
+            ) : null}
           </tr>
         }
       >
@@ -889,7 +984,9 @@ const ReconciliacaoPage = () => {
           <CadastroModalHeader
             isEdit={false}
             title="Conciliar fatura"
-            subtitle={selected ? `${selected.name} · ${selected.year_month}` : undefined}
+            subtitle={
+              inspectorCycle ? `${inspectorCycle.name} · ${inspectorCycle.year_month}` : undefined
+            }
             onClose={closeInspector}
             icon={<Link2 size={18} />}
           />
@@ -908,7 +1005,7 @@ const ReconciliacaoPage = () => {
             {footerSaveVisible ? (
               <span className="font-medium text-color-primary">
                 {savableSelectedCount}{' '}
-                {savableSelectedCount === 1 ? 'vínculo pronto para salvar' : 'vínculos prontos para salvar'}
+                {savableSelectedCount === 1 ? 'alteração pronta para salvar' : 'alterações prontas para salvar'}
               </span>
             ) : footerUnmatchVisible ? (
               <span className="font-medium text-color-primary">

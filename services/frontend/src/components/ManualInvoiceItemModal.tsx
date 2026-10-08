@@ -20,6 +20,14 @@ import { dateToLocalString, dateToLocalTimestamp, parseLocalDateTime } from '../
 import { sharingPartnerLabel, sharingPercentForKind } from '../utils/accountFormatter'
 import OwnershipPercentField from './OwnershipPercentField'
 import { maskPercentInput, finalizePercentInput } from '../utils/percentInput'
+import ClosureEditImpactDialog from './ClosureEditImpactDialog'
+import type { ClosureEditImpact } from '../types/closureEditImpact'
+import {
+  buildEditSuccessPayload,
+  extractClosureImpactFromResponse,
+  parseAxiosClosureConflict,
+  type ExpenseEditSuccessPayload,
+} from '../utils/closureEditImpact'
 
 interface TagOption {
   id: number
@@ -56,7 +64,7 @@ interface ManualInvoiceItemModalProps {
   isOpen: boolean
   context: ManualInvoiceItemContext | null
   onClose: () => void
-  onSuccess: () => void
+  onSuccess: (result: ExpenseEditSuccessPayload) => void
 }
 
 const ISSUER_LABEL: Record<'btg' | 'mercadopago', string> = {
@@ -92,6 +100,8 @@ const ManualInvoiceItemModal = ({ isOpen, context, onClose, onSuccess }: ManualI
   const [partners, setPartners] = useState<SharedPartner[]>([])
   const [selectedDate, setSelectedDate] = useState<Date>(new Date())
   const [isLoading, setIsLoading] = useState(false)
+  const [closureImpactOpen, setClosureImpactOpen] = useState(false)
+  const [closureImpact, setClosureImpact] = useState<ClosureEditImpact | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const suppressBackdropCloseRef = useRef(false)
   const contextKey = context ? `${context.cardId}:${context.yearMonth}` : ''
@@ -258,8 +268,25 @@ const ManualInvoiceItemModal = ({ isOpen, context, onClose, onSuccess }: ManualI
       return
     }
 
+    await submitManualItem(false)
+  }
+
+  const submitManualItem = async (confirmClosedClosureImpact: boolean) => {
+    if (!context) return
     try {
       setIsLoading(true)
+      const amount = parseAmountInput(formData.amount)
+      const curRaw = formData.current_installment.trim()
+      const totRaw = formData.total_installments.trim()
+      const hasCur = curRaw.length > 0
+      const hasTot = totRaw.length > 0
+      let currentInstallment: number | null = null
+      let totalInstallments: number | null = null
+      if (hasCur && hasTot) {
+        currentInstallment = parseInt(curRaw, 10)
+        totalInstallments = parseInt(totRaw, 10)
+      }
+
       const payload = {
         credit_card_id: context.cardId,
         year_month: context.yearMonth,
@@ -274,13 +301,21 @@ const ManualInvoiceItemModal = ({ isOpen, context, onClose, onSuccess }: ManualI
         issuer: context.issuer,
         adjustment_notes: formData.adjustment_notes.trim() || null,
         create_mapping: formData.create_mapping,
+        confirm_closed_closure_impact: confirmClosedClosureImpact,
       }
 
-      await axios.post('/api/expenses/credit-card-invoices/manual', payload)
-      onSuccess()
+      const response = await axios.post('/api/expenses/credit-card-invoices/manual', payload)
+      const impact = extractClosureImpactFromResponse(response.data)
+      onSuccess(buildEditSuccessPayload(response.data.message || 'Acerto incluído na fatura.', impact))
       resetForm()
       onClose()
     } catch (error: unknown) {
+      const conflict = parseAxiosClosureConflict(error)
+      if (conflict && !confirmClosedClosureImpact) {
+        setClosureImpact(conflict)
+        setClosureImpactOpen(true)
+        return
+      }
       const detail =
         axios.isAxiosError(error) && typeof error.response?.data?.detail === 'string'
           ? error.response.data.detail
@@ -612,6 +647,18 @@ const ManualInvoiceItemModal = ({ isOpen, context, onClose, onSuccess }: ManualI
       {toast.show ? (
         <Toast message={toast.message} type={toast.type} onClose={() => setToast((t) => ({ ...t, show: false }))} />
       ) : null}
+
+      <ClosureEditImpactDialog
+        isOpen={closureImpactOpen}
+        impact={closureImpact}
+        onClose={() => setClosureImpactOpen(false)}
+        onConfirm={() => {
+          setClosureImpactOpen(false)
+          void submitManualItem(true)
+        }}
+        confirmText="Confirmar e incluir"
+        confirming={isLoading}
+      />
     </>
   )
 }

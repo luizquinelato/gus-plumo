@@ -5,6 +5,15 @@
 
 import * as XLSX from 'xlsx'
 import { filterRegularLoanPayments, getSettlementCreditEntries } from './closureCreditUtils'
+import {
+  EXCEL_FMT_DATE,
+  EXCEL_FMT_DATETIME,
+  EXCEL_FMT_MONEY,
+  EXCEL_FMT_PERCENT,
+  expenseDateToExcelSerial,
+  jsonToFormattedSheet,
+  roundExportMoney,
+} from './excelCellFormat'
 
 export interface ExpenseExportData {
   id: number
@@ -105,13 +114,13 @@ function convertBankStatements(expenses: ExpenseExportData[], options: ExportOpt
   return expenses.map(exp => {
     const { year, month } = extractYearMonth(exp.date)
     const record = {
-      'Ano': year,
-      'Mês': month,
-      'Data e hora': formatDateTime(exp.date),
+      'Ano': Number(year),
+      'Mês': Number(month),
+      'Data e hora': expenseDateToExcelSerial(exp.date),
       'Categoria': exp.category || '',
       'Transação': exp.amount >= 0 ? 'Crédito' : 'Débito',
       'Descrição': exp.description,
-      'Valor': exp.amount,
+      'Valor': roundExportMoney(exp.amount),
       'Tag': exp.tag_name || '',
       'Subtag': exp.subtag_name || ''
     }
@@ -156,14 +165,14 @@ function convertCardInvoices(expenses: ExpenseExportData[], options: ExportOptio
     const valorExportado = -exp.amount
 
     const record = {
-      'Ano': year,
-      'Mês': month,
+      'Ano': Number(year),
+      'Mês': Number(month),
       'Cartão': exp.card_number || '',
       'Titular': exp.card_name || '',
-      'Data': formatDate(exp.date),
+      'Data': expenseDateToExcelSerial(exp.date, true),
       'Descrição': descricaoCompleta,
       'Descrição Limpa': exp.description,
-      'Valor': valorExportado,
+      'Valor': roundExportMoney(valorExportado),
       'Tag': exp.tag_name || '',
       'Subtag': exp.subtag_name || ''
     }
@@ -184,10 +193,10 @@ function convertBenefits(expenses: ExpenseExportData[], options: ExportOptions =
     const cardLast4 = exp.card_number ? exp.card_number.slice(-4) : ''
 
     const record = {
-      'Data': formatDateTime(exp.date),  // Timestamp completo: DD/MM/YYYY HH:MM:SS
-      'Cartão': cardLast4,               // 4 últimos dígitos do cartão
+      'Data': expenseDateToExcelSerial(exp.date),
+      'Cartão': cardLast4,
       'Movimentação': exp.description,
-      'Valor': exp.amount,
+      'Valor': roundExportMoney(exp.amount),
       'Meio de Pagamento': exp.card_name || 'Benefício',
       'Saldo': '',                       // Não temos essa informação
       'Tag': exp.tag_name || '',
@@ -209,24 +218,44 @@ export function exportToExcel(expenses: ExpenseExportData[], filename?: string, 
   // Cria workbook
   const wb = XLSX.utils.book_new()
 
+  const sharingFormats = options.includeSharing
+    ? { 'Parte na sua conta (%)': EXCEL_FMT_PERCENT }
+    : {}
+
   // Aba 1: Extratos Bancários
   if (bankStatements.length > 0) {
     const bankData = convertBankStatements(bankStatements, options)
-    const wsBank = XLSX.utils.json_to_sheet(bankData)
+    const wsBank = jsonToFormattedSheet(bankData, {
+      Ano: '0',
+      Mês: '00',
+      'Data e hora': EXCEL_FMT_DATETIME,
+      Valor: EXCEL_FMT_MONEY,
+      ...sharingFormats,
+    })
     XLSX.utils.book_append_sheet(wb, wsBank, 'Extratos Bancários')
   }
 
   // Aba 2: Faturas de Cartão
   if (cardInvoices.length > 0) {
     const cardData = convertCardInvoices(cardInvoices, options)
-    const wsCard = XLSX.utils.json_to_sheet(cardData)
+    const wsCard = jsonToFormattedSheet(cardData, {
+      Ano: '0',
+      Mês: '00',
+      Data: EXCEL_FMT_DATE,
+      Valor: EXCEL_FMT_MONEY,
+      ...sharingFormats,
+    })
     XLSX.utils.book_append_sheet(wb, wsCard, 'Faturas de Cartão')
   }
 
   // Aba 3: Benefícios
   if (benefits.length > 0) {
     const benefitData = convertBenefits(benefits, options)
-    const wsBenefit = XLSX.utils.json_to_sheet(benefitData)
+    const wsBenefit = jsonToFormattedSheet(benefitData, {
+      Data: EXCEL_FMT_DATETIME,
+      Valor: EXCEL_FMT_MONEY,
+      ...sharingFormats,
+    })
     XLSX.utils.book_append_sheet(wb, wsBenefit, 'Benefícios')
   }
 
@@ -583,11 +612,21 @@ export function exportToExcelSeparado(expenses: ExpenseExportData[], options: Ex
   const today = new Date()
   const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`
 
+  const sharingFormats = options.includeSharing
+    ? { 'Parte na sua conta (%)': EXCEL_FMT_PERCENT }
+    : {}
+
   // Arquivo 1: Extratos Bancários
   if (bankStatements.length > 0) {
     const wb = XLSX.utils.book_new()
     const data = convertBankStatements(bankStatements, options)
-    const ws = XLSX.utils.json_to_sheet(data)
+    const ws = jsonToFormattedSheet(data, {
+      Ano: '0',
+      Mês: '00',
+      'Data e hora': EXCEL_FMT_DATETIME,
+      Valor: EXCEL_FMT_MONEY,
+      ...sharingFormats,
+    })
     XLSX.utils.book_append_sheet(wb, ws, 'Extratos')
     XLSX.writeFile(wb, `extratos_${dateStr}.xlsx`)
   }
@@ -596,7 +635,13 @@ export function exportToExcelSeparado(expenses: ExpenseExportData[], options: Ex
   if (cardInvoices.length > 0) {
     const wb = XLSX.utils.book_new()
     const data = convertCardInvoices(cardInvoices, options)
-    const ws = XLSX.utils.json_to_sheet(data)
+    const ws = jsonToFormattedSheet(data, {
+      Ano: '0',
+      Mês: '00',
+      Data: EXCEL_FMT_DATE,
+      Valor: EXCEL_FMT_MONEY,
+      ...sharingFormats,
+    })
     XLSX.utils.book_append_sheet(wb, ws, 'Faturas')
     XLSX.writeFile(wb, `faturas_${dateStr}.xlsx`)
   }
@@ -605,7 +650,11 @@ export function exportToExcelSeparado(expenses: ExpenseExportData[], options: Ex
   if (benefits.length > 0) {
     const wb = XLSX.utils.book_new()
     const data = convertBenefits(benefits, options)
-    const ws = XLSX.utils.json_to_sheet(data)
+    const ws = jsonToFormattedSheet(data, {
+      Data: EXCEL_FMT_DATETIME,
+      Valor: EXCEL_FMT_MONEY,
+      ...sharingFormats,
+    })
     XLSX.utils.book_append_sheet(wb, ws, 'Benefícios')
     XLSX.writeFile(wb, `beneficios_${dateStr}.xlsx`)
   }
@@ -699,6 +748,13 @@ export function exportTransactionMappingsToExcel(
   }))
 
   const ws = XLSX.utils.json_to_sheet(rows)
+  // Critério regex como texto puro — evita Excel alterar \\b, \\s, etc.
+  const CRITERION_COL = 2
+  items.forEach((item, idx) => {
+    if (item.mapping_type !== 'regex' || item.is_sensitive) return
+    const ref = XLSX.utils.encode_cell({ r: idx + 1, c: CRITERION_COL })
+    ws[ref] = { t: 's', v: item.regex_pattern ?? '' }
+  })
   XLSX.utils.book_append_sheet(wb, ws, 'Mapeamentos')
 
   const metaRows: { Campo: string; Valor: string }[] = [

@@ -13,6 +13,7 @@ from app.models.unified_models import Account, Bank
 from app.models.auth_models import Usuario
 from app.dependencies.auth import get_current_user
 from app.utils.account_import_password import set_account_import_file_password
+from app.schemas.bulk_ops import BulkDeleteResponse, BulkIdsRequest
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
@@ -287,6 +288,39 @@ async def atualizar_conta(
     db.commit()
     db.refresh(conta)
     return conta
+
+
+@router.post("/bulk-delete", response_model=BulkDeleteResponse)
+async def bulk_deletar_contas(
+    body: BulkIdsRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Exclui permanentemente várias contas bancárias do usuário."""
+    if not body.ids:
+        raise HTTPException(status_code=400, detail="Nenhuma conta selecionada")
+
+    tenant_id = current_user.get("tenant_id", 1)
+    user_id = current_user.get("user_id", 1)
+    unique_ids = list(dict.fromkeys(body.ids))
+
+    contas = (
+        db.query(Account)
+        .filter(
+            Account.id.in_(unique_ids),
+            Account.tenant_id == tenant_id,
+            Account.user_id == user_id,
+        )
+        .all()
+    )
+    found_ids = {c.id for c in contas}
+    for conta in contas:
+        db.delete(conta)
+
+    db.commit()
+    deleted = len(contas)
+    skipped = len(unique_ids) - deleted
+    return BulkDeleteResponse(deleted=deleted, skipped=skipped)
 
 
 @router.delete("/{account_id}", status_code=204)

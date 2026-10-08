@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
 import {
@@ -27,6 +27,9 @@ import LoadingSpinner from '../components/LoadingSpinner'
 import SplitExpenseModal from '../components/SplitExpenseModal'
 import EditExpenseModal from '../components/EditExpenseModal'
 import BatchEditExpenseModal from '../components/BatchEditExpenseModal'
+import ClosureEditImpactSummaryModal from '../components/ClosureEditImpactSummaryModal'
+import type { ClosureEditImpact } from '../types/closureEditImpact'
+import type { ExpenseEditSuccessPayload } from '../utils/closureEditImpact'
 import SharedAccountDisplay from '../components/SharedAccountDisplay'
 import { MultiSelectDropdown, SourceMultiSelectDropdown } from '../components/MultiSelectDropdown'
 import { DateField } from '../components/date'
@@ -36,6 +39,10 @@ import { useConfirm } from '../hooks/useConfirm'
 import { dateToLocalString, parseLocalDate } from '../utils/dateUtils'
 import { descriptionMatchesSearch, resolveDescriptionSearchState } from '../utils/descriptionSearch'
 import ExportModal from '../components/ExportModal'
+import ExtratoReportMenu from '../components/ExtratoReportMenu'
+import { CadastroListHeaderActions } from '../components/CadastroExcelMenu'
+import { exportExtratoReportToPdf } from '../utils/exportExtratoReportPdf'
+import type { ImportIssueRow } from '../components/ClosureEditImpactSummaryModal'
 import SendToLoanModal from '../components/SendToLoanModal'
 import ManualTransactionModal from '../components/ManualTransactionModal'
 import Toast from '../components/Toast'
@@ -54,6 +61,11 @@ interface NavigationState {
   startDate?: string
   endDate?: string
   sources?: string[]
+}
+
+function appendOptionalDateRangeParams(params: URLSearchParams, start: Date | null, end: Date | null) {
+  if (start) params.append('start_date', dateToLocalString(start))
+  if (end) params.append('end_date', dateToLocalString(end))
 }
 
 interface TagOption {
@@ -199,6 +211,7 @@ const ORIGIN_OPTIONS = [
 ]
 
 const ExtratoPage = () => {
+  const navigate = useNavigate()
   // Hook para ler navigation state
   const location = useLocation()
   const navigationState = location.state as NavigationState | null
@@ -293,6 +306,29 @@ const ExtratoPage = () => {
   const [showToast, setShowToast] = useState(false)
   const [toastMessage, setToastMessage] = useState('')
   const [toastType, setToastType] = useState<'success' | 'error'>('success')
+  const [closureSummary, setClosureSummary] = useState<{
+    baseMessage: string
+    impact: ClosureEditImpact | null
+    importIssues?: ImportIssueRow[]
+    importStats?: Record<string, number>
+  } | null>(null)
+
+  const handleExpenseEditSuccess = (
+    result: ExpenseEditSuccessPayload & { issues?: ImportIssueRow[]; stats?: Record<string, number> },
+  ) => {
+    loadDetailedReport()
+    const importIssues = result.issues
+    if (result.closureImpact || (importIssues && importIssues.length > 0)) {
+      setClosureSummary({
+        baseMessage: result.message,
+        impact: result.closureImpact ?? null,
+        importIssues,
+        importStats: result.stats,
+      })
+    } else {
+      handleShowToast(result.message, 'success')
+    }
+  }
 
   // Hooks
   const { showConfirm, ConfirmComponent } = useConfirm()
@@ -473,14 +509,7 @@ const ExtratoPage = () => {
 
       params.append('source', sources.join(','))
 
-      // Apenas envia datas se ambas estiverem definidas
-      if (startDate && endDate) {
-        const startDateStr = dateToLocalString(startDate)
-        const endDateStr = dateToLocalString(endDate)
-        console.log('📅 Filtro de datas:', { startDate, endDate, startDateStr, endDateStr })
-        params.append('start_date', startDateStr)
-        params.append('end_date', endDateStr)
-      }
+      appendOptionalDateRangeParams(params, startDate, endDate)
 
       params.append('limit', '10000')
 
@@ -540,12 +569,7 @@ const ExtratoPage = () => {
       // Gráficos: série temporal cobre extrato bancário (benefícios não entram na API time-series).
       params.append('source', 'bank')
 
-      // Apenas envia datas se ambas estiverem definidas (mesmo comportamento do Extrato)
-      if (startDate && endDate) {
-        params.append('start_date', dateToLocalString(startDate))
-        params.append('end_date', dateToLocalString(endDate))
-      }
-      // Se não tiver datas, não envia filtro → backend retorna todos os dados
+      appendOptionalDateRangeParams(params, startDate, endDate)
 
       // Filtros opcionais - Trata opção "Vazio" (id=-1) para tags
       const hasEmptyTag = selectedTagIds.includes(-1)
@@ -576,9 +600,7 @@ const ExtratoPage = () => {
   const handleApplyFilters = () => {
     setAppliedTransactionType(selectedTransactionType)
     setAppliedIncludeDailyBalance(includeDailyBalance)
-    setAppliedPeriodStartKey(
-      startDate && endDate ? dateToLocalString(startDate) : null,
-    )
+    setAppliedPeriodStartKey(startDate ? dateToLocalString(startDate) : null)
     loadDetailedReport({ withDailyBalance: includeDailyBalance })
     loadTimeSeriesData()
   }
@@ -677,12 +699,8 @@ const ExtratoPage = () => {
     )
   }
 
-  const handleEditSuccess = () => {
-    loadDetailedReport()
-  }
-
-  const handleSplitSuccess = () => {
-    loadDetailedReport()
+  const handleSplitSuccess = (result: ExpenseEditSuccessPayload) => {
+    handleExpenseEditSuccess(result)
   }
 
   const handleSendToLoan = (expense: ExpenseDetail) => {
@@ -1102,25 +1120,31 @@ const ExtratoPage = () => {
               title="Extrato de Transações"
               subtitle="Extrato bancário e benefícios por data da transação. Faturas de cartão de crédito: menu Faturas."
               actions={
-                <>
-                  <CadastroListSecondaryButton
-                    label="Exportar Excel"
-                    icon={<Download size={18} />}
-                    disabled={!filteredExpenses || filteredExpenses.length === 0}
-                    onClick={() => {
-                      if (!filteredExpenses || filteredExpenses.length === 0) {
-                        handleShowToast('Nenhum dado para exportar', 'error')
-                        return
-                      }
-                      setIsExportModalOpen(true)
-                    }}
-                  />
+                <CadastroListHeaderActions>
                   <CadastroListPrimaryButton
                     label="Novo Lançamento"
                     icon={<PlusCircle size={18} />}
                     onClick={() => setIsManualTransactionModalOpen(true)}
                   />
-                </>
+                  <ExtratoReportMenu
+                    onImportExcel={() => navigate('/importar')}
+                    onExportExcel={() => {
+                      if (!exportExpenses || exportExpenses.length === 0) {
+                        handleShowToast('Nenhum dado para exportar', 'error')
+                        return
+                      }
+                      setIsExportModalOpen(true)
+                    }}
+                    onExportPdf={() => {
+                      if (!exportExpenses || exportExpenses.length === 0) {
+                        handleShowToast('Nenhum dado para exportar', 'error')
+                        return
+                      }
+                      exportExtratoReportToPdf(exportExpenses, 'Extrato de transações (filtrado)')
+                      handleShowToast(`PDF exportado (${exportExpenses.length} lançamentos)`, 'success')
+                    }}
+                  />
+                </CadastroListHeaderActions>
               }
             />
           }
@@ -1960,10 +1984,13 @@ const ExtratoPage = () => {
                   <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
                     Configure os filtros acima e clique em "Aplicar" para visualizar as transações.
                   </p>
-                  {startDate && endDate && (
+                  {(startDate || endDate) && (
                     <p className="mt-1 text-sm text-gray-500 dark:text-gray-500">
-                      Período atual: <span className="font-medium text-gray-700 dark:text-gray-300">
-                        {startDate.toLocaleDateString('pt-BR')} - {endDate.toLocaleDateString('pt-BR')}
+                      Período:{' '}
+                      <span className="font-medium text-gray-700 dark:text-gray-300">
+                        {startDate ? startDate.toLocaleDateString('pt-BR') : '…'}
+                        {' – '}
+                        {endDate ? endDate.toLocaleDateString('pt-BR') : '…'}
                       </span>
                     </p>
                   )}
@@ -2163,7 +2190,16 @@ const ExtratoPage = () => {
           setExpenseToEdit(null)
         }}
         expense={expenseToEdit}
-        onSuccess={handleEditSuccess}
+        onSuccess={handleExpenseEditSuccess}
+      />
+
+      <ClosureEditImpactSummaryModal
+        isOpen={closureSummary != null}
+        baseMessage={closureSummary?.baseMessage ?? ''}
+        impact={closureSummary?.impact ?? null}
+        importIssues={closureSummary?.importIssues}
+        importStats={closureSummary?.importStats}
+        onClose={() => setClosureSummary(null)}
       />
 
       {/* Toast Notification */}
@@ -2181,12 +2217,9 @@ const ExtratoPage = () => {
         onClose={() => setIsBatchEditModalOpen(false)}
         selectedItems={getSelectedItemsForApi()}
         expenseType={selectionType || 'despesa'}
-        onSuccess={(message) => {
+        onSuccess={(result) => {
           clearSelection()
-          loadDetailedReport()
-          if (message) {
-            handleShowToast(message, 'success')
-          }
+          handleExpenseEditSuccess(result)
         }}
       />
 
@@ -2214,7 +2247,7 @@ const ExtratoPage = () => {
       <ManualTransactionModal
         isOpen={isManualTransactionModalOpen}
         onClose={() => setIsManualTransactionModalOpen(false)}
-        onSuccess={loadDetailedReport}
+        onSuccess={handleExpenseEditSuccess}
         defaultDestination={
           selectedSources.length === 1 && selectedSources[0] === 'benefit' ? 'beneficio' : 'extrato'
         }

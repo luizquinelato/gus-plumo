@@ -8,11 +8,21 @@ import {
   CadastroModalBody,
   CadastroModalFooter,
   CadastroFormSection,
+  CadastroModalFieldsGrid,
+  CadastroModalFieldsRow,
   CadastroFieldLabel,
   cadastroFieldCls,
   cadastroAccentControlCls,
 } from './CadastroFormLayout'
 import { useEscapeKey } from '../hooks/useEscapeKey'
+import ClosureEditImpactDialog from './ClosureEditImpactDialog'
+import type { ClosureEditImpact } from '../types/closureEditImpact'
+import {
+  buildEditSuccessPayload,
+  extractClosureImpactFromResponse,
+  parseAxiosClosureConflict,
+  type ExpenseEditSuccessPayload,
+} from '../utils/closureEditImpact'
 
 interface ToastState {
   show: boolean
@@ -40,13 +50,13 @@ interface SplitExpenseModalProps {
   onClose: () => void
   expense: {
     id: number
-    source: 'bank' | 'cards'
+    source: 'bank' | 'card' | 'cards'
     description: string
     amount: number
     subtag_id: number
     subtag_name: string
   } | null
-  onSuccess: () => void
+  onSuccess: (result: ExpenseEditSuccessPayload) => void
 }
 
 const SplitExpenseModal = ({ isOpen, onClose, expense, onSuccess }: SplitExpenseModalProps) => {
@@ -55,6 +65,8 @@ const SplitExpenseModal = ({ isOpen, onClose, expense, onSuccess }: SplitExpense
   const [isLoading, setIsLoading] = useState(false)
   const [toast, setToast] = useState<ToastState>({ show: false, message: '', type: 'success' })
   const [originalTagType, setOriginalTagType] = useState<string | null>(null)
+  const [closureImpactOpen, setClosureImpactOpen] = useState(false)
+  const [closureImpact, setClosureImpact] = useState<ClosureEditImpact | null>(null)
 
   // Hook para fechar modal com ESC
   useEscapeKey(onClose, isOpen)
@@ -86,6 +98,8 @@ const SplitExpenseModal = ({ isOpen, onClose, expense, onSuccess }: SplitExpense
 
   useEffect(() => {
     if (isOpen && expense) {
+      setClosureImpactOpen(false)
+      setClosureImpact(null)
       loadSubtags().then(() => {
         // Após carregar subtags, inicializa com 2 partes: a original e uma nova
         // Busca o tag_id da subtag original
@@ -224,68 +238,71 @@ const SplitExpenseModal = ({ isOpen, onClose, expense, onSuccess }: SplitExpense
     return Math.round(percentage)
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    if (!expense) return
-
-    // Validações
+  const validateSplit = (): boolean => {
+    if (!expense) return false
     const total = getTotalAmount()
     if (Math.abs(total - expense.amount) > 0.01) {
       showToast(
         `A soma das partes (${formatCurrency(total)}) deve ser igual ao valor original (${formatCurrency(expense.amount)})`,
-        'warning'
+        'warning',
       )
-      return
+      return false
     }
-
-    if (parts.some(p => p.subtag_id === 0)) {
+    if (parts.some((p) => p.subtag_id === 0)) {
       showToast('Todas as partes devem ter uma subtag selecionada', 'warning')
-      return
+      return false
     }
-
-    // Validação de valores: para despesas (negativo), não pode ser >= 0; para receitas (positivo), não pode ser <= 0
     if (expense.amount < 0) {
-      if (parts.some(p => p.amount >= 0)) {
+      if (parts.some((p) => p.amount >= 0)) {
         showToast('Todas as partes de uma despesa devem ter valores negativos', 'warning')
-        return
+        return false
       }
-    } else {
-      if (parts.some(p => p.amount <= 0)) {
-        showToast('Todas as partes de uma receita devem ter valores positivos', 'warning')
-        return
-      }
+    } else if (parts.some((p) => p.amount <= 0)) {
+      showToast('Todas as partes de uma receita devem ter valores positivos', 'warning')
+      return false
     }
+    return true
+  }
+
+  const submitSplit = async (confirmClosedClosureImpact: boolean) => {
+    if (!expense || !validateSplit()) return
 
     try {
       setIsLoading(true)
-      const endpoint = expense.source === 'bank'
+      const isBank = expense.source === 'bank'
+      const endpoint = isBank
         ? `/api/expenses/bank-statements/${expense.id}/split`
         : `/api/expenses/credit-card-invoices/${expense.id}/split`
 
-      await axios.post(endpoint, {
-        parts: parts.map(p => ({
-          amount: p.amount,
-          subtag_id: p.subtag_id
-        }))
+      const response = await axios.post(endpoint, {
+        parts: parts.map((p) => ({ amount: p.amount, subtag_id: p.subtag_id })),
+        confirm_closed_closure_impact: confirmClosedClosureImpact,
       })
 
-      showToast('Despesa dividida com sucesso!', 'success')
-
-      // Aguarda um pouco para o usuário ver o toast antes de fechar
-      setTimeout(() => {
-        onSuccess()
-        onClose()
-      }, 1500)
-    } catch (error: any) {
+      const impact = extractClosureImpactFromResponse(response.data)
+      onClose()
+      onSuccess(buildEditSuccessPayload('Despesa dividida com sucesso!', impact))
+    } catch (error: unknown) {
+      const conflict = parseAxiosClosureConflict(error)
+      if (conflict && !confirmClosedClosureImpact) {
+        setClosureImpact(conflict)
+        setClosureImpactOpen(true)
+        return
+      }
       console.error('Erro ao dividir despesa:', error)
+      const detail = axios.isAxiosError(error) ? error.response?.data?.detail : null
       showToast(
-        error.response?.data?.detail || 'Erro ao dividir despesa. Tente novamente.',
-        'error'
+        typeof detail === 'string' ? detail : 'Erro ao dividir despesa. Tente novamente.',
+        'error',
       )
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    void submitSplit(false)
   }
 
   const formatCurrency = (value: number) => {
@@ -301,136 +318,149 @@ const SplitExpenseModal = ({ isOpen, onClose, expense, onSuccess }: SplitExpense
 
   return (
     <>
-      <CadastroModalShell maxWidth="max-w-5xl" onBackdropClick={onClose}>
+      <CadastroModalShell maxWidth="max-w-3xl" onBackdropClick={onClose}>
         <CadastroModalHeader
           isEdit
-          title="Dividir Despesa"
+          title="Dividir lançamento"
           subtitle={expense.description}
           onClose={onClose}
           icon={<Scissors size={18} />}
         />
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col" id="split-expense-form">
           <CadastroModalBody>
-            <CadastroFormSection title="Valores" icon={<DollarSign size={14} />}>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-600 dark:text-gray-400">Valor original</span>
-                <span className="text-lg font-bold text-gray-900 dark:text-white">{formatCurrency(expense.amount)}</span>
-              </div>
-              {expense && parts.length === 2 && parts[0] && parts[1] && (
-                <div className="mt-4">
-                  <div className="mb-3 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="h-3 w-3 rounded-full bg-gradient-to-r from-[var(--color-1)] to-[var(--color-2)]"></div>
-                      <span className="text-sm font-semibold text-gray-900 dark:text-white">Minha Parte</span>
-                      <span className="text-lg font-bold text-[var(--color-1)]">{getSliderPercentage()}%</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg font-bold text-[var(--color-3)]">{100 - getSliderPercentage()}%</span>
-                      <span className="text-sm font-semibold text-gray-900 dark:text-white">Outra Parte</span>
-                      <div className="h-3 w-3 rounded-full bg-gradient-to-r from-[var(--color-3)] to-[var(--color-4)]"></div>
-                    </div>
+            <CadastroFormSection title="Referência" icon={<DollarSign size={14} />}>
+              <CadastroModalFieldsGrid>
+                <CadastroModalFieldsRow cols={3}>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-600 dark:bg-gray-900/40">
+                    <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      Valor original
+                    </p>
+                    <p className="mt-1 text-base font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                      {formatCurrency(expense.amount)}
+                    </p>
                   </div>
-                  <div className="relative mb-2 h-8 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
-                    <div
-                      className="absolute left-0 top-0 flex h-full items-center justify-center bg-gradient-to-r from-[var(--color-1)] to-[var(--color-2)] transition-all duration-300 ease-out"
-                      style={{ width: `${getSliderPercentage()}%` }}
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-600 dark:bg-gray-900/40">
+                    <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      Soma das partes
+                    </p>
+                    <p
+                      className={`mt-1 text-base font-semibold tabular-nums ${
+                        Math.abs(remaining) < 0.01
+                          ? 'text-green-700 dark:text-green-400'
+                          : 'text-amber-700 dark:text-amber-400'
+                      }`}
                     >
-                      {getSliderPercentage() > 15 && (
-                        <span className="text-xs font-bold text-white drop-shadow-md">
-                          {formatCurrency(parts[0].amount)}
-                        </span>
-                      )}
-                    </div>
-                    <div
-                      className="absolute right-0 top-0 flex h-full items-center justify-center bg-gradient-to-r from-[var(--color-3)] to-[var(--color-4)] transition-all duration-300 ease-out"
-                      style={{ width: `${100 - getSliderPercentage()}%` }}
-                    >
-                      {(100 - getSliderPercentage()) > 15 && (
-                        <span className="text-xs font-bold text-white drop-shadow-md">
-                          {formatCurrency(parts[1].amount)}
-                        </span>
-                      )}
-                    </div>
+                      {formatCurrency(getTotalAmount())}
+                    </p>
                   </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={getSliderPercentage()}
-                    onChange={(e) => handleSliderChange(parseInt(e.target.value))}
-                    className={`${cadastroAccentControlCls} slider-modern h-2 w-full cursor-pointer appearance-none rounded-lg bg-transparent`}
-                  />
-                </div>
-              )}
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-600 dark:bg-gray-900/40">
+                    <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      Diferença
+                    </p>
+                    <p className="mt-1 text-base font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                      {formatCurrency(remaining)}
+                    </p>
+                  </div>
+                </CadastroModalFieldsRow>
+                {parts.length === 2 ? (
+                  <label className="block min-w-0">
+                    <CadastroFieldLabel>Proporção da 1ª parte (%)</CadastroFieldLabel>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={getSliderPercentage()}
+                      onChange={(e) => handleSliderChange(parseInt(e.target.value, 10))}
+                      className={`${cadastroAccentControlCls} mt-1 h-2 w-full cursor-pointer`}
+                    />
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      Parte 1: {getSliderPercentage()}% · Parte 2: {100 - getSliderPercentage()}%
+                    </p>
+                  </label>
+                ) : null}
+              </CadastroModalFieldsGrid>
             </CadastroFormSection>
 
             <CadastroFormSection title="Partes" icon={<Tag size={14} />}>
-              <div className="space-y-3">
+              <div className="flex flex-col gap-4">
                 {parts.map((part, index) => (
-                  <div key={part.id} className="flex items-end gap-3">
-                    <div className={`mb-1.5 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-lg font-bold text-white ${
-                      index === 0
-                        ? 'bg-gradient-to-r from-[var(--color-1)] to-[var(--color-2)]'
-                        : 'bg-gradient-to-r from-[var(--color-3)] to-[var(--color-4)]'
-                    }`}>
-                      {index + 1}
-                    </div>
-                    <label className="block w-40 min-w-0">
-                      <CadastroFieldLabel required>Valor</CadastroFieldLabel>
-                      <input
-                        type="number"
-                        step="0.01"
-                        required
-                        value={part.amount || ''}
-                        onChange={(e) => updatePart(part.id, 'amount', parseFloat(e.target.value) || 0)}
-                        className={`${cadastroFieldCls} mt-0.5 font-semibold`}
-                        placeholder="0.00"
-                      />
-                    </label>
-                    <label className="block min-w-0 flex-1">
-                      <CadastroFieldLabel required>Tag</CadastroFieldLabel>
-                      <select
-                        required
-                        value={part.tag_id || ''}
-                        onChange={(e) => updatePart(part.id, 'tag_id', parseInt(e.target.value))}
-                        className={`${cadastroFieldCls} mt-0.5`}
-                      >
-                        <option value="">Selecione a tag...</option>
-                        {Array.from(new Set(subtags
-                          .filter(subtag => !originalTagType || subtag.tag_type === originalTagType)
-                          .map(s => JSON.stringify({ id: s.tag_id, name: s.tag_name }))))
-                          .map(tagStr => {
-                            const tag = JSON.parse(tagStr)
-                            return (
-                              <option key={tag.id} value={tag.id}>
-                                {tag.name}
-                              </option>
-                            )
-                          })}
-                      </select>
-                    </label>
-                    <label className="block min-w-0 flex-1">
-                      <CadastroFieldLabel required>Subtag</CadastroFieldLabel>
-                      <select
-                        required
-                        value={part.subtag_id || ''}
-                        onChange={(e) => updatePart(part.id, 'subtag_id', parseInt(e.target.value))}
-                        className={`${cadastroFieldCls} mt-0.5`}
-                        disabled={!part.tag_id}
-                      >
-                        <option value="">Selecione a subtag...</option>
-                        {subtags
-                          .filter(subtag =>
-                            (!originalTagType || subtag.tag_type === originalTagType) &&
-                            (part.tag_id === 0 || subtag.tag_id === part.tag_id)
-                          )
-                          .map(subtag => (
-                            <option key={subtag.id} value={subtag.id}>
-                              {subtag.name}
-                            </option>
-                          ))}
-                      </select>
-                    </label>
+                  <div
+                    key={part.id}
+                    className="rounded-lg border border-gray-200 p-3 dark:border-gray-600"
+                  >
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      Parte {index + 1}
+                    </p>
+                    <CadastroModalFieldsGrid>
+                      <CadastroModalFieldsRow cols={3}>
+                        <label className="block min-w-0">
+                          <CadastroFieldLabel required>Valor</CadastroFieldLabel>
+                          <input
+                            type="number"
+                            step="0.01"
+                            required
+                            value={part.amount || ''}
+                            onChange={(e) =>
+                              updatePart(part.id, 'amount', parseFloat(e.target.value) || 0)
+                            }
+                            className={`${cadastroFieldCls} mt-0.5 tabular-nums`}
+                          />
+                        </label>
+                        <label className="block min-w-0">
+                          <CadastroFieldLabel required>Tag</CadastroFieldLabel>
+                          <select
+                            required
+                            value={part.tag_id || ''}
+                            onChange={(e) => updatePart(part.id, 'tag_id', parseInt(e.target.value, 10))}
+                            className={`${cadastroFieldCls} mt-0.5`}
+                          >
+                            <option value="">Selecione...</option>
+                            {Array.from(
+                              new Set(
+                                subtags
+                                  .filter(
+                                    (subtag) =>
+                                      !originalTagType || subtag.tag_type === originalTagType,
+                                  )
+                                  .map((s) => JSON.stringify({ id: s.tag_id, name: s.tag_name })),
+                              ),
+                            ).map((tagStr) => {
+                              const tag = JSON.parse(tagStr) as { id: number; name: string }
+                              return (
+                                <option key={tag.id} value={tag.id}>
+                                  {tag.name}
+                                </option>
+                              )
+                            })}
+                          </select>
+                        </label>
+                        <label className="block min-w-0">
+                          <CadastroFieldLabel required>Subtag</CadastroFieldLabel>
+                          <select
+                            required
+                            value={part.subtag_id || ''}
+                            onChange={(e) =>
+                              updatePart(part.id, 'subtag_id', parseInt(e.target.value, 10))
+                            }
+                            className={`${cadastroFieldCls} mt-0.5`}
+                            disabled={!part.tag_id}
+                          >
+                            <option value="">Selecione...</option>
+                            {subtags
+                              .filter(
+                                (subtag) =>
+                                  (!originalTagType || subtag.tag_type === originalTagType) &&
+                                  (part.tag_id === 0 || subtag.tag_id === part.tag_id),
+                              )
+                              .map((subtag) => (
+                                <option key={subtag.id} value={subtag.id}>
+                                  {subtag.name}
+                                </option>
+                              ))}
+                          </select>
+                        </label>
+                      </CadastroModalFieldsRow>
+                    </CadastroModalFieldsGrid>
                   </div>
                 ))}
               </div>
@@ -450,10 +480,22 @@ const SplitExpenseModal = ({ isOpen, onClose, expense, onSuccess }: SplitExpense
               (expense.amount < 0 && parts.some(p => p.amount >= 0)) ||
               (expense.amount > 0 && parts.some(p => p.amount <= 0))
             }
-            saveLabel="Dividir Despesa"
+            saveLabel="Dividir"
           />
         </form>
       </CadastroModalShell>
+
+      <ClosureEditImpactDialog
+        isOpen={isOpen && closureImpactOpen}
+        impact={closureImpact}
+        onClose={() => setClosureImpactOpen(false)}
+        onConfirm={() => {
+          setClosureImpactOpen(false)
+          void submitSplit(true)
+        }}
+        confirmText="Confirmar divisão"
+        confirming={isLoading}
+      />
 
       {toast.show && (
         <Toast

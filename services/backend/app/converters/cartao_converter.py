@@ -4,6 +4,7 @@ import os
 import re
 from typing import List, Optional, Dict, Any
 import pandas as pd
+from ..utils.import_progress import report_row_progress
 from ..utils.mapping_helper import MappingHelper
 from ..utils.pdf_password import open_pdf_reader
 from .fatura_pdf import (
@@ -150,9 +151,12 @@ class CartaoConverter:
             pwd = passwords[i] if passwords and i < len(passwords) else None
             with open(txt_path, "w", encoding="utf-8") as txt:
                 reader = open_pdf_reader(pdf_path, pwd)
-                for page in reader.pages:
+                page_total = len(reader.pages) or 1
+                report_row_progress(0, page_total, phase=0)
+                for page_index, page in enumerate(reader.pages, start=1):
                     txt.write(page.extract_text() or "")
                     txt.write("\n")
+                    report_row_progress(page_index, page_total, phase=0)
             print(f"Converted {pdf_path} to {txt_path}")
 
         return txt_files
@@ -1059,12 +1063,18 @@ class CartaoConverter:
                 first_invoice_card = CartaoConverter._first_lancamentos_card_last4(
                     processed_content
                 )
-                all_lines = iter(processed_content.split('\n'))
+                all_line_list = processed_content.split('\n')
+                line_total = len(all_line_list) or 1
+                report_row_progress(0, line_total, phase=1)
+                all_lines = iter(all_line_list)
                 pending_date_line: Optional[str] = None
                 pending_valor_first: Optional[Dict[str, Any]] = None
                 pending_resume_line: Optional[str] = None
+                line_index = 0
 
                 for line in all_lines:
+                    line_index += 1
+                    report_row_progress(line_index, line_total, phase=1)
                     if pending_resume_line is not None:
                         line = pending_resume_line
                         pending_resume_line = None

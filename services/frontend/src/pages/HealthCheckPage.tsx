@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import axios from 'axios'
 import {
@@ -893,18 +893,26 @@ const HealthCheckPage = () => {
     setDraftYear('')
     setDraftMonth('')
     setDraftScope('all')
-    setAppliedYear(null)
-    setAppliedMonth(null)
+    setAppliedYear('all')
+    setAppliedMonth('all')
     setAppliedScope('all')
-    setFiltersApplied(false)
-    setHealth(emptyHealth())
-    setCategories(emptyCategories())
+    setFiltersApplied(true)
     setError(null)
   }
 
   useEffect(() => {
     void loadOptions()
   }, [loadOptions])
+
+  const initialHealthLoadDone = useRef(false)
+  useEffect(() => {
+    if (filtersLoading || initialHealthLoadDone.current) return
+    initialHealthLoadDone.current = true
+    setAppliedYear('all')
+    setAppliedMonth('all')
+    setAppliedScope('all')
+    setFiltersApplied(true)
+  }, [filtersLoading])
 
   useEffect(() => {
     if (!filtersApplied || appliedYear == null) return
@@ -1071,7 +1079,13 @@ const HealthCheckPage = () => {
   const avgEntries = toMoney(entries / monthCount)
   const avgExits = toMoney(exits / monthCount)
   const hasSeries = health.months.length > 0
-  const hasActiveFilters = draftYear !== '' || draftMonth !== '' || draftScope !== 'all' || filtersApplied
+  const hasActiveFilters =
+    draftYear !== '' ||
+    draftMonth !== '' ||
+    draftScope !== 'all' ||
+    (appliedYear !== null && appliedYear !== 'all') ||
+    (appliedMonth !== null && appliedMonth !== 'all') ||
+    appliedScope !== 'all'
   const openMonth = health.months.find((item) => item.is_open) ?? null
   const openYearMonth = openMonth?.year_month ?? null
 
@@ -1221,8 +1235,8 @@ const HealthCheckPage = () => {
             {!filtersApplied && !loading && (
               <CadastroListPageEmptyCard
                 icon={<Filter className="h-8 w-8 text-[var(--color-1)]" />}
-                title="Nenhum filtro aplicado"
-                description="Selecione o ano, o mês e o escopo e clique em Aplicar para somar os fechamentos e ver a repartição mês a mês."
+                title="Não foi possível carregar"
+                description="Recarregue a página ou clique em Aplicar nos filtros acima."
               />
             )}
 

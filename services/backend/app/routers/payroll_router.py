@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.utils.import_progress import activate_import_job, deactivate_import_job, report_row_progress
 from app.dependencies.auth import require_account
 from app.models.base_entity import now_utc
 from app.models.payroll_models import IncomeReport, IncomeReportLine, PayrollLineType, Payslip, PayslipLine
@@ -246,7 +247,12 @@ def _replace_income_report_lines(
         IncomeReportLine.account_id == account_id,
     ).delete(synchronize_session=False)
 
-    for line in line_items:
+    total_lines = len(line_items)
+    if total_lines <= 0:
+        report_row_progress(1, 1)
+    else:
+        report_row_progress(0, total_lines)
+    for index, line in enumerate(line_items):
         line_type = get_or_create_line_type(
             doc_type="income_report",
             code=line.get("item_no"),
@@ -265,6 +271,7 @@ def _replace_income_report_lines(
                 amount=line.get("amount"),
             )
         )
+        report_row_progress(index + 1, total_lines)
 
 
 def _find_existing_payslip(
@@ -322,7 +329,12 @@ def _replace_payslip_lines(
         PayslipLine.account_id == account_id,
     ).delete(synchronize_session=False)
 
-    for line in line_items:
+    total_lines = len(line_items)
+    if total_lines <= 0:
+        report_row_progress(1, 1)
+    else:
+        report_row_progress(0, total_lines)
+    for index, line in enumerate(line_items):
         line_type = get_or_create_line_type(
             doc_type="payslip",
             code=line.get("line_code"),
@@ -344,6 +356,7 @@ def _replace_payslip_lines(
                 base_amount=line.get("base_amount"),
             )
         )
+        report_row_progress(index + 1, total_lines)
 
 
 def _deactivate_advance_line_on_final_import(
@@ -680,12 +693,34 @@ async def classify_payroll_pdfs(
 
 
 @router.post("/import-pdfs", response_model=ImportPayrollResponse)
-async def import_payroll_pdfs(
+def import_payroll_pdfs(
     files: List[UploadFile] = File(...),
     doc_types: Optional[str] = Form(None),
     passwords: List[str] = Form([]),
+    progress_job_id: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_account),
+):
+    """Importa holerites e informes. Síncrono para a barra de progresso ser consultada em paralelo."""
+    scope = activate_import_job(progress_job_id, current_user)
+    try:
+        return _import_payroll_pdfs_work(
+            files=files,
+            doc_types=doc_types,
+            passwords=passwords,
+            db=db,
+            current_user=current_user,
+        )
+    finally:
+        deactivate_import_job(scope)
+
+
+def _import_payroll_pdfs_work(
+    files: List[UploadFile],
+    doc_types: Optional[str],
+    passwords: List[str],
+    db: Session,
+    current_user: dict,
 ):
     if not files:
         raise HTTPException(status_code=400, detail="Nenhum arquivo fornecido")

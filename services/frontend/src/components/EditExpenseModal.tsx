@@ -2,6 +2,14 @@ import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 import { Users, Edit2, Tag as TagIcon, Calendar } from 'lucide-react'
 import Toast from './Toast'
+import ClosureEditImpactDialog from './ClosureEditImpactDialog'
+import type { ClosureEditImpact } from '../types/closureEditImpact'
+import {
+  buildEditSuccessPayload,
+  extractClosureImpactFromResponse,
+  parseAxiosClosureConflict,
+  type ExpenseEditSuccessPayload,
+} from '../utils/closureEditImpact'
 import { DateField } from './date'
 import {
   CadastroModalShell,
@@ -18,7 +26,6 @@ import {
 } from './CadastroFormLayout'
 import { useEscapeKey } from '../hooks/useEscapeKey'
 import { dateToLocalString, dateToLocalTimestamp, parseLocalDateTime } from '../utils/dateUtils'
-import { validateAccountPeriodDate } from '../services/accountPeriodClosuresApi'
 import { sharingPartnerLabel, sharingPercentForKind } from '../utils/accountFormatter'
 import OwnershipPercentField from './OwnershipPercentField'
 import { maskPercentInput, finalizePercentInput } from '../utils/percentInput'
@@ -97,7 +104,7 @@ interface EditExpenseModalProps {
     current_installment?: number | null
     total_installments?: number | null
   } | null
-  onSuccess: () => void
+  onSuccess: (result: ExpenseEditSuccessPayload) => void
   /** Modo simplificado: exibe apenas tag/subtag e compartilhamento */
   limitedMode?: boolean
   /** Faturas: edita valor, data, descrição e parcelas (cartão fixo) */
@@ -131,6 +138,8 @@ const EditExpenseModal = ({
   const [isInitialized, setIsInitialized] = useState(false) // ✅ Flag para prevenir submissão prematura
   const hasLoadedDataRef = useRef(false) // ✅ Rastreia se já carregou dados para este expense
   const [toast, setToast] = useState<ToastState>({ show: false, message: '', type: 'success' })
+  const [closureImpactOpen, setClosureImpactOpen] = useState(false)
+  const [closureImpact, setClosureImpact] = useState<ClosureEditImpact | null>(null)
 
   // Hook para fechar modal com ESC
   useEscapeKey(onClose, isOpen)
@@ -201,6 +210,8 @@ const EditExpenseModal = ({
       setIsLoadingData(true)
       setIsInitialized(false)
       hasLoadedDataRef.current = false // ✅ Resetar flag de carregamento
+      setClosureImpactOpen(false)
+      setClosureImpact(null)
       // ✅ Resetar toast ao abrir o modal (evita que toast anterior apareça)
       setToast({ show: false, message: '', type: 'success' })
 
@@ -224,6 +235,8 @@ const EditExpenseModal = ({
       setIsLoadingData(false)
       setIsInitialized(false)
       hasLoadedDataRef.current = false
+      setClosureImpactOpen(false)
+      setClosureImpact(null)
       // ✅ Resetar toast ao fechar o modal
       setToast({ show: false, message: '', type: 'success' })
     }
@@ -338,19 +351,11 @@ const EditExpenseModal = ({
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    // Prevenir submissão se o modal ainda não foi inicializado
-    if (!isInitialized) {
+  const submitExpense = async (confirmClosedClosureImpact: boolean) => {
+    if (!isInitialized || !expense) {
       return
     }
 
-    if (!expense) {
-      return
-    }
-
-    // Validação de valor (apenas no modo completo)
     const amount = parseAmountInput(formData.amount)
     if (showCoreFields && (isNaN(amount) || amount === 0)) {
       showToast('Digite um valor válido (diferente de zero)', 'error')
@@ -384,38 +389,38 @@ const EditExpenseModal = ({
       }
     }
 
-    // Validação de porcentagem
     const percentage = parseFloat(formData.ownership_percentage)
     if (formData.shared_partner_id && (isNaN(percentage) || percentage < 0 || percentage > 100)) {
       showToast('A porcentagem deve estar entre 0 e 100', 'warning')
       return
     }
 
-    if (expense.source === 'bank') {
-      const datesToCheck = [expense.date.slice(0, 10)]
-      if (showCoreFields) {
-        datesToCheck.push(dateToLocalString(selectedDate))
-      }
-      for (const dateValue of [...new Set(datesToCheck)]) {
-        try {
-          const validation = await validateAccountPeriodDate(dateValue)
-          if (validation.is_closed) {
-            showToast(validation.message || 'Este mês da conta já está fechado.', 'warning')
-            return
-          }
-        } catch (error) {
-          console.error('Erro ao validar mês fechado da conta:', error)
-        }
-      }
-    }
-
     try {
       setIsLoading(true)
+
+      if (expense.source === 'benefit') {
+        const payload: Record<string, unknown> = {
+          subtag_id: formData.subtag_id || null,
+          expense_sharing_id: formData.shared_partner_id || null,
+          ownership_percentage: formData.shared_partner_id
+            ? parseFloat(formData.ownership_percentage)
+            : 100,
+          confirm_closed_closure_impact: confirmClosedClosureImpact,
+        }
+        if (!formData.shared_partner_id) {
+          payload.expense_sharing_id = null
+        }
+        const response = await axios.put(`/api/benefit-card-statements/${expense.id}`, payload)
+        const impact = extractClosureImpactFromResponse(response.data)
+        onSuccess(buildEditSuccessPayload('Despesa atualizada com sucesso!', impact))
+        onClose()
+        return
+      }
+
       const endpoint = expense.source === 'bank'
         ? `/api/expenses/bank-statements/${expense.id}`
         : `/api/expenses/credit-card-invoices/${expense.id}`
 
-      // No modo limitado, preserva os valores originais de descrição, amount e data
       const payload: Record<string, unknown> = {
         description: lockCoreFields ? expense.description : formData.description.trim(),
         amount: lockCoreFields ? expense.amount : amount,
@@ -425,6 +430,8 @@ const EditExpenseModal = ({
         ownership_percentage: formData.shared_partner_id ? parseFloat(formData.ownership_percentage) : null,
       }
 
+      payload.confirm_closed_closure_impact = confirmClosedClosureImpact
+
       if (expense.source === 'card') {
         payload.card_number = invoiceItemMode || lockCoreFields ? expense.card_number : formData.card_number
         if (invoiceItemMode) {
@@ -433,23 +440,31 @@ const EditExpenseModal = ({
         }
       }
 
-      await axios.put(endpoint, payload)
-
-      showToast('Despesa atualizada com sucesso!', 'success')
-
-      setTimeout(() => {
-        onSuccess()
-        onClose()
-      }, 1500)
-    } catch (error: any) {
+      const response = await axios.put(endpoint, payload)
+      const impact = extractClosureImpactFromResponse(response.data)
+      onSuccess(buildEditSuccessPayload('Despesa atualizada com sucesso!', impact))
+      onClose()
+    } catch (error: unknown) {
       console.error('Erro ao atualizar despesa:', error)
+      const conflict = parseAxiosClosureConflict(error)
+      if (conflict) {
+        setClosureImpact(conflict)
+        setClosureImpactOpen(true)
+        return
+      }
+      const detail = axios.isAxiosError(error) ? error.response?.data?.detail : null
       showToast(
-        error.response?.data?.detail || 'Erro ao atualizar despesa. Tente novamente.',
-        'error'
+        typeof detail === 'string' ? detail : 'Erro ao atualizar despesa. Tente novamente.',
+        'error',
       )
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    void submitExpense(false)
   }
 
   if (!isOpen || !expense) return null
@@ -782,6 +797,20 @@ const EditExpenseModal = ({
           onClose={() => setToast({ ...toast, show: false })}
         />
       )}
+
+      <ClosureEditImpactDialog
+        isOpen={isOpen && closureImpactOpen}
+        impact={closureImpact}
+        onClose={() => setClosureImpactOpen(false)}
+        onConfirm={() => {
+          void submitExpense(true)
+        }}
+        confirmText={
+          closureImpact?.impact_type === 'split_recalc'
+            ? 'Recalcular compartilhamento'
+            : 'Recalcular fechamentos'
+        }
+      />
     </>
   )
 }

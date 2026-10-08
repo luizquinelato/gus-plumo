@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
-import { Plus, Edit2, Trash2, Tag, Tags, AlertCircle, Eye, EyeOff, X, ArrowUpCircle, ArrowDownCircle, Map, ArrowUpDown, Users, Zap, ArrowUp, ArrowDown, Filter, Loader2, Eraser, Download } from 'lucide-react'
+import { Plus, Edit2, Trash2, Tag, Tags, AlertCircle, Eye, EyeOff, X, ArrowUpCircle, ArrowDownCircle, Map, ArrowUpDown, Users, Zap, Play, ArrowUp, ArrowDown, Filter, Loader2 } from 'lucide-react'
+import MappingsReportMenu from '../../components/MappingsReportMenu'
+import { CadastroListHeaderActions } from '../../components/CadastroExcelMenu'
 import { exportTransactionMappingsToExcel } from '../../utils/exportToExcel'
 import { useConfirm } from '../../hooks/useConfirm'
 import { useEscapeKey } from '../../hooks/useEscapeKey'
@@ -53,6 +56,19 @@ import { getIconComponent } from '../../utils/iconMapper'
 import { formatAccountDisplay, sharingPartnerLabel, sharingPercentForKind } from '../../utils/accountFormatter'
 import OwnershipPercentField from '../../components/OwnershipPercentField'
 import { maskPercentInput } from '../../utils/percentInput'
+import ClosureEditImpactDialog from '../../components/ClosureEditImpactDialog'
+import ClosureEditImpactSummaryModal, {
+  type ImportIssueRow,
+} from '../../components/ClosureEditImpactSummaryModal'
+import {
+  normalizeClosureEditImpact,
+  type ClosureEditImpact,
+} from '../../types/closureEditImpact'
+import {
+  extractClosureImpactFromResponse,
+  hasClosureImpactSummary,
+  parseAxiosClosureConflict,
+} from '../../utils/closureEditImpact'
 
 interface Tag {
   id: number
@@ -171,6 +187,9 @@ const TYPE_FILTER_OPTIONS = [
   { id: 'despesa', name: 'Despesa' },
 ] as const
 
+/** Sentinela do filtro: mapeamentos sem compartilhamento (`expense_sharing_id` nulo). */
+const SHARING_NONE_FILTER_ID = 0
+
 type MappingListQuery = {
   tag_ids?: number[]
   subtag_ids?: number[]
@@ -193,6 +212,35 @@ function mappingListQueryParams(filters: MappingListQuery): Record<string, strin
   if (filters.mapping_types?.length) params.mapping_types = filters.mapping_types.join(',')
   if (filters.expense_sharing_ids?.length) params.expense_sharing_ids = filters.expense_sharing_ids.join(',')
   return params
+}
+
+function buildMappingListQuery(
+  tagFilters: number[],
+  subtagFilters: number[],
+  typeFilters: string[],
+  matchFilters: string[],
+  sharedFilters: number[],
+  tagsCount: number,
+  subtagsCount: number,
+  partnersCount: number,
+): MappingListQuery {
+  return {
+    tag_ids: effectiveMultiFilter(tagFilters, tagsCount),
+    subtag_ids: effectiveMultiFilter(subtagFilters, subtagsCount),
+    subtag_types: effectiveMultiFilter(typeFilters, TYPE_FILTER_OPTIONS.length),
+    mapping_types: effectiveMultiFilter(matchFilters, MATCH_FILTER_OPTIONS.length),
+    expense_sharing_ids: effectiveMultiFilter(sharedFilters, partnersCount),
+  }
+}
+
+function hasNarrowingMappingFilters(query: MappingListQuery): boolean {
+  return Boolean(
+    query.tag_ids?.length ||
+      query.subtag_ids?.length ||
+      query.subtag_types?.length ||
+      query.mapping_types?.length ||
+      query.expense_sharing_ids?.length,
+  )
 }
 
 type MappingSortField =
@@ -249,11 +297,13 @@ function compareMappings(
 }
 
 const TransactionMappingsTab = () => {
+  const navigate = useNavigate()
   const [tags, setTags] = useState<Tag[]>([])
   const [subtags, setSubtags] = useState<Subtag[]>([])
   const [partners, setPartners] = useState<ExpenseSharing[]>([])
   const [mappings, setMappings] = useState<TransactionMapping[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(false)
+  const [catalogReady, setCatalogReady] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [editingMapping, setEditingMapping] = useState<TransactionMapping | null>(null)
@@ -274,6 +324,9 @@ const TransactionMappingsTab = () => {
   const [isDeletingSelected, setIsDeletingSelected] = useState(false)
   const [modalTypeFilter, setModalTypeFilter] = useState<'receita' | 'despesa'>('despesa')  // Filtro de tipo no modal
   const [applyToExistingRecords, setApplyToExistingRecords] = useState(true)  // Switch para aplicar a registros existentes (padrão: true)
+  const [applyOverwriteSharing, setApplyOverwriteSharing] = useState(false)  // Só com apply_to_existing: alterar compartilhamento nas transações
+  const [mappingSaving, setMappingSaving] = useState(false)
+  const [mappingSaveError, setMappingSaveError] = useState<string | null>(null)
   const [revealedOriginal, setRevealedOriginal] = useState<string | null>(null)
   const [revealedMapped, setRevealedMapped] = useState<string | null>(null)
   const [revealedPattern, setRevealedPattern] = useState<string | null>(null)
@@ -311,7 +364,6 @@ const TransactionMappingsTab = () => {
     overwrite_sharing: false  // Por padrão, NÃO sobrescrever compartilhamento existente (false = ignorar, true = sobrescrever)
   })
   const [isClearingClassifications, setIsClearingClassifications] = useState(false)
-
   // Estados para batch edit (editar todas)
   const [showBatchEditModal, setShowBatchEditModal] = useState(false)
   const [isBatchEditing, setIsBatchEditing] = useState(false)
@@ -395,6 +447,9 @@ const TransactionMappingsTab = () => {
     })
     setModalTypeFilter('despesa')
     setApplyToExistingRecords(false)
+    setApplyOverwriteSharing(false)
+    setMappingSaving(false)
+    setMappingSaveError(null)
     setRevealedOriginal(null)
     setRevealedMapped(null)
     setRevealedPattern(null)
@@ -425,7 +480,7 @@ const TransactionMappingsTab = () => {
   }
 
   // Hook para fechar modal com ESC (apenas quando modal de senha NÃO está aberto)
-  useEscapeKey(closeModal, (showAddModal || showEditModal) && !showPasswordModal)
+  useEscapeKey(closeModal, (showAddModal || showEditModal) && !showPasswordModal && !mappingSaving)
 
   // Handler de ESC para o modal de senha (intercepta antes do modal principal)
   useEffect(() => {
@@ -447,24 +502,22 @@ const TransactionMappingsTab = () => {
   // Hook para submeter com Enter (desativado quando modal de senha está aberto)
   useEffect(() => {
     if (!showAddModal && !showEditModal) return
-    if (showPasswordModal) return  // Não interceptar ENTER quando modal de senha está aberto
+    if (showPasswordModal || mappingSaving) return  // Não interceptar ENTER quando modal de senha está aberto
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         const target = e.target as HTMLElement
         if (target.tagName !== 'TEXTAREA' && target.tagName !== 'SELECT') {
           e.preventDefault()
-          const form = document.querySelector('form')
-          if (form) {
-            form.requestSubmit()
-          }
+          const form = document.getElementById('mapping-form') as HTMLFormElement | null
+          form?.requestSubmit()
         }
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [showAddModal, showEditModal, showPasswordModal])
+  }, [showAddModal, showEditModal, showPasswordModal, mappingSaving])
 
   const loadCatalog = useCallback(async () => {
     const [tagsRes, subtagsRes, partnersRes] = await Promise.all([
@@ -503,8 +556,10 @@ const TransactionMappingsTab = () => {
       try {
         setIsLoading(true)
         await loadCatalog()
+        setCatalogReady(true)
       } catch (error) {
         console.error('Erro ao carregar cadastros:', error)
+        showToast('Não foi possível carregar tags e filtros.', 'error')
       } finally {
         setIsLoading(false)
       }
@@ -567,7 +622,7 @@ const TransactionMappingsTab = () => {
             subtag_ids: effectiveMultiFilter(appliedSubtagFilters, subtags.length),
             subtag_types: effectiveMultiFilter(appliedTypeFilters, TYPE_FILTER_OPTIONS.length),
             mapping_types: effectiveMultiFilter(appliedMatchFilters, MATCH_FILTER_OPTIONS.length),
-            expense_sharing_ids: effectiveMultiFilter(appliedSharedFilters, partners.length),
+            expense_sharing_ids: effectiveMultiFilter(appliedSharedFilters, partners.length + 1),
           },
           { silent: true },
         )
@@ -589,7 +644,11 @@ const TransactionMappingsTab = () => {
     partners.length,
   ])
 
-  const handleSubmit = async (e?: React.FormEvent, skipPasswordCheck = false) => {
+  const handleSubmit = async (
+    e?: React.FormEvent,
+    skipPasswordCheck = false,
+    confirmClosedClosureImpact = false,
+  ) => {
     if (e) e.preventDefault()
 
     // Validação: Se is_sensitive=True, mapped_description é obrigatória
@@ -611,6 +670,8 @@ const TransactionMappingsTab = () => {
       return
     }
 
+    setMappingSaveError(null)
+    setMappingSaving(true)
     try {
       // Descrição original sempre em lowercase, mapeada mantém o formato original
       const payload = {
@@ -618,24 +679,47 @@ const TransactionMappingsTab = () => {
         mapped_description: formData.mapped_description.trim() || null,
         subtag_id: formData.subtag_id,
         expense_sharing_id: formData.shared_partner_id || null,
-        my_contribution_percentage: formData.my_contribution_percentage,
-        revenue_contribution_percentage: formData.revenue_contribution_percentage,
+        my_contribution_percentage:
+          modalTypeFilter === 'despesa' ? formData.my_contribution_percentage : null,
+        revenue_contribution_percentage:
+          modalTypeFilter === 'receita' ? formData.revenue_contribution_percentage : null,
         mapping_type: formData.mapping_type,
         pattern: formData.mapping_type === 'pattern' ? formData.pattern.trim() || null : null,
         regex_pattern: formData.mapping_type === 'regex' ? formData.regex_pattern.trim() || null : null,
         priority: formData.priority,
         is_sensitive: formData.is_sensitive,
-        apply_to_existing: applyToExistingRecords  // Enviar flag para backend
+        apply_to_existing: applyToExistingRecords,
+        overwrite_sharing: applyToExistingRecords && applyOverwriteSharing,
+        confirm_closed_closure_impact: confirmClosedClosureImpact,
       }
 
-      await axios.post('/api/expenses/mappings', payload)
-      showToast('Mapeamento criado com sucesso!', 'success')
+      const response = await axios.post('/api/expenses/mappings', payload)
+      const impact = extractClosureImpactFromResponse(response.data)
+      const base = applyToExistingRecords
+        ? 'Mapeamento criado e aplicado aos registros existentes!'
+        : 'Mapeamento criado com sucesso!'
+      showClosureEditResult(base, impact)
       closeModal()
       void loadData()
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const conflict = parseAxiosClosureConflict(error)
+      if (conflict && !confirmClosedClosureImpact) {
+        setRemapClosureImpact(conflict)
+        setPendingRemapAction('create')
+        setPendingMappingSkipPassword(skipPasswordCheck)
+        setRemapClosureOpen(true)
+        return
+      }
       console.error('Erro ao criar mapeamento:', error)
-      const errorMessage = error?.response?.data?.detail || 'Não foi possível criar o mapeamento. Verifique os dados e tente novamente.'
+      const errorMessage = axios.isAxiosError(error)
+        ? (typeof error.response?.data?.detail === 'string'
+            ? error.response.data.detail
+            : 'Não foi possível criar o mapeamento. Verifique os dados e tente novamente.')
+        : 'Não foi possível criar o mapeamento. Verifique os dados e tente novamente.'
+      setMappingSaveError(errorMessage)
       showToast(errorMessage, 'error')
+    } finally {
+      setMappingSaving(false)
     }
   }
 
@@ -678,6 +762,7 @@ const TransactionMappingsTab = () => {
     setCanEditSensitive(false)  // Reset edit permission
     // Definir o tipo do modal baseado na subtag
     setModalTypeFilter(mapping.subtag_type as 'receita' | 'despesa' || 'despesa')
+    setMappingSaveError(null)
     setShowEditModal(true)
   }
 
@@ -865,7 +950,11 @@ const TransactionMappingsTab = () => {
     showEditModal && editingMapping?.is_sensitive && !canEditSensitive && !mappingCriterionTypeChanged,
   )
 
-  const handleUpdate = async (e?: React.FormEvent, skipPasswordCheck = false) => {
+  const handleUpdate = async (
+    e?: React.FormEvent,
+    skipPasswordCheck = false,
+    confirmClosedClosureImpact = false,
+  ) => {
     if (e) e.preventDefault()
     if (!editingMapping) return
 
@@ -895,17 +984,23 @@ const TransactionMappingsTab = () => {
       return
     }
 
+    setMappingSaveError(null)
+    setMappingSaving(true)
     try {
       const mappedText = sensitivePayloadText(formData.mapped_description, revealedMapped)
       const payload: Record<string, unknown> = {
         subtag_id: formData.subtag_id,
         expense_sharing_id: formData.shared_partner_id || null,
-        my_contribution_percentage: formData.my_contribution_percentage,
-        revenue_contribution_percentage: formData.revenue_contribution_percentage,
+        my_contribution_percentage:
+          modalTypeFilter === 'despesa' ? formData.my_contribution_percentage : null,
+        revenue_contribution_percentage:
+          modalTypeFilter === 'receita' ? formData.revenue_contribution_percentage : null,
         mapping_type: formData.mapping_type,
         priority: formData.priority,
         is_sensitive: formData.is_sensitive,
         apply_to_existing: applyToExistingRecords,
+        overwrite_sharing: applyToExistingRecords && applyOverwriteSharing,
+        confirm_closed_closure_impact: confirmClosedClosureImpact,
       }
       if (mappedText !== undefined) payload.mapped_description = mappedText
 
@@ -929,20 +1024,33 @@ const TransactionMappingsTab = () => {
         payload.regex_pattern = null
       }
 
-      await axios.put(`/api/expenses/mappings/${editingMapping.id}`, payload)
-
-      if (applyToExistingRecords) {
-        showToast('Mapeamento atualizado e aplicado a todos os registros existentes com esta descrição!', 'success')
-      } else {
-        showToast('Mapeamento atualizado com sucesso!', 'success')
-      }
-
+      const response = await axios.put(`/api/expenses/mappings/${editingMapping.id}`, payload)
+      const impact = extractClosureImpactFromResponse(response.data)
+      const base = applyToExistingRecords
+        ? 'Mapeamento atualizado e aplicado a todos os registros existentes com esta descrição!'
+        : 'Mapeamento atualizado com sucesso!'
+      showClosureEditResult(base, impact)
       closeModal()
       void loadData()
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const conflict = parseAxiosClosureConflict(error)
+      if (conflict && !confirmClosedClosureImpact) {
+        setRemapClosureImpact(conflict)
+        setPendingRemapAction('update')
+        setPendingMappingSkipPassword(skipPasswordCheck)
+        setRemapClosureOpen(true)
+        return
+      }
       console.error('Erro ao atualizar mapeamento:', error)
-      const errorMessage = error?.response?.data?.detail || 'Não foi possível atualizar o mapeamento. Verifique os dados e tente novamente.'
+      const errorMessage = axios.isAxiosError(error)
+        ? (typeof error.response?.data?.detail === 'string'
+            ? error.response.data.detail
+            : 'Não foi possível atualizar o mapeamento. Verifique os dados e tente novamente.')
+        : 'Não foi possível atualizar o mapeamento. Verifique os dados e tente novamente.'
+      setMappingSaveError(errorMessage)
       showToast(errorMessage, 'error')
+    } finally {
+      setMappingSaving(false)
     }
   }
 
@@ -989,11 +1097,16 @@ const TransactionMappingsTab = () => {
       async () => {
         setIsDeletingSelected(true)
         try {
-          const deletePromises = Array.from(selectedMappings).map(id =>
-            axios.delete(`/api/expenses/mappings/${id}`)
+          const ids = Array.from(selectedMappings)
+          const { data } = await axios.post<{ deleted: number; skipped: number }>(
+            '/api/expenses/mappings/bulk-delete',
+            { ids },
           )
-          await Promise.all(deletePromises)
-          showToast(`${selectedMappings.size} mapeamento(s) deletado(s) com sucesso!`, 'success')
+          const msg =
+            data.skipped > 0
+              ? `${data.deleted} mapeamento(s) excluído(s); ${data.skipped} ignorado(s).`
+              : `${data.deleted} mapeamento(s) deletado(s) com sucesso!`
+          showToast(msg, data.deleted > 0 ? 'success' : 'warning')
           setSelectedMappings(new Set())
           void loadData()
         } catch (error) {
@@ -1016,6 +1129,39 @@ const TransactionMappingsTab = () => {
     skip_subtag_if_null: false,
     overwrite_sharing: false  // Por padrão, NÃO sobrescrever compartilhamento existente (false = ignorar, true = sobrescrever)
   })
+  const [remapClosureOpen, setRemapClosureOpen] = useState(false)
+  const [remapClosureImpact, setRemapClosureImpact] = useState<ClosureEditImpact | null>(null)
+  const [pendingRemapAction, setPendingRemapAction] = useState<
+    'single' | 'batch' | 'create' | 'update' | null
+  >(null)
+  const [pendingMappingSkipPassword, setPendingMappingSkipPassword] = useState(false)
+  const [closureSummary, setClosureSummary] = useState<{
+    baseMessage: string
+    impact: ClosureEditImpact | null
+    importIssues?: ImportIssueRow[]
+    importStats?: Record<string, number>
+  } | null>(null)
+
+  const showClosureEditResult = (
+    baseMessage: string,
+    impact: ClosureEditImpact | null | undefined,
+    importIssues?: ImportIssueRow[],
+    importStats?: Record<string, number>,
+  ) => {
+    const normalized = normalizeClosureEditImpact(impact) ?? impact ?? null
+    const hasImpact = hasClosureImpactSummary(normalized)
+    const hasIssues = Boolean(importIssues?.length)
+    if (hasImpact || hasIssues) {
+      setClosureSummary({
+        baseMessage,
+        impact: hasImpact ? normalized! : null,
+        importIssues,
+        importStats,
+      })
+    } else {
+      showToast(baseMessage, 'success')
+    }
+  }
 
   // Abre o modal de reaplicação
   const openRemapModal = (mapping: TransactionMapping) => {
@@ -1039,43 +1185,60 @@ const TransactionMappingsTab = () => {
     setShowBatchRemapModal(false)
   }
 
-  // Executa o remapeamento com opções
-  const handleRemap = async () => {
+  const remapResultBase = (
+    data: {
+      total_records_updated: number
+      bank_statements: number
+      credit_card_invoices: number
+      benefit_statements: number
+    },
+    prefix?: string,
+  ) =>
+    prefix ??
+    `${data.total_records_updated} registro(s) atualizado(s): ` +
+      `${data.bank_statements} extratos, ${data.credit_card_invoices} faturas, ${data.benefit_statements} benefícios.`
+
+  const executeSingleRemap = async (confirmClosedClosureImpact: boolean) => {
     if (!remapMapping || remappingId != null) return
 
     setRemappingId(remapMapping.id)
+    const mappingDesc = remapMapping.original_description || remapMapping.pattern || remapMapping.regex_pattern || 'N/A'
 
     try {
-      // overwrite_sharing: true = sobrescrever (skip_sharing_if_null: false)
-      // overwrite_sharing: false = ignorar (skip_sharing_if_null: true)
-      const skipSharingIfNull = remapMapping.shared_partner_id === null ? !remapOptions.overwrite_sharing : false
       const response = await axios.post(`/api/expenses/mappings/${remapMapping.id}/remap`, {
         skip_subtag_if_null: remapOptions.skip_subtag_if_null,
-        skip_sharing_if_null: skipSharingIfNull
+        overwrite_sharing: remapOptions.overwrite_sharing,
+        confirm_closed_closure_impact: confirmClosedClosureImpact,
       })
       const data = response.data
-      const mappingDesc = remapMapping.original_description || remapMapping.pattern || remapMapping.regex_pattern || 'N/A'
 
       if (data.total_records_updated === 0) {
         showToast(`Nenhum registro encontrado para "${mappingDesc.substring(0, 30)}..."`, 'warning')
       } else {
-        showToast(
-          `${data.total_records_updated} registro(s) atualizado(s): ` +
-          `${data.bank_statements} extratos, ` +
-          `${data.credit_card_invoices} faturas, ` +
-          `${data.benefit_statements} benefícios.`,
-          'success'
-        )
+        showClosureEditResult(remapResultBase(data), data.closure_impact)
       }
-    } catch (error: any) {
+      setShowRemapModal(false)
+      setRemapMapping(null)
+    } catch (error: unknown) {
+      const conflict = parseAxiosClosureConflict(error)
+      if (conflict && !confirmClosedClosureImpact) {
+        setRemapClosureImpact(conflict)
+        setPendingRemapAction('single')
+        setRemapClosureOpen(true)
+        return
+      }
       console.error('Erro ao remapear:', error)
-      const errorMessage = error?.response?.data?.detail || 'Não foi possível remapear. Tente novamente.'
+      const errorMessage = axios.isAxiosError(error)
+        ? (typeof error.response?.data?.detail === 'string' ? error.response.data.detail : 'Não foi possível remapear.')
+        : 'Não foi possível remapear. Tente novamente.'
       showToast(errorMessage, 'error')
     } finally {
       setRemappingId(null)
-      setShowRemapModal(false)
-      setRemapMapping(null)
     }
+  }
+
+  const handleRemap = async () => {
+    await executeSingleRemap(false)
   }
 
   // Executa a edição em lote (todos os selecionados)
@@ -1160,10 +1323,12 @@ const TransactionMappingsTab = () => {
   )
 
   const partnerFilterOptions = useMemo(
-    () =>
-      [...partners]
+    () => [
+      { id: SHARING_NONE_FILTER_ID, name: 'Sem' },
+      ...[...partners]
         .sort((a, b) => getPartnerLabel(a).localeCompare(getPartnerLabel(b)))
         .map((partner) => ({ id: partner.id, name: getPartnerLabel(partner) })),
+    ],
     [partners],
   )
 
@@ -1191,21 +1356,54 @@ const TransactionMappingsTab = () => {
   }, [draftSubtagFilterOptions])
 
   const hasActiveFilters =
-    filtersApplied ||
     draftMatchFilters.length > 0 ||
     draftTypeFilters.length > 0 ||
     draftTagFilters.length > 0 ||
     draftSubtagFilters.length > 0 ||
-    draftSharedFilters.length > 0
+    draftSharedFilters.length > 0 ||
+    appliedMatchFilters.length > 0 ||
+    appliedTypeFilters.length > 0 ||
+    appliedTagFilters.length > 0 ||
+    appliedSubtagFilters.length > 0 ||
+    appliedSharedFilters.length > 0
+
+  const appliedListQuery = useMemo(
+    () =>
+      buildMappingListQuery(
+        appliedTagFilters,
+        appliedSubtagFilters,
+        appliedTypeFilters,
+        appliedMatchFilters,
+        appliedSharedFilters,
+        tags.length,
+        subtags.length,
+        partners.length + 1,
+      ),
+    [
+      appliedTagFilters,
+      appliedSubtagFilters,
+      appliedTypeFilters,
+      appliedMatchFilters,
+      appliedSharedFilters,
+      tags.length,
+      subtags.length,
+      partners.length,
+    ],
+  )
+
+  const appliedFiltersAreNarrowed = hasNarrowingMappingFilters(appliedListQuery)
 
   const applyListFilters = async () => {
-    const query: MappingListQuery = {
-      tag_ids: effectiveMultiFilter(draftTagFilters, tags.length),
-      subtag_ids: effectiveMultiFilter(draftSubtagFilters, subtags.length),
-      subtag_types: effectiveMultiFilter(draftTypeFilters, TYPE_FILTER_OPTIONS.length),
-      mapping_types: effectiveMultiFilter(draftMatchFilters, MATCH_FILTER_OPTIONS.length),
-      expense_sharing_ids: effectiveMultiFilter(draftSharedFilters, partners.length),
-    }
+    const query = buildMappingListQuery(
+      draftTagFilters,
+      draftSubtagFilters,
+      draftTypeFilters,
+      draftMatchFilters,
+      draftSharedFilters,
+      tags.length,
+      subtags.length,
+      partners.length + 1,
+    )
     setSearchTerm('')
     setAppliedTagFilters([...draftTagFilters])
     setAppliedSubtagFilters([...draftSubtagFilters])
@@ -1230,10 +1428,10 @@ const TransactionMappingsTab = () => {
     setAppliedMatchFilters([])
     setAppliedSharedFilters([])
     setSearchTerm('')
-    setFiltersApplied(false)
-    setMappings([])
     setSelectedMappings(new Set())
     setCurrentPage(1)
+    setFiltersApplied(true)
+    void fetchMappingsFromServer({}, { silent: true })
   }
 
   const filteredMappings = useMemo(() => {
@@ -1309,7 +1507,8 @@ const TransactionMappingsTab = () => {
       subtags.find((s) => s.id === id)?.name ?? String(id),
     )
     if (subtagPart) parts.push(subtagPart)
-    const sharedPart = summarize(appliedSharedFilters, partners.length, 'Compart.', (id) => {
+    const sharedPart = summarize(appliedSharedFilters, partners.length + 1, 'Compart.', (id) => {
+      if (id === SHARING_NONE_FILTER_ID) return 'Sem'
       const partner = partners.find((p) => p.id === id)
       return partner ? getPartnerLabel(partner) : String(id)
     })
@@ -1381,68 +1580,90 @@ const TransactionMappingsTab = () => {
   const runRemapMappings = async (
     mappingsToRemap: TransactionMapping[],
     emptyMessage: string,
-  ) => {
-    if (mappingsToRemap.length === 0) return
+    confirmClosedClosureImpact: boolean,
+  ): Promise<boolean> => {
+    if (mappingsToRemap.length === 0) return false
 
     setIsBatchRemapping(true)
-    let totalUpdated = 0
-    let totalBankStatements = 0
-    let totalCreditCardInvoices = 0
-    let totalBenefitStatements = 0
-    let errors = 0
 
     try {
-      for (const mapping of sortMappingsForRemap(mappingsToRemap)) {
-        try {
-          const skipSharingIfNull = mapping.shared_partner_id === null
-            ? !batchRemapOptions.overwrite_sharing
-            : false
-          const response = await axios.post(`/api/expenses/mappings/${mapping.id}/remap`, {
-            skip_subtag_if_null: false,
-            skip_sharing_if_null: skipSharingIfNull,
-          })
-          const data = response.data
-          totalUpdated += data.total_records_updated
-          totalBankStatements += data.bank_statements
-          totalCreditCardInvoices += data.credit_card_invoices
-          totalBenefitStatements += data.benefit_statements
-        } catch (error) {
-          console.error(`Erro ao remapear mapping ${mapping.id}:`, error)
-          errors++
-        }
+      const mappingIds = sortMappingsForRemap(mappingsToRemap).map((m) => m.id)
+      const response = await axios.post<{
+        total_records_updated: number
+        bank_statements: number
+        credit_card_invoices: number
+        benefit_statements: number
+        mappings_failed: number
+        errors: string[]
+        closure_impact?: ClosureEditImpact | null
+      }>('/api/expenses/mappings/bulk-remap', {
+        ids: mappingIds,
+        overwrite_sharing: batchRemapOptions.overwrite_sharing,
+        confirm_closed_closure_impact: confirmClosedClosureImpact,
+      })
+      const data = response.data
+      const summary = {
+        total_records_updated: data.total_records_updated,
+        bank_statements: data.bank_statements,
+        credit_card_invoices: data.credit_card_invoices,
+        benefit_statements: data.benefit_statements,
+        closure_impact: data.closure_impact ?? null,
       }
+      const errors = data.mappings_failed ?? 0
 
-      if (totalUpdated === 0 && errors === 0) {
+      if (summary.total_records_updated === 0 && errors === 0) {
         showToast(emptyMessage, 'warning')
       } else if (errors > 0) {
-        showToast(
-          `${totalUpdated} registro(s) atualizado(s), ${errors} erro(s). ` +
-            `${totalBankStatements} extratos, ${totalCreditCardInvoices} faturas, ${totalBenefitStatements} benefícios.`,
-          'warning',
+        const base = remapResultBase(
+          summary,
+          `${summary.total_records_updated} registro(s) atualizado(s), ${errors} erro(s). ` +
+            `${summary.bank_statements} extratos, ${summary.credit_card_invoices} faturas, ${summary.benefit_statements} benefícios.`,
         )
+        if (hasClosureImpactSummary(summary.closure_impact)) {
+          showClosureEditResult(base, summary.closure_impact)
+        } else {
+          showToast(base, 'warning')
+        }
       } else {
-        showToast(
-          `${totalUpdated} registro(s) atualizado(s): ` +
-            `${totalBankStatements} extratos, ${totalCreditCardInvoices} faturas, ${totalBenefitStatements} benefícios.`,
-          'success',
-        )
+        showClosureEditResult(remapResultBase(summary), summary.closure_impact)
       }
-    } catch (error) {
-      console.error('Erro ao executar remap:', error)
-      showToast('Erro ao aplicar mapeamentos', 'error')
+    } catch (error: unknown) {
+      const conflict = parseAxiosClosureConflict(error)
+      if (conflict && !confirmClosedClosureImpact) {
+        setRemapClosureImpact(conflict)
+        setPendingRemapAction('batch')
+        setRemapClosureOpen(true)
+        return true
+      }
+      if (axios.isAxiosError(error)) {
+        const status = error.response?.status
+        const detail = error.response?.data?.detail
+        if (typeof detail === 'string') {
+          showToast(detail, status === 400 ? 'warning' : 'error')
+        } else {
+          showToast('Erro ao aplicar mapeamentos', 'error')
+        }
+      } else {
+        console.error('Erro ao executar remap:', error)
+        showToast('Erro ao aplicar mapeamentos', 'error')
+      }
     } finally {
       setIsBatchRemapping(false)
     }
+    return false
   }
 
   const handleBatchRemap = async () => {
     if (selectedMappings.size === 0) return
-    await runRemapMappings(
+    const needsConfirm = await runRemapMappings(
       filteredMappings.filter((m) => selectedMappings.has(m.id)),
       'Nenhum registro encontrado para os mapeamentos selecionados',
+      false,
     )
-    setShowBatchRemapModal(false)
-    setSelectedMappings(new Set())
+    if (!needsConfirm) {
+      setShowBatchRemapModal(false)
+      setSelectedMappings(new Set())
+    }
   }
 
   const handleClearTransactionClassifications = () => {
@@ -1491,35 +1712,12 @@ const TransactionMappingsTab = () => {
       title="Mapeamento de Transações"
       subtitle="Configure como suas transações são categorizadas automaticamente"
       actions={
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={handleExportExcel}
-            disabled={!filtersApplied || sortedFilteredMappings.length === 0}
-            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-100"
-            title="Exportar listagem atual (filtros, busca e ordenação) para Excel"
-          >
-            <Download size={18} />
-            Exportar Excel
-          </button>
-          <button
-            type="button"
-            onClick={handleClearTransactionClassifications}
-            disabled={isClearingClassifications}
-            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-100"
-            title="Remove categorias (tag/subtag) de extrato, fatura e benefício desta conta"
-          >
-            {isClearingClassifications ? (
-              <Loader2 size={18} className="animate-spin" />
-            ) : (
-              <Eraser size={18} />
-            )}
-            {isClearingClassifications ? 'Limpando...' : 'Limpar categorias'}
-          </button>
+        <CadastroListHeaderActions>
           <button
             type="button"
             onClick={() => {
               setModalTypeFilter('despesa')
+              setMappingSaveError(null)
               setShowAddModal(true)
             }}
             className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
@@ -1528,7 +1726,14 @@ const TransactionMappingsTab = () => {
             <Plus size={20} />
             Novo Mapeamento
           </button>
-        </div>
+          <MappingsReportMenu
+            exportDisabled={!filtersApplied || sortedFilteredMappings.length === 0}
+            clearing={isClearingClassifications}
+            onImportExcel={() => navigate('/importar')}
+            onExportExcel={handleExportExcel}
+            onClearClassifications={handleClearTransactionClassifications}
+          />
+        </CadastroListHeaderActions>
       }
     />
   )
@@ -1592,7 +1797,6 @@ const TransactionMappingsTab = () => {
           onChange={setDraftSharedFilters}
           placeholder="Todos"
           icon={<Users size={14} className="text-gray-500" />}
-          disabled={partnerFilterOptions.length === 0}
         />
       </CadastroFilterField>
     </CadastroListPageFilterCard>
@@ -1606,13 +1810,17 @@ const TransactionMappingsTab = () => {
         header={pageHeader}
         tabs={pageTabs}
       >
-        {isLoading ? (
+        {isLoading || filtersApplying ? (
           <CadastroListPageLoading label="Carregando mapeamentos…" />
         ) : !filtersApplied ? (
           <CadastroListPageEmptyCard
             icon={<Filter size={32} className="text-gray-400" />}
-            title="Nenhum filtro aplicado"
-            description="Ajuste os filtros acima e clique em Aplicar para listar os mapeamentos."
+            title={catalogReady ? 'Aplique os filtros para ver os mapeamentos' : 'Carregando opções de filtro…'}
+            description={
+              catalogReady
+                ? 'Use os filtros acima e clique em Aplicar (ou Limpar filtros para listar todos).'
+                : 'Aguarde o cadastro de tags e compartilhamentos.'
+            }
           />
         ) : (
           <div className="space-y-3">
@@ -1626,8 +1834,14 @@ const TransactionMappingsTab = () => {
             {mappings.length === 0 ? (
               <CadastroListPageEmptyCard
                 icon={<Map size={32} className="text-gray-400" />}
-                title="Nenhum mapeamento neste filtro"
-                description="Altere os filtros acima e clique em Aplicar, ou limpe os filtros."
+                title={
+                  appliedFiltersAreNarrowed ? 'Nenhum mapeamento neste filtro' : 'Nenhum mapeamento cadastrado'
+                }
+                description={
+                  appliedFiltersAreNarrowed
+                    ? 'Altere os filtros acima e clique em Aplicar, ou use Limpar filtros.'
+                    : 'Use Novo Mapeamento para criar o primeiro.'
+                }
               />
             ) : filteredMappings.length === 0 ? (
               <CadastroListPageEmptyCard
@@ -1636,7 +1850,7 @@ const TransactionMappingsTab = () => {
                 description={
                   searchTerm.trim()
                     ? 'Tente outro termo ou limpe a busca.'
-                    : 'Altere os filtros acima e clique em Aplicar, ou limpe os filtros.'
+                    : 'Altere os filtros acima e clique em Aplicar, ou use Limpar filtros.'
                 }
               />
             ) : (
@@ -1951,7 +2165,7 @@ const TransactionMappingsTab = () => {
                               {remappingId === mapping.id ? (
                                 <Loader2 size={15} className="animate-spin" />
                               ) : (
-                                <Zap size={15} />
+                                <Play size={15} />
                               )}
                             </button>
                             <button
@@ -1997,7 +2211,7 @@ const TransactionMappingsTab = () => {
         <CadastroModalShell
           maxWidth="max-w-6xl"
           onBackdropClick={() => {
-            if (showPasswordModal || skipMappingModalBackdropCloseRef.current) return
+            if (showPasswordModal || skipMappingModalBackdropCloseRef.current || mappingSaving) return
             closeModal()
           }}
           zClass="z-[60]"
@@ -2006,11 +2220,18 @@ const TransactionMappingsTab = () => {
             isEdit={showEditModal}
             title={showEditModal ? 'Editar Mapeamento' : 'Novo Mapeamento'}
             subtitle="Configure como uma descrição deve ser categorizada automaticamente"
-            onClose={closeModal}
+            onClose={() => {
+              if (!mappingSaving) closeModal()
+            }}
             icon={<Map size={18} />}
           />
           <form onSubmit={showEditModal ? handleUpdate : handleSubmit} className="flex min-h-0 flex-1 flex-col" id="mapping-form">
             <CadastroModalBody>
+              {mappingSaveError ? (
+                <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
+                  {mappingSaveError}
+                </p>
+              ) : null}
               <CadastroFormSection title="Aplicação" icon={<Zap size={14} />}>
                 <CadastroModalFieldsGrid>
                   <CadastroModalFieldsRow>
@@ -2035,11 +2256,29 @@ const TransactionMappingsTab = () => {
                       <span>
                         <span className="block text-sm font-medium">Aplicar a todos os registros existentes</span>
                         <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
-                          Atualiza tag, subtag e compartilhamento em <strong>todos</strong> os registros que correspondem a este mapeamento
+                          Atualiza tag e subtag em <strong>todos</strong> os registros que correspondem a este mapeamento
                         </span>
                       </span>
                     </label>
                   </CadastroModalFieldsRow>
+                  {applyToExistingRecords ? (
+                    <CadastroModalFieldsRow>
+                      <label className={`${cadastroOptionLabelCls} items-start`}>
+                        <input
+                          type="checkbox"
+                          checked={applyOverwriteSharing}
+                          onChange={(e) => setApplyOverwriteSharing(e.target.checked)}
+                          className={`${cadastroAccentControlCls} mt-0.5 h-4 w-4 rounded border-gray-300`}
+                        />
+                        <span>
+                          <span className="block text-sm font-medium">Sobrescrever compartilhamento</span>
+                          <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                            Desmarcado, aplica o parceiro deste mapeamento quando houver um; não remove compartilhamento já gravado se o mapeamento for &quot;Próprio&quot;. Marcado, espelha exatamente este mapeamento (Próprio remove compartilhamento nos lançamentos).
+                          </span>
+                        </span>
+                      </label>
+                    </CadastroModalFieldsRow>
+                  ) : null}
                 </CadastroModalFieldsGrid>
               </CadastroFormSection>
 
@@ -2310,7 +2549,12 @@ const TransactionMappingsTab = () => {
                         type="button"
                         onClick={() => {
                           setModalTypeFilter('receita')
-                          setFormData({ ...formData, tag_id: 0, subtag_id: 0 })
+                          setFormData({
+                            ...formData,
+                            tag_id: 0,
+                            subtag_id: 0,
+                            my_contribution_percentage: null,
+                          })
                         }}
                         className={`flex flex-1 items-center justify-center gap-2 rounded-lg border-2 px-4 py-3 transition-all ${
                           modalTypeFilter === 'receita'
@@ -2325,7 +2569,12 @@ const TransactionMappingsTab = () => {
                         type="button"
                         onClick={() => {
                           setModalTypeFilter('despesa')
-                          setFormData({ ...formData, tag_id: 0, subtag_id: 0 })
+                          setFormData({
+                            ...formData,
+                            tag_id: 0,
+                            subtag_id: 0,
+                            revenue_contribution_percentage: null,
+                          })
                         }}
                         className={`flex flex-1 items-center justify-center gap-2 rounded-lg border-2 px-4 py-3 transition-all ${
                           modalTypeFilter === 'despesa'
@@ -2391,15 +2640,25 @@ const TransactionMappingsTab = () => {
                         value={formData.shared_partner_id}
                         onChange={(e) => {
                           const selectedId = Number(e.target.value)
-                          setFormData({ ...formData, shared_partner_id: selectedId })
                           if (selectedId > 0) {
                             const selectedSharing = partners.find(p => p.id === selectedId)
                             if (selectedSharing) {
                               setFormData(prev => ({
                                 ...prev,
                                 shared_partner_id: selectedId,
-                                my_contribution_percentage: sharingPercentForKind(selectedSharing, 'expense'),
-                                revenue_contribution_percentage: sharingPercentForKind(selectedSharing, 'revenue'),
+                                ...(modalTypeFilter === 'despesa'
+                                  ? {
+                                      my_contribution_percentage: sharingPercentForKind(
+                                        selectedSharing,
+                                        'expense',
+                                      ),
+                                    }
+                                  : {
+                                      revenue_contribution_percentage: sharingPercentForKind(
+                                        selectedSharing,
+                                        'revenue',
+                                      ),
+                                    }),
                               }))
                             }
                           } else {
@@ -2421,63 +2680,66 @@ const TransactionMappingsTab = () => {
                         ))}
                       </select>
                       <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        Para despesas compartilhadas com parceiro
+                        {modalTypeFilter === 'despesa'
+                          ? 'Para despesas compartilhadas com parceiro'
+                          : 'Para receitas compartilhadas com parceiro'}
                       </p>
                     </label>
-                    <OwnershipPercentField
-                      context="mappingExpense"
-                      value={
-                        formData.my_contribution_percentage != null
-                          ? String(formData.my_contribution_percentage)
-                          : ''
-                      }
-                      onChange={(raw) => {
-                        const masked = maskPercentInput(raw)
-                        if (masked === '') {
-                          setFormData({ ...formData, my_contribution_percentage: null })
-                          return
+                    {modalTypeFilter === 'despesa' ? (
+                      <OwnershipPercentField
+                        context="mappingExpense"
+                        value={
+                          formData.my_contribution_percentage != null
+                            ? String(formData.my_contribution_percentage)
+                            : ''
                         }
-                        const n = parseFloat(masked)
-                        if (!Number.isNaN(n) && n >= 0 && n <= 100) {
-                          setFormData({ ...formData, my_contribution_percentage: n })
+                        onChange={(raw) => {
+                          const masked = maskPercentInput(raw)
+                          if (masked === '') {
+                            setFormData({ ...formData, my_contribution_percentage: null })
+                            return
+                          }
+                          const n = parseFloat(masked)
+                          if (!Number.isNaN(n) && n >= 0 && n <= 100) {
+                            setFormData({ ...formData, my_contribution_percentage: n })
+                          }
+                        }}
+                        disabled={formData.shared_partner_id === 0}
+                        showProprioBadge={formData.shared_partner_id > 0}
+                        hint={
+                          formData.shared_partner_id > 0
+                            ? 'Override de despesa neste mapeamento. Vazio usa cartão ou config de compartilhamento.'
+                            : 'Selecione um compartilhamento primeiro.'
                         }
-                      }}
-                      disabled={formData.shared_partner_id === 0}
-                      showProprioBadge={formData.shared_partner_id > 0}
-                      hint={
-                        formData.shared_partner_id > 0
-                          ? 'Override de despesa neste mapeamento. Vazio usa cartão ou config de compartilhamento.'
-                          : 'Selecione um compartilhamento primeiro.'
-                      }
-                    />
-                  </CadastroModalFieldsRow>
-                  <CadastroModalFieldsRow>
-                    <OwnershipPercentField
-                      context="mappingRevenue"
-                      value={
-                        formData.revenue_contribution_percentage != null
-                          ? String(formData.revenue_contribution_percentage)
-                          : ''
-                      }
-                      onChange={(raw) => {
-                        const masked = maskPercentInput(raw)
-                        if (masked === '') {
-                          setFormData({ ...formData, revenue_contribution_percentage: null })
-                          return
+                      />
+                    ) : (
+                      <OwnershipPercentField
+                        context="mappingRevenue"
+                        value={
+                          formData.revenue_contribution_percentage != null
+                            ? String(formData.revenue_contribution_percentage)
+                            : ''
                         }
-                        const n = parseFloat(masked)
-                        if (!Number.isNaN(n) && n >= 0 && n <= 100) {
-                          setFormData({ ...formData, revenue_contribution_percentage: n })
+                        onChange={(raw) => {
+                          const masked = maskPercentInput(raw)
+                          if (masked === '') {
+                            setFormData({ ...formData, revenue_contribution_percentage: null })
+                            return
+                          }
+                          const n = parseFloat(masked)
+                          if (!Number.isNaN(n) && n >= 0 && n <= 100) {
+                            setFormData({ ...formData, revenue_contribution_percentage: n })
+                          }
+                        }}
+                        disabled={formData.shared_partner_id === 0}
+                        showProprioBadge={formData.shared_partner_id > 0}
+                        hint={
+                          formData.shared_partner_id > 0
+                            ? 'Override de receita neste mapeamento. Vazio usa cartão ou config de compartilhamento.'
+                            : 'Selecione um compartilhamento primeiro.'
                         }
-                      }}
-                      disabled={formData.shared_partner_id === 0}
-                      showProprioBadge={formData.shared_partner_id > 0}
-                      hint={
-                        formData.shared_partner_id > 0
-                          ? 'Override de receita neste mapeamento. Vazio usa cartão ou config de compartilhamento.'
-                          : 'Selecione um compartilhamento primeiro.'
-                      }
-                    />
+                      />
+                    )}
                   </CadastroModalFieldsRow>
                   <CadastroModalFieldsRow>
                     <label className={`${cadastroOptionLabelCls} items-start`}>
@@ -2557,12 +2819,15 @@ const TransactionMappingsTab = () => {
               </CadastroFormSection>
             </CadastroModalBody>
             <CadastroModalFooter
-              onClose={closeModal}
+              onClose={() => {
+                if (!mappingSaving) closeModal()
+              }}
               onSave={() => {
                 const form = document.getElementById('mapping-form') as HTMLFormElement | null
                 form?.requestSubmit()
               }}
-              disabled={showEditModal && !hasFormChanges()}
+              saving={mappingSaving}
+              disabled={mappingSaving || (showEditModal && !hasFormChanges())}
               saveLabel={showEditModal ? 'Atualizar Mapeamento' : 'Criar Mapeamento'}
             />
           </form>
@@ -2636,13 +2901,13 @@ const TransactionMappingsTab = () => {
             isEdit={false}
             title="Aplicar Mapeamento"
             onClose={closeSingleRemapModal}
-            icon={<Zap size={18} />}
+            icon={<Play size={18} />}
           />
           <CadastroModalBody>
             <CadastroFormSection
               title="O que será aplicado"
               hint="Nas transações que corresponderem a este mapeamento."
-              icon={<Zap size={14} />}
+              icon={<Play size={14} />}
             >
               <div className="space-y-3">
               <p className="truncate text-sm font-medium text-gray-800 dark:text-gray-100">
@@ -2680,8 +2945,8 @@ const TransactionMappingsTab = () => {
                   </span>
                   <span className="mt-0.5 block text-xs leading-snug text-gray-500 dark:text-gray-400">
                     {remapMapping.shared_partner_id
-                      ? `Aplica ${remapMapping.shared_partner_name} (${remapMapping.my_contribution_percentage ?? 100}%) nas transações que já tiverem outro compartilhamento. Desmarcado, o valor atual é mantido.`
-                      : 'Remove o compartilhamento das transações que já tiverem um. Desmarcado, o valor atual é mantido.'}
+                      ? `Marcado, aplica ${remapMapping.shared_partner_name} (${remapMapping.my_contribution_percentage ?? 100}%) nos lançamentos correspondentes. Desmarcado, mantém o compartilhamento atual de cada lançamento.`
+                      : 'Marcado, remove o compartilhamento dos lançamentos correspondentes. Desmarcado, mantém o compartilhamento atual de cada lançamento.'}
                   </span>
                 </span>
               </label>
@@ -2697,7 +2962,7 @@ const TransactionMappingsTab = () => {
               remappingId != null ? (
                 <Loader2 size={15} className="animate-spin" />
               ) : (
-                <Zap size={15} />
+                <Play size={15} />
               )
             }
           />
@@ -2710,15 +2975,15 @@ const TransactionMappingsTab = () => {
           <CadastroModalHeader
             isEdit={false}
             title={`Executar ${selectedMappings.size} Mapeamento(s)`}
-            subtitle={`Ordem: regex → padrão → exato. Aplica tag, subtag e compartilhamento em extrato, fatura e benefício.`}
+            subtitle="Ordem: regex → padrão → exato. Tag e subtag sempre; compartilhamento só se você marcar abaixo."
             onClose={closeBatchRemapModal}
-            icon={<Zap size={18} />}
+            icon={<Play size={18} />}
           />
           <CadastroModalBody>
             <CadastroFormSection
               title="O que será aplicado"
               hint="Nas transações que corresponderem aos mapeamentos selecionados."
-              icon={<Zap size={14} />}
+              icon={<Play size={14} />}
             >
               <div className="space-y-3">
               <label className={`${cadastroOptionLabelCls} items-start`}>
@@ -2753,7 +3018,7 @@ const TransactionMappingsTab = () => {
                     Sobrescrever compartilhamento
                   </span>
                   <span className="mt-0.5 block text-xs leading-snug text-gray-500 dark:text-gray-400">
-                    Aplica o compartilhamento do mapeamento (ou remove, se ele não tiver um) nas transações que já tiverem outro. Desmarcado, o valor atual é mantido.
+                    Marcado, aplica o compartilhamento de cada mapeamento (vazio remove). Desmarcado, mantém o compartilhamento atual de cada lançamento.
                   </span>
                 </span>
               </label>
@@ -2775,7 +3040,7 @@ const TransactionMappingsTab = () => {
               isBatchRemapping ? (
                 <Loader2 size={15} className="animate-spin" />
               ) : (
-                <Zap size={15} />
+                <Play size={15} />
               )
             }
           />
@@ -2972,7 +3237,7 @@ const TransactionMappingsTab = () => {
                 {isBatchRemapping ? (
                   <Loader2 size={14} className="animate-spin" />
                 ) : (
-                  <Zap size={14} />
+                  <Play size={14} />
                 )}
                 {isBatchRemapping ? 'Executando...' : 'Executar selecionados'}
               </button>
@@ -3018,6 +3283,51 @@ const TransactionMappingsTab = () => {
       )}
 
       {/* Dialogs */}
+      <ClosureEditImpactDialog
+        isOpen={remapClosureOpen}
+        impact={remapClosureImpact}
+        onClose={() => {
+          setRemapClosureOpen(false)
+          setPendingRemapAction(null)
+        }}
+        onConfirm={() => {
+          void (async () => {
+            setRemapClosureOpen(false)
+            if (pendingRemapAction === 'single') {
+              await executeSingleRemap(true)
+            } else if (pendingRemapAction === 'batch') {
+              const needsConfirm = await runRemapMappings(
+                filteredMappings.filter((m) => selectedMappings.has(m.id)),
+                'Nenhum registro encontrado para os mapeamentos selecionados',
+                true,
+              )
+              if (!needsConfirm) {
+                setShowBatchRemapModal(false)
+                setSelectedMappings(new Set())
+              }
+            } else if (pendingRemapAction === 'create') {
+              await handleSubmit(undefined, pendingMappingSkipPassword, true)
+            } else if (pendingRemapAction === 'update') {
+              await handleUpdate(undefined, pendingMappingSkipPassword, true)
+            }
+            setPendingRemapAction(null)
+            setPendingMappingSkipPassword(false)
+          })()
+        }}
+        confirmText={
+          remapClosureImpact?.impact_type === 'split_recalc'
+            ? 'Recalcular compartilhamento'
+            : 'Continuar'
+        }
+      />
+      <ClosureEditImpactSummaryModal
+        isOpen={closureSummary != null}
+        baseMessage={closureSummary?.baseMessage ?? ''}
+        impact={closureSummary?.impact ?? null}
+        importIssues={closureSummary?.importIssues}
+        importStats={closureSummary?.importStats}
+        onClose={() => setClosureSummary(null)}
+      />
       <ConfirmComponent />
 
       {/* Toast */}

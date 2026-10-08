@@ -19,6 +19,14 @@ import { useEscapeKey } from '../hooks/useEscapeKey'
 import { sharingPartnerLabel, sharingPercentForKind } from '../utils/accountFormatter'
 import OwnershipPercentField from './OwnershipPercentField'
 import { finalizePercentInput, maskPercentInput } from '../utils/percentInput'
+import ClosureEditImpactDialog from './ClosureEditImpactDialog'
+import type { ClosureEditImpact } from '../types/closureEditImpact'
+import {
+  buildEditSuccessPayload,
+  extractClosureImpactFromResponse,
+  parseAxiosClosureConflict,
+  type ExpenseEditSuccessPayload,
+} from '../utils/closureEditImpact'
 
 interface ToastState {
   show: boolean
@@ -79,16 +87,28 @@ interface BatchEditExpenseModalProps {
   onClose: () => void
   selectedItems: SelectedItem[]
   expenseType: 'despesa' | 'receita'
-  onSuccess: (message?: string) => void
+  /** Oculta tag/subtag; só compartilhamento (seleção global em Faturas). */
+  sharingOnly?: boolean
+  onSuccess: (result: ExpenseEditSuccessPayload) => void
 }
 
-const BatchEditExpenseModal = ({ isOpen, onClose, selectedItems, expenseType, onSuccess }: BatchEditExpenseModalProps) => {
+const BatchEditExpenseModal = ({
+  isOpen,
+  onClose,
+  selectedItems,
+  expenseType,
+  sharingOnly = false,
+  onSuccess,
+}: BatchEditExpenseModalProps) => {
   const [tags, setTags] = useState<Tag[]>([])
   const [subtags, setSubtags] = useState<Subtag[]>([])
   const [partners, setPartners] = useState<Partner[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [isLoadingData, setIsLoadingData] = useState(true) // ✅ Inicia como true para evitar flash de conteúdo
   const [toast, setToast] = useState<ToastState>({ show: false, message: '', type: 'success' })
+  const [closureImpactOpen, setClosureImpactOpen] = useState(false)
+  const [closureImpact, setClosureImpact] = useState<ClosureEditImpact | null>(null)
+  const [pendingPayload, setPendingPayload] = useState<Record<string, unknown> | null>(null)
 
   // Form state - todos opcionais
   const [formData, setFormData] = useState({
@@ -113,6 +133,9 @@ const BatchEditExpenseModal = ({ isOpen, onClose, selectedItems, expenseType, on
   useEffect(() => {
     if (isOpen) {
       setIsLoadingData(true)
+      setClosureImpactOpen(false)
+      setClosureImpact(null)
+      setPendingPayload(null)
       // Reset form
       setFormData({
         tag_id: 0,
@@ -183,49 +206,65 @@ const BatchEditExpenseModal = ({ isOpen, onClose, selectedItems, expenseType, on
     const hasSubtag = formData.subtag_id > 0
     const hasAdjustment = formData.adjustment_type !== ''
 
-    if (!hasSubtag && !hasAdjustment && !clearSubtag && !clearSharing) {
+    if (sharingOnly) {
+      if (!hasAdjustment && !clearSharing) {
+        showToast('Escolha um compartilhamento ou marque para limpar', 'warning')
+        return
+      }
+    } else if (!hasSubtag && !hasAdjustment && !clearSubtag && !clearSharing) {
       showToast('Preencha pelo menos um campo para atualizar ou marque para limpar', 'warning')
       return
     }
 
-    setIsLoading(true)
+    const payload: Record<string, unknown> = {
+      items: selectedItems.map(item => ({ id: item.id, source: item.source })),
+    }
 
-    try {
-      const payload: any = {
-        items: selectedItems.map(item => ({ id: item.id, source: item.source }))
-      }
-
-      // Limpar subtag tem prioridade sobre definir subtag
+    if (!sharingOnly) {
       if (clearSubtag) {
-        payload.clear_subtag = true  // Flag explícita para limpar subtag
+        payload.clear_subtag = true
       } else if (hasSubtag) {
         payload.subtag_id = formData.subtag_id
       }
+    }
 
-      // Limpar compartilhamento tem prioridade sobre definir compartilhamento
-      if (clearSharing) {
-        payload.expense_sharing_id = 0  // 0 = remover compartilhamento
+    if (clearSharing) {
+      payload.expense_sharing_id = 0
+      payload.ownership_percentage = 100
+    } else if (hasAdjustment) {
+      if (formData.adjustment_type === 'proprio') {
+        payload.expense_sharing_id = 0
         payload.ownership_percentage = 100
-      } else if (hasAdjustment) {
-        if (formData.adjustment_type === 'proprio') {
-          payload.expense_sharing_id = 0  // 0 = remover compartilhamento
-          payload.ownership_percentage = 100
-        } else if (formData.adjustment_type === 'compartilhado' && formData.shared_partner_id) {
-          payload.expense_sharing_id = formData.shared_partner_id
-          // Usar ?? ao invés de || para permitir 0 como valor válido
-          const parsedPercentage = parseFloat(formData.ownership_percentage)
-          payload.ownership_percentage = !isNaN(parsedPercentage) ? parsedPercentage : 50
-        }
+      } else if (formData.adjustment_type === 'compartilhado' && formData.shared_partner_id) {
+        payload.expense_sharing_id = formData.shared_partner_id
+        const parsedPercentage = parseFloat(formData.ownership_percentage)
+        payload.ownership_percentage = !isNaN(parsedPercentage) ? parsedPercentage : 50
       }
+    }
 
-      await axios.patch('/api/expenses/batch-update', payload)
-      const successMessage = `${selectedItems.length} registro(s) atualizado(s) com sucesso!`
-      // Fecha o modal primeiro, depois mostra o toast na página pai
+    await submitBatch(payload, false)
+  }
+
+  const submitBatch = async (payload: Record<string, unknown>, confirmClosedClosureImpact: boolean) => {
+    setIsLoading(true)
+    try {
+      const body = { ...payload, confirm_closed_closure_impact: confirmClosedClosureImpact }
+      const response = await axios.patch('/api/expenses/batch-update', body)
+      const impact = extractClosureImpactFromResponse(response.data)
+      const base = `${selectedItems.length} registro(s) atualizado(s) com sucesso!`
       onClose()
-      onSuccess(successMessage)
-    } catch (error: any) {
+      onSuccess(buildEditSuccessPayload(base, impact))
+    } catch (error: unknown) {
+      const conflict = parseAxiosClosureConflict(error)
+      if (conflict) {
+        setPendingPayload(payload)
+        setClosureImpact(conflict)
+        setClosureImpactOpen(true)
+        return
+      }
       console.error('Erro ao atualizar em lote:', error)
-      showToast(error.response?.data?.detail || 'Erro ao atualizar registros', 'error')
+      const detail = axios.isAxiosError(error) ? error.response?.data?.detail : null
+      showToast(typeof detail === 'string' ? detail : 'Erro ao atualizar registros', 'error')
     } finally {
       setIsLoading(false)
     }
@@ -256,13 +295,18 @@ const BatchEditExpenseModal = ({ isOpen, onClose, selectedItems, expenseType, on
 
           <CadastroModalHeader
             isEdit
-            title="Editar em Lote"
-            subtitle={`${selectedItems.length} ${expenseType === 'despesa' ? 'despesa(s)' : 'receita(s)'} selecionada(s)`}
+            title={sharingOnly ? 'Compartilhamento em lote' : 'Editar em Lote'}
+            subtitle={
+              sharingOnly
+                ? `${selectedItems.length} lançamento(s) selecionado(s) no filtro atual`
+                : `${selectedItems.length} ${expenseType === 'despesa' ? 'despesa(s)' : 'receita(s)'} selecionada(s)`
+            }
             onClose={onClose}
             icon={<Pencil size={18} />}
           />
           <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col" id="batch-edit-expense-form">
             <CadastroModalBody>
+              {!sharingOnly ? (
               <CadastroFormSection title="Classificação" icon={<TagIcon size={14} />}>
                 <CadastroModalFieldsGrid>
                   <CadastroModalFieldsRow cols={2}>
@@ -328,6 +372,7 @@ const BatchEditExpenseModal = ({ isOpen, onClose, selectedItems, expenseType, on
                   </CadastroModalFieldsRow>
                 </CadastroModalFieldsGrid>
               </CadastroFormSection>
+              ) : null}
 
               <CadastroFormSection title="Compartilhamento" icon={<Users size={14} />}>
                 <CadastroModalFieldsGrid>
@@ -453,6 +498,15 @@ const BatchEditExpenseModal = ({ isOpen, onClose, selectedItems, expenseType, on
           </form>
         </div>
       </CadastroModalShell>
+
+      <ClosureEditImpactDialog
+        isOpen={isOpen && closureImpactOpen}
+        impact={closureImpact}
+        onClose={() => setClosureImpactOpen(false)}
+        onConfirm={() => {
+          if (pendingPayload) void submitBatch(pendingPayload, true)
+        }}
+      />
     </>
   )
 }

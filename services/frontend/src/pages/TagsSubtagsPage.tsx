@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
 import {
@@ -50,6 +51,8 @@ import {
 import { getIconComponent } from '../utils/iconMapper'
 import { selectionHeaderState } from '../utils/listTableSelection'
 import { useConfirm } from '../hooks/useConfirm'
+import { CadastroListHeaderActions } from '../components/CadastroExcelMenu'
+import { exportTagsSubtagsToExcel } from '../utils/exportCadastroExcel'
 
 // Interfaces
 interface TagItem {
@@ -276,6 +279,7 @@ function SubtagAreaCard({
 }
 
 const TagsSubtagsPage = () => {
+  const navigate = useNavigate()
   const { showConfirm, ConfirmComponent } = useConfirm()
 
   const [hierarchicalData, setHierarchicalData] = useState<HierarchicalData[]>([])
@@ -304,7 +308,6 @@ const TagsSubtagsPage = () => {
   // Estados de modais
   const [showTagModal, setShowTagModal] = useState(false)
   const [showSubtagModal, setShowSubtagModal] = useState(false)
-  
   // Estados de edição
   const [editingTag, setEditingTag] = useState<TagItem | null>(null)
   const [editingSubtag, setEditingSubtag] = useState<SubtagItem | null>(null)
@@ -928,15 +931,17 @@ const TagsSubtagsPage = () => {
       async () => {
         setBulkDeleting(true)
         try {
-          for (const tagId of tagIds) {
-            await axios.delete(`/api/expenses/tags/${tagId}/force`)
-          }
-          for (const subtagId of subtagIds) {
-            await axios.delete(`/api/expenses/subtags/${subtagId}/force`)
-          }
+          const { data } = await axios.post<{ deleted: number; skipped: number }>(
+            '/api/expenses/tags/bulk-delete-force',
+            { tag_ids: tagIds, subtag_ids: subtagIds },
+          )
           clearBulkSelection()
           await loadAllData()
-          showToast('Seleção excluída com sucesso.', 'success')
+          const msg =
+            data.skipped > 0
+              ? `${data.deleted} item(ns) excluído(s); ${data.skipped} ignorado(s).`
+              : 'Seleção excluída com sucesso.'
+          showToast(msg, data.deleted > 0 ? 'success' : 'warning')
         } catch (error: unknown) {
           console.error('Erro na exclusão em massa:', error)
           const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
@@ -962,7 +967,21 @@ const TagsSubtagsPage = () => {
               icon={<Tag className="w-8 h-8" />}
               title="Tags e Subtags"
               subtitle="Gerencie suas tags e subtags de categorização"
-              actions={<CadastroListCreateButton label="Nova Tag" onClick={handleCreateTag} />}
+              actions={
+                <CadastroListHeaderActions
+                  menu={{
+                    exportDisabled: hierarchicalData.length === 0,
+                    onImportExcel: () => navigate('/importar'),
+                    onExportExcel: () => {
+                      const tags = hierarchicalData.map((h) => h.tag)
+                      const subtags = hierarchicalData.flatMap((h) => h.subtags)
+                      exportTagsSubtagsToExcel(tags, subtags)
+                    },
+                  }}
+                >
+                  <CadastroListCreateButton label="Nova Tag" onClick={handleCreateTag} />
+                </CadastroListHeaderActions>
+              }
             />
           }
           tabs={
@@ -1000,7 +1019,6 @@ const TagsSubtagsPage = () => {
               icon={<Tag size={32} className="text-gray-400" />}
               title="Nenhuma tag cadastrada"
               description="Comece criando sua primeira tag de categorização"
-              action={<CadastroListCreateButton label="Criar primeira tag" onClick={handleCreateTag} />}
             />
           ) : filteredData.length === 0 ? (
             <CadastroListPageEmptyCard

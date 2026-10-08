@@ -417,7 +417,13 @@ export default function EmprestimosPage() {
   }
 
   useEffect(() => {
-    loadPartners()
+    void (async () => {
+      await loadPartners()
+      setAppliedFilterType('all')
+      setAppliedFilterPartner(null)
+      setFiltersApplied(true)
+      await loadLoans()
+    })()
   }, [])
 
   // Máscara BRL: dígitos brutos → "1.234,56"
@@ -794,7 +800,10 @@ export default function EmprestimosPage() {
   }
 
   const hasActiveFilters =
-    filtersApplied || draftFilterType !== 'all' || draftFilterPartner != null
+    draftFilterType !== 'all' ||
+    draftFilterPartner != null ||
+    appliedFilterType !== 'all' ||
+    appliedFilterPartner != null
 
   const applyFilters = async () => {
     setSearchTerm('')
@@ -810,9 +819,9 @@ export default function EmprestimosPage() {
     setAppliedFilterType('all')
     setAppliedFilterPartner(null)
     setSearchTerm('')
-    setFiltersApplied(false)
-    setLoans([])
     setListTab('open')
+    setFiltersApplied(true)
+    void loadLoans()
   }
 
   const filteredLoans = filtersApplied
@@ -1009,16 +1018,16 @@ export default function EmprestimosPage() {
           }
         >
         <div>
-          {isLoading && filtersApplied ? (
+          {isLoading ? (
             <div className="flex items-center justify-center rounded-xl border border-gray-200 bg-white py-12 shadow-sm dark:border-gray-700 dark:bg-gray-800">
               <LoadingSpinner />
             </div>
           ) : !filtersApplied ? (
             <div className="rounded-xl border border-gray-200 bg-white p-12 text-center shadow-sm dark:border-gray-700 dark:bg-gray-800">
               <Filter size={48} className="mx-auto mb-4 text-gray-300 dark:text-gray-600" />
-              <h3 className="mb-2 text-lg font-semibold text-gray-900 dark:text-white">Nenhum filtro aplicado</h3>
+              <h3 className="mb-2 text-lg font-semibold text-gray-900 dark:text-white">Não foi possível carregar</h3>
               <p className="text-gray-600 dark:text-gray-400">
-                Ajuste os filtros acima e clique em Aplicar para carregar os empréstimos.
+                Recarregue a página ou clique em Aplicar nos filtros acima.
               </p>
             </div>
           ) : loans.length === 0 ? (

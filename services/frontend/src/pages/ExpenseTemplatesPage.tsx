@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Sidebar from '../components/Sidebar'
 import {
   CadastroListCreateButton,
@@ -45,6 +46,8 @@ import { useAlert } from '../hooks/useAlert'
 import type { ExpenseTemplate } from '../types/expenseTemplate'
 import * as templatesApi from '../services/expenseTemplatesApi'
 import axios from 'axios'
+import { CadastroListHeaderActions } from '../components/CadastroExcelMenu'
+import { exportTemplatesToExcel } from '../utils/exportCadastroExcel'
 
 interface ToastState {
   show: boolean
@@ -55,6 +58,7 @@ interface ToastState {
 const TEMPLATE_TABLE_COL_SPAN = 8
 
 const ExpenseTemplatesPage = () => {
+  const navigate = useNavigate()
   const { showConfirm, ConfirmComponent } = useConfirm()
   const { AlertComponent } = useAlert()
 
@@ -222,6 +226,7 @@ const ExpenseTemplatesPage = () => {
 
   const handleApplySuccess = () => {
     showToast('Lançamentos criados com sucesso!', 'success')
+    loadTemplates()
   }
 
   const templatesAtivos = templates.filter((t) => t.active)
@@ -377,15 +382,20 @@ const ExpenseTemplatesPage = () => {
       async () => {
         setBulkDeleting(true)
         try {
-          for (const templateId of templateIds) {
-            await templatesApi.deleteTemplate(templateId)
-          }
-          for (const { templateId, itemId } of itemDeletes) {
-            await templatesApi.deleteTemplateItem(templateId, itemId)
-          }
+          const data = await templatesApi.bulkDeleteTemplates({
+            template_ids: templateIds,
+            items: itemDeletes.map(({ templateId, itemId }) => ({
+              template_id: templateId,
+              item_id: itemId,
+            })),
+          })
           clearBulkSelection()
           await loadTemplates()
-          showToast('Seleção excluída com sucesso.', 'success')
+          const msg =
+            data.skipped > 0
+              ? `${data.deleted} item(ns) excluído(s); ${data.skipped} ignorado(s).`
+              : 'Seleção excluída com sucesso.'
+          showToast(msg, data.deleted > 0 ? 'success' : 'warning')
         } catch (error: unknown) {
           console.error('Erro na exclusão em massa:', error)
           const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
@@ -411,7 +421,17 @@ const ExpenseTemplatesPage = () => {
               icon={<FileText className="w-8 h-8" />}
               title="Templates de Lançamentos"
               subtitle="Crie templates reutilizáveis para agilizar lançamentos recorrentes"
-              actions={<CadastroListCreateButton label="Novo Template" onClick={handleCreate} />}
+              actions={
+                <CadastroListHeaderActions
+                  menu={{
+                    exportDisabled: filteredTemplates.length === 0,
+                    onImportExcel: () => navigate('/importar'),
+                    onExportExcel: () => exportTemplatesToExcel(filteredTemplates),
+                  }}
+                >
+                  <CadastroListCreateButton label="Novo Template" onClick={handleCreate} />
+                </CadastroListHeaderActions>
+              }
             />
           }
           tabs={
@@ -455,7 +475,6 @@ const ExpenseTemplatesPage = () => {
               icon={<FileText size={32} className="text-gray-400" />}
               title="Nenhum template cadastrado"
               description="Crie templates reutilizáveis para agilizar lançamentos recorrentes"
-              action={<CadastroListCreateButton label="Criar primeiro template" onClick={handleCreate} />}
             />
           ) : filteredTemplates.length === 0 ? (
             <CadastroListPageEmptyCard
@@ -782,6 +801,7 @@ const ExpenseTemplatesPage = () => {
         onClose={() => {
           setShowApplyModal(false)
           setApplyingTemplate(null)
+          loadTemplates()
         }}
         onSuccess={handleApplySuccess}
         template={applyingTemplate}

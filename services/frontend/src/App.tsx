@@ -8,6 +8,7 @@ import ProtectedRoute from './components/ProtectedRoute'
 import LoginPage from './pages/LoginPage'
 import SelectAccountPage from './pages/SelectAccountPage'
 import HomePage from './pages/HomePage'
+import ImportWizardPage from './pages/ImportWizardPage'
 import CartoesPage from './pages/CartoesPage'
 import ContasPage from './pages/ContasPage'
 import CompartilhamentosPage from './pages/CompartilhamentosPage'
@@ -72,6 +73,14 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <HomePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/importar"
+                element={
+                  <ProtectedRoute>
+                    <ImportWizardPage />
                   </ProtectedRoute>
                 }
               />

@@ -584,7 +584,12 @@ class ExpenseTemplate(Base, AccountBaseEntity):
 
     # Relacionamentos
     account = relationship("Account", foreign_keys="[ExpenseTemplate.account_id]")
-    items = relationship("ExpenseTemplateItem", back_populates="template", cascade="all, delete-orphan")
+    items = relationship(
+        "ExpenseTemplateItem",
+        back_populates="template",
+        cascade="all, delete-orphan",
+        order_by="ExpenseTemplateItem.display_order",
+    )
 
 
 class ExpenseTemplateItem(Base, AccountBaseEntity):

@@ -12,6 +12,7 @@ from datetime import datetime, date
 from app.database import get_db
 from app.models.unified_models import ExpenseTemplate, ExpenseTemplateItem, Subtag, Tag, BankStatement, ExpenseSharingSetting, Account
 from app.dependencies.auth import get_current_user
+from app.schemas.bulk_ops import BulkDeleteResponse, BulkDeleteTemplatesRequest
 
 router = APIRouter(prefix="/api/expense-templates", tags=["expense-templates"])
 
@@ -200,6 +201,62 @@ async def listar_templates(
         result.append(template_dict)
 
     return result
+
+
+@router.post("/bulk-delete", response_model=BulkDeleteResponse)
+async def bulk_deletar_templates(
+    body: BulkDeleteTemplatesRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    account_id = current_user.get("account_id")
+    if not account_id:
+        raise HTTPException(status_code=400, detail="account_id não encontrado no token")
+    if not body.template_ids and not body.items:
+        raise HTTPException(status_code=400, detail="Nenhum template ou item selecionado")
+
+    deleted = 0
+    skipped = 0
+    template_ids = list(dict.fromkeys(body.template_ids))
+    soft_deleted_template_ids: set[int] = set()
+
+    if template_ids:
+        templates = (
+            db.query(ExpenseTemplate)
+            .filter(
+                ExpenseTemplate.id.in_(template_ids),
+                ExpenseTemplate.account_id == account_id,
+            )
+            .all()
+        )
+        found = {t.id for t in templates}
+        for template in templates:
+            template.active = False
+            soft_deleted_template_ids.add(template.id)
+            deleted += 1
+        skipped += len(template_ids) - len(found)
+
+    for ref in body.items:
+        if ref.template_id in soft_deleted_template_ids:
+            skipped += 1
+            continue
+        item = (
+            db.query(ExpenseTemplateItem)
+            .filter(
+                ExpenseTemplateItem.id == ref.item_id,
+                ExpenseTemplateItem.expense_template_id == ref.template_id,
+                ExpenseTemplateItem.account_id == account_id,
+            )
+            .first()
+        )
+        if not item:
+            skipped += 1
+            continue
+        db.delete(item)
+        deleted += 1
+
+    db.commit()
+    return BulkDeleteResponse(deleted=deleted, skipped=skipped)
 
 
 @router.get("/{template_id}", response_model=ExpenseTemplateResponse)

@@ -196,16 +196,30 @@ async def get_time_series(
     start_date_obj = None
     end_date_obj = None
 
+    start_year = None
+    start_month = None
+    end_year = None
+    end_month = None
+
     if start_date and end_date:
-        # Converte datas para ano/mês
         start_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
         end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
         start_year = start_date_obj.year
         start_month = start_date_obj.month
         end_year = end_date_obj.year
         end_month = end_date_obj.month
+    elif start_date:
+        start_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
+        start_year = start_date_obj.year
+        start_month = start_date_obj.month
+        end_date_obj = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_year = end_date_obj.year
+        end_month = end_date_obj.month
+    elif end_date:
+        end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
+        end_year = end_date_obj.year
+        end_month = end_date_obj.month
     else:
-        # Usa filtros antigos (ano/mês)
         end_year = end_year or now.year
         end_month = end_month or now.month
 
@@ -1379,6 +1393,10 @@ async def get_detailed_report(
         # Filtro APENAS START_DATE: usa apenas >= start_date (sem end_date)
         start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
         end_date_obj = None
+    elif end_date:
+        # Filtro APENAS END_DATE: tudo até o fim do dia escolhido (exclusive +1 dia)
+        start_date_obj = None
+        end_date_obj = datetime.strptime(end_date, "%Y-%m-%d").date() + timedelta(days=1)
     elif start_year or end_year or start_month or end_month:
         # Fallback para filtros antigos (ano/mês) - DEPRECATED
         now = datetime.now()

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
@@ -13,6 +13,7 @@ import {
   cadastroRowIconBtnCls,
   cadastroRowIconDangerCls,
   listPageTableRowHoverCls,
+  listPageTableSectionCls,
   listPageTableTdCls,
 } from '../components/CadastroListPageLayout'
 import {
@@ -26,6 +27,7 @@ import {
   CadastroModalShell,
   cadastroAccentControlCls,
   cadastroFieldCls,
+  cadastroSectionsStackCls,
 } from '../components/CadastroFormLayout'
 import { ListPageTable } from '../components/ListPageTable'
 import {
@@ -81,19 +83,19 @@ import {
   ArrowUp,
   ArrowUpCircle,
   Calendar,
-  CheckSquare,
   CreditCard,
   Eye,
   Filter,
   Gift,
   Landmark,
   Lock,
-  MinusSquare,
   Scale,
-  Square,
   Unlock,
   Users,
   X,
+  TrendingUp,
+  TrendingDown,
+  History,
 } from 'lucide-react'
 
 type ClosureTab = 'open' | 'closed'
@@ -172,20 +174,6 @@ const splitOf = (item?: Pick<AccountPeriodMonth, 'split_account' | 'split_shared
   shared: item?.split_shared ?? emptySplit,
 })
 
-const sumSplits = (months: AccountPeriodMonth[]) =>
-  months.reduce(
-    (acc, item) => {
-      const split = splitOf(item)
-      return {
-        accountEntries: acc.accountEntries + split.account.entries,
-        sharedEntries: acc.sharedEntries + split.shared.entries,
-        accountExits: acc.accountExits + split.account.exits,
-        sharedExits: acc.sharedExits + split.shared.exits,
-      }
-    },
-    { accountEntries: 0, sharedEntries: 0, accountExits: 0, sharedExits: 0 },
-  )
-
 function FlowSplitLines({
   total,
   account,
@@ -223,6 +211,183 @@ const closureTableThRightCls =
 const closureTableTdCls = 'border-b border-gray-200 px-3 py-2 dark:border-gray-600'
 const closureTableFootCls =
   'border-t-2 border-gray-200 bg-gray-50 dark:border-gray-600 dark:bg-gray-800/50'
+
+function ClosureSummaryPanelCell({
+  label,
+  icon,
+  value,
+  hint,
+}: {
+  label: string
+  icon: ReactNode
+  value: ReactNode
+  hint?: string
+}) {
+  return (
+    <div className="flex min-h-[7.5rem] flex-col justify-center bg-white px-5 py-4 dark:bg-gray-800">
+      <div className="mb-2 flex items-center gap-2 text-gray-500 dark:text-gray-400">
+        {icon}
+        <span className="text-xs font-semibold uppercase tracking-wide">{label}</span>
+      </div>
+      <div className="text-xl font-bold tabular-nums sm:text-2xl">{value}</div>
+      {hint ? <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">{hint}</p> : null}
+    </div>
+  )
+}
+
+function BulkCloseSummaryScorecards({ months }: { months: AccountPeriodMonth[] }) {
+  const sorted = sortMonths(months)
+  const first = sorted[0]
+  const last = sorted[sorted.length - 1]
+  const totalEntries = sorted.reduce((sum, m) => sum + Number(m.entries), 0)
+  const totalExits = sorted.reduce((sum, m) => sum + Number(m.exits), 0)
+  const periodLabel =
+    sorted.length === 1
+      ? monthTitle(first)
+      : `${monthTitle(first)} – ${monthTitle(last)}`
+  const monthCountLabel = `${sorted.length} mês${sorted.length === 1 ? '' : 'es'}`
+
+  return (
+    <article className={`${listPageTableSectionCls} flex flex-col overflow-hidden`}>
+      <div
+        className="flex items-start gap-3 border-b border-l-4 border-gray-200 px-5 py-4 dark:border-gray-600"
+        style={{ borderLeftColor: 'var(--color-1)' }}
+      >
+        <div
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ring-1 ring-[color-mix(in_srgb,var(--color-1)_20%,transparent)]"
+          style={{
+            color: 'var(--color-1)',
+            background: 'color-mix(in srgb, var(--color-1) 14%, transparent)',
+          }}
+        >
+          <Landmark size={18} aria-hidden />
+        </div>
+        <div className="min-w-0">
+          <h2 className="text-lg font-bold text-gray-900 dark:text-white">Caixa do extrato</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Resumo · {periodLabel}</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 divide-y divide-gray-200 dark:divide-gray-600 sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4">
+        <ClosureSummaryPanelCell
+          label="Saldo anterior"
+          icon={<History size={14} className="text-gray-600 dark:text-gray-400" />}
+          hint={
+            hasOfficialOpening(first)
+              ? `Início · ${monthTitle(first)}`
+              : 'Sem saldo oficial de abertura'
+          }
+          value={
+            hasOfficialOpening(first) ? (
+              <span style={moneyStyle(first.opening_balance)}>{formatCurrency(first.opening_balance)}</span>
+            ) : (
+              <span className="text-gray-400">—</span>
+            )
+          }
+        />
+        <ClosureSummaryPanelCell
+          label="Entradas"
+          icon={<TrendingUp size={14} className="text-[var(--color-success)]" />}
+          hint={monthCountLabel}
+          value={
+            <span className="text-[var(--color-success)]">{formatCurrency(totalEntries)}</span>
+          }
+        />
+        <ClosureSummaryPanelCell
+          label="Saídas"
+          icon={<TrendingDown size={14} className="text-[var(--color-danger)]" />}
+          hint={monthCountLabel}
+          value={
+            <span className="text-[var(--color-danger)]">
+              {totalExits === 0 ? formatCurrency(0) : `−${formatCurrency(Math.abs(totalExits))}`}
+            </span>
+          }
+        />
+        <ClosureSummaryPanelCell
+          label="Resultado"
+          icon={<Scale size={14} className="text-[var(--color-1)]" />}
+          hint={`Saldo final · ${monthTitle(last)}`}
+          value={
+            <span style={moneyStyle(last.closing_balance)}>{formatCurrency(last.closing_balance)}</span>
+          }
+        />
+      </div>
+    </article>
+  )
+}
+
+function CloseModalMonthDetail({
+  month,
+  showItemSourceColumn = false,
+}: {
+  month: AccountPeriodMonth
+  showItemSourceColumn?: boolean
+}) {
+  return (
+    <>
+      <CadastroFormSection
+        title="Caixa do extrato"
+        hint="Estes totais travam o saldo bancário do mês."
+        icon={<Scale size={14} />}
+        bodyClassName="p-0"
+      >
+        <CaixaTotals item={month} />
+      </CadastroFormSection>
+
+      <CadastroFormSection
+        title="Repartição Conta / Compartilhado"
+        hint="Esta divisão é gravada no fechamento para a saúde somar depois."
+        icon={<Users size={14} />}
+        bodyClassName="p-0"
+      >
+        <SplitBreakdownTable item={month} />
+      </CadastroFormSection>
+
+      <CadastroFormSection
+        title="Compartilhado por conta"
+        hint="Mesmas entradas, saídas e resultado do compartilhado, separados pela conta parceira."
+        icon={<Users size={14} />}
+        bodyClassName="p-0"
+      >
+        <SharedByAccountTable rows={mergeSharedByAccount([month])} />
+      </CadastroFormSection>
+
+      {(month.card_items ?? []).length > 0 ? (
+        <CadastroFormSection
+          title="Itens da fatura"
+          hint="Despesa sai na conta/compartilhado do item; estorno entra. O débito bancário reconciliado não conta como 100% da conta."
+          icon={<CreditCard size={14} />}
+          bodyClassName="p-0"
+        >
+          <AllocationMiniTable rows={month.card_items ?? []} showSourceColumn={showItemSourceColumn} />
+        </CadastroFormSection>
+      ) : null}
+
+      {(month.benefit_items ?? []).length > 0 ? (
+        <CadastroFormSection
+          title="Cartão de benefício"
+          hint="Lançamentos do mês do item entram na repartição Conta / Compartilhado. O caixa do extrato não muda."
+          icon={<Gift size={14} />}
+          bodyClassName="p-0"
+        >
+          <AllocationMiniTable rows={month.benefit_items ?? []} showSourceColumn={showItemSourceColumn} />
+        </CadastroFormSection>
+      ) : null}
+
+      <UnmatchedCardWarning items={month.unmatched_card_payments ?? []} />
+
+      {(month.shared_settlements ?? []).length > 0 ? (
+        <CadastroFormSection
+          title="Acertos compartilhados"
+          hint="PIX/pagamento do Balanço e empréstimo gerado no fechamento entram como crédito compartilhado."
+          icon={<Scale size={14} />}
+          bodyClassName="p-0"
+        >
+          <AllocationMiniTable rows={month.shared_settlements ?? []} showSourceColumn={showItemSourceColumn} />
+        </CadastroFormSection>
+      ) : null}
+    </>
+  )
+}
 
 function CaixaTotals({ item }: { item: AccountPeriodMonth }) {
   return (
@@ -660,10 +825,10 @@ function PeriodItemsBySource({
     return <p className="px-3 py-4 text-center text-sm text-gray-500">Nenhum lançamento.</p>
   }
   return (
-    <div className="divide-y-2 divide-gray-200 dark:divide-gray-700">
+    <div className={`${cadastroSectionsStackCls} p-4 pt-1`}>
       {groupItemsBySource(items).map((entry) => (
-        <div key={entry.source}>
-          <div className="flex items-center justify-between gap-2 bg-gray-50 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-gray-700 dark:bg-gray-800/40 dark:text-gray-200">
+        <div key={entry.source} className={listPageTableSectionCls}>
+          <div className="flex items-center justify-between gap-2 border-b border-gray-200 bg-gray-50 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-gray-700 dark:border-gray-600 dark:bg-gray-800/40 dark:text-gray-200">
             <SourceLabel source={entry.source} />
             <span className="font-medium normal-case tracking-normal text-gray-500 dark:text-gray-400">
               {entry.items.length} lançamento{entry.items.length === 1 ? '' : 's'}
@@ -968,7 +1133,14 @@ function UnmatchedCardWarning({ items }: { items: AccountPeriodItem[] }) {
   )
 }
 
-function AllocationMiniTable({ rows }: { rows: AccountPeriodItem[] }) {
+function AllocationMiniTable({
+  rows,
+  showSourceColumn = false,
+}: {
+  rows: AccountPeriodItem[]
+  /** Coluna Fonte (extrato / benefício / etc.) — ex.: fechamento em lote com vários meses. */
+  showSourceColumn?: boolean
+}) {
   const [dateSort, setDateSort] = useState<DateSortDirection>('desc')
   const sortedRows = useMemo(
     () =>
@@ -988,6 +1160,9 @@ function AllocationMiniTable({ rows }: { rows: AccountPeriodItem[] }) {
       <table className="w-full text-sm">
         <thead className={closureTableHeadCls}>
           <tr>
+            {showSourceColumn ? (
+              <th className={`${closureTableThLeftCls} w-14`}>Fonte</th>
+            ) : null}
             <SortableDateHeader
               sortDirection={dateSort}
               onToggle={() => setDateSort((prev) => toggleDateSortDirection(prev))}
@@ -1004,6 +1179,11 @@ function AllocationMiniTable({ rows }: { rows: AccountPeriodItem[] }) {
             const sharedAmount = Number(row.amount_shared ?? 0)
             return (
               <tr key={`${row.source ?? 'row'}-${row.id}`}>
+                {showSourceColumn ? (
+                  <td className={closureTableTdCls}>
+                    <ItemSourceSymbols item={row} />
+                  </td>
+                ) : null}
                 <td className={`${closureTableTdCls} whitespace-nowrap`}>{formatDateBR(row.date)}</td>
                 <td className={closureTableTdCls}>{row.description || '—'}</td>
                 <td className={`${closureTableTdCls} text-right font-semibold tabular-nums`} style={moneyStyle(accountAmount)}>
@@ -1018,7 +1198,12 @@ function AllocationMiniTable({ rows }: { rows: AccountPeriodItem[] }) {
         </tbody>
         <tfoot className={closureTableFootCls}>
           <tr>
-            <td className="px-3 py-2.5 font-semibold text-gray-800 dark:text-gray-100" colSpan={2}>Total</td>
+            <td
+              className="px-3 py-2.5 font-semibold text-gray-800 dark:text-gray-100"
+              colSpan={showSourceColumn ? 3 : 2}
+            >
+              Total
+            </td>
             <td className="px-3 py-2.5 text-right font-semibold tabular-nums" style={moneyStyle(accountTotal)}>
               {accountTotal === 0 ? <span className="text-gray-400">—</span> : formatCurrency(accountTotal)}
             </td>
@@ -1080,6 +1265,277 @@ const sortMonths = (items: AccountPeriodMonth[]) =>
 
 const sortMonthsDesc = (items: AccountPeriodMonth[]) =>
   [...items].sort((left, right) => right.year - left.year || right.month - left.month)
+
+function collectPeriodItems(month: AccountPeriodMonth): AccountPeriodItem[] {
+  return [
+    ...(month.items ?? []),
+    ...(month.card_items ?? []),
+    ...(month.benefit_items ?? []),
+    ...(month.shared_settlements ?? []),
+  ]
+}
+
+function groupItemsForMonth(month: AccountPeriodMonth, groupKey: string): AccountPeriodItem[] {
+  const groups = groupPeriodItems(collectPeriodItems(month), month.shared_by_account ?? [])
+  return groups.find((group) => group.key === groupKey)?.items ?? []
+}
+
+function bulkCloseGroupsForMonths(months: AccountPeriodMonth[]): PeriodItemGroup[] {
+  const allItems: AccountPeriodItem[] = []
+  for (const month of months) {
+    allItems.push(...collectPeriodItems(month))
+  }
+  return groupPeriodItems(allItems, mergeSharedByAccount(months))
+}
+
+function bulkCloseMonthFlowTotals(
+  month: AccountPeriodMonth,
+  groupKey: string,
+  flow: 'receitas' | 'despesas',
+): ItemColumnTotals {
+  const { receitas, despesas } = splitItemsByFlow(groupItemsForMonth(month, groupKey))
+  return sumItemColumns(flow === 'receitas' ? receitas : despesas)
+}
+
+function BulkCloseMonthlyFlowTable({
+  months,
+  groupKey,
+  flow,
+  ownView,
+}: {
+  months: AccountPeriodMonth[]
+  groupKey: string
+  flow: 'receitas' | 'despesas'
+  ownView: boolean
+}) {
+  const sorted = sortMonths(months)
+  const rows = sorted.map((month) => ({
+    month,
+    totals: bulkCloseMonthFlowTotals(month, groupKey, flow),
+  }))
+  const yearTotals = rows.reduce(
+    (acc, row) => {
+      acc.accountEntries += row.totals.accountEntries
+      acc.accountExits += row.totals.accountExits
+      acc.sharedEntries += row.totals.sharedEntries
+      acc.sharedExits += row.totals.sharedExits
+      return acc
+    },
+    emptyColumnTotals(),
+  )
+  const hasAny = rows.some(
+    (row) =>
+      row.totals.accountEntries !== 0
+      || row.totals.accountExits !== 0
+      || row.totals.sharedEntries !== 0
+      || row.totals.sharedExits !== 0,
+  )
+  if (!hasAny) {
+    return <p className="px-3 py-4 text-center text-sm text-gray-500">Nenhum lançamento.</p>
+  }
+  const bodyCellCls = `${closureTableTdCls} text-right font-semibold tabular-nums`
+  const footCellCls = 'px-3 py-2.5 text-right font-semibold tabular-nums'
+  const flowHeaders = ['Entradas', 'Saídas', 'Resultado']
+  const groupThCls =
+    'px-3 py-2 text-center text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300'
+  const dash = <span className="text-gray-400">—</span>
+  const flowCell = (entries: number, exits: number, cls: string) => {
+    if (entries === 0 && exits === 0) {
+      return (
+        <>
+          <td className={cls}>{dash}</td>
+          <td className={cls}>{dash}</td>
+          <td className={cls}>{dash}</td>
+        </>
+      )
+    }
+    return flowCells(entries, exits, cls)
+  }
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className={closureTableHeadCls}>
+          {ownView ? (
+            <tr>
+              <th className={closureTableThLeftCls}>Mês</th>
+              {flowHeaders.map((label) => (
+                <th key={label} className={closureTableThRightCls}>
+                  {label}
+                </th>
+              ))}
+            </tr>
+          ) : (
+            <>
+              <tr>
+                <th rowSpan={2} className={`${closureTableThLeftCls} align-bottom`}>
+                  Mês
+                </th>
+                <th colSpan={3} className={groupThCls}>
+                  <span className="inline-flex items-center gap-1">
+                    <Landmark size={12} />
+                    Conta
+                  </span>
+                </th>
+                <th colSpan={3} className={groupThCls}>
+                  <span className="inline-flex items-center gap-1">
+                    <Users size={12} />
+                    Compartilhado
+                  </span>
+                </th>
+              </tr>
+              <tr>
+                {[...flowHeaders, ...flowHeaders].map((label, index) => (
+                  <th key={`${label}-${index}`} className={closureTableThRightCls}>
+                    {label}
+                  </th>
+                ))}
+              </tr>
+            </>
+          )}
+        </thead>
+        <tbody>
+          {rows.map(({ month, totals }) => (
+            <tr key={monthKey(month)}>
+              <td className={`${closureTableTdCls} font-medium text-gray-800 dark:text-gray-100`}>
+                {MONTH_LABELS[month.month - 1]}
+              </td>
+              {flowCell(totals.accountEntries, totals.accountExits, bodyCellCls)}
+              {!ownView && flowCell(totals.sharedEntries, totals.sharedExits, bodyCellCls)}
+            </tr>
+          ))}
+        </tbody>
+        <tfoot className={closureTableFootCls}>
+          <tr>
+            <td className="px-3 py-2.5 font-semibold text-gray-800 dark:text-gray-100">Total</td>
+            {flowCell(yearTotals.accountEntries, yearTotals.accountExits, footCellCls)}
+            {!ownView && flowCell(yearTotals.sharedEntries, yearTotals.sharedExits, footCellCls)}
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  )
+}
+
+function BulkCloseYearDetail({
+  monthsInYear,
+  activeGroupKey,
+  onSelectGroup,
+}: {
+  monthsInYear: AccountPeriodMonth[]
+  activeGroupKey: string
+  onSelectGroup: (key: string) => void
+}) {
+  const groups = useMemo(() => bulkCloseGroupsForMonths(monthsInYear), [monthsInYear])
+  const activeGroup = groups.find((group) => group.key === activeGroupKey) ?? groups[0] ?? null
+  const ownView = activeGroup?.kind === 'own'
+
+  if (groups.length === 0) {
+    return (
+      <p className="rounded-xl border border-gray-200 px-4 py-8 text-center text-sm text-gray-500 dark:border-gray-700">
+        Nenhum lançamento nos meses selecionados deste ano.
+      </p>
+    )
+  }
+
+  return (
+    <div className="space-y-5">
+      <CadastroListPageTabs
+        tabs={groups.map((group) => ({
+          key: group.key,
+          label: groupAccountLabel(group),
+          icon: group.kind === 'own' ? <Landmark size={14} /> : <Users size={14} />,
+          count: group.items.length,
+        }))}
+        active={activeGroup?.key ?? groups[0].key}
+        onChange={onSelectGroup}
+      />
+      {activeGroup ? (
+        <>
+          <CadastroFormSection title="Receitas" icon={<ArrowUpCircle size={14} />} bodyClassName="p-0">
+            <BulkCloseMonthlyFlowTable
+              months={monthsInYear}
+              groupKey={activeGroup.key}
+              flow="receitas"
+              ownView={ownView}
+            />
+          </CadastroFormSection>
+          <CadastroFormSection title="Despesas" icon={<ArrowDownCircle size={14} />} bodyClassName="p-0">
+            <BulkCloseMonthlyFlowTable
+              months={monthsInYear}
+              groupKey={activeGroup.key}
+              flow="despesas"
+              ownView={ownView}
+            />
+          </CadastroFormSection>
+        </>
+      ) : null}
+    </div>
+  )
+}
+
+function groupModalMonthsByYear(months: AccountPeriodMonth[]) {
+  const grouped: Record<string, AccountPeriodMonth[]> = {}
+  for (const month of sortMonths(months)) {
+    const year = String(month.year)
+    if (!grouped[year]) grouped[year] = []
+    grouped[year].push(month)
+  }
+  return {
+    sortedYears: Object.keys(grouped).sort(),
+    groupedByYear: grouped,
+  }
+}
+
+function BulkCloseYearTabs({
+  months,
+  activeYear,
+  onSelectYear,
+}: {
+  months: AccountPeriodMonth[]
+  activeYear: string
+  onSelectYear: (year: string) => void
+}) {
+  const { sortedYears, groupedByYear } = useMemo(() => groupModalMonthsByYear(months), [months])
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <div className="flex items-center gap-2 border-b border-gray-200 px-4 py-2 dark:border-gray-700">
+        <Calendar size={16} style={{ color: 'var(--color-1)' }} aria-hidden />
+        <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">Detalhe por ano</span>
+      </div>
+      <div className="flex overflow-x-auto px-2">
+        {sortedYears.map((year) => {
+          const yearMonths = groupedByYear[year] ?? []
+          const isActive = activeYear === year
+          return (
+            <button
+              key={year}
+              type="button"
+              onClick={() => onSelectYear(year)}
+              className={`flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-all ${
+                isActive
+                  ? 'border-[var(--color-1)] text-[var(--color-1)]'
+                  : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-300'
+              }`}
+            >
+              {year}
+              <Badge
+                variant="tab"
+                tone="brand1"
+                className={
+                  isActive
+                    ? 'bg-[var(--color-1)] text-[var(--on-color-1)]'
+                    : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                }
+                label={String(yearMonths.length)}
+              />
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
 const yearMonthLabel = (yearMonth: string) => {
   const month = Number(yearMonth.slice(5, 7))
@@ -1193,6 +1649,8 @@ const AccountClosuresPage = () => {
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set())
   const [showBackToTop, setShowBackToTop] = useState(false)
   const [modalMonths, setModalMonths] = useState<AccountPeriodMonth[] | null>(null)
+  const [bulkCloseActiveYear, setBulkCloseActiveYear] = useState<string | null>(null)
+  const [bulkCloseGroupTab, setBulkCloseGroupTab] = useState('own')
   const [modalLoading, setModalLoading] = useState(false)
   const [adjustmentCents, setAdjustmentCents] = useState('')
   const [adjustmentNegative, setAdjustmentNegative] = useState(false)
@@ -1322,6 +1780,13 @@ const AccountClosuresPage = () => {
     void loadOptions()
   }, [loadOptions])
 
+  const initialClosuresLoadDone = useRef(false)
+  useEffect(() => {
+    if (filtersLoading || initialClosuresLoadDone.current) return
+    initialClosuresLoadDone.current = true
+    void loadYear('all')
+  }, [filtersLoading, loadYear])
+
   useEffect(() => {
     const container = scrollContainerRef.current
     if (!container) return
@@ -1336,7 +1801,7 @@ const AccountClosuresPage = () => {
     navigate(tab === 'closed' ? '/fechamentos/conta/fechados' : '/fechamentos/conta')
   }
 
-  const hasActiveFilters = draftYear !== '' || filtersApplied
+  const hasActiveFilters = draftYear !== '' || (appliedYear !== null && appliedYear !== 'all')
 
   const applyFilters = () => {
     void loadYear(draftYear === '' ? 'all' : Number(draftYear))
@@ -1344,11 +1809,9 @@ const AccountClosuresPage = () => {
 
   const clearFilters = () => {
     setDraftYear('')
-    setAppliedYear(null)
-    setFiltersApplied(false)
-    setSeries(null)
     setSelectedKeys(new Set())
     setError(null)
+    void loadYear('all')
   }
 
   const lastClosedYearMonth = series?.last_closed_year_month ?? filterOptions?.last_closed_year_month
@@ -1403,6 +1866,10 @@ const AccountClosuresPage = () => {
       return
     }
     setModalMonths(ordered)
+    setBulkCloseActiveYear(
+      ordered.length > 1 ? String(sortMonths(ordered)[0]?.year ?? '') || null : null,
+    )
+    setBulkCloseGroupTab('own')
     setAdjustmentCents('')
     setAdjustmentNegative(false)
     setNotes('')
@@ -1441,11 +1908,40 @@ const AccountClosuresPage = () => {
   const closeModal = () => {
     if (saving) return
     setModalMonths(null)
+    setBulkCloseActiveYear(null)
+    setBulkCloseGroupTab('own')
     setModalLoading(false)
     setAdjustmentCents('')
     setAdjustmentNegative(false)
     setNotes('')
   }
+
+  const bulkCloseGroupedByYear = useMemo(
+    () => (modalMonths?.length ? groupModalMonthsByYear(modalMonths) : null),
+    [modalMonths],
+  )
+
+  useEffect(() => {
+    if (!modalMonths?.length || !bulkCloseGroupedByYear) {
+      setBulkCloseActiveYear(null)
+      setBulkCloseGroupTab('own')
+      return
+    }
+    const { sortedYears } = bulkCloseGroupedByYear
+    setBulkCloseActiveYear((prev) => (prev && sortedYears.includes(prev) ? prev : sortedYears[0] ?? null))
+  }, [modalMonths, bulkCloseGroupedByYear])
+
+  const bulkCloseMonthsInActiveYear = useMemo(() => {
+    if (!bulkCloseGroupedByYear || !bulkCloseActiveYear) return []
+    return bulkCloseGroupedByYear.groupedByYear[bulkCloseActiveYear] ?? []
+  }, [bulkCloseGroupedByYear, bulkCloseActiveYear])
+
+  useEffect(() => {
+    if (bulkCloseMonthsInActiveYear.length === 0) return
+    const groups = bulkCloseGroupsForMonths(bulkCloseMonthsInActiveYear)
+    if (groups.length === 0) return
+    setBulkCloseGroupTab((prev) => (groups.some((group) => group.key === prev) ? prev : groups[0].key))
+  }, [bulkCloseMonthsInActiveYear])
 
   const closeItemsModal = () => {
     setItemsMonth(null)
@@ -1597,8 +2093,11 @@ const AccountClosuresPage = () => {
     partialBulkPrompt != null && modalMonths == null && reopenModalMonths == null && itemsMonth == null && !isConfirmOpen,
   )
 
-  const newestModalMonth = modalMonths?.length ? sortMonths(modalMonths).at(-1) ?? null : null
-  const bulkSplitTotal = modalMonths && modalMonths.length > 1 ? sumSplits(modalMonths) : null
+  const newestModalMonth = useMemo(() => {
+    if (!modalMonths?.length) return null
+    const sorted = sortMonths(modalMonths)
+    return sorted[sorted.length - 1] ?? null
+  }, [modalMonths])
   const adjustmentValue = amountFromCents(adjustmentCents, adjustmentNegative)
   const projectedClosing = newestModalMonth
     ? Number(newestModalMonth.closing_balance) + adjustmentValue
@@ -1724,9 +2223,9 @@ const AccountClosuresPage = () => {
           {!filtersLoading && !loading && !error && !filtersApplied && (
             <div className="rounded-xl border border-gray-200 bg-white p-12 text-center dark:border-gray-700 dark:bg-gray-800">
               <Filter size={48} className="mx-auto mb-4 text-gray-300 dark:text-gray-600" />
-              <h3 className="mb-2 text-lg font-semibold text-gray-900 dark:text-white">Nenhum filtro aplicado</h3>
+              <h3 className="mb-2 text-lg font-semibold text-gray-900 dark:text-white">Não foi possível carregar</h3>
               <p className="text-gray-600 dark:text-gray-400">
-                Selecione o ano (ou Todos) e clique em Aplicar para visualizar os fechamentos.
+                Recarregue a página ou clique em Aplicar nos filtros acima.
               </p>
             </div>
           )}
@@ -1745,48 +2244,6 @@ const AccountClosuresPage = () => {
               </div>
 
               <div className="p-4">
-                {activeTab === 'open' && selectableMonths.length > 0 && (
-                  <div className="mb-4 flex items-center justify-between gap-3 px-1">
-                    <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={toggleSelectAll}
-                        className="rounded p-1 transition-colors hover:bg-gray-200 dark:hover:bg-gray-600"
-                        title={selectAllState === 'all' ? 'Limpar seleção' : 'Selecionar todos'}
-                      >
-                        {selectAllState === 'none' && <Square size={18} className="text-gray-400" />}
-                        {selectAllState === 'partial' && <MinusSquare size={18} className="text-[var(--color-1)]" />}
-                        {selectAllState === 'all' && <CheckSquare size={18} className="text-[var(--color-1)]" />}
-                      </button>
-                      <span className="text-sm text-gray-600 dark:text-gray-400">
-                        Selecionar todos ({selectableMonths.length} {selectableMonths.length === 1 ? 'mês' : 'meses'})
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                {activeTab === 'closed' && selectableClosedMonths.length > 0 && (
-                  <div className="mb-4 flex items-center justify-between gap-3 px-1">
-                    <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={toggleSelectAll}
-                        className="rounded p-1 transition-colors hover:bg-gray-200 dark:hover:bg-gray-600"
-                        title={closedSelectAllState === 'all' ? 'Limpar seleção' : 'Selecionar todos reabíveis'}
-                      >
-                        {closedSelectAllState === 'none' && <Square size={18} className="text-gray-400" />}
-                        {closedSelectAllState === 'partial' && <MinusSquare size={18} className="text-[var(--color-1)]" />}
-                        {closedSelectAllState === 'all' && <CheckSquare size={18} className="text-[var(--color-1)]" />}
-                      </button>
-                      <span className="text-sm text-gray-600 dark:text-gray-400">
-                        Selecionar sequência até {yearMonthLabel(lastClosedYearMonth ?? '')} (
-                        {selectableClosedMonths.length}{' '}
-                        {selectableClosedMonths.length === 1 ? 'mês' : 'meses'})
-                      </span>
-                    </div>
-                  </div>
-                )}
-
                 {visibleMonths.length === 0 ? (
                   <p className="py-8 text-center text-sm text-gray-500">
                     {activeTab === 'open'
@@ -2130,197 +2587,28 @@ const AccountClosuresPage = () => {
                 }}
               />
             ) : null}
-            <CadastroFormSection
-              title="Caixa do extrato"
-              hint="Estes totais travam o saldo bancário do mês."
-              icon={<Scale size={14} />}
-              bodyClassName="p-0"
-            >
-              <CaixaTotals item={newestModalMonth} />
-              {modalMonths.length > 1 ? (
-                <div className="overflow-x-auto border-t border-gray-200 dark:border-gray-700">
-                  <table className="w-full text-sm">
-                    <thead className={closureTableHeadCls}>
-                      <tr>
-                        <th className={closureTableThLeftCls}>Mês</th>
-                        <th className={closureTableThRightCls}>Anterior</th>
-                        <th className={closureTableThRightCls}>Entradas</th>
-                        <th className={closureTableThRightCls}>Saídas</th>
-                        <th className={closureTableThRightCls}>Resultado</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {modalMonths.map((item) => (
-                        <tr key={monthKey(item)}>
-                          <td className={`${closureTableTdCls} font-medium text-gray-800 dark:text-gray-100`}>{monthTitle(item)}</td>
-                          <td className={`${closureTableTdCls} text-right tabular-nums`}>
-                            {hasOfficialOpening(item) ? formatCurrency(item.opening_balance) : '—'}
-                          </td>
-                          <td className={`${closureTableTdCls} text-right tabular-nums`} style={moneyStyle(item.entries)}>
-                            {formatCurrency(item.entries)}
-                          </td>
-                          <td className={`${closureTableTdCls} text-right tabular-nums`} style={moneyStyle(item.exits, true)}>
-                            {formatCurrency(item.exits)}
-                          </td>
-                          <td className={`${closureTableTdCls} text-right tabular-nums`} style={moneyStyle(item.closing_balance)}>
-                            {formatCurrency(item.closing_balance)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : null}
-            </CadastroFormSection>
 
-            <CadastroFormSection
-              title="Repartição Conta / Compartilhado"
-              hint="Esta divisão é gravada no fechamento para a saúde somar depois."
-              icon={<Users size={14} />}
-              bodyClassName="p-0"
-            >
-              {modalMonths.length > 1 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className={closureTableHeadCls}>
-                      <tr>
-                        <th className={closureTableThLeftCls}>Mês</th>
-                        <th className={closureTableThRightCls}>Entradas conta</th>
-                        <th className={closureTableThRightCls}>Entradas comp.</th>
-                        <th className={closureTableThRightCls}>Saídas conta</th>
-                        <th className={closureTableThRightCls}>Saídas comp.</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {modalMonths.map((item) => {
-                        const split = splitOf(item)
-                        return (
-                          <tr key={`split-${monthKey(item)}`}>
-                            <td className={`${closureTableTdCls} font-medium text-gray-800 dark:text-gray-100`}>{monthTitle(item)}</td>
-                            <td className={`${closureTableTdCls} text-right tabular-nums`} style={moneyStyle(split.account.entries)}>
-                              {formatCurrency(split.account.entries)}
-                            </td>
-                            <td className={`${closureTableTdCls} text-right tabular-nums`} style={moneyStyle(split.shared.entries)}>
-                              {formatCurrency(split.shared.entries)}
-                            </td>
-                            <td className={`${closureTableTdCls} text-right tabular-nums`} style={moneyStyle(split.account.exits, true)}>
-                              {formatCurrency(split.account.exits)}
-                            </td>
-                            <td className={`${closureTableTdCls} text-right tabular-nums`} style={moneyStyle(split.shared.exits, true)}>
-                              {formatCurrency(split.shared.exits)}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                    <tfoot className={closureTableFootCls}>
-                      {bulkSplitTotal ? (
-                        <tr>
-                          <td className="px-3 py-2.5 font-semibold text-gray-800 dark:text-gray-100">Total</td>
-                          <td className="px-3 py-2.5 text-right font-semibold tabular-nums" style={moneyStyle(bulkSplitTotal.accountEntries)}>
-                            {formatCurrency(bulkSplitTotal.accountEntries)}
-                          </td>
-                          <td className="px-3 py-2.5 text-right font-semibold tabular-nums" style={moneyStyle(bulkSplitTotal.sharedEntries)}>
-                            {formatCurrency(bulkSplitTotal.sharedEntries)}
-                          </td>
-                          <td className="px-3 py-2.5 text-right font-semibold tabular-nums" style={moneyStyle(bulkSplitTotal.accountExits, true)}>
-                            {formatCurrency(bulkSplitTotal.accountExits)}
-                          </td>
-                          <td className="px-3 py-2.5 text-right font-semibold tabular-nums" style={moneyStyle(bulkSplitTotal.sharedExits, true)}>
-                            {formatCurrency(bulkSplitTotal.sharedExits)}
-                          </td>
-                        </tr>
-                      ) : null}
-                    </tfoot>
-                  </table>
-                </div>
-              ) : (
-                <SplitBreakdownTable item={newestModalMonth} />
-              )}
-            </CadastroFormSection>
-
-            <CadastroFormSection
-              title="Compartilhado por conta"
-              hint="Mesmas entradas, saídas e resultado do compartilhado, separados pela conta parceira."
-              icon={<Users size={14} />}
-              bodyClassName="p-0"
-            >
-              <SharedByAccountTable rows={mergeSharedByAccount(modalMonths)} />
-            </CadastroFormSection>
-
-            {modalMonths.some((item) => (item.card_items ?? []).length > 0) ? (
-              <CadastroFormSection
-                title="Itens da fatura"
-                hint="Despesa sai na conta/compartilhado do item; estorno entra. O débito bancário reconciliado não conta como 100% da conta."
-                icon={<CreditCard size={14} />}
-                bodyClassName="p-0"
-              >
-                {modalMonths.map((item) => {
-                  const rows = item.card_items ?? []
-                  if (rows.length === 0) return null
-                  return (
-                    <div key={`card-${monthKey(item)}`}>
-                      {modalMonths.length > 1 ? (
-                        <p className="border-b border-gray-200 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:border-gray-700">
-                          {monthTitle(item)}
-                        </p>
-                      ) : null}
-                      <AllocationMiniTable rows={rows} />
-                    </div>
-                  )
-                })}
-              </CadastroFormSection>
-            ) : null}
-            {modalMonths.some((item) => (item.benefit_items ?? []).length > 0) ? (
-              <CadastroFormSection
-                title="Cartão de benefício"
-                hint="Lançamentos do mês do item entram na repartição Conta / Compartilhado. O caixa do extrato não muda."
-                icon={<Gift size={14} />}
-                bodyClassName="p-0"
-              >
-                {modalMonths.map((item) => {
-                  const rows = item.benefit_items ?? []
-                  if (rows.length === 0) return null
-                  return (
-                    <div key={`benefit-${monthKey(item)}`}>
-                      {modalMonths.length > 1 ? (
-                        <p className="border-b border-gray-200 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:border-gray-700">
-                          {monthTitle(item)}
-                        </p>
-                      ) : null}
-                      <AllocationMiniTable rows={rows} />
-                    </div>
-                  )
-                })}
-              </CadastroFormSection>
-            ) : null}
-            <UnmatchedCardWarning
-              items={modalMonths.flatMap((item) => item.unmatched_card_payments ?? [])}
-            />
-
-            {modalMonths.some((item) => (item.shared_settlements ?? []).length > 0) ? (
-              <CadastroFormSection
-                title="Acertos compartilhados"
-                hint="PIX/pagamento do Balanço e empréstimo gerado no fechamento entram como crédito compartilhado."
-                icon={<Scale size={14} />}
-                bodyClassName="p-0"
-              >
-                {modalMonths.map((item) => {
-                  const rows = item.shared_settlements ?? []
-                  if (rows.length === 0) return null
-                  return (
-                    <div key={`settlement-${monthKey(item)}`}>
-                      {modalMonths.length > 1 ? (
-                        <p className="border-b border-gray-200 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:border-gray-700">
-                          {monthTitle(item)}
-                        </p>
-                      ) : null}
-                      <AllocationMiniTable rows={rows} />
-                    </div>
-                  )
-                })}
-              </CadastroFormSection>
-            ) : null}
+            {modalMonths.length > 1 ? (
+              <div className="space-y-6">
+                <BulkCloseSummaryScorecards months={modalMonths} />
+                {bulkCloseActiveYear && bulkCloseMonthsInActiveYear.length > 0 ? (
+                  <>
+                    <BulkCloseYearTabs
+                      months={modalMonths}
+                      activeYear={bulkCloseActiveYear}
+                      onSelectYear={setBulkCloseActiveYear}
+                    />
+                    <BulkCloseYearDetail
+                      monthsInYear={bulkCloseMonthsInActiveYear}
+                      activeGroupKey={bulkCloseGroupTab}
+                      onSelectGroup={setBulkCloseGroupTab}
+                    />
+                  </>
+                ) : null}
+              </div>
+            ) : (
+              <CloseModalMonthDetail month={newestModalMonth} />
+            )}
               </>
             )}
 
@@ -2655,7 +2943,7 @@ const AccountClosuresPage = () => {
               <p className="py-8 text-center text-sm text-[var(--color-danger)]">{itemsError}</p>
             )}
             {!itemsLoading && !itemsError && itemsViewTab === 'geral' && (
-              <>
+              <div className={cadastroSectionsStackCls}>
                 {(itemsPreview ?? itemsMonth)?.has_open_shared_closure ? (
                   <OpenSharedNotice
                     message={
@@ -2705,10 +2993,10 @@ const AccountClosuresPage = () => {
                     <SharedByAccountTable rows={mergeSharedByAccount([openingSource])} />
                   </CadastroFormSection>
                 ) : null}
-              </>
+              </div>
             )}
             {!itemsLoading && !itemsError && itemsViewTab !== 'geral' && (
-              <>
+              <div className={cadastroSectionsStackCls}>
                 <UnmatchedCardWarning items={itemsPreview?.unmatched_card_payments ?? []} />
                 {activeItemGroup ? (
                   <>
@@ -2758,7 +3046,7 @@ const AccountClosuresPage = () => {
                 ) : (
                   <p className="px-3 py-4 text-center text-sm text-gray-500">Nenhum lançamento neste período.</p>
                 )}
-              </>
+              </div>
             )}
           </CadastroModalBody>
           <CadastroModalFooter

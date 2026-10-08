@@ -14,6 +14,7 @@ from pydantic import BaseModel, field_validator
 from app.database import get_db
 from app.models.unified_models import ExpenseSharingSetting, Account, Bank
 from app.dependencies.auth import get_current_user
+from app.schemas.bulk_ops import BulkDeleteResponse, BulkIdsRequest
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,21 @@ class ExpenseSharingUpdate(BaseModel):
     my_contribution_percentage: Decimal | None = None
     revenue_contribution_percentage: Decimal | None = None
     description: str | None = None
+
+
+class BulkExpenseSharingUpdate(BaseModel):
+    ids: List[int]
+    update_expense_pct: bool = False
+    update_revenue_pct: bool = False
+    update_active: bool = False
+    my_contribution_percentage: Decimal | None = None
+    revenue_contribution_percentage: Decimal | None = None
+    active: bool | None = None
+
+
+class BulkExpenseSharingUpdateResponse(BaseModel):
+    updated: int
+    skipped: int
 
 
 class ExpenseSharingResponse(BaseModel):
@@ -321,6 +337,83 @@ async def criar_compartilhamento(
     db.refresh(novo_compartilhamento, ['shared_account'])
 
     return novo_compartilhamento
+
+
+@router.patch("/bulk-update", response_model=BulkExpenseSharingUpdateResponse)
+async def bulk_atualizar_compartilhamentos(
+    body: BulkExpenseSharingUpdate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    account_id = current_user.get("account_id")
+    if not account_id:
+        raise HTTPException(status_code=400, detail="account_id não encontrado no token")
+    if not body.ids:
+        raise HTTPException(status_code=400, detail="Nenhum compartilhamento selecionado")
+    if not (body.update_expense_pct or body.update_revenue_pct or body.update_active):
+        raise HTTPException(status_code=400, detail="Selecione ao menos um campo para atualizar")
+
+    if body.update_expense_pct:
+        _validate_pct(body.my_contribution_percentage, "Percentual de despesa")
+    if body.update_revenue_pct:
+        _validate_pct(body.revenue_contribution_percentage, "Percentual de receita")
+    if body.update_active and body.active is None:
+        raise HTTPException(status_code=400, detail="Status não informado")
+
+    updated = 0
+    skipped = 0
+    for sharing_id in body.ids:
+        compartilhamento = (
+            db.query(ExpenseSharingSetting)
+            .filter(
+                ExpenseSharingSetting.id == sharing_id,
+                ExpenseSharingSetting.account_id == account_id,
+            )
+            .first()
+        )
+        if not compartilhamento:
+            skipped += 1
+            continue
+        if body.update_expense_pct and body.my_contribution_percentage is not None:
+            compartilhamento.my_contribution_percentage = body.my_contribution_percentage
+        if body.update_revenue_pct and body.revenue_contribution_percentage is not None:
+            compartilhamento.revenue_contribution_percentage = body.revenue_contribution_percentage
+        if body.update_active and body.active is not None:
+            compartilhamento.active = body.active
+        updated += 1
+
+    db.commit()
+    return BulkExpenseSharingUpdateResponse(updated=updated, skipped=skipped)
+
+
+@router.post("/bulk-delete", response_model=BulkDeleteResponse)
+async def bulk_deletar_compartilhamentos(
+    body: BulkIdsRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    account_id = current_user.get("account_id")
+    if not account_id:
+        raise HTTPException(status_code=400, detail="account_id não encontrado no token")
+    if not body.ids:
+        raise HTTPException(status_code=400, detail="Nenhum compartilhamento selecionado")
+
+    unique_ids = list(dict.fromkeys(body.ids))
+    rows = (
+        db.query(ExpenseSharingSetting)
+        .filter(
+            ExpenseSharingSetting.id.in_(unique_ids),
+            ExpenseSharingSetting.account_id == account_id,
+        )
+        .all()
+    )
+    for row in rows:
+        db.delete(row)
+
+    db.commit()
+    deleted = len(rows)
+    skipped = len(unique_ids) - deleted
+    return BulkDeleteResponse(deleted=deleted, skipped=skipped)
 
 
 @router.put("/{sharing_id}", response_model=ExpenseSharingResponse)

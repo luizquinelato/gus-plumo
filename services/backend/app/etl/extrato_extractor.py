@@ -4,10 +4,12 @@ ExtratoExtractor - Camada EXTRACT do ETL
 Responsável apenas por ler e limpar arquivos Excel, retornando dados brutos.
 """
 import os
-from typing import List, Dict, Any
+from typing import Callable, List, Dict, Any, Optional
 from datetime import datetime
 import pyexcel as p
 from openpyxl import load_workbook
+
+from ..utils.import_progress import report_row_progress
 
 
 class ExtratoExtractor:
@@ -77,15 +79,25 @@ class ExtratoExtractor:
         # Carrega workbook
         workbook = load_workbook(file_path)
         sheet = workbook.active
-        
+        row_count = max(int(sheet.max_row or 1), 1)
+
+        def report_pass(phase: int, processed: int, total: int) -> None:
+            report_row_progress(processed, total, phase=phase)
+
         # Limpa formatação
-        ExtratoExtractor._clean_formatting(sheet)
+        ExtratoExtractor._clean_formatting(
+            sheet,
+            on_row=lambda index: report_pass(0, index, row_count),
+        )
 
         # Remove colunas desnecessárias (A, E, F, H, I, J, M, N)
         ExtratoExtractor._remove_columns(sheet, ['A', 'E', 'F', 'H', 'I', 'J', 'M', 'N'])
 
         # Remove linhas inválidas
-        ExtratoExtractor._remove_invalid_rows(sheet)
+        ExtratoExtractor._remove_invalid_rows(
+            sheet,
+            on_row=lambda done, total: report_pass(1, done, total),
+        )
 
         # Remove cabeçalhos do banco (linhas 1-10)
         sheet.delete_rows(1, 10)
@@ -95,7 +107,10 @@ class ExtratoExtractor:
         sheet.delete_rows(1, 1)
 
         # Extrai dados brutos
-        records = ExtratoExtractor._extract_records(sheet)
+        records = ExtratoExtractor._extract_records(
+            sheet,
+            on_row=lambda index, total: report_pass(2, index, total),
+        )
         
         # Limpa arquivo temporário se foi criado
         if file_path.endswith('_temp.xlsx'):
@@ -104,14 +119,16 @@ class ExtratoExtractor:
         return records
     
     @staticmethod
-    def _clean_formatting(sheet):
+    def _clean_formatting(sheet, on_row: Optional[Callable[[int], None]] = None):
         """Remove toda formatação das células."""
-        for row in sheet.iter_rows():
+        for index, row in enumerate(sheet.iter_rows(), start=1):
             for cell in row:
                 cell.font = None
                 cell.fill = None
                 cell.border = None
                 cell.alignment = None
+            if on_row is not None:
+                on_row(index)
     
     @staticmethod
     def _remove_columns(sheet, column_letters: List[str]):
@@ -123,7 +140,7 @@ class ExtratoExtractor:
             sheet.delete_cols(col_index)
     
     @staticmethod
-    def _remove_invalid_rows(sheet):
+    def _remove_invalid_rows(sheet, on_row: Optional[Callable[[int, int], None]] = None):
         """
         Remove linhas inválidas:
         - Sem valor na coluna 5 (Valor)
@@ -132,11 +149,17 @@ class ExtratoExtractor:
         - Com descrição "Saldo Diário" na coluna 4 (Descrição)
         """
         deleted_count = 0
-        for row in range(sheet.max_row, 11, -1):
+        last_row = int(sheet.max_row or 0)
+        scan_total = max(last_row - 11, 1)
+        examined = 0
+        for row in range(last_row, 11, -1):
             col1_value = sheet.cell(row=row, column=1).value  # Data e hora
             col2_value = sheet.cell(row=row, column=2).value  # Categoria
             col4_value = sheet.cell(row=row, column=4).value  # Descrição
             col5_value = sheet.cell(row=row, column=5).value  # Valor
+            examined += 1
+            if on_row is not None:
+                on_row(min(examined, scan_total), scan_total)
 
             # Remove linha sem valor na coluna 5
             if not col5_value:
@@ -163,7 +186,10 @@ class ExtratoExtractor:
                 continue
     
     @staticmethod
-    def _extract_records(sheet) -> List[Dict[str, Any]]:
+    def _extract_records(
+        sheet,
+        on_row: Optional[Callable[[int, int], None]] = None,
+    ) -> List[Dict[str, Any]]:
         """
         Extrai registros brutos do sheet.
 
@@ -178,6 +204,7 @@ class ExtratoExtractor:
         não há mais cabeçalho.
         """
         records = []
+        last_row = max(int(sheet.max_row or 1), 1)
 
         # Começa da linha 1 porque já deletamos os cabeçalhos do banco (linhas 1-10)
         for row in range(1, sheet.max_row + 1):
@@ -189,6 +216,8 @@ class ExtratoExtractor:
                 "valor": sheet.cell(row, 5).value
             }
             records.append(record)
+            if on_row is not None:
+                on_row(row, last_row)
 
         return records
 

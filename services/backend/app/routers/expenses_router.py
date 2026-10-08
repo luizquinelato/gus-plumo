@@ -5,7 +5,7 @@ Router para gerenciamento de despesas e mapeamentos
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_, and_, func
-from typing import List, Literal
+from typing import Any, List, Literal
 from pydantic import BaseModel, field_validator, Field
 from decimal import Decimal
 import logging
@@ -20,7 +20,40 @@ from app.services.account_period_closure_service import (
     AccountPeriodClosedError,
     ensure_period_open,
 )
-from app.services.mapping_remap_service import apply_mapping_remap, sort_mappings_for_remap
+from app.services.mapping_remap_service import (
+    apply_mapping_remap,
+    ensure_account_has_remap_transaction_data,
+    sort_mappings_for_remap,
+)
+from app.services.closed_period_edit_service import (
+    after_bank_statement_updated,
+    _account_id_for_benefit,
+    after_benefit_subtag_updated,
+    after_credit_card_updated,
+    ensure_bank_update_allowed,
+    _account_id_for_card_invoice,
+    ensure_credit_card_update_allowed,
+    ensure_mapping_remap_allowed,
+    finalize_mapping_remap_closures,
+    merge_closure_impacts,
+    post_batch_update_closure_sync,
+    after_expense_split,
+    after_new_transaction_in_closed_period,
+    ensure_new_transaction_in_closed_period_allowed,
+    ensure_closed_period_change_allowed,
+    ensure_batch_update_closure_allowed,
+    closure_impact_confirmation_prompt,
+)
+from app.services.import_batch import ImportBatch, ImportBatchPayload
+from app.services.visual_extrato_import_service import (
+    apply_visual_extrato_import,
+    preview_visual_extrato_import,
+)
+from app.services.visual_mapping_import_service import (
+    apply_visual_mapping_import,
+    preview_visual_mapping_import,
+)
+from app.schemas.bulk_ops import BulkDeleteResponse, BulkDeleteTagsRequest, BulkIdsRequest
 import json
 import re
 from datetime import datetime
@@ -100,6 +133,7 @@ class TransactionMappingResponse(BaseModel):
     is_sensitive: bool = False
     created_at: str | None = None
     last_updated_at: str | None = None
+    closure_impact: dict | None = None
 
     class Config:
         from_attributes = True
@@ -119,6 +153,8 @@ class TransactionMappingCreate(BaseModel):
     priority: int = 1  # 0=Alta, 1=Média, 2=Baixa (definido automaticamente pelo mapping_type)
     is_sensitive: bool = False
     apply_to_existing: bool = False  # Se True, aplica o mapeamento a registros existentes
+    overwrite_sharing: bool = False  # Só com apply_to_existing: altera compartilhamento nas transações
+    confirm_closed_closure_impact: bool = False
 
     @field_validator('my_contribution_percentage')
     @classmethod
@@ -155,6 +191,8 @@ class TransactionMappingUpdate(BaseModel):
     priority: int | None = None  # 0=Alta, 1=Média, 2=Baixa
     is_sensitive: bool | None = None
     apply_to_existing: bool = False  # Se True, aplica o mapeamento a registros existentes
+    overwrite_sharing: bool = False  # Só com apply_to_existing: altera compartilhamento nas transações
+    confirm_closed_closure_impact: bool = False
 
     @field_validator('my_contribution_percentage')
     @classmethod
@@ -176,6 +214,104 @@ class TransactionMappingUpdate(BaseModel):
         if v is not None and (v < 0 or v > 2):
             raise ValueError('Prioridade deve estar entre 0 (Alta) e 2 (Baixa)')
         return v
+
+
+def _closure_impact_http_detail(exc: AccountPeriodClosedError):
+    detail: dict | str = exc.message
+    if exc.payload:
+        detail = {"message": exc.message, **exc.payload}
+    return detail
+
+
+class RemapOptionsRequest(BaseModel):
+    """Opções para controlar o que aplicar no remapeamento / apply_to_existing."""
+    skip_subtag_if_null: bool = False  # Não usado atualmente (subtag é obrigatória)
+    skip_sharing_if_null: bool = True  # Legado; preferir overwrite_sharing
+    overwrite_sharing: bool = False  # True = aplicar compartilhamento do mapeamento (null limpa)
+    confirm_closed_closure_impact: bool = False
+
+
+def _ensure_mappings_remap_closure_allowed(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    mappings: list[TransactionMapping],
+    options: RemapOptionsRequest,
+) -> None:
+    """Uma passada de preview de fechamento antes de remapear vários mapeamentos."""
+    if options.confirm_closed_closure_impact or not mappings:
+        return
+    merged: dict | None = None
+    blocked = False
+    for mapping in mappings:
+        try:
+            ensure_mapping_remap_allowed(
+                db,
+                tenant_id,
+                account_id,
+                mapping,
+                overwrite_sharing=options.overwrite_sharing,
+                confirm_closed_closure_impact=False,
+                records_updated_estimate=0,
+            )
+        except AccountPeriodClosedError as exc:
+            blocked = True
+            if exc.payload:
+                merged = merge_closure_impacts(merged, exc.payload)
+    if not blocked:
+        return
+    if not merged or merged.get("impact_type") == "none" or not merged.get("year_months"):
+        merged = closure_impact_confirmation_prompt(
+            "split_recalc" if options.overwrite_sharing else "classification",
+            message="Remapeamento afetará meses fechados. Confirme para continuar.",
+        )
+    raise AccountPeriodClosedError(
+        merged.get("message", "Confirme o impacto nos fechamentos."),
+        merged,
+    )
+
+
+def _apply_mapping_remap_with_closure(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    mapping: TransactionMapping,
+    options: RemapOptionsRequest,
+    *,
+    verify_transaction_data: bool = True,
+    verify_closure_precheck: bool = True,
+) -> tuple[int, int, int, dict | None]:
+    if verify_transaction_data:
+        ensure_account_has_remap_transaction_data(db, tenant_id, account_id)
+    if verify_closure_precheck:
+        try:
+            ensure_mapping_remap_allowed(
+                db,
+                tenant_id,
+                account_id,
+                mapping,
+                overwrite_sharing=options.overwrite_sharing,
+                confirm_closed_closure_impact=options.confirm_closed_closure_impact,
+                records_updated_estimate=0,
+            )
+        except AccountPeriodClosedError as exc:
+            raise HTTPException(status_code=409, detail=_closure_impact_http_detail(exc)) from exc
+
+    updated_bank, updated_cc, updated_benefit = apply_mapping_remap(
+        db, tenant_id, account_id, mapping, options, _mapping_apply_percentage
+    )
+    total = updated_bank + updated_cc + updated_benefit
+    impact = finalize_mapping_remap_closures(
+        db,
+        tenant_id,
+        account_id,
+        mapping,
+        overwrite_sharing=options.overwrite_sharing,
+        records_updated=total,
+    )
+    if impact.get("impact_type") == "none":
+        impact = None
+    return updated_bank, updated_cc, updated_benefit, impact
 
 
 class TagCreate(BaseModel):
@@ -406,7 +542,18 @@ async def list_mappings(
     if parsed_mapping_types:
         query = query.filter(TransactionMapping.mapping_type.in_(parsed_mapping_types))
     if parsed_sharing_ids:
-        query = query.filter(TransactionMapping.expense_sharing_id.in_(parsed_sharing_ids))
+        # 0 = opção "Sem" do filtro: mapeamentos sem compartilhamento.
+        include_unshared = 0 in parsed_sharing_ids
+        real_sharing_ids = [sharing_id for sharing_id in parsed_sharing_ids if sharing_id != 0]
+        sharing_clauses = []
+        if real_sharing_ids:
+            sharing_clauses.append(TransactionMapping.expense_sharing_id.in_(real_sharing_ids))
+        if include_unshared:
+            sharing_clauses.append(TransactionMapping.expense_sharing_id.is_(None))
+        if len(sharing_clauses) == 1:
+            query = query.filter(sharing_clauses[0])
+        elif sharing_clauses:
+            query = query.filter(or_(*sharing_clauses))
 
     if parsed_tag_ids or parsed_subtag_types:
         query = query.join(Subtag, TransactionMapping.subtag_id == Subtag.id)
@@ -552,24 +699,24 @@ async def create_mapping(
     # Obter o tipo da subtag selecionada (receita ou despesa)
     subtag_type = subtag.type
 
-    # Verificar se já existe mapeamento duplicado (baseado no tipo de mapeamento E tipo de subtag)
-    # NOTA: Permitimos o mesmo padrão para tipos diferentes (ex: "cancelamento" pode ser receita OU despesa)
+    # Duplicata só no mesmo mapping_type e no mesmo tipo de subtag (receita/despesa).
+    # Um regex que também captura o texto não impede padrão nem exato:
+    # na classificação, exato tem prioridade sobre padrão, e padrão sobre regex.
     existing_query = db.query(TransactionMapping).join(
         Subtag, TransactionMapping.subtag_id == Subtag.id
     ).filter(
         TransactionMapping.account_id == account_id,
         TransactionMapping.mapping_type == mapping_data.mapping_type,
-        Subtag.type == subtag_type  # Apenas verifica duplicata se for do mesmo tipo
+        Subtag.type == subtag_type
     )
 
-    # Adicionar filtro específico baseado no tipo de mapeamento
     if mapping_data.mapping_type == 'exact':
         existing_query = existing_query.filter(
-            TransactionMapping.original_description == original_desc_check
+            func.lower(TransactionMapping.original_description) == original_desc_check
         )
     elif mapping_data.mapping_type == 'pattern':
         existing_query = existing_query.filter(
-            TransactionMapping.pattern == pattern_check
+            func.lower(TransactionMapping.pattern) == pattern_check
         )
     elif mapping_data.mapping_type == 'regex':
         existing_query = existing_query.filter(
@@ -580,7 +727,12 @@ async def create_mapping(
 
     if existing:
         tipo_label = "receita" if subtag_type == "receita" else "despesa"
-        raise HTTPException(status_code=400, detail=f"Já existe um mapeamento {mapping_data.mapping_type} de {tipo_label} com esse padrão")
+        match_labels = {"exact": "exato", "pattern": "padrão", "regex": "regex"}
+        match_label = match_labels.get(mapping_data.mapping_type, mapping_data.mapping_type)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Já existe um mapeamento {match_label} de {tipo_label} com esse critério",
+        )
 
     # Normalizar campos para lowercase (garantir busca case-insensitive)
     # NOTA: Salvamos em lowercase no banco para otimização, mas o MappingHelper
@@ -631,131 +783,22 @@ async def create_mapping(
     )
 
     db.add(new_mapping)
-    db.commit()
+    db.flush()
     db.refresh(new_mapping)
 
-    # ========================================
-    # APLICAR A REGISTROS EXISTENTES (se solicitado)
-    # ========================================
+    # Aplica na mesma transação. Se o remap falhar, o mapeamento novo não fica gravado
+    # (senão a próxima tentativa esbarra em duplicata).
+    closure_impact = None
     if mapping_data.apply_to_existing:
-        # Determinar tipo da subtag para filtrar por receita/despesa
-        subtag_type = subtag.type
-        is_receita = subtag_type == 'receita'
-
-        # Função auxiliar para verificar se o registro é do tipo correto
-        def matches_type(amount) -> bool:
-            if amount is None:
-                return False
-            amount_float = float(amount)
-            if is_receita:
-                return amount_float > 0
-            else:
-                return amount_float < 0
-
-        # Valores para atualização
-        update_values = {
-            'subtag_id': new_mapping.subtag_id
-        }
-        if new_mapping.expense_sharing_id is not None:
-            update_values['expense_sharing_id'] = new_mapping.expense_sharing_id
-        if new_mapping.expense_sharing_id is not None or new_mapping.my_contribution_percentage is not None or new_mapping.revenue_contribution_percentage is not None:
-            from app.utils.sharing_percentage import resolve_ownership_percentage
-            sharing = None
-            if new_mapping.expense_sharing_id:
-                sharing = db.query(ExpenseSharingSetting).filter(ExpenseSharingSetting.id == new_mapping.expense_sharing_id).first()
-            update_values['ownership_percentage'] = resolve_ownership_percentage(
-                kind='revenue' if is_receita else 'expense',
-                mapping=new_mapping,
-                sharing=sharing,
-            )
-
-        if mapping_data.mapping_type == 'exact' and new_mapping.original_description:
-            # TIPO EXATO: Comparação direta
-            search_description = new_mapping.original_description
-            if new_mapping.is_sensitive and search_description:
-                try:
-                    from app.utils.crypto_helper import get_crypto_helper
-                    crypto = get_crypto_helper()
-                    search_description = crypto.decrypt(search_description)
-                except Exception:
-                    search_description = None
-
-            if search_description:
-                base_filter_bank = [
-                    BankStatement.tenant_id == tenant_id,
-                    func.lower(BankStatement.description) == search_description.lower()
-                ]
-                base_filter_cc = [
-                    CreditCardInvoice.tenant_id == tenant_id,
-                    func.lower(CreditCardInvoice.description) == search_description.lower()
-                ]
-                base_filter_benefit = [
-                    BenefitCardStatement.tenant_id == tenant_id,
-                    func.lower(BenefitCardStatement.description) == search_description.lower()
-                ]
-
-                # Adicionar filtro por tipo
-                if is_receita:
-                    base_filter_bank.append(BankStatement.amount > 0)
-                    base_filter_cc.append(CreditCardInvoice.amount > 0)
-                    base_filter_benefit.append(BenefitCardStatement.amount > 0)
-                else:
-                    base_filter_bank.append(BankStatement.amount < 0)
-                    base_filter_cc.append(CreditCardInvoice.amount < 0)
-                    base_filter_benefit.append(BenefitCardStatement.amount < 0)
-
-                db.query(BankStatement).filter(*base_filter_bank).update(update_values, synchronize_session=False)
-                db.query(CreditCardInvoice).filter(*base_filter_cc).update(update_values, synchronize_session=False)
-                db.query(BenefitCardStatement).filter(*base_filter_benefit).update(update_values, synchronize_session=False)
-
-        elif mapping_data.mapping_type == 'pattern' and new_mapping.pattern:
-            # TIPO PADRÃO: Busca todos e testa se pattern está contido
-            from app.utils.sensitive_mapping import decrypt_pattern_for_match
-
-            plain_pattern = decrypt_pattern_for_match(new_mapping.pattern, new_mapping.is_sensitive)
-            pattern_lower = plain_pattern.lower() if plain_pattern else None
-            if pattern_lower:
-                all_bank = db.query(BankStatement).filter(BankStatement.tenant_id == tenant_id).all()
-                all_cc = db.query(CreditCardInvoice).filter(CreditCardInvoice.tenant_id == tenant_id).all()
-                all_benefit = db.query(BenefitCardStatement).filter(BenefitCardStatement.tenant_id == tenant_id).all()
-
-                matching_bank_ids = [r.id for r in all_bank if r.description and pattern_lower in r.description.lower() and matches_type(r.amount)]
-                matching_cc_ids = [r.id for r in all_cc if r.description and pattern_lower in r.description.lower() and matches_type(r.amount)]
-                matching_benefit_ids = [r.id for r in all_benefit if r.description and pattern_lower in r.description.lower() and matches_type(r.amount)]
-
-                if matching_bank_ids:
-                    db.query(BankStatement).filter(BankStatement.id.in_(matching_bank_ids)).update(update_values, synchronize_session=False)
-                if matching_cc_ids:
-                    db.query(CreditCardInvoice).filter(CreditCardInvoice.id.in_(matching_cc_ids)).update(update_values, synchronize_session=False)
-                if matching_benefit_ids:
-                    db.query(BenefitCardStatement).filter(BenefitCardStatement.id.in_(matching_benefit_ids)).update(update_values, synchronize_session=False)
-
-        elif mapping_data.mapping_type == 'regex' and new_mapping.regex_pattern:
-            # TIPO REGEX: Busca todos e testa regex
-            from app.utils.sensitive_mapping import decrypt_regex_for_match
-
-            plain_regex = decrypt_regex_for_match(new_mapping.regex_pattern, new_mapping.is_sensitive)
-            try:
-                compiled_regex = re.compile(plain_regex or "", re.IGNORECASE)
-
-                all_bank = db.query(BankStatement).filter(BankStatement.tenant_id == tenant_id).all()
-                all_cc = db.query(CreditCardInvoice).filter(CreditCardInvoice.tenant_id == tenant_id).all()
-                all_benefit = db.query(BenefitCardStatement).filter(BenefitCardStatement.tenant_id == tenant_id).all()
-
-                matching_bank_ids = [r.id for r in all_bank if r.description and compiled_regex.search(r.description) and matches_type(r.amount)]
-                matching_cc_ids = [r.id for r in all_cc if r.description and compiled_regex.search(r.description) and matches_type(r.amount)]
-                matching_benefit_ids = [r.id for r in all_benefit if r.description and compiled_regex.search(r.description) and matches_type(r.amount)]
-
-                if matching_bank_ids:
-                    db.query(BankStatement).filter(BankStatement.id.in_(matching_bank_ids)).update(update_values, synchronize_session=False)
-                if matching_cc_ids:
-                    db.query(CreditCardInvoice).filter(CreditCardInvoice.id.in_(matching_cc_ids)).update(update_values, synchronize_session=False)
-                if matching_benefit_ids:
-                    db.query(BenefitCardStatement).filter(BenefitCardStatement.id.in_(matching_benefit_ids)).update(update_values, synchronize_session=False)
-            except re.error:
-                pass  # Ignora erro de regex inválido
-
-        db.commit()
+        remap_opts = RemapOptionsRequest(
+            overwrite_sharing=mapping_data.overwrite_sharing,
+            confirm_closed_closure_impact=mapping_data.confirm_closed_closure_impact,
+        )
+        _, _, _, closure_impact = _apply_mapping_remap_with_closure(
+            db, tenant_id, account_id, new_mapping, remap_opts,
+        )
+    db.commit()
+    db.refresh(new_mapping)
 
     # Buscar tag e compartilhamento
     tag = db.query(Tag).filter(Tag.id == subtag.tag_id).first()
@@ -785,7 +828,8 @@ async def create_mapping(
         priority=new_mapping.priority,
         is_sensitive=new_mapping.is_sensitive,
         created_at=new_mapping.created_at.isoformat() if new_mapping.created_at else None,
-        last_updated_at=new_mapping.last_updated_at.isoformat() if new_mapping.last_updated_at else None
+        last_updated_at=new_mapping.last_updated_at.isoformat() if new_mapping.last_updated_at else None,
+        closure_impact=closure_impact,
     )
 
 
@@ -1116,143 +1160,20 @@ async def update_mapping(
     if 'priority' in fields_set and mapping_data.priority is not None:
         mapping.priority = mapping_data.priority
 
-    db.commit()
+    db.flush()
     db.refresh(mapping)
 
-    # Se apply_to_existing for True, atualizar todos os registros existentes que batam com o mapeamento
+    closure_impact = None
     if mapping_data.apply_to_existing:
-        updated_bank = 0
-        updated_cc = 0
-        updated_benefit = 0
-
-        # Buscar o tipo da subtag para filtrar por receita/despesa
-        subtag = db.query(Subtag).filter(Subtag.id == mapping.subtag_id).first()
-        if not subtag:
-            subtag_type = 'despesa'
-        else:
-            subtag_type = subtag.type
-        is_receita = subtag_type == 'receita'
-
-        # Valores a serem aplicados
-        update_values = {
-            'subtag_id': mapping.subtag_id,
-            'expense_sharing_id': mapping.expense_sharing_id,
-            'ownership_percentage': _mapping_apply_percentage(db, mapping, is_receita)
-        }
-
-        # Função auxiliar para verificar se o registro é do tipo correto
-        def matches_type(amount, description: str = "") -> bool:
-            """Verifica se o valor do registro bate com o tipo do mapeamento.
-            Receita: amount > 0, Despesa: amount < 0
-            """
-            if amount is None:
-                return False
-            amount_float = float(amount)
-            if is_receita:
-                result = amount_float > 0
-            else:
-                result = amount_float < 0
-            # Debug: mostrar alguns exemplos
-            # print(f"   matches_type({amount_float}, is_receita={is_receita}) = {result} | {description[:30]}")
-            return result
-
-        if mapping.mapping_type == 'exact':
-            # TIPO EXATO: Comparação direta (O(1) no banco)
-            search_description = mapping.original_description
-            if mapping.is_sensitive and search_description:
-                try:
-                    search_description = crypto.decrypt(search_description)
-                except Exception as e:
-                    logger.warning(f"Erro ao descriptografar original_description para busca: {e}")
-                    search_description = None
-
-            if search_description:
-
-                # Filtro base por descrição
-                base_filter_bank = [
-                    BankStatement.tenant_id == tenant_id,
-                    func.lower(BankStatement.description) == search_description.lower()
-                ]
-                base_filter_cc = [
-                    CreditCardInvoice.tenant_id == tenant_id,
-                    func.lower(CreditCardInvoice.description) == search_description.lower()
-                ]
-                base_filter_benefit = [
-                    BenefitCardStatement.tenant_id == tenant_id,
-                    func.lower(BenefitCardStatement.description) == search_description.lower()
-                ]
-
-                # Adicionar filtro por tipo (receita: amount > 0, despesa: amount < 0)
-                if is_receita:
-                    base_filter_bank.append(BankStatement.amount > 0)
-                    base_filter_cc.append(CreditCardInvoice.amount > 0)
-                    base_filter_benefit.append(BenefitCardStatement.amount > 0)
-                else:
-                    base_filter_bank.append(BankStatement.amount < 0)
-                    base_filter_cc.append(CreditCardInvoice.amount < 0)
-                    base_filter_benefit.append(BenefitCardStatement.amount < 0)
-
-                # Atualizar bank_statements
-                updated_bank = db.query(BankStatement).filter(*base_filter_bank).update(update_values, synchronize_session=False)
-
-                # Atualizar credit_card_invoices
-                updated_cc = db.query(CreditCardInvoice).filter(*base_filter_cc).update(update_values, synchronize_session=False)
-
-                # Atualizar benefit_card_statements
-                updated_benefit = db.query(BenefitCardStatement).filter(*base_filter_benefit).update(update_values, synchronize_session=False)
-
-        elif mapping.mapping_type == 'pattern' and mapping.pattern:
-            # TIPO PADRÃO: Busca todos e testa se pattern está contido (O(n))
-            from app.utils.sensitive_mapping import decrypt_pattern_for_match
-
-            plain_pattern = decrypt_pattern_for_match(mapping.pattern, mapping.is_sensitive)
-            pattern_lower = plain_pattern.lower() if plain_pattern else None
-            if pattern_lower:
-                all_bank = db.query(BankStatement).filter(BankStatement.tenant_id == tenant_id).all()
-                all_cc = db.query(CreditCardInvoice).filter(CreditCardInvoice.tenant_id == tenant_id).all()
-                all_benefit = db.query(BenefitCardStatement).filter(BenefitCardStatement.tenant_id == tenant_id).all()
-
-                matching_bank_ids = [r.id for r in all_bank if r.description and pattern_lower in r.description.lower() and matches_type(r.amount)]
-                matching_cc_ids = [r.id for r in all_cc if r.description and pattern_lower in r.description.lower() and matches_type(r.amount)]
-                matching_benefit_ids = [r.id for r in all_benefit if r.description and pattern_lower in r.description.lower() and matches_type(r.amount)]
-
-                if matching_bank_ids:
-                    updated_bank = db.query(BankStatement).filter(BankStatement.id.in_(matching_bank_ids)).update(update_values, synchronize_session=False)
-                if matching_cc_ids:
-                    updated_cc = db.query(CreditCardInvoice).filter(CreditCardInvoice.id.in_(matching_cc_ids)).update(update_values, synchronize_session=False)
-                if matching_benefit_ids:
-                    updated_benefit = db.query(BenefitCardStatement).filter(BenefitCardStatement.id.in_(matching_benefit_ids)).update(update_values, synchronize_session=False)
-
-        elif mapping.mapping_type == 'regex' and mapping.regex_pattern:
-            # TIPO REGEX: Busca todos e testa regex (O(n))
-            from app.utils.sensitive_mapping import decrypt_regex_for_match
-
-            regex_pattern = decrypt_regex_for_match(mapping.regex_pattern, mapping.is_sensitive)
-
-            try:
-                compiled_regex = re.compile(regex_pattern or "", re.IGNORECASE)
-
-                # Buscar todos os registros do tenant
-                all_bank = db.query(BankStatement).filter(BankStatement.tenant_id == tenant_id).all()
-                all_cc = db.query(CreditCardInvoice).filter(CreditCardInvoice.tenant_id == tenant_id).all()
-                all_benefit = db.query(BenefitCardStatement).filter(BenefitCardStatement.tenant_id == tenant_id).all()
-
-                # Filtrar IDs que batem com o regex E com o tipo (receita/despesa)
-                matching_bank_ids = [r.id for r in all_bank if r.description and compiled_regex.search(r.description) and matches_type(r.amount)]
-                matching_cc_ids = [r.id for r in all_cc if r.description and compiled_regex.search(r.description) and matches_type(r.amount)]
-                matching_benefit_ids = [r.id for r in all_benefit if r.description and compiled_regex.search(r.description) and matches_type(r.amount)]
-
-                # Atualizar em batch
-                if matching_bank_ids:
-                    updated_bank = db.query(BankStatement).filter(BankStatement.id.in_(matching_bank_ids)).update(update_values, synchronize_session=False)
-                if matching_cc_ids:
-                    updated_cc = db.query(CreditCardInvoice).filter(CreditCardInvoice.id.in_(matching_cc_ids)).update(update_values, synchronize_session=False)
-                if matching_benefit_ids:
-                    updated_benefit = db.query(BenefitCardStatement).filter(BenefitCardStatement.id.in_(matching_benefit_ids)).update(update_values, synchronize_session=False)
-            except re.error as e:
-                logger.warning(f"Erro ao compilar regex '{regex_pattern}': {e}")
-
-        db.commit()
+        remap_opts = RemapOptionsRequest(
+            overwrite_sharing=mapping_data.overwrite_sharing,
+            confirm_closed_closure_impact=mapping_data.confirm_closed_closure_impact,
+        )
+        _, _, _, closure_impact = _apply_mapping_remap_with_closure(
+            db, tenant_id, account_id, mapping, remap_opts,
+        )
+    db.commit()
+    db.refresh(mapping)
 
     # Buscar subtag, tag e compartilhamento
     subtag = db.query(Subtag).filter(Subtag.id == mapping.subtag_id).first()
@@ -1283,8 +1204,37 @@ async def update_mapping(
         priority=mapping.priority,
         is_sensitive=mapping.is_sensitive,
         created_at=mapping.created_at.isoformat() if mapping.created_at else None,
-        last_updated_at=mapping.last_updated_at.isoformat() if mapping.last_updated_at else None
+        last_updated_at=mapping.last_updated_at.isoformat() if mapping.last_updated_at else None,
+        closure_impact=closure_impact,
     )
+
+
+@router.post("/mappings/bulk-delete", response_model=BulkDeleteResponse)
+async def bulk_delete_mappings(
+    body: BulkIdsRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    if not body.ids:
+        raise HTTPException(status_code=400, detail="Nenhum mapeamento selecionado")
+
+    account_id = current_user.get("account_id")
+    unique_ids = list(dict.fromkeys(body.ids))
+    mappings = (
+        db.query(TransactionMapping)
+        .filter(
+            TransactionMapping.id.in_(unique_ids),
+            TransactionMapping.account_id == account_id,
+        )
+        .all()
+    )
+    for mapping in mappings:
+        db.delete(mapping)
+
+    db.commit()
+    deleted = len(mappings)
+    skipped = len(unique_ids) - deleted
+    return BulkDeleteResponse(deleted=deleted, skipped=skipped)
 
 
 @router.delete("/mappings/{mapping_id}", status_code=204)
@@ -1318,12 +1268,7 @@ class RemapSingleResponse(BaseModel):
     credit_card_invoices: int
     benefit_statements: int
     total_records_updated: int
-
-
-class RemapOptionsRequest(BaseModel):
-    """Opções para controlar o que aplicar no remapeamento."""
-    skip_subtag_if_null: bool = False  # Não usado atualmente (subtag é obrigatória)
-    skip_sharing_if_null: bool = True  # Por padrão, NÃO sobrescrever compartilhamento se mapeamento não tem
+    closure_impact: dict | None = None
 
 
 class RemapAllResponse(BaseModel):
@@ -1334,38 +1279,48 @@ class RemapAllResponse(BaseModel):
     benefit_statements: int
     total_records_updated: int
     errors: List[str] = []
+    closure_impact: dict | None = None
 
 
-def _remap_options_for_mapping(mapping: TransactionMapping, options: RemapOptionsRequest) -> RemapOptionsRequest:
-    """Mapeamentos sem compartilhamento respeitam skip_sharing_if_null; com sharing, sempre aplicam."""
-    if mapping.expense_sharing_id is not None:
-        return RemapOptionsRequest(
-            skip_subtag_if_null=options.skip_subtag_if_null,
-            skip_sharing_if_null=False,
+class BulkRemapRequest(BaseModel):
+    """Mesmo padrão de ids do bulk-delete, com opções de remapeamento."""
+
+    ids: List[int]
+    overwrite_sharing: bool = False
+    confirm_closed_closure_impact: bool = False
+
+
+class RemapAllRequest(RemapOptionsRequest):
+    """Remap-all; mapping_ids opcional (null = todos os mapeamentos da conta)."""
+
+    mapping_ids: List[int] | None = None
+
+
+def _run_remap_sequence(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    mappings: list[TransactionMapping],
+    options: RemapOptionsRequest,
+) -> RemapAllResponse:
+    """Valida lançamentos e fechamentos uma vez; aplica todos os mapeamentos na ordem correta."""
+    if not mappings:
+        return RemapAllResponse(
+            mappings_processed=0,
+            mappings_failed=0,
+            bank_statements=0,
+            credit_card_invoices=0,
+            benefit_statements=0,
+            total_records_updated=0,
+            errors=[],
+            closure_impact=None,
         )
-    return options
 
-
-@router.post("/mappings/remap-all", response_model=RemapAllResponse)
-async def remap_all_mappings(
-    options: RemapOptionsRequest = None,
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(require_account),
-):
-    """
-    Aplica todos os mapeamentos da conta às transações (extrato, fatura, benefício).
-    Ordem: regex → pattern → exact (exato por último, alinhado à prioridade da importação).
-    """
-    account_id = current_user.get("account_id")
-    tenant_id = current_user.get("tenant_id")
-
-    if options is None:
-        options = RemapOptionsRequest()
-
-    mappings = db.query(TransactionMapping).filter(
-        TransactionMapping.account_id == account_id
-    ).all()
-    ordered = sort_mappings_for_remap(mappings)
+    ensure_account_has_remap_transaction_data(db, tenant_id, account_id)
+    try:
+        _ensure_mappings_remap_closure_allowed(db, tenant_id, account_id, mappings, options)
+    except AccountPeriodClosedError as exc:
+        raise HTTPException(status_code=409, detail=_closure_impact_http_detail(exc)) from exc
 
     total_bank = 0
     total_cc = 0
@@ -1373,25 +1328,31 @@ async def remap_all_mappings(
     processed = 0
     failed = 0
     errors: List[str] = []
+    merged_impact: dict | None = None
 
-    for mapping in ordered:
+    for mapping in mappings:
         try:
-            per_mapping_options = _remap_options_for_mapping(mapping, options)
-            bank, cc, benefit = apply_mapping_remap(
-                db, tenant_id, mapping, per_mapping_options, _mapping_apply_percentage
+            bank, cc, benefit, impact = _apply_mapping_remap_with_closure(
+                db,
+                tenant_id,
+                account_id,
+                mapping,
+                options,
+                verify_transaction_data=False,
+                verify_closure_precheck=False,
             )
+            merged_impact = merge_closure_impacts(merged_impact, impact)
             total_bank += bank
             total_cc += cc
             total_benefit += benefit
             processed += 1
         except HTTPException as e:
             failed += 1
-            errors.append(f"Mapeamento #{mapping.id}: {e.detail}")
+            detail = e.detail if isinstance(e.detail, str) else str(e.detail)
+            errors.append(f"Mapeamento #{mapping.id}: {detail}")
         except Exception as e:
             failed += 1
             errors.append(f"Mapeamento #{mapping.id}: {str(e)}")
-
-    db.commit()
 
     total = total_bank + total_cc + total_benefit
     return RemapAllResponse(
@@ -1402,7 +1363,81 @@ async def remap_all_mappings(
         benefit_statements=total_benefit,
         total_records_updated=total,
         errors=errors,
+        closure_impact=merged_impact,
     )
+
+
+def _remap_mappings_query(
+    db: Session,
+    account_id: int,
+    mapping_ids: List[int] | None,
+) -> list[TransactionMapping]:
+    base = db.query(TransactionMapping).filter(TransactionMapping.account_id == account_id)
+    if mapping_ids is None:
+        return base.all()
+    unique_ids = list(dict.fromkeys(mapping_ids))
+    if not unique_ids:
+        raise HTTPException(status_code=400, detail="Nenhum mapeamento selecionado")
+    mappings = base.filter(TransactionMapping.id.in_(unique_ids)).all()
+    found = {m.id for m in mappings}
+    missing = [i for i in unique_ids if i not in found]
+    if missing:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Mapeamento(s) não encontrado(s): {', '.join(str(i) for i in missing)}",
+        )
+    return mappings
+
+
+@router.post("/mappings/bulk-remap", response_model=RemapAllResponse)
+async def bulk_remap_mappings(
+    body: BulkRemapRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    """Remapeamento em lote dos IDs selecionados (validação única de lançamentos/fechamento)."""
+    account_id = current_user.get("account_id")
+    tenant_id = current_user.get("tenant_id")
+    options = RemapOptionsRequest(
+        overwrite_sharing=body.overwrite_sharing,
+        confirm_closed_closure_impact=body.confirm_closed_closure_impact,
+    )
+    mappings = _remap_mappings_query(db, account_id, body.ids)
+    ordered = sort_mappings_for_remap(mappings)
+    result = _run_remap_sequence(db, tenant_id, account_id, ordered, options)
+    db.commit()
+    return result
+
+
+@router.post("/mappings/remap-all", response_model=RemapAllResponse)
+async def remap_all_mappings(
+    body: RemapAllRequest | None = None,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    """
+    Aplica mapeamentos da conta às transações (extrato, fatura, benefício).
+    Sem mapping_ids: todos. Com mapping_ids: apenas os informados.
+    Ordem: regex → pattern → exact (exato por último).
+    """
+    account_id = current_user.get("account_id")
+    tenant_id = current_user.get("tenant_id")
+
+    if body is None:
+        body = RemapAllRequest()
+
+    options = RemapOptionsRequest(
+        skip_subtag_if_null=body.skip_subtag_if_null,
+        skip_sharing_if_null=body.skip_sharing_if_null,
+        overwrite_sharing=body.overwrite_sharing,
+        confirm_closed_closure_impact=body.confirm_closed_closure_impact,
+    )
+
+    mappings = _remap_mappings_query(db, account_id, body.mapping_ids)
+    ordered = sort_mappings_for_remap(mappings)
+    result = _run_remap_sequence(db, tenant_id, account_id, ordered, options)
+    db.commit()
+    return result
 
 
 class ClearTransactionClassificationsResponse(BaseModel):
@@ -1497,7 +1532,8 @@ async def remap_single_mapping(
 
     Opções:
     - skip_subtag_if_null: Se True, não atualiza subtag quando o mapeamento não tem (não aplicável - subtag é obrigatória)
-    - skip_sharing_if_null: Se True, não sobrescreve compartilhamento existente quando o mapeamento não tem compartilhamento
+    - overwrite_sharing: Se True, aplica expense_sharing_id/percentual do mapeamento (null limpa). Padrão False.
+    - skip_sharing_if_null: legado; use overwrite_sharing quando possível
     """
     account_id = current_user.get("account_id")
     tenant_id = current_user.get("tenant_id")
@@ -1515,9 +1551,8 @@ async def remap_single_mapping(
     if not mapping:
         raise HTTPException(status_code=404, detail="Mapeamento não encontrado")
 
-    per_mapping_options = _remap_options_for_mapping(mapping, options)
-    updated_bank, updated_cc, updated_benefit = apply_mapping_remap(
-        db, tenant_id, mapping, per_mapping_options, _mapping_apply_percentage
+    updated_bank, updated_cc, updated_benefit, closure_impact = _apply_mapping_remap_with_closure(
+        db, tenant_id, account_id, mapping, options,
     )
 
     db.commit()
@@ -1527,7 +1562,8 @@ async def remap_single_mapping(
         bank_statements=updated_bank,
         credit_card_invoices=updated_cc,
         benefit_statements=updated_benefit,
-        total_records_updated=updated_bank + updated_cc + updated_benefit
+        total_records_updated=updated_bank + updated_cc + updated_benefit,
+        closure_impact=closure_impact,
     )
 
 
@@ -1689,6 +1725,119 @@ async def get_tag_usage_count(
     }
 
 
+def _force_delete_tag_no_commit(
+    db: Session,
+    *,
+    account_id: int,
+    tenant_id: int,
+    tag_id: int,
+) -> bool:
+    tag = db.query(Tag).filter(
+        Tag.id == tag_id,
+        Tag.account_id == account_id,
+    ).first()
+    if not tag:
+        return False
+
+    subtags = db.query(Subtag).filter(
+        Subtag.tag_id == tag_id,
+        Subtag.account_id == account_id,
+    ).all()
+
+    for subtag in subtags:
+        db.query(BankStatement).filter(
+            BankStatement.subtag_id == subtag.id,
+            BankStatement.tenant_id == tenant_id,
+        ).update({"subtag_id": None}, synchronize_session=False)
+
+        db.query(CreditCardInvoice).filter(
+            CreditCardInvoice.subtag_id == subtag.id,
+            CreditCardInvoice.tenant_id == tenant_id,
+        ).update({"subtag_id": None}, synchronize_session=False)
+
+    db.query(Subtag).filter(
+        Subtag.tag_id == tag_id,
+        Subtag.account_id == account_id,
+    ).delete(synchronize_session=False)
+
+    db.delete(tag)
+    return True
+
+
+def _force_delete_subtag_no_commit(
+    db: Session,
+    *,
+    account_id: int,
+    tenant_id: int,
+    subtag_id: int,
+) -> bool:
+    subtag = db.query(Subtag).filter(
+        Subtag.id == subtag_id,
+        Subtag.account_id == account_id,
+    ).first()
+    if not subtag:
+        return False
+
+    db.query(BankStatement).filter(
+        BankStatement.subtag_id == subtag_id,
+        BankStatement.tenant_id == tenant_id,
+    ).update({"subtag_id": None}, synchronize_session=False)
+
+    db.query(CreditCardInvoice).filter(
+        CreditCardInvoice.subtag_id == subtag_id,
+        CreditCardInvoice.tenant_id == tenant_id,
+    ).update({"subtag_id": None}, synchronize_session=False)
+
+    db.delete(subtag)
+    return True
+
+
+@router.post("/tags/bulk-delete-force", response_model=BulkDeleteResponse)
+async def bulk_force_delete_tags(
+    body: BulkDeleteTagsRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    if not body.tag_ids and not body.subtag_ids:
+        raise HTTPException(status_code=400, detail="Nenhuma tag ou subtag selecionada")
+
+    account_id = current_user["account_id"]
+    tenant_id = current_user["tenant_id"]
+    deleted = 0
+    skipped = 0
+    soft_deleted_tag_ids: set[int] = set()
+
+    for tag_id in dict.fromkeys(body.tag_ids):
+        if _force_delete_tag_no_commit(
+            db, account_id=account_id, tenant_id=tenant_id, tag_id=tag_id
+        ):
+            soft_deleted_tag_ids.add(tag_id)
+            deleted += 1
+        else:
+            skipped += 1
+
+    for subtag_id in dict.fromkeys(body.subtag_ids):
+        subtag = db.query(Subtag).filter(
+            Subtag.id == subtag_id,
+            Subtag.account_id == account_id,
+        ).first()
+        if not subtag:
+            skipped += 1
+            continue
+        if subtag.tag_id in soft_deleted_tag_ids:
+            skipped += 1
+            continue
+        if _force_delete_subtag_no_commit(
+            db, account_id=account_id, tenant_id=tenant_id, subtag_id=subtag_id
+        ):
+            deleted += 1
+        else:
+            skipped += 1
+
+    db.commit()
+    return BulkDeleteResponse(deleted=deleted, skipped=skipped)
+
+
 @router.delete("/tags/{tag_id}/force", status_code=204)
 async def force_delete_tag(
     tag_id: int,
@@ -1708,45 +1857,11 @@ async def force_delete_tag(
     account_id = current_user.get("account_id")
     tenant_id = current_user.get("tenant_id")
 
-    # 1. Verifica se a tag existe
-    tag = db.query(Tag).filter(
-        Tag.id == tag_id,
-        Tag.account_id == account_id
-    ).first()
-
-    if not tag:
+    if not _force_delete_tag_no_commit(
+        db, account_id=account_id, tenant_id=tenant_id, tag_id=tag_id
+    ):
         raise HTTPException(status_code=404, detail="Tag não encontrada")
 
-    # 2. Busca todas as subtags da tag
-    subtags = db.query(Subtag).filter(
-        Subtag.tag_id == tag_id,
-        Subtag.account_id == account_id
-    ).all()
-
-    # 3. Migra registros para NULL (não categorizado)
-    for subtag in subtags:
-        # Migra registros de bank_statements para NULL
-        # NOTA: BankStatement NÃO tem campo 'active'
-        db.query(BankStatement).filter(
-            BankStatement.subtag_id == subtag.id,
-            BankStatement.tenant_id == tenant_id
-        ).update({"subtag_id": None})
-
-        # Migra registros de credit_card_invoices para NULL
-        # NOTA: CreditCardInvoice NÃO tem campo 'active'
-        db.query(CreditCardInvoice).filter(
-            CreditCardInvoice.subtag_id == subtag.id,
-            CreditCardInvoice.tenant_id == tenant_id
-        ).update({"subtag_id": None})
-
-    # 4. Deleta todas as subtags da tag
-    db.query(Subtag).filter(
-        Subtag.tag_id == tag_id,
-        Subtag.account_id == account_id
-    ).delete(synchronize_session=False)
-
-    # 5. Deleta a tag
-    db.delete(tag)
     db.commit()
 
     return None
@@ -1963,28 +2078,11 @@ async def force_delete_subtag(
     account_id = current_user.get("account_id")
     tenant_id = current_user.get("tenant_id")
 
-    # 1. Verifica se a subtag existe
-    subtag = db.query(Subtag).filter(
-        Subtag.id == subtag_id,
-        Subtag.account_id == account_id
-    ).first()
-
-    if not subtag:
+    if not _force_delete_subtag_no_commit(
+        db, account_id=account_id, tenant_id=tenant_id, subtag_id=subtag_id
+    ):
         raise HTTPException(status_code=404, detail="Subtag não encontrada")
 
-    # 2. Migra registros para NULL (não categorizado)
-    db.query(BankStatement).filter(
-        BankStatement.subtag_id == subtag_id,
-        BankStatement.tenant_id == tenant_id
-    ).update({"subtag_id": None}, synchronize_session=False)
-
-    db.query(CreditCardInvoice).filter(
-        CreditCardInvoice.subtag_id == subtag_id,
-        CreditCardInvoice.tenant_id == tenant_id
-    ).update({"subtag_id": None}, synchronize_session=False)
-
-    # 3. Deleta a subtag
-    db.delete(subtag)
     db.commit()
 
     return None
@@ -2123,9 +2221,15 @@ async def update_benefit_card_statement_subtag(
 
     # Atualizar subtag_id
     statement.subtag_id = request.subtag_id
+    account_id = _account_id_for_benefit(db, statement)
+    closure_impact = after_benefit_subtag_updated(db, tenant_id, account_id, statement)
     db.commit()
 
-    return {"success": True, "message": "Subtag atualizada com sucesso"}
+    return {
+        "success": True,
+        "message": "Subtag atualizada com sucesso",
+        "closure_impact": closure_impact if closure_impact.get("impact_type") != "none" else None,
+    }
 
 
 # ==================== BULK UPDATE SUBTAGS ====================
@@ -2407,6 +2511,7 @@ class BankStatementUpdate(BaseModel):
     subtag_id: int | None = None
     shared_partner_id: int | None = None
     ownership_percentage: float | None = None
+    confirm_closed_closure_impact: bool = False
 
 
 @router.put("/bank-statements/{statement_id}", status_code=200)
@@ -2428,7 +2533,27 @@ async def update_bank_statement(
     if not statement:
         raise HTTPException(status_code=404, detail="Extrato não encontrado")
 
-    _guard_closed_account_period(db, tenant_id, statement.account_id, statement.date, request.date)
+    old_date = statement.date
+    try:
+        change_kind = ensure_bank_update_allowed(
+            db,
+            tenant_id,
+            statement.account_id,
+            int(current_user.get("user_id") or current_user.get("id") or 0),
+            statement,
+            description=request.description,
+            amount=request.amount,
+            date=request.date,
+            subtag_id=request.subtag_id,
+            shared_partner_id=request.shared_partner_id,
+            ownership_percentage=request.ownership_percentage,
+            confirm_closed_closure_impact=request.confirm_closed_closure_impact,
+        )
+    except AccountPeriodClosedError as exc:
+        detail: dict | str = exc.message
+        if exc.payload:
+            detail = {"message": exc.message, **exc.payload}
+        raise HTTPException(status_code=409, detail=detail) from exc
 
     # Atualiza os campos
     statement.description = request.description
@@ -2439,13 +2564,25 @@ async def update_bank_statement(
     # Se ownership_percentage for None, usa 100.00 (despesa própria)
     statement.ownership_percentage = request.ownership_percentage if request.ownership_percentage is not None else 100.00
 
+    closure_impact = after_bank_statement_updated(
+        db,
+        tenant_id,
+        statement.account_id,
+        int(current_user.get("user_id") or current_user.get("id") or 0),
+        statement,
+        kind=change_kind,
+        old_date=old_date,
+        note=f"Retificação extrato #{statement_id}",
+    )
+
     db.commit()
     db.refresh(statement)
 
     return {
         "success": True,
         "message": "Extrato atualizado com sucesso",
-        "id": statement_id
+        "id": statement_id,
+        "closure_impact": closure_impact if closure_impact.get("impact_type") != "none" else None,
     }
 
 
@@ -2462,6 +2599,7 @@ class CreditCardInvoiceUpdate(BaseModel):
     ownership_percentage: float | None = None
     current_installment: int | None = Field(default=None, ge=1)
     total_installments: int | None = Field(default=None, ge=1)
+    confirm_closed_closure_impact: bool = False
 
 
 @router.put("/credit-card-invoices/{invoice_id}", status_code=200)
@@ -2496,6 +2634,26 @@ async def update_credit_card_invoice(
             detail="Parcela atual não pode ser maior que o total de parcelas",
         )
 
+    card_account_id = _account_id_for_card_invoice(db, invoice)
+    old_date = invoice.date
+    try:
+        change_kind = ensure_credit_card_update_allowed(
+            db,
+            tenant_id,
+            card_account_id,
+            int(current_user.get("user_id") or current_user.get("id") or 0),
+            invoice,
+            description=request.description,
+            amount=request.amount,
+            date=request.date,
+            subtag_id=request.subtag_id,
+            shared_partner_id=request.shared_partner_id,
+            ownership_percentage=request.ownership_percentage,
+            confirm_closed_closure_impact=request.confirm_closed_closure_impact,
+        )
+    except AccountPeriodClosedError as exc:
+        raise HTTPException(status_code=409, detail=_closure_impact_http_detail(exc)) from exc
+
     # Atualiza os campos
     invoice.description = request.description
     invoice.amount = request.amount
@@ -2517,6 +2675,18 @@ async def update_credit_card_invoice(
 
         invoice.card_number = request.card_number
         invoice.credit_card_id = card_id
+        card_account_id = _account_id_for_card_invoice(db, invoice)
+
+    closure_impact = after_credit_card_updated(
+        db,
+        tenant_id,
+        card_account_id,
+        int(current_user.get("user_id") or current_user.get("id") or 0),
+        invoice,
+        kind=change_kind,
+        old_date=old_date,
+        note=f"Retificação fatura #{invoice_id}",
+    )
 
     db.commit()
     db.refresh(invoice)
@@ -2524,7 +2694,8 @@ async def update_credit_card_invoice(
     return {
         "success": True,
         "message": "Fatura atualizada com sucesso",
-        "id": invoice_id
+        "id": invoice_id,
+        "closure_impact": closure_impact if closure_impact.get("impact_type") != "none" else None,
     }
 
 
@@ -2593,6 +2764,7 @@ class SplitPart(BaseModel):
 class SplitExpenseRequest(BaseModel):
     """Request para dividir uma despesa em múltiplas partes"""
     parts: List[SplitPart]
+    confirm_closed_closure_impact: bool = False
 
 
 @router.post("/bank-statements/{statement_id}/split", status_code=200)
@@ -2609,6 +2781,7 @@ async def split_bank_statement(
     e novos registros são criados para as demais partes.
     """
     tenant_id = current_user.get("tenant_id", 1)
+    user_id = int(current_user.get("user_id") or current_user.get("id") or 0)
 
     # Busca o registro original
     # NOTA: BankStatement NÃO tem campo 'active'
@@ -2619,8 +2792,6 @@ async def split_bank_statement(
 
     if not original:
         raise HTTPException(status_code=404, detail="Extrato não encontrado")
-
-    _guard_closed_account_period(db, tenant_id, original.account_id, original.date)
 
     # Validações
     if len(request.parts) < 2:
@@ -2645,34 +2816,60 @@ async def split_bank_statement(
         if not subtag:
             raise HTTPException(status_code=404, detail=f"Subtag {part.subtag_id} não encontrada")
 
-    # Atualiza o registro original com a primeira parte
-    first_part = request.parts[0]
-    original.amount = first_part.amount
-    original.subtag_id = first_part.subtag_id
+    def apply_bank_split() -> None:
+        first_part = request.parts[0]
+        original.amount = first_part.amount
+        original.subtag_id = first_part.subtag_id
+        for part in request.parts[1:]:
+            db.add(
+                BankStatement(
+                    tenant_id=tenant_id,
+                    created_by=current_user.get("id"),
+                    account_id=original.account_id,
+                    date=original.date,
+                    category=original.category,
+                    transaction=original.transaction,
+                    description=original.description,
+                    amount=part.amount,
+                    subtag_id=part.subtag_id,
+                )
+            )
 
-    # Cria novos registros para as demais partes
-    for part in request.parts[1:]:
-        new_statement = BankStatement(
-            tenant_id=tenant_id,
-            created_by=current_user.get("id"),
-            account_id=original.account_id,
-            date=original.date,
-            category=original.category,
-            transaction=original.transaction,
-            description=original.description,
-            amount=part.amount,
-            subtag_id=part.subtag_id
-            # NOTA: bank_statements NÃO tem coluna 'active' - usa hard delete
+    try:
+        ensure_closed_period_change_allowed(
+            db,
+            tenant_id,
+            original.account_id,
+            user_id,
+            original.date,
+            request.confirm_closed_closure_impact,
+            lambda: (apply_bank_split(), db.flush()),
         )
-        db.add(new_statement)
+    except AccountPeriodClosedError as exc:
+        detail: dict | str = exc.message
+        if exc.payload:
+            detail = {"message": exc.message, **exc.payload}
+        raise HTTPException(status_code=409, detail=detail) from exc
 
+    apply_bank_split()
+    db.flush()
+    closure_impact = after_expense_split(
+        db,
+        tenant_id,
+        original.account_id,
+        user_id,
+        original.date,
+        note=f"Divisão extrato #{statement_id}",
+    )
     db.commit()
 
+    impact_payload = closure_impact if closure_impact.get("impact_type") != "none" else None
     return {
         "success": True,
         "message": f"Extrato dividido em {len(request.parts)} partes",
         "original_id": statement_id,
-        "parts_created": len(request.parts) - 1
+        "parts_created": len(request.parts) - 1,
+        "closure_impact": impact_payload,
     }
 
 
@@ -2690,6 +2887,7 @@ async def split_credit_card_invoice(
     e novos registros são criados para as demais partes.
     """
     tenant_id = current_user.get("tenant_id", 1)
+    user_id = int(current_user.get("user_id") or current_user.get("id") or 0)
 
     # Busca o registro original
     # NOTA: CreditCardInvoice NÃO tem campo 'active'
@@ -2724,36 +2922,65 @@ async def split_credit_card_invoice(
         if not subtag:
             raise HTTPException(status_code=404, detail=f"Subtag {part.subtag_id} não encontrada")
 
-    # Atualiza o registro original com a primeira parte
-    first_part = request.parts[0]
-    original.amount = first_part.amount
-    original.subtag_id = first_part.subtag_id
+    card_account_id = _account_id_for_card_invoice(db, original)
 
-    # Cria novos registros para as demais partes
-    for part in request.parts[1:]:
-        new_invoice = CreditCardInvoice(
-            tenant_id=tenant_id,
-            created_by=current_user.get("id"),
-            credit_card_id=original.credit_card_id,
-            date=original.date,
-            year_month=original.year_month,  # Campo obrigatório!
-            description=original.description,
-            amount=part.amount,
-            current_installment=original.current_installment,
-            total_installments=original.total_installments,
-            subtag_id=part.subtag_id,
-            issuer=original.issuer or 'btg',
-            # NOTA: credit_card_invoices NÃO tem coluna 'active' - usa hard delete
-        )
-        db.add(new_invoice)
+    def apply_card_split() -> None:
+        first_part = request.parts[0]
+        original.amount = first_part.amount
+        original.subtag_id = first_part.subtag_id
+        for part in request.parts[1:]:
+            db.add(
+                CreditCardInvoice(
+                    tenant_id=tenant_id,
+                    created_by=current_user.get("id"),
+                    credit_card_id=original.credit_card_id,
+                    date=original.date,
+                    year_month=original.year_month,
+                    description=original.description,
+                    amount=part.amount,
+                    current_installment=original.current_installment,
+                    total_installments=original.total_installments,
+                    subtag_id=part.subtag_id,
+                    issuer=original.issuer or "btg",
+                )
+            )
 
+    if card_account_id is not None:
+        try:
+            ensure_closed_period_change_allowed(
+                db,
+                tenant_id,
+                card_account_id,
+                user_id,
+                original.date,
+                request.confirm_closed_closure_impact,
+                lambda: (apply_card_split(), db.flush()),
+            )
+        except AccountPeriodClosedError as exc:
+            detail: dict | str = exc.message
+            if exc.payload:
+                detail = {"message": exc.message, **exc.payload}
+            raise HTTPException(status_code=409, detail=detail) from exc
+
+    apply_card_split()
+    db.flush()
+    closure_impact = after_expense_split(
+        db,
+        tenant_id,
+        card_account_id,
+        user_id,
+        original.date,
+        note=f"Divisão fatura #{invoice_id}",
+    )
     db.commit()
 
+    impact_payload = closure_impact if closure_impact.get("impact_type") != "none" else None
     return {
         "success": True,
         "message": f"Fatura dividida em {len(request.parts)} partes",
         "original_id": invoice_id,
-        "parts_created": len(request.parts) - 1
+        "parts_created": len(request.parts) - 1,
+        "closure_impact": impact_payload,
     }
 
 
@@ -2770,6 +2997,7 @@ class ManualTransactionCreate(BaseModel):
     ownership_percentage: Decimal = Decimal('100.00')
     adjustment_notes: str | None = None
     create_mapping: bool = False  # Flag para criar mapeamento automático
+    confirm_closed_closure_impact: bool = False
 
 
 class ManualTransactionResponse(BaseModel):
@@ -2778,6 +3006,7 @@ class ManualTransactionResponse(BaseModel):
     statement_id: int
     mapping_created: bool
     message: str
+    closure_impact: dict | None = None
 
 
 @router.post("/bank-statements/manual", response_model=ManualTransactionResponse, status_code=201)
@@ -2862,8 +3091,6 @@ async def create_manual_transaction(
             detail="Percentual de propriedade deve estar entre 0 e 100"
         )
 
-    _guard_closed_account_period(db, tenant_id, request.account_id, request.date)
-
     # ========================================
     # CRIAR LANÇAMENTO
     # ========================================
@@ -2883,6 +3110,22 @@ async def create_manual_transaction(
         transaction=None  # Lançamento manual não tem tipo de transação do banco
         # NOTA: bank_statements NÃO tem coluna 'active' - usa hard delete
     )
+
+    try:
+        ensure_new_transaction_in_closed_period_allowed(
+            db,
+            tenant_id,
+            request.account_id,
+            int(user_id),
+            request.date,
+            request.confirm_closed_closure_impact,
+            lambda: (db.add(new_statement), db.flush()),
+        )
+    except AccountPeriodClosedError as exc:
+        detail: dict | str = exc.message
+        if exc.payload:
+            detail = {"message": exc.message, **exc.payload}
+        raise HTTPException(status_code=409, detail=detail) from exc
 
     db.add(new_statement)
     db.flush()  # Para obter o ID
@@ -2921,7 +3164,15 @@ async def create_manual_transaction(
             db.add(new_mapping)
             mapping_created = True
 
-    # Commit de tudo
+    closure_impact = after_new_transaction_in_closed_period(
+        db,
+        tenant_id,
+        request.account_id,
+        int(user_id),
+        request.date,
+        note="Lançamento manual",
+    )
+
     db.commit()
 
     # ========================================
@@ -2936,7 +3187,8 @@ async def create_manual_transaction(
         success=True,
         statement_id=new_statement.id,
         mapping_created=mapping_created,
-        message=message
+        message=message,
+        closure_impact=closure_impact if closure_impact.get("impact_type") != "none" else None,
     )
 
 
@@ -2973,6 +3225,7 @@ class ManualCreditCardInvoiceCreate(BaseModel):
     issuer: str | None = None
     adjustment_notes: str | None = None
     create_mapping: bool = False
+    confirm_closed_closure_impact: bool = False
 
     @field_validator("year_month")
     @classmethod
@@ -3002,6 +3255,7 @@ class ManualCreditCardInvoiceResponse(BaseModel):
     invoice_id: int
     mapping_created: bool
     message: str
+    closure_impact: dict | None = None
 
 
 @router.post(
@@ -3103,10 +3357,14 @@ async def create_manual_credit_card_invoice(
     else:
         issuer = _resolve_invoice_issuer_for_card(db, tenant_id, cartao.id)
 
+    card_account_id = cartao.account_id or account_id
+    if card_account_id is None:
+        raise HTTPException(status_code=400, detail="Conta do cartão não encontrada")
+
     new_invoice = CreditCardInvoice(
         tenant_id=tenant_id,
         created_by=int(user_id),
-        account_id=cartao.account_id or account_id,
+        account_id=card_account_id,
         credit_card_id=cartao.id,
         year_month=request.year_month,
         date=request.date,
@@ -3120,6 +3378,22 @@ async def create_manual_credit_card_invoice(
         adjustment_notes=notes,
         issuer=issuer,
     )
+    try:
+        ensure_new_transaction_in_closed_period_allowed(
+            db,
+            tenant_id,
+            int(card_account_id),
+            int(user_id),
+            request.date,
+            request.confirm_closed_closure_impact,
+            lambda: (db.add(new_invoice), db.flush()),
+        )
+    except AccountPeriodClosedError as exc:
+        detail: dict | str = exc.message
+        if exc.payload:
+            detail = {"message": exc.message, **exc.payload}
+        raise HTTPException(status_code=409, detail=detail) from exc
+
     db.add(new_invoice)
     db.flush()
 
@@ -3152,6 +3426,15 @@ async def create_manual_credit_card_invoice(
             )
             mapping_created = True
 
+    closure_impact = after_new_transaction_in_closed_period(
+        db,
+        tenant_id,
+        int(card_account_id),
+        int(user_id),
+        request.date,
+        note="Acerto manual fatura",
+    )
+
     db.commit()
 
     message = "Lançamento adicionado à fatura com sucesso!"
@@ -3163,6 +3446,7 @@ async def create_manual_credit_card_invoice(
         invoice_id=new_invoice.id,
         mapping_created=mapping_created,
         message=message,
+        closure_impact=closure_impact if closure_impact.get("impact_type") != "none" else None,
     )
 
 
@@ -3178,6 +3462,7 @@ class ManualBenefitStatementCreate(BaseModel):
     adjustment_notes: str | None = None
     create_mapping: bool = False
     payment_method: str | None = "Manual"
+    confirm_closed_closure_impact: bool = False
 
 
 class ManualBenefitStatementResponse(BaseModel):
@@ -3185,6 +3470,7 @@ class ManualBenefitStatementResponse(BaseModel):
     statement_id: int
     mapping_created: bool
     message: str
+    closure_impact: dict | None = None
 
 
 @router.post(
@@ -3264,7 +3550,8 @@ async def create_manual_benefit_statement(
         raise HTTPException(status_code=400, detail="Descrição é obrigatória")
 
     card_account_id = cartao.account_id or account_id
-    _guard_closed_account_period(db, tenant_id, card_account_id, request.date)
+    if card_account_id is None:
+        raise HTTPException(status_code=400, detail="Conta do cartão não encontrada")
 
     new_statement = BenefitCardStatement(
         tenant_id=tenant_id,
@@ -3280,6 +3567,22 @@ async def create_manual_benefit_statement(
         ownership_percentage=request.ownership_percentage,
         adjustment_notes=request.adjustment_notes,
     )
+    try:
+        ensure_new_transaction_in_closed_period_allowed(
+            db,
+            tenant_id,
+            int(card_account_id),
+            int(user_id),
+            request.date,
+            request.confirm_closed_closure_impact,
+            lambda: (db.add(new_statement), db.flush()),
+        )
+    except AccountPeriodClosedError as exc:
+        detail: dict | str = exc.message
+        if exc.payload:
+            detail = {"message": exc.message, **exc.payload}
+        raise HTTPException(status_code=409, detail=detail) from exc
+
     db.add(new_statement)
     db.flush()
 
@@ -3312,6 +3615,15 @@ async def create_manual_benefit_statement(
             )
             mapping_created = True
 
+    closure_impact = after_new_transaction_in_closed_period(
+        db,
+        tenant_id,
+        int(card_account_id),
+        int(user_id),
+        request.date,
+        note="Lançamento manual benefício",
+    )
+
     db.commit()
 
     message = "Lançamento de benefício criado com sucesso!"
@@ -3323,6 +3635,7 @@ async def create_manual_benefit_statement(
         statement_id=new_statement.id,
         mapping_created=mapping_created,
         message=message,
+        closure_impact=closure_impact if closure_impact.get("impact_type") != "none" else None,
     )
 
 
@@ -3342,6 +3655,7 @@ class BatchUpdateRequest(BaseModel):
     ownership_percentage: float | None = None
     clear_subtag: bool = False  # Flag explícita para limpar subtag
     target_credit_card_id: int | None = None  # Lançamentos de fatura: mover para outro cartão no mesmo ciclo
+    confirm_closed_closure_impact: bool = False
 
 
 class BatchUpdateResponse(BaseModel):
@@ -3349,19 +3663,21 @@ class BatchUpdateResponse(BaseModel):
     success: bool
     updated_count: int
     message: str
+    closure_impact: dict | None = None
 
 
 @router.patch("/batch-update", response_model=BatchUpdateResponse)
 async def batch_update_expenses(
     request: BatchUpdateRequest,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_account)
 ):
     """
     Atualiza múltiplas despesas em lote.
     Apenas os campos preenchidos (não None) serão atualizados.
     """
     tenant_id = current_user.get("tenant_id", 1)
+    account_id = current_user.get("account_id")
 
     if not request.items:
         raise HTTPException(status_code=400, detail="Nenhum item para atualizar")
@@ -3474,6 +3790,26 @@ async def batch_update_expenses(
     if not update_fields:
         raise HTTPException(status_code=400, detail="Nenhum campo para atualizar")
 
+    has_sharing_change = request.expense_sharing_id is not None
+    user_id = int(current_user.get("user_id") or current_user.get("id") or 0)
+
+    if account_id is not None:
+        try:
+            ensure_batch_update_closure_allowed(
+                db,
+                tenant_id,
+                int(account_id),
+                user_id,
+                bank_ids=bank_ids,
+                card_ids=card_ids,
+                benefit_ids=benefit_ids,
+                update_fields=update_fields,
+                has_sharing_change=has_sharing_change,
+                confirm=request.confirm_closed_closure_impact,
+            )
+        except AccountPeriodClosedError as exc:
+            raise HTTPException(status_code=409, detail=_closure_impact_http_detail(exc)) from exc
+
     # Atualizar bank_statements
     if bank_ids:
         result = db.query(BankStatement).filter(
@@ -3498,12 +3834,268 @@ async def batch_update_expenses(
         ).update(update_fields, synchronize_session=False)
         updated_count += result
 
+    has_subtag_change = (
+        request.clear_subtag
+        or request.subtag_id is not None
+    )
+
+    closure_impact = None
+    if account_id is not None:
+        impact = post_batch_update_closure_sync(
+            db,
+            tenant_id,
+            int(account_id),
+            bank_ids=bank_ids,
+            card_ids=card_ids,
+            benefit_ids=benefit_ids,
+            has_subtag_change=has_subtag_change,
+            has_sharing_change=has_sharing_change,
+            updated_count=updated_count,
+        )
+        if impact.get("impact_type") != "none":
+            closure_impact = impact
+
     db.commit()
 
     return BatchUpdateResponse(
         success=True,
         updated_count=updated_count,
-        message=f"{updated_count} registro(s) atualizado(s) com sucesso"
+        message=f"{updated_count} registro(s) atualizado(s) com sucesso",
+        closure_impact=closure_impact,
+    )
+
+
+# ==================== VISUAL EXTRATO IMPORT (Excel exportado pelo Plumo) ====================
+
+
+class VisualExtratoImportRow(BaseModel):
+    row_index: int | None = None
+    date: str
+    description: str
+    amount: float
+    tag: str | None = None
+    subtag: str | None = None
+    partner_name: str | None = None
+    ownership_percentage: float | None = None
+    category: str | None = None
+    transaction: str | None = None
+    card_last4: str | None = None
+    payment_method: str | None = None
+
+
+class VisualExtratoImportRowsPayload(BaseModel):
+    bank_rows: List[VisualExtratoImportRow] = Field(default_factory=list)
+    benefit_rows: List[VisualExtratoImportRow] = Field(default_factory=list)
+    batch: ImportBatchPayload | None = None
+
+
+class VisualExtratoImportRequest(VisualExtratoImportRowsPayload):
+    confirm_closed_closure_impact: bool = False
+
+
+class VisualExtratoImportPreviewResponse(BaseModel):
+    summary: dict[str, Any]
+    creates: list[dict[str, Any]]
+    updates: list[dict[str, Any]]
+    issues: list[dict[str, Any]]
+
+
+@router.post("/visual-import/preview", response_model=VisualExtratoImportPreviewResponse)
+async def visual_extrato_import_preview(
+    request: VisualExtratoImportRowsPayload,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    """Pré-visualiza upsert da planilha exportada (somente dados, sem fechamentos)."""
+    tenant_id = int(current_user.get("tenant_id") or 1)
+    account_id = current_user.get("account_id")
+    if account_id is None:
+        raise HTTPException(status_code=400, detail="Conta não selecionada")
+    if not request.bank_rows and not request.benefit_rows:
+        raise HTTPException(status_code=400, detail="Nenhuma linha para analisar")
+    result = preview_visual_extrato_import(
+        db,
+        tenant_id,
+        int(account_id),
+        bank_rows=[row.model_dump() for row in request.bank_rows],
+        benefit_rows=[row.model_dump() for row in request.benefit_rows],
+        batch=ImportBatch(request.batch),
+    )
+    return VisualExtratoImportPreviewResponse(**result)
+
+
+class VisualExtratoImportResponse(BaseModel):
+    success: bool
+    stats: dict[str, Any]
+    issues: list[dict[str, Any]]
+    message: str
+    closure_impact: dict | None = None
+
+
+@router.post("/visual-import", response_model=VisualExtratoImportResponse)
+async def visual_extrato_import(
+    request: VisualExtratoImportRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    """Importa planilha exportada pelo relatório de extrato (upsert por data + descrição)."""
+    tenant_id = int(current_user.get("tenant_id") or 1)
+    account_id = current_user.get("account_id")
+    if account_id is None:
+        raise HTTPException(status_code=400, detail="Conta não selecionada")
+    user_id = int(current_user.get("user_id") or current_user.get("id") or 0)
+    if not request.bank_rows and not request.benefit_rows:
+        raise HTTPException(status_code=400, detail="Nenhuma linha para importar")
+
+    try:
+        result = apply_visual_extrato_import(
+            db,
+            tenant_id,
+            int(account_id),
+            user_id,
+            bank_rows=[row.model_dump() for row in request.bank_rows],
+            benefit_rows=[row.model_dump() for row in request.benefit_rows],
+            confirm_closed_closure_impact=request.confirm_closed_closure_impact,
+        )
+    except AccountPeriodClosedError as exc:
+        detail: dict | str = exc.message
+        if exc.payload:
+            detail = {"message": exc.message, **exc.payload}
+        raise HTTPException(status_code=409, detail=detail) from exc
+
+    stats = result.get("stats") or {}
+    message = (
+        f"Importação concluída: {stats.get('bank_updated', 0)} extrato(s) atualizado(s), "
+        f"{stats.get('bank_created', 0)} criado(s), "
+        f"{stats.get('benefit_updated', 0)} benefício(s) atualizado(s), "
+        f"{stats.get('benefit_created', 0)} criado(s)."
+    )
+    db.commit()
+    return VisualExtratoImportResponse(
+        success=True,
+        stats=stats,
+        issues=result.get("issues") or [],
+        message=message,
+        closure_impact=result.get("closure_impact"),
+    )
+
+
+# ==================== VISUAL MAPPING IMPORT (Excel exportado pelo Plumo) ====================
+
+
+class VisualMappingImportRow(BaseModel):
+    row_index: int | None = None
+    mapping_id: int | None = None
+    match: str
+    criterion: str = ""
+    priority: str | int | None = None
+    mapped_description: str = ""
+    subtag_type: str
+    tag_name: str = ""
+    subtag_name: str = ""
+    partner_name: str = ""
+    contribution_pct: float | None = None
+    is_sensitive: str | bool = False
+
+
+class VisualMappingImportRowsPayload(BaseModel):
+    rows: List[VisualMappingImportRow] = Field(default_factory=list)
+    batch: ImportBatchPayload | None = None
+
+
+class VisualMappingImportRequest(VisualMappingImportRowsPayload):
+    auto_run_remap: bool = True
+    overwrite_sharing: bool = True
+    confirm_closed_closure_impact: bool = False
+
+
+class VisualMappingImportPreviewResponse(BaseModel):
+    summary: dict[str, Any]
+    creates: list[dict[str, Any]]
+    updates: list[dict[str, Any]]
+    issues: list[dict[str, Any]]
+    corrections: list[dict[str, Any]] = Field(default_factory=list)
+
+
+@router.post("/mappings/visual-import/preview", response_model=VisualMappingImportPreviewResponse)
+async def visual_mapping_import_preview(
+    request: VisualMappingImportRowsPayload,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    """Pré-visualiza importação de mapeamentos a partir da planilha exportada."""
+    tenant_id = int(current_user.get("tenant_id") or 1)
+    account_id = current_user.get("account_id")
+    if account_id is None:
+        raise HTTPException(status_code=400, detail="Conta não selecionada")
+    if not request.rows:
+        raise HTTPException(status_code=400, detail="Nenhuma linha para analisar")
+    result = preview_visual_mapping_import(
+        db,
+        tenant_id,
+        int(account_id),
+        rows=[row.model_dump() for row in request.rows],
+        batch=ImportBatch(request.batch),
+    )
+    return VisualMappingImportPreviewResponse(**result)
+
+
+class VisualMappingImportResponse(BaseModel):
+    success: bool
+    stats: dict[str, Any]
+    issues: list[dict[str, Any]]
+    message: str
+    closure_impact: dict | None = None
+
+
+@router.post("/mappings/visual-import", response_model=VisualMappingImportResponse)
+async def visual_mapping_import(
+    request: VisualMappingImportRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    """Importa mapeamentos da planilha exportada; opcionalmente remapeia lançamentos."""
+    tenant_id = int(current_user.get("tenant_id") or 1)
+    account_id = current_user.get("account_id")
+    if account_id is None:
+        raise HTTPException(status_code=400, detail="Conta não selecionada")
+    user_id = int(current_user.get("user_id") or current_user.get("id") or 0)
+    if not request.rows:
+        raise HTTPException(status_code=400, detail="Nenhuma linha para importar")
+
+    try:
+        result = apply_visual_mapping_import(
+            db,
+            tenant_id,
+            int(account_id),
+            user_id,
+            rows=[row.model_dump() for row in request.rows],
+            auto_run_remap=request.auto_run_remap,
+            overwrite_sharing=request.overwrite_sharing,
+            confirm_closed_closure_impact=request.confirm_closed_closure_impact,
+        )
+    except AccountPeriodClosedError as exc:
+        db.rollback()
+        detail: dict | str = exc.message
+        if exc.payload:
+            detail = {"message": exc.message, **exc.payload}
+        raise HTTPException(status_code=409, detail=detail) from exc
+
+    stats = result.get("stats") or {}
+    message = (
+        f"Importação concluída: {stats.get('created', 0)} criado(s), "
+        f"{stats.get('updated', 0)} atualizado(s), "
+        f"{stats.get('unchanged', 0)} sem alteração."
+    )
+    if request.auto_run_remap:
+        message += f" Remapeamento: {stats.get('remap_records', 0)} lançamento(s)."
+    db.commit()
+    return VisualMappingImportResponse(
+        success=True,
+        stats=stats,
+        issues=result.get("issues") or [],
+        message=message,
+        closure_impact=result.get("closure_impact"),
     )
 
 

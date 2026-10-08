@@ -10,6 +10,7 @@ from typing import Any, Optional
 
 from sqlalchemy import Integer, and_, case, cast, extract, func, or_
 from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.models.base_entity import now_utc
 from app.models.unified_models import (
@@ -24,6 +25,8 @@ from app.models.unified_models import (
     CreditCardInvoice,
     ExpenseSharingSetting,
     LoanPayment,
+    Subtag,
+    Tag,
 )
 from app.services.financial_health_service import (
     _load_benefit_items,
@@ -440,12 +443,17 @@ def _month_flow(
             BankStatement.migrated_from_account_id,
             BankStatement.ownership_percentage,
             BankStatement.expense_sharing_id,
+            BankStatement.subtag_id,
+            Subtag.name.label("subtag_name"),
+            Tag.name.label("tag_name"),
             SharedAccount.id.label("shared_partner_id"),
             SharedAccount.name.label("shared_partner_name"),
             SharedAccount.agency.label("shared_partner_agency"),
             SharedAccount.account_number.label("shared_partner_account_number"),
             Bank.name.label("shared_partner_bank"),
         )
+        .outerjoin(Subtag, Subtag.id == BankStatement.subtag_id)
+        .outerjoin(Tag, Tag.id == Subtag.tag_id)
         .outerjoin(ExpenseSharingSetting, ExpenseSharingSetting.id == BankStatement.expense_sharing_id)
         .outerjoin(SharedAccount, SharedAccount.id == ExpenseSharingSetting.shared_account_id)
         .outerjoin(Bank, Bank.id == SharedAccount.bank_id)
@@ -487,6 +495,9 @@ def _month_flow(
                 "expense_sharing_id": (
                     int(row.expense_sharing_id) if row.expense_sharing_id is not None else None
                 ),
+                "subtag_id": int(row.subtag_id) if row.subtag_id is not None else None,
+                "subtag_name": row.subtag_name,
+                "tag_name": row.tag_name,
                 "amount_account": splits["amount_account"],
                 "amount_shared": splits["amount_shared"],
                 **_partner_fields(row),
@@ -1571,3 +1582,228 @@ def reopen_period(
     db.commit()
     logger.info("Fechamento da conta reaberto account=%s período=%s-%02d", account_id, year, month)
     return get_preview(db, tenant_id, account_id, year, month)
+
+
+def get_closure_for_period(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    year: int,
+    month: int,
+) -> Optional[AccountPeriodClosure]:
+    return (
+        db.query(AccountPeriodClosure)
+        .filter(
+            AccountPeriodClosure.tenant_id == tenant_id,
+            AccountPeriodClosure.account_id == account_id,
+            AccountPeriodClosure.year == year,
+            AccountPeriodClosure.month == month,
+        )
+        .first()
+    )
+
+
+def _build_closure_snapshot(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    year: int,
+    month: int,
+    prior_snapshot: dict[str, Any],
+    flow_items: list[dict[str, Any]],
+) -> dict[str, Any]:
+    allocation = period_allocation_details(db, tenant_id, account_id, year, month)
+    snapshot = dict(prior_snapshot)
+    snapshot["sources"] = SOURCES
+    snapshot["items"] = flow_items
+    snapshot["splits"] = allocation["splits"]
+    snapshot["card_items"] = allocation["card_items"]
+    snapshot["benefit_items"] = allocation["benefit_items"]
+    snapshot["shared_settlements"] = allocation["shared_settlements"]
+    snapshot["unmatched_card_payments"] = allocation["unmatched_card_payments"]
+    snapshot["replaced_bank_ids"] = allocation["replaced_bank_ids"]
+    snapshot["shared_by_account"] = allocation["shared_by_account"]
+    return snapshot
+
+
+def _apply_month_adjustment_delta(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    user_id: int,
+    year: int,
+    month: int,
+    snapshot: dict[str, Any],
+    delta_closing: Decimal,
+    note_append: Optional[str],
+) -> dict[str, Any]:
+    """Atualiza, cria ou remove lançamento de ajuste conforme delta de fechamento."""
+    snapshot = dict(snapshot)
+    adj_stmt = _resolve_closure_adjustment_statement(db, tenant_id, account_id, year, month, snapshot)
+    amount_atual = _money(adj_stmt.amount) if adj_stmt else ZERO
+    amount_novo = (amount_atual + delta_closing).quantize(MONEY)
+
+    if adj_stmt is not None:
+        if amount_novo == ZERO:
+            db.delete(adj_stmt)
+            snapshot.pop("adjustment_bank_statement_id", None)
+            snapshot["adjustment_amount"] = 0.0
+            snapshot.pop("adjustment_date", None)
+        else:
+            adj_stmt.amount = amount_novo
+            if note_append:
+                prior = (adj_stmt.adjustment_notes or "").strip()
+                adj_stmt.adjustment_notes = f"{prior}\n{note_append}".strip() if prior else note_append
+            snapshot["adjustment_bank_statement_id"] = int(adj_stmt.id)
+            snapshot["adjustment_amount"] = float(amount_novo)
+            snapshot["adjustment_date"] = _iso_date(_last_moment(year, month))
+    elif amount_novo != ZERO:
+        note = note_append or "Retificação após fechamento da conta"
+        stmt = _insert_adjustment(db, tenant_id, account_id, user_id, year, month, amount_novo, note)
+        if stmt:
+            snapshot["adjustment_bank_statement_id"] = int(stmt.id)
+            snapshot["adjustment_amount"] = float(amount_novo)
+            snapshot["adjustment_date"] = _iso_date(_last_moment(year, month))
+    return snapshot
+
+
+def recascade_single_closed_month(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    user_id: int,
+    closure: AccountPeriodClosure,
+    opening: Decimal,
+    closing_old: Decimal,
+    *,
+    note_append: Optional[str] = None,
+    apply_adjustment_delta: bool = False,
+) -> Decimal:
+    year, month = int(closure.year), int(closure.month)
+    prior_snapshot = dict(closure.closure_data or {})
+
+    flow = _month_flow(db, tenant_id, account_id, year, month, include_items=True)
+    entries = flow["entries"]
+    exits = flow["exits"]
+    closing_final = (opening + entries - exits).quantize(MONEY)
+
+    snapshot = dict(prior_snapshot)
+    if apply_adjustment_delta:
+        delta_closing = closing_final - _money(closing_old)
+        if delta_closing != ZERO:
+            snapshot = _apply_month_adjustment_delta(
+                db,
+                tenant_id,
+                account_id,
+                user_id,
+                year,
+                month,
+                prior_snapshot,
+                delta_closing,
+                note_append,
+            )
+            flow = _month_flow(db, tenant_id, account_id, year, month, include_items=True)
+
+    snapshot = _build_closure_snapshot(
+        db, tenant_id, account_id, year, month, snapshot, flow["items"],
+    )
+
+    closure.opening_balance = opening
+    closure.entries = entries
+    closure.exits = exits
+    closure.closing_balance = closing_final
+    closure.closure_data = snapshot
+    closure.last_updated_at = now_utc()
+    flag_modified(closure, "closure_data")
+    return closing_final
+
+
+def recascade_closed_periods(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    user_id: int,
+    periods: list[tuple[int, int]],
+    *,
+    note_append: Optional[str] = None,
+    adjustment_periods: Optional[set[tuple[int, int]]] = None,
+) -> list[dict[str, Any]]:
+    """Recalcula fechamentos fechados em ordem cronológica (ajuste no próprio mês)."""
+    if not periods:
+        return []
+    ordered = sorted(set(periods))
+    closures = {
+        (int(row.year), int(row.month)): row
+        for row in _list_closures(db, tenant_id, account_id)
+    }
+    results: list[dict[str, Any]] = []
+    closing_old_by_period: dict[tuple[int, int], Decimal] = {
+        key: _money(row.closing_balance) for key, row in closures.items()
+    }
+
+    prev_closing: Optional[Decimal] = None
+    for year, month in ordered:
+        closure = closures.get((year, month))
+        if not closure:
+            continue
+        if prev_closing is not None:
+            opening = prev_closing
+        else:
+            prev = _add_month(year, month, -1)
+            prev_row = closures.get(prev)
+            opening = _money(prev_row.closing_balance) if prev_row else ZERO
+
+        closing_old = closing_old_by_period.get((year, month), _money(closure.closing_balance))
+        apply_adj = (
+            (year, month) in adjustment_periods
+            if adjustment_periods is not None
+            else False
+        )
+        closing_final = recascade_single_closed_month(
+            db,
+            tenant_id,
+            account_id,
+            user_id,
+            closure,
+            opening,
+            closing_old,
+            note_append=note_append,
+            apply_adjustment_delta=apply_adj,
+        )
+        prev_closing = closing_final
+        results.append({
+            "year": year,
+            "month": month,
+            "closing_old": float(closing_old),
+            "closing_new": float(closing_final),
+            "delta_closing": float(closing_final - closing_old),
+        })
+    return results
+
+
+def preview_recascade_closed_periods(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    user_id: int,
+    periods: list[tuple[int, int]],
+    *,
+    adjustment_periods: Optional[set[tuple[int, int]]] = None,
+) -> list[dict[str, Any]]:
+    """Simula recascata; reverte ao final (não persiste lançamentos/fechamentos)."""
+    if not periods:
+        return []
+    savepoint = db.begin_nested()
+    try:
+        results = recascade_closed_periods(
+            db,
+            tenant_id,
+            account_id,
+            user_id,
+            periods,
+            adjustment_periods=adjustment_periods,
+        )
+        db.flush()
+        return results
+    finally:
+        savepoint.rollback()

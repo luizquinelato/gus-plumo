@@ -36,12 +36,27 @@ from ..database import get_db, DATABASE_URL
 from ..routers.excel_import_router import save_extrato_records
 from ..dependencies.auth import require_account
 from ..models.unified_models import Account, Cartao
+from ..utils.import_progress import (
+    activate_import_job,
+    deactivate_import_job,
+    read_import_progress,
+    set_import_phase_count,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/import", tags=["import"])
 
 CONVERSION_TXT_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "logs", "pdf_conversion")
+
+
+@router.get("/progress/{job_id}")
+async def get_import_progress(
+    job_id: str,
+    current_user: dict = Depends(require_account),
+):
+    """Linhas já processadas do arquivo que está sendo importado."""
+    return read_import_progress(job_id, current_user)
 
 
 def _account_default_pdf_password(db: Session, current_user: dict) -> Optional[str]:
@@ -138,12 +153,34 @@ def _persist_conversion_txt_files(txt_folder: str, original_filenames: List[str]
 
 
 @router.post("/extrato")
-async def import_extrato(
+def import_extrato(
     files: List[UploadFile] = File(...),
     account_id: Optional[int] = Form(None),
     enable_tracing: Optional[str] = Form("false"),
+    progress_job_id: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_account)
+    current_user: dict = Depends(require_account),
+):
+    """Importa extratos. Endpoint síncrono para a barra de progresso poder ser consultada em paralelo."""
+    scope = activate_import_job(progress_job_id, current_user)
+    try:
+        return _import_extrato_work(
+            files=files,
+            account_id=account_id,
+            enable_tracing=enable_tracing,
+            db=db,
+            current_user=current_user,
+        )
+    finally:
+        deactivate_import_job(scope)
+
+
+def _import_extrato_work(
+    files: List[UploadFile],
+    account_id: Optional[int],
+    enable_tracing: Optional[str],
+    db: Session,
+    current_user: dict,
 ):
     """
     Importa arquivos de extrato bancário (.xls ou .xlsx) e salva no banco de dados.
@@ -219,6 +256,9 @@ async def import_extrato(
         # Cria conexão psycopg2 para o MappingHelper
         psycopg2_conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
         mapping_helper = MappingHelper(db_connection=psycopg2_conn, user_id=user_id, tenant_id=tenant_id, account_id=account_id)
+
+        # Limpeza, filtro, leitura, transformação e gravação. A barra não fecha na primeira passada.
+        set_import_phase_count(5)
 
         # Inicializa ETL
         etl = ExtratoETL(
@@ -435,14 +475,40 @@ async def detect_cartao_pdfs(
 
 
 @router.post("/cartao")
-async def import_cartao(
+def import_cartao(
     files: List[UploadFile] = File(...),
     years: List[str] = Form(...),
     months: List[str] = Form(...),
     passwords: List[str] = Form([]),
     save_conversion_txt: Optional[str] = Form("false"),
+    progress_job_id: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_account)
+    current_user: dict = Depends(require_account),
+):
+    """Importa faturas PDF. Endpoint síncrono para a barra de progresso poder ser consultada em paralelo."""
+    scope = activate_import_job(progress_job_id, current_user)
+    try:
+        return _import_cartao_work(
+            files=files,
+            years=years,
+            months=months,
+            passwords=passwords,
+            save_conversion_txt=save_conversion_txt,
+            db=db,
+            current_user=current_user,
+        )
+    finally:
+        deactivate_import_job(scope)
+
+
+def _import_cartao_work(
+    files: List[UploadFile],
+    years: List[str],
+    months: List[str],
+    passwords: List[str],
+    save_conversion_txt: Optional[str],
+    db: Session,
+    current_user: dict,
 ):
     """
     Importa arquivos de fatura de cartão de crédito (PDF).
@@ -518,6 +584,8 @@ async def import_cartao(
         psycopg2_conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
         mapping_helper = MappingHelper(db_connection=psycopg2_conn, user_id=user_id, tenant_id=tenant_id, account_id=account_id)
         converter = CartaoConverter(mapping_helper)
+        # Páginas do PDF, linhas extraídas e gravação no banco.
+        set_import_phase_count(3)
         keep_conversion_txt = save_conversion_txt.lower() == "true" if save_conversion_txt else False
         combined_df = converter.process_pdf_files(
             file_paths=file_paths,

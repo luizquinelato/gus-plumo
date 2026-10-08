@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Sidebar from '../components/Sidebar'
 import {
   CadastroListCreateButton,
@@ -61,6 +62,8 @@ import OwnershipPercentField from '../components/OwnershipPercentField'
 import { finalizePercentInput, maskPercentInput, samePercent } from '../utils/percentInput'
 import axios from 'axios'
 import { useConfirm } from '../hooks/useConfirm'
+import { CadastroListHeaderActions } from '../components/CadastroExcelMenu'
+import { exportCartoesToExcel } from '../utils/exportCadastroExcel'
 import { useEscapeKey } from '../hooks/useEscapeKey'
 
 interface Bank {
@@ -203,6 +206,7 @@ function ActiveSwitch({
 }
 
 const CartoesPage = () => {
+  const navigate = useNavigate()
   const [cartoes, setCartoes] = useState<Cartao[]>([])
   const [invoiceGroups, setInvoiceGroups] = useState<InvoiceGroup[]>([])
   const [showGroupModal, setShowGroupModal] = useState(false)
@@ -763,13 +767,18 @@ const CartoesPage = () => {
       async () => {
         setBulkDeleting(true)
         try {
-          for (const id of ids) {
-            await axios.delete(`/api/cartoes/${id}`)
-          }
+          const { data } = await axios.post<{ deleted: number; skipped: number }>(
+            '/api/cartoes/bulk-delete',
+            { ids },
+          )
           clearBulkSelection()
           await carregarCartoes()
           await carregarGrupos()
-          showToast('Cartões excluídos com sucesso.', 'success')
+          const msg =
+            data.skipped > 0
+              ? `${data.deleted} cartão(ões) excluído(s); ${data.skipped} ignorado(s).`
+              : 'Cartões excluídos com sucesso.'
+          showToast(msg, data.deleted > 0 ? 'success' : 'warning')
         } catch (error) {
           console.error('Erro na exclusão em massa:', error)
           showToast('Não foi possível excluir todos os cartões selecionados.', 'error')
@@ -913,7 +922,13 @@ const CartoesPage = () => {
               title="Gerenciar Cartões"
               subtitle="Cartões de crédito, benefícios e faturas conjuntas"
               actions={
-                <>
+                <CadastroListHeaderActions
+                  menu={{
+                    exportDisabled: cartoesFiltrados.length === 0 && invoiceGroups.length === 0,
+                    onImportExcel: () => navigate('/importar'),
+                    onExportExcel: () => exportCartoesToExcel(cartoesFiltrados, invoiceGroups, cartoes),
+                  }}
+                >
                   <CadastroListSecondaryButton
                     label="Novo Grupo"
                     icon={<Layers size={18} />}
@@ -926,7 +941,7 @@ const CartoesPage = () => {
                     }
                   />
                   <CadastroListCreateButton label="Novo Cartão" onClick={abrirModalNovo} />
-                </>
+                </CadastroListHeaderActions>
               }
             />
           }
@@ -972,7 +987,6 @@ const CartoesPage = () => {
               icon={<CreditCard size={32} className="text-gray-400" />}
               title="Nenhum cartão cadastrado"
               description="Comece adicionando seu primeiro cartão de crédito"
-              action={<CadastroListCreateButton label="Adicionar Cartão" onClick={abrirModalNovo} />}
             />
           ) : cartoesFiltrados.length === 0 ? (
             <CadastroListPageEmptyCard

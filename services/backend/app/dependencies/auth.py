@@ -88,6 +88,18 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sessão expirada. Faça login novamente.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.InvalidTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token inválido ou expirado",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     except httpx.RequestError as e:
         logger.error(f"Erro de conexão com auth service: {e}")
         raise HTTPException(
@@ -97,7 +109,7 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception(f"Erro inesperado em get_current_user:")
+        logger.exception("Erro inesperado em get_current_user: %s", e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Erro ao validar token: {str(e)}"

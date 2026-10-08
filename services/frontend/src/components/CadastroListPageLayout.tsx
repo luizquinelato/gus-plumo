@@ -364,20 +364,29 @@ export function CadastroListPageTabs<T extends string>({
   active,
   onChange,
   trailing,
+  nowrap = false,
 }: {
   tabs: CadastroListTab<T>[]
   active: T
   onChange: (key: T) => void
   trailing?: ReactNode
+  /** Evita quebra de linha nos rótulos (útil com scroll horizontal no pai). */
+  nowrap?: boolean
 }) {
   return (
-    <div className="mb-4 flex items-center gap-1 border-b border-gray-200 dark:border-gray-700">
+    <div
+      className={`mb-4 flex items-center gap-1 border-b border-gray-200 dark:border-gray-700 ${
+        nowrap ? 'min-w-max flex-nowrap' : ''
+      }`}
+    >
       {tabs.map((tab) => (
         <button
           key={tab.key}
           type="button"
           onClick={() => onChange(tab.key)}
-          className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-all ${
+          className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-all ${
+            nowrap ? 'whitespace-nowrap' : ''
+          } ${
             active === tab.key
               ? 'border-[var(--color-1)] text-[var(--color-1)]'
               : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-300'

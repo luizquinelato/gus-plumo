@@ -16,6 +16,13 @@ import logging
 from app.database import get_db, DATABASE_URL
 from app.models.unified_models import BenefitCardStatement, Cartao, TransactionMapping, Subtag, ExpenseSharingSetting, Account
 from app.dependencies.auth import require_account
+from app.services.account_period_closure_service import AccountPeriodClosedError
+from app.services.closed_period_edit_service import (
+    _account_id_for_benefit,
+    after_benefit_curadoria_updated,
+    ensure_benefit_curadoria_update_allowed,
+)
+from app.utils.import_progress import activate_import_job, deactivate_import_job, report_row_progress
 from app.utils.mapping_helper import MappingHelper
 from app.utils.sharing_percentage import resolve_ownership_percentage
 import psycopg2
@@ -159,6 +166,7 @@ class BenefitCardStatementUpdate(BaseModel):
     ownership_percentage: Decimal | None = None
     expense_sharing_id: int | None = None
     adjustment_notes: str | None = None
+    confirm_closed_closure_impact: bool = False
 
 
 class BenefitCardStatementResponse(BaseModel):
@@ -173,6 +181,7 @@ class BenefitCardStatementResponse(BaseModel):
     ownership_percentage: Decimal
     expense_sharing_id: int | None
     adjustment_notes: str | None
+    closure_impact: dict | None = None
     # NOTA: BenefitCardStatement NÃO tem campo 'active' (não usa soft delete)
 
     class Config:
@@ -216,11 +225,31 @@ async def listar_extratos(
 
 
 @router.post("/importar-csv")
-async def importar_csv(
+def importar_csv(
     credit_card_id: int,
     file: UploadFile = File(...),
+    progress_job_id: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_account)
+    current_user: dict = Depends(require_account),
+):
+    """Importa CSV de benefícios. Síncrono para a barra de progresso ser consultada em paralelo."""
+    scope = activate_import_job(progress_job_id, current_user)
+    try:
+        return _importar_csv_work(
+            credit_card_id=credit_card_id,
+            file=file,
+            db=db,
+            current_user=current_user,
+        )
+    finally:
+        deactivate_import_job(scope)
+
+
+def _importar_csv_work(
+    credit_card_id: int,
+    file: UploadFile,
+    db: Session,
+    current_user: dict,
 ):
     """
     Importa extratos de cartão de benefícios a partir de arquivo CSV.
@@ -265,7 +294,7 @@ async def importar_csv(
         start_time = time.time()
 
         # Lê o conteúdo do arquivo
-        contents = await file.read()
+        contents = file.file.read()
         decoded = contents.decode('utf-8')
 
         # ========================================
@@ -404,6 +433,8 @@ async def importar_csv(
 
         # Converte DataFrame para lista de dicts (muito mais rápido que iterrows)
         records = df.to_dict('records')
+        total_rows = len(records)
+        report_row_progress(0, total_rows)
 
         for idx, row in enumerate(records):
             linha_numero = idx + 2  # +2 porque linha 1 é header
@@ -654,6 +685,8 @@ async def importar_csv(
                     status_code=400,
                     detail=f"Erro ao processar linha {linha_numero}: {str(e)}"
                 )
+            finally:
+                report_row_progress(idx + 1, total_rows)
 
         # ========================================
         # ETAPA 7: BULK INSERT/UPDATE (2 OPERAÇÕES)
@@ -718,14 +751,55 @@ async def atualizar_extrato(
     if not extrato:
         raise HTTPException(status_code=404, detail="Extrato não encontrado")
 
+    account_id = current_user.get("account_id")
+    user_id = int(current_user.get("user_id") or current_user.get("id") or 0)
+
     # Atualiza apenas os campos fornecidos
     update_data = extrato_data.model_dump(exclude_unset=True)
+    confirm_closed = bool(update_data.pop("confirm_closed_closure_impact", False))
+    subtag_changed = "subtag_id" in update_data and update_data["subtag_id"] != extrato.subtag_id
+    sharing_changed = (
+        "expense_sharing_id" in update_data and update_data["expense_sharing_id"] != extrato.expense_sharing_id
+    ) or (
+        "ownership_percentage" in update_data
+        and update_data["ownership_percentage"] != extrato.ownership_percentage
+    )
+
+    card_account_id = _account_id_for_benefit(db, extrato) if account_id is not None else None
+    try:
+        ensure_benefit_curadoria_update_allowed(
+            db,
+            tenant_id,
+            card_account_id,
+            user_id,
+            extrato,
+            update_data,
+            confirm_closed,
+        )
+    except AccountPeriodClosedError as exc:
+        detail: dict | str = exc.message
+        if exc.payload:
+            detail = {"message": exc.message, **exc.payload}
+        raise HTTPException(status_code=409, detail=detail) from exc
+
     for field, value in update_data.items():
         setattr(extrato, field, value)
 
+    closure_impact = after_benefit_curadoria_updated(
+        db,
+        tenant_id,
+        _account_id_for_benefit(db, extrato) if account_id is not None else None,
+        extrato,
+        subtag_changed=subtag_changed,
+        sharing_changed=sharing_changed,
+    )
+
     db.commit()
     db.refresh(extrato)
-    return extrato
+    return BenefitCardStatementResponse(
+        **BenefitCardStatementResponse.model_validate(extrato).model_dump(),
+        closure_impact=closure_impact if closure_impact.get("impact_type") != "none" else None,
+    )
 
 
 @router.delete("/{extrato_id}", status_code=204)

@@ -18,7 +18,14 @@ import {
 } from './CadastroFormLayout'
 import { useAlert } from '../hooks/useAlert'
 import { dateToLocalString, dateToLocalTimestamp, parseLocalDateTime } from '../utils/dateUtils'
-import { validateAccountPeriodDate } from '../services/accountPeriodClosuresApi'
+import ClosureEditImpactDialog from './ClosureEditImpactDialog'
+import type { ClosureEditImpact } from '../types/closureEditImpact'
+import {
+  buildEditSuccessPayload,
+  extractClosureImpactFromResponse,
+  parseAxiosClosureConflict,
+  type ExpenseEditSuccessPayload,
+} from '../utils/closureEditImpact'
 import { sharingPartnerLabel, sharingPercentForKind } from '../utils/accountFormatter'
 import OwnershipPercentField from './OwnershipPercentField'
 import { maskPercentInput } from '../utils/percentInput'
@@ -91,7 +98,7 @@ interface BenefitCardOption {
 interface ManualTransactionModalProps {
   isOpen: boolean
   onClose: () => void
-  onSuccess: () => void
+  onSuccess: (result: ExpenseEditSuccessPayload) => void
   /** Destino inicial ao abrir o modal (relatório de extrato). */
   defaultDestination?: ManualLaunchDestination
 }
@@ -113,6 +120,8 @@ const ManualTransactionModal = ({
   }
 
   const [toast, setToast] = useState<ToastState>({ show: false, message: '', type: 'success' })
+  const [closureImpactOpen, setClosureImpactOpen] = useState(false)
+  const [closureImpact, setClosureImpact] = useState<ClosureEditImpact | null>(null)
 
   const showToast = (message: string, type: 'success' | 'error' | 'warning') => {
     setToast({ show: true, message, type })
@@ -142,6 +151,10 @@ const ManualTransactionModal = ({
   })
 
   const [isLoading, setIsLoading] = useState(false)
+  /** Após salvar, permanece aberto e prepara novo lançamento (padrão: ligado). */
+  const [prepareNextLaunch, setPrepareNextLaunch] = useState(false)
+  /** Ao preparar novo lançamento, mantém destino, classificação e compartilhamento. */
+  const [keepClassificationAndDestination, setKeepClassificationAndDestination] = useState(false)
 
   // Estados para validação de período fechado
   const [closedPeriodInfo, setClosedPeriodInfo] = useState<ClosedPeriodValidation | null>(null)
@@ -242,6 +255,21 @@ const ManualTransactionModal = ({
       adjustment_notes: '',
       create_mapping: false
     })
+  }
+
+  /** Limpa campos que mudam a cada lançamento; opcionalmente preserva destino/classificação/compart. */
+  const resetFormForNextEntry = (keepMeta: boolean) => {
+    setSelectedDate(new Date())
+    if (keepMeta) {
+      setFormData((prev) => ({
+        ...prev,
+        description: '',
+        amount: '',
+        adjustment_notes: '',
+      }))
+      return
+    }
+    resetForm(launchDestination)
   }
 
   const getTransactionType = (): 'receita' | 'despesa' | null => {
@@ -382,22 +410,6 @@ const ManualTransactionModal = ({
       return
     }
 
-    // Validação de período fechado da conta (extrato)
-    const accountValidation = await validateAccountPeriodDate(dateToLocalString(selectedDate))
-    if (accountValidation?.is_closed) {
-      setClosedPeriodInfo({
-        is_closed: true,
-        closure_id: accountValidation.closure_id ?? null,
-        closure_year: accountValidation.closure_year ?? null,
-        closure_month: accountValidation.closure_month ?? null,
-        is_settled: false,
-        next_open_date: accountValidation.next_open_date ?? null,
-        message: accountValidation.message ?? null,
-      })
-      setShowClosedPeriodDialog(true)
-      return
-    }
-
     // Validação de período fechado (apenas para lançamentos compartilhados)
     if (formData.adjustment_type === 'compartilhado' && formData.expense_sharing_id) {
       const validation = await validateDateAgainstClosures(selectedDate, formData.expense_sharing_id)
@@ -409,10 +421,10 @@ const ManualTransactionModal = ({
     }
 
     // Continua com o submit normal
-    await submitTransaction()
+    await submitTransaction(undefined, false)
   }
 
-  const submitTransaction = async (dateOverride?: Date) => {
+  const submitTransaction = async (dateOverride?: Date, confirmClosedClosureImpact = false) => {
     try {
       setIsLoading(true)
 
@@ -427,6 +439,7 @@ const ManualTransactionModal = ({
         ownership_percentage: parseFloat(formData.ownership_percentage),
         adjustment_notes: formData.adjustment_notes.trim() || null,
         create_mapping: formData.create_mapping,
+        confirm_closed_closure_impact: confirmClosedClosureImpact,
       }
 
       const response =
@@ -440,19 +453,27 @@ const ManualTransactionModal = ({
               account_id: accountId,
             })
 
-      // Atualiza os dados na tela principal
-      onSuccess()
+      const impact = extractClosureImpactFromResponse(response.data)
+      const base = response.data.message || 'Lançamento criado com sucesso!'
+      onSuccess(buildEditSuccessPayload(base, impact))
 
-      // Limpa o formulário para um possível novo lançamento
-      resetForm(launchDestination)
-
-      // Mostra mensagem de sucesso em toast
-      showToast(response.data.message || 'Lançamento criado com sucesso!', 'success')
-    } catch (error: any) {
+      if (prepareNextLaunch) {
+        resetFormForNextEntry(keepClassificationAndDestination)
+      } else {
+        onClose()
+      }
+    } catch (error: unknown) {
+      const conflict = parseAxiosClosureConflict(error)
+      if (conflict && !confirmClosedClosureImpact) {
+        setClosureImpact(conflict)
+        setClosureImpactOpen(true)
+        return
+      }
       console.error('Erro ao criar lançamento:', error)
+      const detail = axios.isAxiosError(error) ? error.response?.data?.detail : null
       showToast(
-        error.response?.data?.detail || 'Erro ao criar lançamento. Tente novamente.',
-        'error'
+        typeof detail === 'string' ? detail : 'Erro ao criar lançamento. Tente novamente.',
+        'error',
       )
     } finally {
       setIsLoading(false)
@@ -752,6 +773,45 @@ const ManualTransactionModal = ({
                 ) : null}
               </CadastroModalFieldsGrid>
             </CadastroFormSection>
+
+            <CadastroFormSection title="Após salvar" icon={<FileText size={14} />}>
+              <div className="flex flex-col gap-3">
+                <label className={cadastroOptionLabelCls}>
+                  <input
+                    type="checkbox"
+                    checked={prepareNextLaunch}
+                    onChange={(e) => setPrepareNextLaunch(e.target.checked)}
+                    disabled={isLoading}
+                    className={`${cadastroAccentControlCls} h-4 w-4 rounded border-gray-300`}
+                  />
+                  <span>
+                    <span className="block text-sm font-medium">Preparar novo lançamento</span>
+                    <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                      Mantém o modal aberto e limpa o formulário para o próximo preenchimento
+                    </span>
+                  </span>
+                </label>
+                <label
+                  className={`${cadastroOptionLabelCls} items-start ${
+                    !prepareNextLaunch ? 'cursor-not-allowed opacity-60' : ''
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={keepClassificationAndDestination}
+                    onChange={(e) => setKeepClassificationAndDestination(e.target.checked)}
+                    disabled={isLoading || !prepareNextLaunch}
+                    className={`${cadastroAccentControlCls} mt-0.5 h-4 w-4 rounded border-gray-300 disabled:cursor-not-allowed`}
+                  />
+                  <span>
+                    <span className="block text-sm font-medium">Manter destino, classificação e compartilhamento</span>
+                    <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                      Data, descrição e valor são sempre limpos; observações também
+                    </span>
+                  </span>
+                </label>
+              </div>
+            </CadastroFormSection>
           </CadastroModalBody>
           <CadastroModalFooter
             onClose={onClose}
@@ -837,6 +897,18 @@ const ManualTransactionModal = ({
           />
         </CadastroModalShell>
       )}
+
+      <ClosureEditImpactDialog
+        isOpen={closureImpactOpen}
+        impact={closureImpact}
+        onClose={() => setClosureImpactOpen(false)}
+        onConfirm={() => {
+          setClosureImpactOpen(false)
+          void submitTransaction(undefined, true)
+        }}
+        confirmText="Confirmar e lançar"
+        confirming={isLoading}
+      />
     </>
   )
 }

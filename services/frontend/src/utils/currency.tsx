@@ -3,6 +3,43 @@
  */
 
 /**
+ * Converte texto pt-BR (10.000,00), en-US (10,000.00) ou decimal simples (10000.00) em número.
+ */
+export function parseLocaleAmount(value: unknown): number | null {
+  if (value == null || value === '') return null
+  if (typeof value === 'number' && !Number.isNaN(value)) return value
+
+  const text = String(value).trim()
+  if (!text) return null
+
+  const hasComma = text.includes(',')
+  const hasDot = text.includes('.')
+  let normalized: string
+
+  if (hasComma && hasDot) {
+    if (text.lastIndexOf(',') > text.lastIndexOf('.')) {
+      normalized = text.replace(/\./g, '').replace(',', '.')
+    } else {
+      normalized = text.replace(/,/g, '')
+    }
+  } else if (hasComma) {
+    normalized = text.replace(/\./g, '').replace(',', '.')
+  } else if (hasDot) {
+    const parts = text.split('.')
+    if (parts.length === 2 && parts[1].length <= 2) {
+      normalized = text
+    } else {
+      normalized = text.replace(/\./g, '')
+    }
+  } else {
+    normalized = text
+  }
+
+  const n = parseFloat(normalized)
+  return Number.isNaN(n) ? null : n
+}
+
+/**
  * Formata um valor numérico como moeda brasileira (BRL)
  */
 export const formatCurrency = (value: number): string => {

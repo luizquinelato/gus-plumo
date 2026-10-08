@@ -1,4 +1,4 @@
-import { Home, Palette, TrendingUp, Sun, Moon, CreditCard, LogOut, Tags, ClipboardCheck, FolderTree, Settings, ChevronRight, ChevronLeft, Building2, Users, User, FileText, RefreshCw, Copy, Scale, Layers, Wallet, Feather, Camera, FolderOpen, Link2, Landmark, Activity } from 'lucide-react'
+import { Home, Palette, TrendingUp, Sun, Moon, CreditCard, LogOut, Tags, ClipboardCheck, FolderTree, Settings, ChevronRight, ChevronLeft, Building2, Users, User, FileText, RefreshCw, Copy, Scale, Layers, Wallet, Feather, Camera, FolderOpen, Link2, Landmark, Activity, FileUp } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -63,6 +63,10 @@ const fechamentosSubmenu = [
 
 const topLevelMenuItems = [
   { icon: Home, label: 'Home', path: '/' },
+]
+
+const importMenuItems = [
+  { icon: FileUp, label: 'Importar', path: '/importar' },
 ]
 
 const afterFechamentosMenuItems = [
@@ -350,6 +354,20 @@ const Sidebar = () => {
         </div>
       )}
 
+      {!collapsed && selectedAccount && (
+        <div className="px-4 py-3">
+          <div className="flex items-center gap-1.5 text-sm leading-tight text-gray-400">
+            <Building2 size={14} className="shrink-0" />
+            <span className="font-medium text-gray-200">{selectedAccount.name || 'Conta sem nome'}</span>
+          </div>
+          <div className="ml-5 mt-1 text-sm leading-tight text-gray-500">
+            {selectedAccount.bank?.name || 'Banco não informado'}
+            {selectedAccount.agency && ` • ${selectedAccount.agency}`}
+            {selectedAccount.account_number && ` • ${selectedAccount.account_number}`}
+          </div>
+        </div>
+      )}
+
       {/* Navigation Menu */}
       <nav className="flex-1 p-2 overflow-y-auto">
         {!collapsed && (
@@ -437,49 +455,40 @@ const Sidebar = () => {
             onToggle={() => toggleNavGroup('cadastro')}
             onClose={() => closeNavGroup('cadastro')}
           />
+
+          <li className={collapsed ? 'mx-2 my-2 border-t border-gray-700' : 'px-3 pb-1 pt-4'}>
+            {!collapsed && (
+              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                Importação
+              </p>
+            )}
+          </li>
+          {importMenuItems.map((item) => {
+            const Icon = item.icon
+            const isActive = location.pathname === item.path
+            return (
+              <li key={item.path}>
+                <Link
+                  to={item.path}
+                  title={collapsed ? item.label : undefined}
+                  className={`
+                    flex items-center gap-3 rounded-lg transition-colors duration-200
+                    ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2'}
+                    ${isActive ? '' : 'text-gray-300 hover:bg-gray-800 hover:text-white'}
+                  `}
+                  style={isActive ? { background: 'var(--gradient-1-2)', color: 'var(--on-gradient-1-2)' } : undefined}
+                >
+                  <Icon size={20} />
+                  {!collapsed && <span className="font-medium text-sm">{item.label}</span>}
+                </Link>
+              </li>
+            )
+          })}
         </ul>
       </nav>
 
-      {/* Theme Toggle — acima de Configurações */}
-      <div className={`pb-2 pt-2 border-t border-gray-800 ${collapsed ? 'px-2' : 'px-3'}`}>
-        {collapsed ? (
-          <button
-            onClick={toggleTheme}
-            title={theme === 'dark' ? 'Modo Claro' : 'Modo Escuro'}
-            className="w-full flex items-center justify-center py-2 rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white transition-colors duration-200"
-          >
-            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-          </button>
-        ) : (
-          <div
-            className="flex rounded-lg p-0.5"
-            style={{ background: theme === 'dark' ? 'rgba(0,0,0,0.30)' : 'rgba(255,255,255,0.08)' }}
-          >
-            {([
-              { label: 'Claro', Icon: Sun, active: theme === 'light', onClick: () => theme === 'dark' && toggleTheme() },
-              { label: 'Escuro', Icon: Moon, active: theme === 'dark', onClick: () => theme === 'light' && toggleTheme() },
-            ] as const).map(({ label, Icon, active, onClick }) => (
-              <button
-                key={label}
-                onClick={onClick}
-                className="flex flex-1 items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-all duration-200"
-                style={{
-                  background: active ? (theme === 'dark' ? '#2A2D3E' : 'rgba(255,255,255,0.15)') : 'transparent',
-                  color: active ? (theme === 'dark' ? '#F1F5F9' : 'white') : (theme === 'dark' ? '#64748b' : 'rgba(255,255,255,0.5)'),
-                  boxShadow: active ? '0 1px 4px rgba(0,0,0,.25)' : 'none',
-                  fontWeight: active ? 600 : 500,
-                }}
-              >
-                <Icon size={12} />
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Settings Menu - Separado, antes do perfil */}
-      <div className={`pb-3 ${collapsed ? 'px-2' : 'px-2'}`}>
+      {/* Settings Menu — acima do tema, como no Vigra */}
+      <div className={`border-t border-gray-800 pt-2 pb-1 ${collapsed ? 'px-2' : 'px-2'}`}>
         <ul>
           {(() => {
             const item = settingsMenuItem
@@ -549,23 +558,46 @@ const Sidebar = () => {
         </ul>
       </div>
 
-      {/* User Profile Section */}
-      <div className={`border-t border-gray-800 relative ${collapsed ? 'p-2' : 'p-3'}`} ref={profileMenuRef}>
-        {/* Dados da conta selecionada - ACIMA do perfil (oculto quando collapsed) */}
-        {!collapsed && selectedAccount && (
-          <div className="px-2 py-1.5 mb-1">
-            <div className="text-xs text-gray-400 leading-tight">
-              <Building2 size={12} className="inline mr-1" />
-              <span className="text-gray-200 font-medium">{selectedAccount.name || 'Conta sem nome'}</span>
-            </div>
-            <div className="text-xs text-gray-500 leading-tight mt-0.5 ml-4">
-              {selectedAccount.bank?.name || 'Banco não informado'}
-              {selectedAccount.agency && ` • ${selectedAccount.agency}`}
-              {selectedAccount.account_number && ` • ${selectedAccount.account_number}`}
-            </div>
+      {/* Theme Toggle — abaixo de Configurações */}
+      <div className={`border-t border-gray-800 pt-2 pb-2 ${collapsed ? 'px-2' : 'px-3'}`}>
+        {collapsed ? (
+          <button
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Modo Claro' : 'Modo Escuro'}
+            className="w-full flex items-center justify-center py-2 rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white transition-colors duration-200"
+          >
+            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
+        ) : (
+          <div
+            className="flex rounded-lg p-0.5"
+            style={{ background: theme === 'dark' ? 'rgba(0,0,0,0.30)' : 'rgba(255,255,255,0.08)' }}
+          >
+            {([
+              { label: 'Claro', Icon: Sun, active: theme === 'light', onClick: () => theme === 'dark' && toggleTheme() },
+              { label: 'Escuro', Icon: Moon, active: theme === 'dark', onClick: () => theme === 'light' && toggleTheme() },
+            ] as const).map(({ label, Icon, active, onClick }) => (
+              <button
+                key={label}
+                onClick={onClick}
+                className="flex flex-1 items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-all duration-200"
+                style={{
+                  background: active ? (theme === 'dark' ? '#2A2D3E' : 'rgba(255,255,255,0.15)') : 'transparent',
+                  color: active ? (theme === 'dark' ? '#F1F5F9' : 'white') : (theme === 'dark' ? '#64748b' : 'rgba(255,255,255,0.5)'),
+                  boxShadow: active ? '0 1px 4px rgba(0,0,0,.25)' : 'none',
+                  fontWeight: active ? 600 : 500,
+                }}
+              >
+                <Icon size={12} />
+                {label}
+              </button>
+            ))}
           </div>
         )}
+      </div>
 
+      {/* User Profile Section */}
+      <div className={`border-t border-gray-800 relative ${collapsed ? 'p-2' : 'p-3'}`} ref={profileMenuRef}>
         {/* Botão de perfil */}
         <button
           onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}

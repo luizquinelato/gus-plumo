@@ -39,10 +39,10 @@ def invoice_billing_window(year_month: str, closing_day: int) -> tuple[date, dat
     year = int(year_month[:4])
     month = int(year_month[5:7])
     close_day = min(max(int(closing_day or 14), 1), 30)
-    end_day = min(close_day, monthrange(year, month)[1])
+    end_day = min(close_day, calendar.monthrange(year, month)[1])
     end = date(year, month, end_day)
     prev_year, prev_month = _prev_month(year, month)
-    prev_close_day = min(close_day, monthrange(prev_year, prev_month)[1])
+    prev_close_day = min(close_day, calendar.monthrange(prev_year, prev_month)[1])
     start = date(prev_year, prev_month, prev_close_day) + timedelta(days=1)
     return start, end
 

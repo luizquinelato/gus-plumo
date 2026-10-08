@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Sidebar from '../components/Sidebar'
 import {
   CadastroListCreateButton,
@@ -46,6 +47,8 @@ import Toast from '../components/Toast'
 import { ArrowUp, Edit2, Trash2, Building2, Landmark, X, FileLock2, Eye, EyeOff } from 'lucide-react'
 import axios from 'axios'
 import { useConfirm } from '../hooks/useConfirm'
+import { CadastroListHeaderActions } from '../components/CadastroExcelMenu'
+import { exportContasToExcel } from '../utils/exportCadastroExcel'
 
 interface Bank {
   id: number
@@ -79,7 +82,24 @@ interface ToastState {
 
 const ACCOUNT_TYPE_TONE = badgeToneMap(['corrente', 'poupanca', 'investimento'] as const, 'brand')
 
+/** Checkbox / # / spacer fixos; as 9 colunas de dados repartem o resto igualmente. */
+const contasTableColsEqual = (
+  <>
+    <ListTableSpacerCol />
+    <col />
+    <col />
+    <col />
+    <col />
+    <col />
+    <col />
+    <col />
+    <col />
+    <col />
+  </>
+)
+
 const ContasPage = () => {
+  const navigate = useNavigate()
   const [contas, setContas] = useState<Conta[]>([])
   const [bancos, setBancos] = useState<Bank[]>([])
   const [loading, setLoading] = useState(true)
@@ -418,12 +438,17 @@ const ContasPage = () => {
       async () => {
         setBulkDeleting(true)
         try {
-          for (const id of ids) {
-            await axios.delete(`/api/accounts/${id}`)
-          }
+          const { data } = await axios.post<{ deleted: number; skipped: number }>(
+            '/api/accounts/bulk-delete',
+            { ids },
+          )
           clearBulkSelection()
           await carregarContas()
-          showToast('Contas excluídas com sucesso.', 'success')
+          const msg =
+            data.skipped > 0
+              ? `${data.deleted} conta(s) excluída(s); ${data.skipped} ignorada(s).`
+              : 'Contas excluídas com sucesso.'
+          showToast(msg, data.deleted > 0 ? 'success' : 'warning')
         } catch (error) {
           console.error('Erro na exclusão em massa:', error)
           showToast('Não foi possível excluir todas as contas selecionadas.', 'error')
@@ -453,7 +478,17 @@ const ContasPage = () => {
               icon={<Landmark className="w-8 h-8" />}
               title="Gerenciar Contas"
               subtitle="Cadastre e gerencie suas contas bancárias"
-              actions={<CadastroListCreateButton label="Nova Conta" onClick={abrirModalNovo} />}
+              actions={
+                <CadastroListHeaderActions
+                  menu={{
+                    exportDisabled: contasFiltradas.length === 0,
+                    onImportExcel: () => navigate('/importar'),
+                    onExportExcel: () => exportContasToExcel(contasFiltradas),
+                  }}
+                >
+                  <CadastroListCreateButton label="Nova Conta" onClick={abrirModalNovo} />
+                </CadastroListHeaderActions>
+              }
             />
           }
           contentOverflow="auto"
@@ -478,7 +513,6 @@ const ContasPage = () => {
               icon={<Building2 size={32} className="text-gray-400" />}
               title="Nenhuma conta cadastrada"
               description="Comece adicionando sua primeira conta bancária"
-              action={<CadastroListCreateButton label="Adicionar Conta" onClick={abrirModalNovo} />}
             />
           ) : contasFiltradas.length === 0 ? (
             <CadastroListPageEmptyCard
@@ -489,21 +523,21 @@ const ContasPage = () => {
           ) : (
             <ListPageTable
               leadingMode="bulk"
-              colsRest={<ListTableSpacerCol />}
+              colsRest={contasTableColsEqual}
               head={
                 <tr>
                   <ListTableCheckboxHeader state={globalHeaderState} onToggle={toggleGlobalSelection} />
                   <ListTableIndexHeader />
                   <ListTableSpacerHeader />
-                  <ListTableStaticHeader label="Nome" className="w-[16%]" />
-                  <ListTableStaticHeader label="Banco" className="w-[18%]" />
-                  <ListTableStaticHeader label="Descrição" className="w-[16%]" />
+                  <ListTableStaticHeader label="Nome" />
+                  <ListTableStaticHeader label="Banco" />
+                  <ListTableStaticHeader label="Descrição" />
                   <ListTableStaticHeader label="Agência" />
                   <ListTableStaticHeader label="Conta" />
                   <ListTableStaticHeader label="Tipo" />
                   <ListTableStaticHeader label="Atualização" />
                   <ListTableStaticHeader label="Status" />
-                  <ListTableStaticHeader label="Ações" className="w-[8%]" />
+                  <ListTableStaticHeader label="Ações" />
                 </tr>
               }
             >
@@ -525,16 +559,20 @@ const ContasPage = () => {
                     />
                     <ListTableIndexCell index={index + 1} />
                     <ListTableSpacerCell />
-                    <td className="px-3 py-3">
-                      <div className="flex items-center gap-2">
+                    <td className="max-w-0 px-3 py-3">
+                      <div className="flex min-w-0 items-center gap-2">
                         <Landmark size={16} className="shrink-0" style={{ color: 'var(--color-1)' }} />
-                        <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">{conta.name || '—'}</span>
+                        <span className="truncate text-sm font-semibold text-gray-800 dark:text-gray-100" title={conta.name || undefined}>
+                          {conta.name || '—'}
+                        </span>
                       </div>
                     </td>
-                    <td className="px-3 py-3 text-sm text-gray-700 dark:text-gray-300">
+                    <td className="max-w-0 whitespace-normal break-words px-3 py-3 text-sm text-gray-700 dark:text-gray-300">
                       {conta.bank ? `${conta.bank.code} — ${conta.bank.name}` : '—'}
                     </td>
-                    <td className="px-3 py-3 text-sm text-gray-500 dark:text-gray-400">{conta.description || '—'}</td>
+                    <td className="max-w-0 whitespace-normal break-words px-3 py-3 text-sm text-gray-500 dark:text-gray-400">
+                      {conta.description || '—'}
+                    </td>
                     <td className="px-3 py-3 text-sm tabular-nums text-gray-600 dark:text-gray-400">{formatAgency(conta.agency)}</td>
                     <td className="px-3 py-3 text-sm tabular-nums text-gray-600 dark:text-gray-400">{formatAccount(conta.account_number)}</td>
                     <td className="px-3 py-3">

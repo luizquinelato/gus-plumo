@@ -13,6 +13,7 @@ from app.models.unified_models import Cartao, CreditCardInvoiceGroup, ExpenseSha
 from app.dependencies.auth import get_current_user, require_account
 from app.services import invoice_payment_match_service as match_service
 from app.utils.card_invoice_calendar import apply_group_calendar_to_card
+from app.schemas.bulk_ops import BulkDeleteResponse, BulkIdsRequest
 
 router = APIRouter(prefix="/api/cartoes", tags=["cartoes"])
 
@@ -944,6 +945,36 @@ async def atualizar_cartao(
     db.commit()
     db.refresh(cartao)
     return _serialize_cartao(cartao)
+
+
+@router.post("/bulk-delete", response_model=BulkDeleteResponse)
+async def bulk_deletar_cartoes(
+    body: BulkIdsRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    if not body.ids:
+        raise HTTPException(status_code=400, detail="Nenhum cartão selecionado")
+
+    tenant_id = current_user.get("tenant_id", 1)
+    account_id = current_user.get("account_id")
+    unique_ids = list(dict.fromkeys(body.ids))
+
+    query = db.query(Cartao).filter(
+        Cartao.id.in_(unique_ids),
+        Cartao.tenant_id == tenant_id,
+    )
+    if account_id is not None:
+        query = query.filter(Cartao.account_id == account_id)
+
+    cartoes = query.all()
+    for cartao in cartoes:
+        db.delete(cartao)
+
+    db.commit()
+    deleted = len(cartoes)
+    skipped = len(unique_ids) - deleted
+    return BulkDeleteResponse(deleted=deleted, skipped=skipped)
 
 
 @router.delete("/{cartao_id}", status_code=204)

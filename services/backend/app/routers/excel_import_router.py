@@ -22,6 +22,7 @@ from sqlalchemy import or_
 from app.services.fatura_service import FaturaService
 from app.services.account_period_closure_service import closed_periods
 from app.utils.card_helper import CardHelper
+from app.utils.import_progress import report_row_progress
 from app.utils.mapping_helper import MappingHelper
 from app.utils.sharing_percentage import resolve_ownership_percentage, card_adjustment_config
 from app.core.logging_config import get_logger
@@ -613,6 +614,8 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
 
     # Converte DataFrame para lista de dicts (muito mais rápido que iterrows)
     records = df.to_dict('records')
+    total_rows = len(records)
+    report_row_progress(0, total_rows, phase=4)
 
     for idx, row in enumerate(records):
         try:
@@ -1108,6 +1111,8 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
                     row_dict[k] = str(v)
             skipped_rows.append(row_dict)
             continue
+        finally:
+            report_row_progress(idx + 1, total_rows, phase=4)
 
     # ========================================
     # ETAPA 5: BULK INSERT/UPDATE (2 OPERAÇÕES)

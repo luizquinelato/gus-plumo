@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
 import {
@@ -18,6 +18,9 @@ import BatchMoveInvoiceCardModal from '../components/BatchMoveInvoiceCardModal'
 import ManualInvoiceItemModal, { type ManualInvoiceItemContext } from '../components/ManualInvoiceItemModal'
 import SortableDateHeader from '../components/SortableDateHeader'
 import Toast from '../components/Toast'
+import ClosureEditImpactSummaryModal from '../components/ClosureEditImpactSummaryModal'
+import type { ClosureEditImpact } from '../types/closureEditImpact'
+import type { ExpenseEditSuccessPayload } from '../utils/closureEditImpact'
 import {
   sortRowsByDate,
   toggleDateSortDirection,
@@ -25,7 +28,7 @@ import {
 } from '../utils/tableDateSort'
 import { useConfirm } from '../hooks/useConfirm'
 import { MultiSelectDropdown, SourceMultiSelectDropdown } from '../components/MultiSelectDropdown'
-import { CreditCard, Calendar, FileText, Receipt, Filter, X, Search, Gift, Tag, Tags, Users, ArrowUp, Edit2, Trash2, CheckSquare, Square, MinusSquare, ChevronDown, ChevronRight, Landmark, Link2, Layers, Plus, ArrowRightLeft } from 'lucide-react'
+import { CreditCard, Calendar, FileText, Receipt, Filter, X, Search, Tag, Tags, Users, ArrowUp, Edit2, Trash2, CheckSquare, Square, MinusSquare, ChevronDown, ChevronRight, Landmark, Link2, Layers, Plus, ArrowRightLeft } from 'lucide-react'
 import type { InvoiceMatchPreview } from '../types/invoiceReconcile'
 import { descriptionMatchesSearch, resolveDescriptionSearchState } from '../utils/descriptionSearch'
 
@@ -42,6 +45,10 @@ interface CreditCardOption {
   type: string
   invoice_group_id?: number | null
   invoice_group_name?: string | null
+}
+
+function isCreditCardForInvoiceReport(type?: string | null): boolean {
+  return (type ?? 'credito') === 'credito'
 }
 
 interface InvoiceGroup {
@@ -229,6 +236,7 @@ function resolveCardIssuer(
 const FaturasPage = () => {
   // Hook para ler navigation state
   const location = useLocation()
+  const [searchParams, setSearchParams] = useSearchParams()
   const navigationState = location.state as NavigationState | null
 
   // Estados de filtros
@@ -275,6 +283,7 @@ const FaturasPage = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [itemToEdit, setItemToEdit] = useState<InvoiceItem | null>(null)
   const [isBatchEditModalOpen, setIsBatchEditModalOpen] = useState(false)
+  const [batchEditSharingOnly, setBatchEditSharingOnly] = useState(false)
   const [isBatchMoveCardModalOpen, setIsBatchMoveCardModalOpen] = useState(false)
   const [moveCardModalItems, setMoveCardModalItems] = useState<{ id: number; source: 'card' }[]>([])
   const [moveCardModalExcludeId, setMoveCardModalExcludeId] = useState<number | null>(null)
@@ -291,6 +300,19 @@ const FaturasPage = () => {
   const [showToast, setShowToast] = useState(false)
   const [toastMessage, setToastMessage] = useState('')
   const [toastType, setToastType] = useState<'success' | 'error'>('success')
+  const [closureSummary, setClosureSummary] = useState<{
+    baseMessage: string
+    impact: ClosureEditImpact
+  } | null>(null)
+
+  const handleExpenseEditSuccess = (result: ExpenseEditSuccessPayload) => {
+    loadInvoiceData({ preserveTabs: true, preserveExpandedCards: true })
+    if (result.closureImpact) {
+      setClosureSummary({ baseMessage: result.message, impact: result.closureImpact })
+    } else {
+      handleShowToast(result.message, 'success')
+    }
+  }
 
   const { showConfirm, ConfirmComponent } = useConfirm()
 
@@ -400,29 +422,40 @@ const FaturasPage = () => {
     loadPartners()
   }, [])
 
-  // Aplica filtros do navigation state (quando vindo da HomePage)
+  // Aplica filtros do navigation state ou da URL (Home, Extrato, nova aba)
   useEffect(() => {
-    if (navigationState && !initialFiltersApplied && cards.length > 0) {
-      // Aplica ano/mês se fornecido
-      if (navigationState.yearMonth) {
-        const [year, month] = navigationState.yearMonth.split('-')
-        setSelectedYears([year])
-        setSelectedMonths([month.padStart(2, '0')])
-        setActiveYear(year)
-        setActiveMonth(navigationState.yearMonth)
-      }
-      // Seleciona todos os cartões se solicitado
-      if (navigationState.selectAllCards) {
-        setSelectedCardIds(cards.map(c => c.id))
-      }
-      setInitialFiltersApplied(true)
-      // Marca que deve auto-aplicar os filtros
-      setShouldAutoApply(true)
+    if (initialFiltersApplied || cards.length === 0) return
 
-      // Limpa o state da navegação para evitar reaplicação
+    const yearMonthFromUrl = searchParams.get('yearMonth') ?? undefined
+    const selectAllParam = searchParams.get('selectAllCards')
+    const selectAllFromUrl = selectAllParam === '1' || selectAllParam === 'true'
+    const yearMonth = navigationState?.yearMonth ?? yearMonthFromUrl
+    const selectAllCards = navigationState?.selectAllCards === true || selectAllFromUrl
+
+    if (!yearMonth && !selectAllCards) return
+
+    if (yearMonth) {
+      const [year, month] = yearMonth.split('-')
+      setSelectedYears([year])
+      setSelectedMonths([month.padStart(2, '0')])
+      setActiveYear(year)
+      setActiveMonth(yearMonth)
+    }
+    if (selectAllCards) {
+      setSelectedCardIds(cards.map((c) => c.id))
+    }
+    setInitialFiltersApplied(true)
+    setShouldAutoApply(true)
+
+    if (yearMonthFromUrl || selectAllParam) {
+      const next = new URLSearchParams(searchParams)
+      next.delete('yearMonth')
+      next.delete('selectAllCards')
+      setSearchParams(next, { replace: true })
+    } else if (navigationState) {
       window.history.replaceState({}, document.title)
     }
-  }, [navigationState, initialFiltersApplied, cards])
+  }, [navigationState, initialFiltersApplied, cards, searchParams, setSearchParams])
 
   const loadCards = async () => {
     setCardsLoading(true)
@@ -431,16 +464,28 @@ const FaturasPage = () => {
         axios.get('/api/cartoes'),
         axios.get('/api/cartoes/invoice-groups'),
       ])
+      const creditCards = (
+        cartoesRes.data as Array<{
+          id: number
+          name?: string
+          number: string
+          type?: string
+          invoice_group_id?: number | null
+          invoice_group_name?: string | null
+        }>
+      ).filter((c) => isCreditCardForInvoiceReport(c.type))
+
       setCards(
-        cartoesRes.data.map((c: { id: number; name?: string; number: string; type?: string; invoice_group_id?: number | null; invoice_group_name?: string | null }) => ({
+        creditCards.map((c) => ({
           id: c.id,
           name: c.name || 'Sem nome',
           number: c.number,
-          type: c.type || 'crédito',
+          type: c.type || 'credito',
           invoice_group_id: c.invoice_group_id ?? null,
           invoice_group_name: c.invoice_group_name ?? null,
         })),
       )
+      setSelectedCardIds((prev) => prev.filter((id) => creditCards.some((c) => c.id === id)))
       setInvoiceGroups(groupsRes.data)
     } catch (error) {
       console.error('Erro ao carregar cartões:', error)
@@ -449,11 +494,68 @@ const FaturasPage = () => {
     }
   }
 
+  type InvoiceFilterSnapshot = {
+    selectedCardIds: number[]
+    selectedYears: string[]
+    selectedMonths: string[]
+    selectedTagIds: number[]
+    selectedSubtagIds: number[]
+    selectedPartnerIds: number[]
+    selectedIssuerIds: number[]
+  }
+
+  const buildInvoiceRequestParams = (filters: InvoiceFilterSnapshot) => {
+    const params: Record<string, string | undefined> = {}
+
+    if (filters.selectedCardIds.length > 0) {
+      params.card_ids = filters.selectedCardIds.join(',')
+    }
+    if (filters.selectedYears.length > 0) {
+      params.years = filters.selectedYears.join(',')
+    }
+    if (filters.selectedMonths.length > 0) {
+      params.months = filters.selectedMonths.join(',')
+    }
+
+    const hasEmptyTag = filters.selectedTagIds.includes(-1)
+    const realTagIds = filters.selectedTagIds.filter((id) => id !== -1)
+    if (realTagIds.length > 0) {
+      params.tag_ids = realTagIds.join(',')
+    }
+    if (hasEmptyTag) {
+      params.include_empty_tag = 'true'
+    }
+    if (filters.selectedSubtagIds.length > 0) {
+      params.subtag_ids = filters.selectedSubtagIds.join(',')
+    }
+
+    const hasEmptySharing = filters.selectedPartnerIds.includes(-1)
+    const realPartnerIds = filters.selectedPartnerIds.filter((id) => id !== -1)
+    if (realPartnerIds.length > 0) {
+      params.partner_ids = realPartnerIds.join(',')
+    }
+    if (hasEmptySharing) {
+      params.include_empty_sharing = 'true'
+    }
+    if (filters.selectedIssuerIds.length > 0) {
+      const issuerCodes = filters.selectedIssuerIds
+        .map((id) => ISSUER_FILTER_OPTIONS.find((option) => option.id === id)?.code)
+        .filter((code): code is 'btg' | 'mercadopago' => Boolean(code))
+      if (issuerCodes.length > 0) {
+        params.issuers = issuerCodes.join(',')
+      }
+    }
+
+    return params
+  }
+
   type LoadInvoiceDataOptions = {
     /** Mantém ano/mês das abas de período (ex.: após incluir ou editar lançamento). */
     preserveTabs?: boolean
     /** Não recolhe os painéis de cartão ao recarregar. */
     preserveExpandedCards?: boolean
+    /** Usado ao limpar filtros antes do React aplicar o setState. */
+    filters?: InvoiceFilterSnapshot
   }
 
   const loadInvoiceData = async (options?: LoadInvoiceDataOptions) => {
@@ -462,51 +564,17 @@ const FaturasPage = () => {
     const tabsToRestore = options?.preserveTabs
       ? { year: activeYear, month: activeMonth }
       : null
+    const filters = options?.filters ?? {
+      selectedCardIds,
+      selectedYears,
+      selectedMonths,
+      selectedTagIds,
+      selectedSubtagIds,
+      selectedPartnerIds,
+      selectedIssuerIds,
+    }
     try {
-      // Monta parâmetros de filtro
-      const params: Record<string, string | undefined> = {}
-
-      // Adiciona cartões se selecionados
-      if (selectedCardIds.length > 0) {
-        params.card_ids = selectedCardIds.join(',')
-      }
-
-      if (selectedYears.length > 0) {
-        params.years = selectedYears.join(',')
-      }
-      if (selectedMonths.length > 0) {
-        params.months = selectedMonths.join(',')
-      }
-
-      // Adiciona filtros de tags/subtags/parceiros
-      const hasEmptyTag = selectedTagIds.includes(-1)
-      const realTagIds = selectedTagIds.filter((id) => id !== -1)
-      if (realTagIds.length > 0) {
-        params.tag_ids = realTagIds.join(',')
-      }
-      if (hasEmptyTag) {
-        params.include_empty_tag = 'true'
-      }
-      if (selectedSubtagIds.length > 0) {
-        params.subtag_ids = selectedSubtagIds.join(',')
-      }
-      // Filtra parceiros: -1 = "(Vazio)" = include_empty_sharing
-      const hasEmptySharing = selectedPartnerIds.includes(-1)
-      const realPartnerIds = selectedPartnerIds.filter(id => id !== -1)
-      if (realPartnerIds.length > 0) {
-        params.partner_ids = realPartnerIds.join(',')
-      }
-      if (hasEmptySharing) {
-        params.include_empty_sharing = 'true'
-      }
-      if (selectedIssuerIds.length > 0) {
-        const issuerCodes = selectedIssuerIds
-          .map(id => ISSUER_FILTER_OPTIONS.find(option => option.id === id)?.code)
-          .filter((code): code is 'btg' | 'mercadopago' => Boolean(code))
-        if (issuerCodes.length > 0) {
-          params.issuers = issuerCodes.join(',')
-        }
-      }
+      const params = buildInvoiceRequestParams(filters)
 
       const response = await axios.get('/api/reports/invoices', { params })
       setInvoiceData(response.data)
@@ -525,11 +593,11 @@ const FaturasPage = () => {
         const year = firstItem.year_month.split('-')[0]
         setActiveYear(year)
         setActiveMonth(firstItem.year_month)
-      } else if (selectedYears.length === 1 && selectedMonths.length === 1) {
-        setActiveYear(selectedYears[0])
-        setActiveMonth(`${selectedYears[0]}-${selectedMonths[0].padStart(2, '0')}`)
-      } else if (selectedYears.length === 1) {
-        setActiveYear(selectedYears[0])
+      } else if (filters.selectedYears.length === 1 && filters.selectedMonths.length === 1) {
+        setActiveYear(filters.selectedYears[0])
+        setActiveMonth(`${filters.selectedYears[0]}-${filters.selectedMonths[0].padStart(2, '0')}`)
+      } else if (filters.selectedYears.length === 1) {
+        setActiveYear(filters.selectedYears[0])
         setActiveMonth('')
       } else {
         setActiveYear('')
@@ -570,8 +638,6 @@ const FaturasPage = () => {
     setSelectedIssuerIds([])
     setSearchTerm('')
     setSearchAmount('')
-    setInvoiceData(null)
-    setExpandedCards(new Set())
   }
 
   const toggleCardCollapse = (cardKey: string) => {
@@ -605,10 +671,6 @@ const FaturasPage = () => {
     setIsEditModalOpen(true)
   }
 
-  const handleEditSuccess = () => {
-    loadInvoiceData({ preserveTabs: true, preserveExpandedCards: true })
-  }
-
   const handleShowToast = (message: string, type: 'success' | 'error') => {
     setToastMessage(message)
     setToastType(type)
@@ -617,10 +679,17 @@ const FaturasPage = () => {
 
   const descriptionSearch = useMemo(() => resolveDescriptionSearchState(searchTerm), [searchTerm])
 
+  const cardsById = useMemo(() => new Map(cards.map((c) => [c.id, c])), [cards])
+  const creditCardIds = useMemo(() => new Set(cards.map((c) => c.id)), [cards])
+
   const filteredItems = useMemo(() => {
     if (!invoiceData?.items) return []
 
     return invoiceData.items.filter(item => {
+      if (creditCardIds.size > 0 && !creditCardIds.has(item.card_id)) {
+        return false
+      }
+
       const matchesText = descriptionMatchesSearch(item.description, searchTerm)
 
       let matchesAmount = true
@@ -634,7 +703,7 @@ const FaturasPage = () => {
 
       return matchesText && matchesAmount
     })
-  }, [invoiceData, searchTerm, searchAmount])
+  }, [invoiceData, searchTerm, searchAmount, creditCardIds])
 
   const currentItems = useMemo(() => {
     if (!activeMonth) return []
@@ -650,8 +719,6 @@ const FaturasPage = () => {
     () => computeInvoiceAmountTotals(filteredItems),
     [filteredItems],
   )
-
-  const cardsById = useMemo(() => new Map(cards.map((c) => [c.id, c])), [cards])
 
   const invoicePeriodIndex = useMemo(() => {
     const groupedByMonth = filteredItems.reduce((acc, item) => {
@@ -824,8 +891,8 @@ const FaturasPage = () => {
     const idSet = new Set(
       Array.from(selectedItems).map((key) => parseInt(key.split(':')[1], 10)),
     )
-    return currentItems.filter((item) => idSet.has(item.id))
-  }, [selectedItems, currentItems])
+    return filteredItems.filter((item) => idSet.has(item.id))
+  }, [selectedItems, filteredItems])
 
   /** Edição em lote exige um único tipo (tag receita vs despesa); mover/excluir aceita misto. */
   const batchEditExpenseType = useMemo((): 'despesa' | 'receita' | null => {
@@ -856,11 +923,21 @@ const FaturasPage = () => {
   const selectAllFiltered = () => {
     if (currentItems.length === 0) return
 
-    const newSelected = new Set<string>()
+    const newSelected = new Set(selectedItems)
     currentItems.forEach((item) => {
       newSelected.add(getItemKey(item))
     })
 
+    setSelectedItems(newSelected)
+  }
+
+  const selectAllGlobalFiltered = () => {
+    if (filteredItems.length === 0) return
+
+    const newSelected = new Set<string>()
+    filteredItems.forEach((item) => {
+      newSelected.add(getItemKey(item))
+    })
     setSelectedItems(newSelected)
   }
 
@@ -900,6 +977,19 @@ const FaturasPage = () => {
     if (selectedCount === currentItems.length) return 'all'
     return 'partial'
   }, [selectedItems, currentItems])
+
+  const selectAllGlobalState = useMemo(() => {
+    if (filteredItems.length === 0) return 'none'
+
+    const selectedCount = filteredItems.filter((item) =>
+      selectedItems.has(getItemKey(item)),
+    ).length
+    if (selectedCount === 0) return 'none'
+    if (selectedCount === filteredItems.length) return 'all'
+    return 'partial'
+  }, [selectedItems, filteredItems])
+
+  const allFilteredSelected = selectAllGlobalState === 'all'
 
   const handleBatchDelete = async () => {
     const confirmed = await showConfirm({
@@ -1010,7 +1100,7 @@ const FaturasPage = () => {
     const chip = issuerCodes.length === 1 ? issuerChip(issuerCodes[0]) : null
     const paymentCycle = paymentPreview?.cycles.find((cycle) => cycle.card_ids.includes(cardId))
     const cardMeta = cardsById.get(cardId)
-    const canManualAdjust = Boolean(activeMonth) && cardMeta?.type !== 'beneficios'
+    const canManualAdjust = Boolean(activeMonth) && isCreditCardForInvoiceReport(cardMeta?.type)
     const openManualAdjust = (e: React.MouseEvent) => {
       e.stopPropagation()
       e.preventDefault()
@@ -1376,8 +1466,8 @@ const FaturasPage = () => {
                     options={cards.map(c => ({
                       id: c.id,
                       name: `${c.name} • ${c.number}`,
-                      icon: c.type === 'beneficios' ? <Gift size={14} /> : <CreditCard size={14} />,
-                      color: c.type === 'beneficios' ? 'var(--color-3)' : 'var(--color-2)'
+                      icon: <CreditCard size={14} />,
+                      color: 'var(--color-2)',
                     }))}
                     selectedIds={selectedCardIds}
                     onChange={setSelectedCardIds}
@@ -1628,6 +1718,40 @@ const FaturasPage = () => {
                   </div>
                 </div>
 
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3 px-1">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (selectAllGlobalState === 'none') {
+                          selectAllGlobalFiltered()
+                        } else {
+                          clearSelection()
+                        }
+                      }}
+                      className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+                      title={
+                        selectAllGlobalState === 'none'
+                          ? 'Selecionar todos os lançamentos visíveis no filtro'
+                          : 'Limpar seleção global'
+                      }
+                    >
+                      {selectAllGlobalState === 'none' && <Square size={18} className="text-gray-400" />}
+                      {selectAllGlobalState === 'partial' && <MinusSquare size={18} className="text-blue-600" />}
+                      {selectAllGlobalState === 'all' && <CheckSquare size={18} className="text-blue-600" />}
+                    </button>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">
+                      Selecionar todos do filtro ({filteredItems.length}{' '}
+                      {filteredItems.length === 1 ? 'lançamento' : 'lançamentos'})
+                    </span>
+                  </div>
+                  {allFilteredSelected ? (
+                    <span className="text-xs font-medium text-[var(--color-1)]">
+                      Edição em lote disponível: compartilhamento
+                    </span>
+                  ) : null}
+                </div>
+
                 <div className="mb-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm overflow-hidden">
                   <div className="flex items-center gap-2 border-b border-gray-200 px-4 py-2 dark:border-gray-700">
                     <Calendar size={16} style={{ color: 'var(--color-1)' }} />
@@ -1705,14 +1829,22 @@ const FaturasPage = () => {
                     <div className="flex items-center gap-3">
                       <button
                         onClick={() => {
-                          if (selectAllState === 'none') {
+                          if (selectAllState === 'none' || selectAllState === 'partial') {
                             selectAllFiltered()
                           } else {
-                            clearSelection()
+                            setSelectedItems((prev) => {
+                              const next = new Set(prev)
+                              currentItems.forEach((item) => next.delete(getItemKey(item)))
+                              return next
+                            })
                           }
                         }}
                         className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
-                        title={selectAllState === 'none' ? 'Selecionar todos do mês' : 'Limpar seleção'}
+                        title={
+                          selectAllState === 'all'
+                            ? 'Desmarcar lançamentos deste mês'
+                            : 'Selecionar todos do mês'
+                        }
                       >
                         {selectAllState === 'none' && <Square size={18} className="text-gray-400" />}
                         {selectAllState === 'partial' && <MinusSquare size={18} className="text-blue-600" />}
@@ -1793,22 +1925,40 @@ const FaturasPage = () => {
               </button>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  if (batchEditExpenseType) setIsBatchEditModalOpen(true)
-                }}
-                disabled={!batchEditExpenseType}
-                className="px-3 py-1.5 text-white rounded-lg transition-colors flex items-center gap-1.5 hover:opacity-90 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-                style={{ backgroundColor: 'var(--crud-edit)' }}
-                title={
-                  batchEditExpenseType
-                    ? 'Editar categoria e compartilhamento em lote'
-                    : 'Selecione apenas despesas ou apenas receitas para editar em lote'
-                }
-              >
-                <Edit2 size={14} />
-                Editar em Lote
-              </button>
+              {allFilteredSelected ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBatchEditSharingOnly(true)
+                    setIsBatchEditModalOpen(true)
+                  }}
+                  className="px-3 py-1.5 text-white rounded-lg transition-colors flex items-center gap-1.5 hover:opacity-90 text-sm font-semibold"
+                  style={{ backgroundColor: 'var(--crud-edit)' }}
+                  title="Alterar compartilhamento de todos os lançamentos selecionados no filtro"
+                >
+                  <Users size={14} />
+                  Compartilhamento em lote
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBatchEditSharingOnly(false)
+                    setIsBatchEditModalOpen(true)
+                  }}
+                  disabled={!batchEditExpenseType}
+                  className="px-3 py-1.5 text-white rounded-lg transition-colors flex items-center gap-1.5 hover:opacity-90 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                  style={{ backgroundColor: 'var(--crud-edit)' }}
+                  title={
+                    batchEditExpenseType
+                      ? 'Editar categoria e compartilhamento em lote'
+                      : 'Selecione apenas despesas ou apenas receitas para editar em lote'
+                  }
+                >
+                  <Edit2 size={14} />
+                  Editar em Lote
+                </button>
+              )}
               {invoiceCardMoveOptions.length > 1 && (
                 <button
                   onClick={() => openMoveCardModal(getSelectedItemsForApi(), null)}
@@ -1869,18 +2019,26 @@ const FaturasPage = () => {
         />
       )}
 
+      <ClosureEditImpactSummaryModal
+        isOpen={closureSummary != null}
+        baseMessage={closureSummary?.baseMessage ?? ''}
+        impact={closureSummary?.impact ?? null}
+        onClose={() => setClosureSummary(null)}
+      />
+
       {/* Modal de Edição em Lote */}
       <BatchEditExpenseModal
         isOpen={isBatchEditModalOpen}
-        onClose={() => setIsBatchEditModalOpen(false)}
+        onClose={() => {
+          setIsBatchEditModalOpen(false)
+          setBatchEditSharingOnly(false)
+        }}
         selectedItems={getSelectedItemsForApi()}
         expenseType={batchEditExpenseType || 'despesa'}
-        onSuccess={(message) => {
+        sharingOnly={batchEditSharingOnly}
+        onSuccess={(result) => {
           clearSelection()
-          loadInvoiceData({ preserveTabs: true, preserveExpandedCards: true })
-          if (message) {
-            handleShowToast(message, 'success')
-          }
+          handleExpenseEditSuccess(result)
         }}
       />
 
@@ -1904,10 +2062,7 @@ const FaturasPage = () => {
         isOpen={manualInvoiceContext !== null}
         context={manualInvoiceContext}
         onClose={() => setManualInvoiceContext(null)}
-        onSuccess={() => {
-          void loadInvoiceData({ preserveTabs: true, preserveExpandedCards: true })
-          handleShowToast('Acerto incluído na fatura.', 'success')
-        }}
+        onSuccess={handleExpenseEditSuccess}
       />
 
       <EditExpenseModal
@@ -1929,7 +2084,7 @@ const FaturasPage = () => {
           current_installment: itemToEdit.current_installment ?? null,
           total_installments: itemToEdit.total_installments ?? null,
         } : null}
-        onSuccess={handleEditSuccess}
+        onSuccess={handleExpenseEditSuccess}
       />
     </div>
   )
