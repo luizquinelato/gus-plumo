@@ -632,6 +632,7 @@ const TemplateFormModal = ({ isOpen, onClose, onSuccess, template, availableIcon
                         <td className={listPageTableTdCls}>
                           <OwnershipPercentField
                             compact
+                            hideLabel
                             context="transaction"
                             value={item.ownership_percentage}
                             onChange={(raw) =>

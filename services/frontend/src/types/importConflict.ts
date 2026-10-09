@@ -78,6 +78,8 @@ export interface ConflictResolution {
   accept_tag_change: boolean;
   accept_amount_change: boolean;
   new_subtag_id?: number | null;
+  /** Aceitar a troca de tag remove a classificação (arquivo sem mapeamento). */
+  clear_subtag?: boolean;
   new_amount?: number | null;
 
   // Para múltiplos matches - qual registro foi selecionado

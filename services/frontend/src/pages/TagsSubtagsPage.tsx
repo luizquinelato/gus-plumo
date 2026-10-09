@@ -1,5 +1,4 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
 import {
@@ -279,7 +278,6 @@ function SubtagAreaCard({
 }
 
 const TagsSubtagsPage = () => {
-  const navigate = useNavigate()
   const { showConfirm, ConfirmComponent } = useConfirm()
 
   const [hierarchicalData, setHierarchicalData] = useState<HierarchicalData[]>([])
@@ -971,7 +969,6 @@ const TagsSubtagsPage = () => {
                 <CadastroListHeaderActions
                   menu={{
                     exportDisabled: hierarchicalData.length === 0,
-                    onImportExcel: () => navigate('/importar'),
                     onExportExcel: () => {
                       const tags = hierarchicalData.map((h) => h.tag)
                       const subtags = hierarchicalData.flatMap((h) => h.subtags)

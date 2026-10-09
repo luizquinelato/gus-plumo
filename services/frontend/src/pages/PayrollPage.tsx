@@ -471,16 +471,9 @@ const PayrollPage = () => {
     }
   }
 
-  const initialPayrollLoadDone = useRef(false)
   useEffect(() => {
     void loadFilterOptions()
   }, [])
-
-  useEffect(() => {
-    if (filtersLoading || initialPayrollLoadDone.current) return
-    initialPayrollLoadDone.current = true
-    void loadData()
-  }, [filtersLoading])
 
   useEffect(() => {
     clearSelection()
@@ -677,9 +670,9 @@ const PayrollPage = () => {
           {!loading && !error && !filtersApplied && (
             <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-12 text-center">
               <Filter size={48} className="mx-auto text-gray-300 dark:text-gray-600 mb-4" />
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Não foi possível carregar</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Selecione os filtros</h3>
               <p className="text-gray-600 dark:text-gray-400">
-                Recarregue a página ou clique em Aplicar nos filtros acima.
+                Escolha ano, mês e empregador (ou deixe Todos) e clique em Aplicar para carregar holerites e informes.
               </p>
             </div>
           )}

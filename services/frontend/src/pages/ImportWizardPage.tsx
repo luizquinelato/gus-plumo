@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useConfirm } from '../hooks/useConfirm'
+import { useAuth } from '../contexts/AuthContext'
+import { Link, useLocation } from 'react-router-dom'
 import axios from 'axios'
-import { Check, ChevronLeft, ChevronsRight, FileUp, Upload, X } from 'lucide-react'
+import { ArrowUp, Check, ChevronLeft, ChevronsRight, FileSpreadsheet, FileText, FileUp, Trash2, Upload } from 'lucide-react'
+import FloatingFooterBar from '../components/FloatingFooterBar'
 import Sidebar from '../components/Sidebar'
 import {
   CadastroListPageBody,
@@ -10,18 +13,53 @@ import {
   CadastroListPageTabs,
   CadastroListPrimaryButton,
   CadastroListSecondaryButton,
+  cadastroFilterFieldCls,
+  listPageTableRowHoverCls,
+  listPageTableTdCls,
+  listPageTableThCls,
 } from '../components/CadastroListPageLayout'
-import CadastroImportPreview, { type CadastroImportPreviewData } from '../components/CadastroImportPreview'
-import ExtratoVisualImportPreview, { type VisualImportPreviewData } from '../components/ExtratoVisualImportPreview'
+import { CadastroFormSection } from '../components/CadastroFormLayout'
+import { ListPageTable } from '../components/ListPageTable'
+import {
+  ListTableIndexCell,
+  ListTableIndexHeader,
+  ListTableSpacerCol,
+  ListTableSpacerHeader,
+} from '../components/ListTableSelectColumns'
+import CadastroImportPreview, {
+  type CadastroImportPreviewData,
+  type CadastroImportPreviewRow,
+} from '../components/CadastroImportPreview'
+import ExtratoVisualImportPreview, {
+  type VisualImportPreviewData,
+  type VisualImportPreviewRow,
+} from '../components/ExtratoVisualImportPreview'
 import MappingVisualImportPreview, { type MappingImportPreviewData } from '../components/MappingVisualImportPreview'
+import RawImportPreview, {
+  summarizeRawKind,
+  type RawFilePreview,
+  type RawImportPreviewData,
+  type RawKindPreviewData,
+} from '../components/RawImportPreview'
+import RawImportAdjustments, {
+  conflictDecisionComplete,
+  effectiveDecision,
+  exportUpdateKey,
+  pendingRawFixes,
+  rawConflictKey,
+  resolutionForDecision,
+  type ConflictDecision,
+  type RawFixGroup,
+} from '../components/RawImportAdjustments'
+import { KindBadge, KindIcon } from '../components/ImportFileKindBadge'
 import ClosureEditImpactDialog from '../components/ClosureEditImpactDialog'
 import ConflictReviewModal from '../components/ConflictReviewModal'
-import type { BenefitCardForMatch } from '../utils/benefitCardFileMatch'
-import { fileExtension, isPdfFileName } from '../utils/fileTypeDetector'
+import { matchBenefitCardIdFromFileName, type BenefitCardForMatch } from '../utils/benefitCardFileMatch'
+import { isPdfFileName, isSupportedImportFileName } from '../utils/fileTypeDetector'
 import type { MappingImportLookup } from '../utils/mappingImportCorrections'
 import { parseAxiosClosureConflict } from '../utils/closureEditImpact'
 import type { ClosureEditImpact } from '../types/closureEditImpact'
-import type { ImportConflict } from '../types/importConflict'
+import type { ConflictResolution, ImportConflict } from '../types/importConflict'
 import {
   KIND_LABEL,
   KIND_ORDER,
@@ -31,7 +69,7 @@ import {
   applyAdjustments,
   applyBody,
   applyUrl,
-  classifySpreadsheet,
+  classifySpreadsheetKinds,
   collectAdjustments,
   filesCarryClassification,
   lookupWithBatchTags,
@@ -80,7 +118,122 @@ const MONTHS = [
 interface PreviewSlot {
   loading: boolean
   error?: string
-  data?: CadastroImportPreviewData | MappingImportPreviewData | VisualImportPreviewData
+  progress?: string
+  data?: CadastroImportPreviewData | MappingImportPreviewData | VisualImportPreviewData | RawKindPreviewData
+}
+
+type PreviewTabId = WizardKind | 'beneficios'
+
+interface PreviewTabEntry {
+  id: PreviewTabId
+  label: string
+  /** `source` separa as linhas de banco e de benefício da planilha de extrato exportada. */
+  parts: Array<{ kind: WizardKind; slot: PreviewSlot | undefined; source?: 'bank' | 'benefit' }>
+}
+
+/** Separa o preview do Excel exportado entre extrato (banco) e benefícios. */
+function visualSlotBySource(slot: PreviewSlot | undefined, benefit: boolean): PreviewSlot | undefined {
+  if (!slot || slot.loading || slot.error || !slot.data) return slot
+  const data = slot.data as VisualImportPreviewData
+  const keep = (source: string) => (source === 'benefit') === benefit
+  const creates = data.creates.filter((row) => keep(row.source))
+  const updates = data.updates.filter((row) => keep(row.source))
+  const issues = data.issues.filter((issue) => keep(issue.source))
+  return {
+    ...slot,
+    data: {
+      ...data,
+      creates,
+      updates,
+      issues,
+      summary: {
+        ...data.summary,
+        creates: creates.length,
+        updates: updates.length,
+        issues: issues.length,
+        unchanged: benefit ? 0 : data.summary.unchanged,
+      },
+    },
+  }
+}
+
+function exportSheetRows(files: WizardFile[]): { bank: number; benefit: number } {
+  let bank = 0
+  let benefit = 0
+  for (const file of files) {
+    const parsed = file.parsed ?? file.parsedOriginal
+    if (parsed?.kind !== 'extrato_export') continue
+    bank += parsed.data.bank_rows.length
+    benefit += parsed.data.benefit_rows.length
+  }
+  return { bank, benefit }
+}
+
+function buildPreviewTabs(
+  kinds: WizardKind[],
+  previews: Partial<Record<WizardKind, PreviewSlot>>,
+  files: WizardFile[],
+): PreviewTabEntry[] {
+  const sheet = exportSheetRows(files)
+  const benefitParts: PreviewTabEntry['parts'] = []
+  if (kinds.includes('extrato_export') && sheet.benefit > 0) {
+    benefitParts.push({
+      kind: 'extrato_export',
+      slot: visualSlotBySource(previews.extrato_export, true),
+      source: 'benefit',
+    })
+  }
+  if (kinds.includes('beneficio_csv')) benefitParts.push({ kind: 'beneficio_csv', slot: previews.beneficio_csv })
+  const benefitTab: PreviewTabEntry | null = benefitParts.length
+    ? { id: 'beneficios', label: 'Benefícios', parts: benefitParts }
+    : null
+
+  const tabs: PreviewTabEntry[] = []
+  for (const kind of kinds) {
+    if (kind === 'extrato_export') {
+      if (sheet.bank > 0 || sheet.benefit === 0) {
+        tabs.push({
+          id: kind,
+          label: KIND_LABEL[kind],
+          parts: [
+            sheet.benefit > 0
+              ? { kind, slot: visualSlotBySource(previews[kind], false), source: 'bank' }
+              : { kind, slot: previews[kind] },
+          ],
+        })
+      }
+      if (benefitTab && !tabs.includes(benefitTab)) tabs.push(benefitTab)
+      continue
+    }
+    if (kind === 'beneficio_csv') {
+      if (benefitTab && !tabs.includes(benefitTab)) tabs.push(benefitTab)
+      continue
+    }
+    tabs.push({ id: kind, label: KIND_LABEL[kind], parts: [{ kind, slot: previews[kind] }] })
+  }
+  return tabs
+}
+
+function previewPartLabel(kind: WizardKind): string {
+  if (kind === 'extrato_export') return 'Planilha exportada'
+  if (kind === 'beneficio_csv') return 'Arquivo do cartão de benefícios'
+  return KIND_LABEL[kind]
+}
+
+/** Resultado do processamento (sem gravar) de um arquivo bruto, reaproveitado na gravação. */
+interface RawProcessed {
+  key: string
+  rows: Array<Record<string, unknown>>
+  ignoredRows: Array<Record<string, unknown>>
+  preview: RawFilePreview
+}
+
+function hasPreviewKind(kind: WizardKind): boolean {
+  return isExcelKind(kind) || isRawKind(kind)
+}
+
+function rawProcessKey(file: WizardFile): string {
+  return [file.id, file.kind, file.year ?? '', file.month ?? '', file.creditCardId ?? '', file.pdfPassword ?? ''].join('|')
 }
 
 interface WizardFileResult {
@@ -102,6 +255,162 @@ interface ProgressState {
   processed: number
   total: number
   fraction: number
+}
+
+type RawLoadStatus = Omit<ProgressState, 'jobId'> & { detail?: string }
+
+type AdjustTabId = 'classificacao' | 'compartilhamento' | 'extrato_bruto' | 'beneficio_csv' | 'fatura_bruta'
+
+const ADJUST_TAB_LABEL: Record<AdjustTabId, string> = {
+  classificacao: 'Tag/Subtag',
+  compartilhamento: 'Compartilhamento',
+  extrato_bruto: 'Extrato',
+  beneficio_csv: 'Benefícios',
+  fatura_bruta: 'Cartão',
+}
+
+const RAW_ADJUST_TABS = ['extrato_bruto', 'beneficio_csv', 'fatura_bruta'] as const
+
+function isRawAdjustTab(tab: AdjustTabId): tab is (typeof RAW_ADJUST_TABS)[number] {
+  return (RAW_ADJUST_TABS as readonly string[]).includes(tab)
+}
+
+interface AdjustTabInfo {
+  id: AdjustTabId
+  count: number
+  pending: boolean
+}
+
+function buildAdjustTabs(
+  adjustments: AdjustmentRow[],
+  omit: boolean,
+  groups: RawFixGroup[],
+  decisions: Record<string, ConflictDecision> = {},
+): AdjustTabInfo[] {
+  const tabs: AdjustTabInfo[] = []
+  const classRows = adjustments.filter((row) => row.kind !== 'sharing')
+  const sharingRows = adjustments.filter((row) => row.kind === 'sharing')
+  if (classRows.length || omit) {
+    tabs.push({
+      id: 'classificacao',
+      count: classRows.length,
+      pending: classRows.some((row) => !adjustmentComplete(row)),
+    })
+  }
+  if (sharingRows.length) {
+    tabs.push({
+      id: 'compartilhamento',
+      count: sharingRows.length,
+      pending: sharingRows.some((row) => !adjustmentComplete(row)),
+    })
+  }
+  for (const id of RAW_ADJUST_TABS) {
+    const kindGroups = groups.filter((group) => group.kind === id)
+    if (!kindGroups.length) continue
+    tabs.push({
+      id,
+      count: kindGroups.reduce((sum, group) => sum + group.conflicts.length + group.updates.length, 0),
+      pending: pendingRawFixes(kindGroups, decisions) > 0,
+    })
+  }
+  return tabs
+}
+
+function firstAdjustTab(adjustments: AdjustmentRow[], omit: boolean, groups: RawFixGroup[]): AdjustTabId {
+  return buildAdjustTabs(adjustments, omit, groups)[0]?.id ?? 'classificacao'
+}
+
+function isExportKind(kind: WizardKind): kind is 'extrato_export' | 'fatura_export' {
+  return kind === 'extrato_export' || kind === 'fatura_export'
+}
+
+/** Alterações de registros existentes que a planilha exportada traria (sem gravar). */
+async function exportFileUpdates(file: WizardFile, files: WizardFile[]): Promise<VisualImportPreviewRow[]> {
+  const url = previewUrl(file.kind)
+  if (!url || !file.parsedOriginal) return []
+  try {
+    const response = await axios.post<VisualImportPreviewData>(url, previewBody(file.parsedOriginal, files))
+    return response.data.updates.filter((row) => (row.changes?.length ?? 0) > 0)
+  } catch {
+    // O erro reaparece na pré-visualização, que chama o mesmo endpoint.
+    return []
+  }
+}
+
+function exportFixGroups(file: WizardFile, updates: VisualImportPreviewRow[]): RawFixGroup[] {
+  const group = (kind: string, rows: VisualImportPreviewRow[]): RawFixGroup => ({
+    fileId: file.id,
+    fileName: file.file.name,
+    kind,
+    warnings: [],
+    conflicts: [],
+    updates: rows,
+  })
+  if (file.kind === 'fatura_export') return updates.length ? [group('fatura_bruta', updates)] : []
+  const bank = updates.filter((row) => row.source === 'bank')
+  const benefit = updates.filter((row) => row.source === 'benefit')
+  return [
+    ...(bank.length ? [group('extrato_bruto', bank)] : []),
+    ...(benefit.length ? [group('beneficio_csv', benefit)] : []),
+  ]
+}
+
+/** Chaves das alterações da planilha exportada que ficaram em "Manter" (padrão). */
+function keptExportKeys(groups: RawFixGroup[], decisions: Record<string, ConflictDecision>): Set<string> {
+  const keys = new Set<string>()
+  for (const group of groups) {
+    for (const update of group.updates) {
+      const key = exportUpdateKey(group.fileId, update.source, update.row)
+      if (effectiveDecision(decisions[key]).choice === 'atual') keys.add(key)
+    }
+  }
+  return keys
+}
+
+function withKeptRows(fileId: string, parsed: WizardParsed, keep: Set<string>): WizardParsed {
+  if (!keep.size) return parsed
+  const mark = <T extends { row_index: number }>(rows: T[], source: string): T[] =>
+    rows.map((row) => (keep.has(exportUpdateKey(fileId, source, row.row_index)) ? { ...row, keep_existing: true } : row))
+  if (parsed.kind === 'extrato_export') {
+    return {
+      kind: 'extrato_export',
+      data: {
+        ...parsed.data,
+        bank_rows: mark(parsed.data.bank_rows, 'bank'),
+        benefit_rows: mark(parsed.data.benefit_rows, 'benefit'),
+      },
+    }
+  }
+  if (parsed.kind === 'fatura_export') {
+    return { kind: 'fatura_export', data: { ...parsed.data, rows: mark(parsed.data.rows, 'invoice') } }
+  }
+  return parsed
+}
+
+function exportDecisionNotes(
+  kind: WizardKind,
+  source: 'bank' | 'benefit' | undefined,
+  files: WizardFile[],
+  groups: RawFixGroup[],
+  decisions: Record<string, ConflictDecision>,
+): string[] {
+  if (!isExportKind(kind)) return []
+  const kindIds = new Set(files.filter((file) => file.kind === kind).map((file) => file.id))
+  let keep = 0
+  let replace = 0
+  for (const group of groups) {
+    if (!kindIds.has(group.fileId)) continue
+    for (const update of group.updates) {
+      if (source && update.source !== source) continue
+      const decision = effectiveDecision(decisions[exportUpdateKey(group.fileId, update.source, update.row)])
+      if (decision.choice === 'novo') replace += 1
+      else keep += 1
+    }
+  }
+  if (!keep && !replace) return []
+  return [
+    `Alterações decididas nos Ajustes: ${keep} ficam como estão e ${replace} recebem a versão da planilha (só estas aparecem abaixo).`,
+  ]
 }
 
 function errorText(error: unknown, fallback: string): string {
@@ -127,11 +436,13 @@ function importBatchPercent(fileIndex: number, fileCount: number, fraction: numb
 
 async function postImportWithProgress<T>(
   url: string,
-  formData: FormData,
+  body: FormData | Record<string, unknown>,
   jobId: string,
   onProgress: (update: { processed: number; total: number; fraction: number }) => void,
 ) {
-  formData.append('progress_job_id', jobId)
+  const isForm = body instanceof FormData
+  if (isForm) body.append('progress_job_id', jobId)
+  const payload = isForm ? body : { ...body, progress_job_id: jobId }
   let stopped = false
   const poll = async () => {
     if (stopped) return
@@ -153,10 +464,171 @@ async function postImportWithProgress<T>(
   }, 200)
   void poll()
   try {
-    return await axios.post<T>(url, formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+    return await axios.post<T>(
+      url,
+      payload,
+      isForm ? { headers: { 'Content-Type': 'multipart/form-data' } } : undefined,
+    )
   } finally {
     stopped = true
     window.clearInterval(timer)
+  }
+}
+
+async function processRawFile(
+  file: WizardFile,
+  cache: Map<string, RawProcessed>,
+  onProgress: (update: { processed: number; total: number; fraction: number }) => void,
+): Promise<RawFilePreview> {
+  const key = rawProcessKey(file)
+  const cached = cache.get(file.id)
+  if (cached && cached.key === key) return cached.preview
+  const base = { fileId: file.id, fileName: file.file.name }
+  const store = (
+    rows: RawProcessed['rows'],
+    ignoredRows: RawProcessed['ignoredRows'],
+    preview: RawFilePreview,
+  ): RawFilePreview => {
+    cache.set(file.id, { key, rows, ignoredRows, preview })
+    return preview
+  }
+  try {
+    if (file.kind === 'holerite' || file.kind === 'informe') {
+      const form = new FormData()
+      form.append('files', file.file)
+      form.append('passwords', file.pdfPassword ?? '')
+      const response = await axios.post<{ results: PayrollClassifyResult[] }>('/api/payroll/classify-pdfs', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      const hit = response.data.results?.[0]
+      if (!hit || hit.status !== 'ok') return { ...base, error: hit?.message || 'Não foi possível ler o PDF.' }
+      return store([], [], {
+        ...base,
+        payroll: {
+          action: hit.action === 'updated' ? 'updated' : 'created',
+          summary: payrollSummary(hit),
+          netAmount: optionalNumber(hit.net_amount),
+          grossEarnings: optionalNumber(hit.gross_earnings),
+          totalDeductions: optionalNumber(hit.total_deductions),
+          lineCount: hit.line_count ?? null,
+        },
+      })
+    }
+
+    const form = new FormData()
+    let url: string
+    if (file.kind === 'extrato_bruto') {
+      url = '/api/import/extrato/process'
+      form.append('files', file.file)
+    } else if (file.kind === 'fatura_bruta') {
+      url = '/api/import/cartao/process'
+      form.append('files', file.file)
+      form.append('years', file.year || '')
+      form.append('months', file.month || '')
+      form.append('passwords', file.pdfPassword ?? '')
+    } else if (file.kind === 'beneficio_csv') {
+      if (!file.creditCardId) return { ...base, error: 'Selecione um cartão de benefícios.' }
+      url = '/api/benefit-card-statements/csv/process'
+      form.append('credit_card_id', String(file.creditCardId))
+      form.append('file', file.file)
+    } else {
+      return { ...base, error: 'Tipo de arquivo sem pré-visualização.' }
+    }
+    const response = await postImportWithProgress<{
+      rows?: RawProcessed['rows']
+      ignored_rows?: RawProcessed['ignoredRows']
+      preview: RawImportPreviewData
+    }>(url, form, crypto.randomUUID(), onProgress)
+    const data = response.data
+    return store(data.rows ?? [], data.ignored_rows ?? [], { ...base, preview: data.preview })
+  } catch (error) {
+    return { ...base, error: errorText(error, 'Erro ao processar o arquivo.') }
+  }
+}
+
+function rawPreviewNotes(kind: WizardKind, files: WizardFile[]): string[] {
+  const notes: string[] = []
+  const has = (target: WizardKind) => files.some((file) => file.kind === target)
+  if (has('mapeamentos')) {
+    notes.push(
+      'Esta leva traz mapeamentos. Eles são gravados antes e reaplicados na gravação, então a classificação final pode diferir desta prévia.',
+    )
+  }
+  if (kind === 'fatura_bruta' && has('cartoes')) {
+    notes.push(
+      'Esta leva traz cartões. Eles são cadastrados antes da fatura, então linhas de cartão ainda não cadastrado podem entrar na gravação.',
+    )
+  }
+  return notes
+}
+
+function pendingRawMessage(pending: number): string {
+  return `Para continuar, escolha qual registro atualizar em ${pending} conflito(s) marcado(s) como Atualizar.`
+}
+
+function rawDecisionNotes(
+  kind: WizardKind,
+  files: WizardFile[],
+  groups: RawFixGroup[],
+  decisions: Record<string, ConflictDecision>,
+): string[] {
+  const kindIds = new Set(files.filter((file) => file.kind === kind).map((file) => file.id))
+  let keep = 0
+  let replace = 0
+  for (const group of groups) {
+    if (!kindIds.has(group.fileId)) continue
+    for (const conflict of group.conflicts) {
+      if (effectiveDecision(decisions[rawConflictKey(group.fileId, conflict)]).choice === 'novo') replace += 1
+      else keep += 1
+    }
+  }
+  if (!keep && !replace) return []
+  return [
+    `Conflitos decididos nos Ajustes: ${keep} mantêm a versão atual e ${replace} recebem a versão do arquivo (aplicado logo após a gravação).`,
+  ]
+}
+
+/**
+ * Aplica as decisões de conflito tomadas nos Ajustes (sem decisão explícita = manter o atual).
+ * Conflitos que não apareceram nos Ajustes seguem para o modal.
+ */
+async function applyConflictDecisions(
+  fileId: string,
+  result: WizardFileResult,
+  decisions: Record<string, ConflictDecision>,
+  reviewedKeys: Set<string>,
+): Promise<WizardFileResult> {
+  if (!result.conflicts.length) return result
+  const resolutions: ConflictResolution[] = []
+  const remaining: ImportConflict[] = []
+  let kept = 0
+  for (const conflict of result.conflicts) {
+    const key = rawConflictKey(fileId, conflict)
+    if (!reviewedKeys.has(key) || !conflictDecisionComplete(conflict, decisions[key])) {
+      remaining.push(conflict)
+      continue
+    }
+    const resolution = resolutionForDecision(conflict, effectiveDecision(decisions[key]))
+    if (resolution) resolutions.push(resolution)
+    else kept += 1
+  }
+  if (resolutions.length) {
+    try {
+      await axios.post('/api/import/resolve-conflicts', { resolutions })
+    } catch (error) {
+      return {
+        ...result,
+        message: `${result.message} Não foi possível aplicar as decisões de conflito: ${errorText(error, 'erro desconhecido')}.`,
+      }
+    }
+  }
+  const parts: string[] = []
+  if (resolutions.length) parts.push(`${resolutions.length} conflito(s) com a versão do arquivo`)
+  if (kept) parts.push(`${kept} mantido(s) como estava`)
+  return {
+    ...result,
+    conflicts: remaining,
+    message: parts.length ? `${result.message} ${parts.join(', ')}.` : result.message,
   }
 }
 
@@ -186,6 +658,76 @@ function cloneParsed(parsed: WizardParsed): WizardParsed {
   return structuredClone(parsed)
 }
 
+interface PayrollClassifyResult {
+  filename: string
+  status: string
+  doc_type?: string | null
+  message?: string | null
+  employer_name?: string | null
+  payer_name?: string | null
+  beneficiary_name?: string | null
+  calendar_year?: number | null
+  payslip_kind?: string | null
+  year?: number | null
+  month?: number | null
+  reference_label?: string | null
+  action?: 'created' | 'updated' | null
+  net_amount?: number | string | null
+  gross_earnings?: number | string | null
+  total_deductions?: number | string | null
+  line_count?: number | null
+}
+
+function payslipKindLabel(kind?: string | null): string | null {
+  if (kind === 'advance') return 'Adiantamento'
+  if (kind === 'final') return 'Folha final'
+  if (kind === 'regular') return 'Mensal'
+  if (kind === 'profit_share') return 'Participação nos lucros'
+  return null
+}
+
+function payrollSummary(hit: PayrollClassifyResult): string {
+  if (hit.doc_type === 'income_report') {
+    return [hit.payer_name, hit.calendar_year ? `Ano-calendário ${hit.calendar_year}` : null, hit.beneficiary_name]
+      .filter(Boolean)
+      .join(' · ')
+  }
+  const month = hit.month ? MONTHS[hit.month - 1]?.label : null
+  const period = hit.year && month ? `${month} ${hit.year}` : hit.reference_label
+  return [hit.employer_name, payslipKindLabel(hit.payslip_kind), period].filter(Boolean).join(' · ')
+}
+
+function optionalNumber(value: number | string | null | undefined): number | null {
+  if (value == null || value === '') return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+const PDF_PASSWORD_MESSAGES = new Set(['PDF protegido por senha', 'Senha do PDF incorreta'])
+
+async function markPasswordProtected(items: WizardFile[]): Promise<void> {
+  if (!items.length) return
+  try {
+    const form = new FormData()
+    items.forEach((item) => form.append('files', item.file))
+    const response = await axios.post<{ results: Array<{ filename: string; requires_password: boolean }> }>(
+      '/api/import/pdf/check-passwords',
+      form,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    )
+    const results = response.data.results || []
+    items.forEach((item, index) => {
+      if (results[index]?.requires_password) {
+        item.needsPassword = true
+        item.error =
+          'PDF protegido: informe a senha aqui ou cadastre a "Senha padrão para PDFs" da conta em Contas.'
+      }
+    })
+  } catch {
+    // Sem a checagem, a identificação abaixo devolve o erro de senha.
+  }
+}
+
 async function identifyPdfs(items: WizardFile[]): Promise<WizardFile[]> {
   const pdfs = items.filter((item) => isPdfFileName(item.file.name))
   if (!pdfs.length) return items
@@ -193,19 +735,7 @@ async function identifyPdfs(items: WizardFile[]): Promise<WizardFile[]> {
   const unlocked = next.filter((item) => isPdfFileName(item.file.name) && !(item.needsPassword && !item.pdfPassword))
   if (!unlocked.length) return next
 
-  let classified: Array<{
-    filename: string
-    status: string
-    doc_type?: string | null
-    message?: string | null
-    employer_name?: string | null
-    payer_name?: string | null
-    calendar_year?: number | null
-    payslip_kind?: string | null
-    year?: number | null
-    month?: number | null
-    reference_label?: string | null
-  }> = []
+  let classified: PayrollClassifyResult[] = []
   try {
     const form = new FormData()
     unlocked.forEach((item) => form.append('files', item.file))
@@ -227,10 +757,10 @@ async function identifyPdfs(items: WizardFile[]): Promise<WizardFile[]> {
       target.kind = hit.doc_type === 'payslip' ? 'holerite' : 'informe'
       target.error = undefined
       target.needsPassword = false
-      const bits = [hit.employer_name || hit.payer_name, hit.reference_label, hit.calendar_year ? String(hit.calendar_year) : '']
-      target.payrollPreview = bits.filter(Boolean).join(' · ')
+      target.payrollPreview = payrollSummary(hit)
       return
     }
+    if (hit?.message && PDF_PASSWORD_MESSAGES.has(hit.message)) target.needsPassword = true
     remaining.push(target)
   })
 
@@ -243,6 +773,9 @@ async function identifyPdfs(items: WizardFile[]): Promise<WizardFile[]> {
       results: Array<{
         filename: string
         status: string
+        issuer?: string | null
+        issuer_label?: string | null
+        card_last4?: string | null
         year?: string
         month?: string
         message?: string
@@ -254,11 +787,15 @@ async function identifyPdfs(items: WizardFile[]): Promise<WizardFile[]> {
       if (!hit || hit.status !== 'ok') {
         item.kind = 'blocked'
         item.error = hit?.message || 'PDF não reconhecido como fatura, holerite ou informe.'
+        if (hit?.message && PDF_PASSWORD_MESSAGES.has(hit.message)) item.needsPassword = true
         return
       }
       item.kind = 'fatura_bruta'
       item.error = undefined
       item.needsPassword = false
+      item.issuer = hit.issuer ?? undefined
+      item.issuerLabel = hit.issuer_label ?? undefined
+      item.cardLast4 = hit.card_last4 ?? undefined
       if (hit.year) item.year = String(hit.year)
       if (hit.month) item.month = String(hit.month).padStart(2, '0')
     })
@@ -271,35 +808,40 @@ async function identifyPdfs(items: WizardFile[]): Promise<WizardFile[]> {
   return next
 }
 
-const PLUMO_EXPORT_ONLY =
-  'Nesta tela entram as planilhas exportadas pelo Plumo. O arquivo original do banco continua na Home.'
+const UNSUPPORTED_FILE = 'Use PDF (fatura, holerite ou informe), Excel (.xlsx, .xls) ou CSV de benefício.'
 
-async function prepareIncoming(files: File[]): Promise<WizardFile[]> {
+async function prepareIncoming(files: File[], benefitCards: BenefitCardForMatch[]): Promise<WizardFile[]> {
   const drafted: WizardFile[] = []
+  const pdfs: WizardFile[] = []
   for (const file of files) {
-    const item: WizardFile = {
-      id: crypto.randomUUID(),
-      file,
-      kind: 'blocked',
-    }
-    const classified = await classifySpreadsheet(file)
-    if (!isExcelKind(classified.kind)) {
-      item.error = isRawKind(classified.kind) ? PLUMO_EXPORT_ONLY : classified.error || PLUMO_EXPORT_ONLY
+    if (isPdfFileName(file.name)) {
+      const item: WizardFile = { id: crypto.randomUUID(), file, kind: 'blocked', error: 'PDF aguardando identificação.' }
       drafted.push(item)
+      pdfs.push(item)
       continue
     }
-    item.kind = classified.kind
-    try {
-      const parsed = await parseForKind(classified.kind, file)
-      item.parsedOriginal = parsed
-      item.parsed = cloneParsed(parsed)
-    } catch (error) {
-      item.kind = 'blocked'
-      item.error = errorText(error, 'Arquivo inválido.')
+    const classified = await classifySpreadsheetKinds(file)
+    for (const entry of classified) {
+      const next: WizardFile = { id: crypto.randomUUID(), file, kind: entry.kind, error: entry.error }
+      if (entry.kind === 'beneficio_csv') {
+        next.creditCardId = matchBenefitCardIdFromFileName(file.name, benefitCards)
+      }
+      if (isExcelKind(entry.kind)) {
+        try {
+          const parsed = await parseForKind(entry.kind, file)
+          next.parsedOriginal = parsed
+          next.parsed = cloneParsed(parsed)
+        } catch (error) {
+          next.kind = 'blocked'
+          next.error = errorText(error, 'Arquivo inválido.')
+        }
+      }
+      drafted.push(next)
     }
-    drafted.push(item)
   }
-  return drafted
+  if (!pdfs.length) return drafted
+  await markPasswordProtected(pdfs)
+  return identifyPdfs(drafted)
 }
 
 function arquivosBlock(files: WizardFile[], detecting: boolean): string | null {
@@ -316,7 +858,20 @@ function arquivosBlock(files: WizardFile[], detecting: boolean): string | null {
   return null
 }
 
+function cachedAccountName(accountId?: number): string | null {
+  if (!accountId) return null
+  try {
+    const cached = localStorage.getItem(`account_${accountId}`)
+    return cached ? (JSON.parse(cached) as { name?: string }).name || null : null
+  } catch {
+    return null
+  }
+}
+
 export default function ImportWizardPage() {
+  const { showConfirm, ConfirmComponent } = useConfirm()
+  const { user } = useAuth()
+  const targetAccountName = useMemo(() => cachedAccountName(user?.account_id), [user?.account_id])
   const [step, setStep] = useState<StepId>('arquivos')
   const [files, setFiles] = useState<WizardFile[]>([])
   const [fileVersion, setFileVersion] = useState(0)
@@ -328,7 +883,6 @@ export default function ImportWizardPage() {
   const [detecting, setDetecting] = useState(false)
   const [pageError, setPageError] = useState<string | null>(null)
   const [benefitCards, setBenefitCards] = useState<BenefitCardForMatch[]>([])
-  const [previewTab, setPreviewTab] = useState<WizardKind | null>(null)
   const [previews, setPreviews] = useState<Partial<Record<WizardKind, PreviewSlot>>>({})
   const [previewToken, setPreviewToken] = useState(0)
   const [running, setRunning] = useState(false)
@@ -340,6 +894,15 @@ export default function ImportWizardPage() {
   const [conflicts, setConflicts] = useState<ImportConflict[]>([])
   const [showConflicts, setShowConflicts] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  const [showBackToTop, setShowBackToTop] = useState(false)
+  const [tagIconOverrides, setTagIconOverrides] = useState<Record<string, string>>({})
+  const [rawStatus, setRawStatus] = useState<RawLoadStatus | null>(null)
+  const [rawReadyVersion, setRawReadyVersion] = useState(-1)
+  const [rawFixGroups, setRawFixGroups] = useState<RawFixGroup[]>([])
+  const [conflictDecisions, setConflictDecisions] = useState<Record<string, ConflictDecision>>({})
+  const [adjustTab, setAdjustTab] = useState<AdjustTabId>('classificacao')
+  const rawRunRef = useRef(0)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const orderedFiles = useMemo(() => sortWizardFiles(files), [files])
 
   const currentYear = new Date().getFullYear()
@@ -358,12 +921,33 @@ export default function ImportWizardPage() {
       .catch(() => setBenefitCards([]))
   }, [])
 
+  useEffect(() => {
+    if (!benefitCards.length) return
+    setFiles((prev) => {
+      let changed = false
+      const next = prev.map((file) => {
+        if (file.kind !== 'beneficio_csv' || file.creditCardId) return file
+        const creditCardId = matchBenefitCardIdFromFileName(file.file.name, benefitCards)
+        if (!creditCardId) return file
+        changed = true
+        return { ...file, creditCardId }
+      })
+      return changed ? next : prev
+    })
+  }, [benefitCards])
+
   const skippedSteps = useMemo(() => {
     const skipped = new Set<StepId>()
-    if (adjustVersion === fileVersion && adjustments.length === 0 && !omitClassification) skipped.add('ajustes')
-    if (files.length > 0 && !files.some((file) => isExcelKind(file.kind))) skipped.add('preview')
+    const rawClean =
+      rawReadyVersion === fileVersion
+        ? rawFixGroups.length === 0
+        : !files.some((file) => isRawKind(file.kind) || isExportKind(file.kind))
+    if (adjustVersion === fileVersion && adjustments.length === 0 && !omitClassification && rawClean) {
+      skipped.add('ajustes')
+    }
+    if (files.length > 0 && !files.some((file) => hasPreviewKind(file.kind))) skipped.add('preview')
     return skipped
-  }, [adjustVersion, adjustments.length, fileVersion, files, omitClassification])
+  }, [adjustVersion, adjustments.length, fileVersion, files, omitClassification, rawReadyVersion, rawFixGroups.length])
 
   const flowSteps = useMemo(
     () => ALL_STEPS.filter((id) => !skippedSteps.has(id)),
@@ -374,18 +958,64 @@ export default function ImportWizardPage() {
     () => KIND_ORDER.filter((kind) => kind !== 'blocked' && files.some((file) => file.kind === kind)),
     [files],
   )
-  const excelKinds = useMemo(() => presentKinds.filter((kind) => isExcelKind(kind)), [presentKinds])
+  const previewKinds = useMemo(() => presentKinds.filter((kind) => hasPreviewKind(kind)), [presentKinds])
+  const rawProcessedRef = useRef<Map<string, RawProcessed>>(new Map())
+  const [previewTab, setPreviewTab] = useState<PreviewTabId | null>(null)
+  const previewTabs = useMemo(
+    () => buildPreviewTabs(previewKinds, previews, orderedFiles),
+    [previewKinds, previews, orderedFiles],
+  )
+  const previewTabIds = previewTabs.map((tab) => tab.id).join('|')
+
+  useEffect(() => {
+    const ids = previewTabIds ? (previewTabIds.split('|') as PreviewTabId[]) : []
+    setPreviewTab((current) => (current && ids.includes(current) ? current : ids[0] ?? null))
+  }, [previewTabIds])
+
+  const scrollToTop = useCallback(() => {
+    setShowBackToTop(false)
+    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [])
+
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+    const handleScroll = () => setShowBackToTop(container.scrollTop > 300)
+    handleScroll()
+    container.addEventListener('scroll', handleScroll)
+    return () => container.removeEventListener('scroll', handleScroll)
+  }, [step])
 
   useEffect(() => {
     if (step !== 'preview') return
-    const kinds = excelKinds
+    const kinds = previewKinds
     if (!kinds.length) return
-    setPreviewTab((current) => (current && kinds.includes(current) ? current : kinds[0]))
     let cancel = false
     setPreviews(Object.fromEntries(kinds.map((kind) => [kind, { loading: true }])))
     void (async () => {
       for (const kind of kinds) {
         if (cancel) return
+        if (isRawKind(kind)) {
+          const kindFiles = orderedFiles.filter((file) => file.kind === kind)
+          const processed: RawFilePreview[] = []
+          for (const [index, file] of kindFiles.entries()) {
+            if (cancel) return
+            const onProgress = (update: { processed: number; total: number }) => {
+              if (cancel) return
+              const line = update.total > 0
+                ? ` · linha ${update.processed.toLocaleString('pt-BR')} de ${update.total.toLocaleString('pt-BR')}`
+                : ''
+              setPreviews((prev) => ({
+                ...prev,
+                [kind]: { loading: true, progress: `Arquivo ${index + 1} de ${kindFiles.length}${line}` },
+              }))
+            }
+            processed.push(await processRawFile(file, rawProcessedRef.current, onProgress))
+          }
+          if (cancel) return
+          setPreviews((prev) => ({ ...prev, [kind]: { loading: false, data: summarizeRawKind(processed) } }))
+          continue
+        }
         try {
           const merged = mergeParsed(kind, orderedFiles)
           const url = previewUrl(kind)
@@ -405,20 +1035,17 @@ export default function ImportWizardPage() {
     return () => {
       cancel = true
     }
-  }, [step, previewToken, orderedFiles, excelKinds])
+  }, [step, previewToken, orderedFiles, previewKinds])
 
   const addFiles = async (list: FileList | File[]) => {
     const incoming = [...list]
     if (!incoming.length) return
-    const spreadsheets = incoming.filter((file) => fileExtension(file.name) === '.xlsx')
-    if (spreadsheets.length !== incoming.length) {
-      setPageError(PLUMO_EXPORT_ONLY)
-    }
-    if (!spreadsheets.length) return
+    const supported = incoming.filter((file) => isSupportedImportFileName(file.name))
+    setPageError(supported.length === incoming.length ? null : UNSUPPORTED_FILE)
+    if (!supported.length) return
     setDetecting(true)
-    setPageError(spreadsheets.length === incoming.length ? null : PLUMO_EXPORT_ONLY)
     try {
-      const prepared = await prepareIncoming(spreadsheets)
+      const prepared = await prepareIncoming(supported, benefitCards)
       setFiles((prev) => sortWizardFiles([...prev, ...prepared]))
       setFileVersion((version) => version + 1)
       setAdjustVersion(-1)
@@ -445,6 +1072,70 @@ export default function ImportWizardPage() {
     }
   }
 
+  const cancelRawLoad = () => {
+    rawRunRef.current += 1
+    setRawStatus(null)
+  }
+
+  /**
+   * Processa os arquivos brutos e compara as planilhas exportadas com o banco (sem gravar),
+   * separando o que precisa de decisão nos Ajustes.
+   */
+  const loadRawFixes = async (
+    source: WizardFile[],
+    version: number,
+    runId: number,
+    stepOffset: number,
+    stepCount: number,
+  ): Promise<RawFixGroup[] | null> => {
+    const fixFiles = sortWizardFiles(source).filter((file) => isRawKind(file.kind) || isExportKind(file.kind))
+    const groups: RawFixGroup[] = []
+    for (const [index, file] of fixFiles.entries()) {
+      if (rawRunRef.current !== runId) return null
+      const stepIndex = stepOffset + index
+      const exportFile = isExportKind(file.kind)
+      setRawStatus({
+        fileIndex: stepIndex,
+        fileCount: stepCount,
+        fileName: file.file.name,
+        processed: 0,
+        total: 0,
+        fraction: 0,
+        detail: exportFile ? 'Comparando a planilha com o que já está gravado…' : undefined,
+      })
+      if (exportFile) {
+        const updates = await exportFileUpdates(file, source)
+        if (rawRunRef.current !== runId) return null
+        groups.push(...exportFixGroups(file, updates))
+        continue
+      }
+      const result = await processRawFile(file, rawProcessedRef.current, (update) => {
+        if (rawRunRef.current !== runId) return
+        setRawStatus((current) =>
+          current && current.fileIndex === stepIndex && update.fraction + 1e-6 >= current.fraction
+            ? { ...current, ...update }
+            : current,
+        )
+      })
+      const preview = result.preview
+      if (!preview) continue
+      if (preview.conflicts.length) {
+        groups.push({
+          fileId: file.id,
+          fileName: file.file.name,
+          kind: file.kind,
+          warnings: preview.warnings ?? [],
+          conflicts: preview.conflicts,
+          updates: [],
+        })
+      }
+    }
+    if (rawRunRef.current !== runId) return null
+    setRawFixGroups(groups)
+    setRawReadyVersion(version)
+    return groups
+  }
+
   const goNext = async () => {
     setPageError(null)
     if (step === 'arquivos') {
@@ -453,17 +1144,44 @@ export default function ImportWizardPage() {
         setPageError(block)
         return
       }
-      let nextLookup = lookup
-      if (files.some((file) => kindUsesReferences(file.kind))) {
-        try {
-          nextLookup = await loadLookup()
-          setLookup(nextLookup)
-        } catch (error) {
-          setPageError(errorText(error, 'Não foi possível carregar tags e compartilhamentos.'))
-          return
+      const hasRaw = files.some((file) => isRawKind(file.kind))
+      const hasRefs = files.some((file) => kindUsesReferences(file.kind))
+      if (!hasRaw && !hasRefs) {
+        publishParsed(files, [], lookup)
+        if (files.some((file) => hasPreviewKind(file.kind))) {
+          setPreviewToken((token) => token + 1)
+          setStep('preview')
+        } else {
+          setStep('executar')
         }
+        return
       }
-      const merged = nextLookup ? lookupWithBatchTags(files, nextLookup) : null
+
+      const runId = ++rawRunRef.current
+      const fixFileCount = files.filter((file) => isRawKind(file.kind) || isExportKind(file.kind)).length
+      const stepCount = 1 + fixFileCount
+      setStep('ajustes')
+      setRawStatus({
+        fileIndex: 0,
+        fileCount: stepCount,
+        fileName: 'Tags, subtags e compartilhamentos da conta',
+        processed: 0,
+        total: 0,
+        fraction: 0,
+      })
+      let nextLookup: MappingImportLookup
+      try {
+        nextLookup = await loadLookup()
+      } catch (error) {
+        if (rawRunRef.current !== runId) return
+        setRawStatus(null)
+        setStep('arquivos')
+        setPageError(errorText(error, 'Não foi possível carregar tags e compartilhamentos.'))
+        return
+      }
+      if (rawRunRef.current !== runId) return
+      setLookup(nextLookup)
+      const merged = lookupWithBatchTags(files, nextLookup)
       setClassLookup(merged)
       const omit = Boolean(
         merged && !merged.tags.length && !merged.subtags.length && filesCarryClassification(files),
@@ -483,12 +1201,16 @@ export default function ImportWizardPage() {
         }),
       )
       setAdjustVersion(fileVersion)
-      if (found.length || omit) {
-        setStep('ajustes')
+      if (!fixFileCount) setRawFixGroups([])
+      const groups = fixFileCount ? await loadRawFixes(files, fileVersion, runId, 1, stepCount) : []
+      if (!groups || rawRunRef.current !== runId) return
+      setRawStatus(null)
+      if (groups.length || found.length || omit) {
+        setAdjustTab(firstAdjustTab(found, omit, groups))
         return
       }
       publishParsed(files, [], nextLookup)
-      if (files.some((file) => isExcelKind(file.kind))) {
+      if (files.some((file) => hasPreviewKind(file.kind))) {
         setPreviewToken((token) => token + 1)
         setStep('preview')
       } else {
@@ -497,24 +1219,42 @@ export default function ImportWizardPage() {
       return
     }
     if (step === 'ajustes') {
-      if (adjustments.some((row) => !adjustmentComplete(row))) {
-        const classPending = adjustments.some((row) => row.kind !== 'sharing' && !adjustmentComplete(row))
-        setPageError(
-          classPending
-            ? 'Escolha a tag e a subtag de cada classificação. Se só a subtag mudou, mantenha a tag.'
-            : 'Escolha um compartilhamento existente para cada nome ausente.',
-        )
+      if (rawStatus) return
+      const pendingRaw = pendingRawFixes(rawFixGroups, conflictDecisions)
+      if (pendingRaw) {
+        setPageError(pendingRawMessage(pendingRaw))
         return
       }
+      if (adjustments.some((row) => row.kind === 'sharing' && !adjustmentComplete(row))) {
+        setPageError('Escolha um compartilhamento existente para cada nome ausente.')
+        return
+      }
+      const pendingClass = adjustments.filter((row) => row.kind !== 'sharing' && !adjustmentComplete(row))
+      if (pendingClass.length) {
+        const confirmed = await showConfirm({
+          title: 'Tags e subtags sem ajuste',
+          message: unadjustedClassMessage(pendingClass),
+          confirmText: 'Continuar',
+          cancelText: 'Voltar',
+          type: 'warning',
+        })
+        if (!confirmed) return
+      }
+      const rewrite = adjustments.length > 0 || omitClassification
       const activeLookup = classLookup ?? lookup
-      if (!activeLookup) return
-      const rewritten = files.map((file) => {
-        if (!file.parsedOriginal) return file
-        const adjusted = applyAdjustments(file.parsedOriginal, adjustments, activeLookup)
-        return { ...file, parsed: omitClassification ? stripClassification(adjusted) : adjusted }
-      })
-      setFiles(rewritten)
-      if (rewritten.some((file) => isExcelKind(file.kind))) {
+      if (rewrite && !activeLookup) return
+      const kept = keptExportKeys(rawFixGroups, conflictDecisions)
+      setFiles(
+        files.map((file) => {
+          if (!file.parsedOriginal) return file
+          let parsed = rewrite
+            ? applyAdjustments(file.parsedOriginal, adjustments, activeLookup!)
+            : cloneParsed(file.parsedOriginal)
+          if (rewrite && omitClassification) parsed = stripClassification(parsed)
+          return { ...file, parsed: withKeptRows(file.id, parsed, kept) }
+        }),
+      )
+      if (files.some((file) => hasPreviewKind(file.kind))) {
         setPreviewToken((token) => token + 1)
         setStep('preview')
       } else {
@@ -523,6 +1263,7 @@ export default function ImportWizardPage() {
       return
     }
     if (step === 'preview') {
+      if (previewKinds.some((kind) => !previews[kind] || previews[kind]?.loading)) return
       setStep('executar')
     }
   }
@@ -549,14 +1290,18 @@ export default function ImportWizardPage() {
     const index = flowSteps.indexOf(step)
     if (index <= 0 || running) return
     setPageError(null)
+    cancelRawLoad()
     setStep(flowSteps[index - 1])
   }
 
   const runFrom = async (startIndex: number, confirmedIds: Set<string>, acc: WizardFileResult[]) => {
+    const reviewedConflictKeys = new Set(
+      rawFixGroups.flatMap((group) => group.conflicts.map((conflict) => rawConflictKey(group.fileId, conflict))),
+    )
     setRunning(true)
     setClosureHold(null)
     for (let index = startIndex; index < orderedFiles.length; index += 1) {
-      const file = orderedFiles[index]
+      const file = withTagIcons(orderedFiles[index], tagIconOverrides)
       const jobId = crypto.randomUUID()
       setProgress({
         jobId,
@@ -578,6 +1323,9 @@ export default function ImportWizardPage() {
         const outcome = await importFile(file, confirmedIds.has(file.id), jobId, onProgress, {
           autoRunRemap,
           overwriteSharing,
+          processed: rawProcessedRef.current.get(file.id),
+          conflictDecisions,
+          reviewedConflictKeys,
         })
         if (outcome.closure) {
           setResults([...acc])
@@ -634,16 +1382,55 @@ export default function ImportWizardPage() {
     setClassLookup(null)
     setOmitClassification(false)
     setPreviews({})
+    rawProcessedRef.current.clear()
+    cancelRawLoad()
+    setRawReadyVersion(-1)
+    setRawFixGroups([])
+    setConflictDecisions({})
+    setTagIconOverrides({})
     setResults([])
     setConflicts([])
     setShowConflicts(false)
     setPageError(null)
     setProgress(null)
     setClosureHold(null)
+    setPreviewTab(null)
+    scrollContainerRef.current?.scrollTo({ top: 0 })
   }
 
+  const locationKey = useLocation().key
+  const lastLocationKey = useRef(locationKey)
+  useEffect(() => {
+    if (lastLocationKey.current === locationKey) return
+    lastLocationKey.current = locationKey
+    if (running) return
+    resetWizard()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locationKey])
+
   const block = step === 'arquivos' ? arquivosBlock(files, detecting) : null
+  const previewLoading =
+    step === 'preview' && previewKinds.some((kind) => !previews[kind] || previews[kind]?.loading)
+  const nothingToImport =
+    step === 'preview' &&
+    !previewLoading &&
+    previewKinds.length > 0 &&
+    previewKinds.every((kind) => previewTabCount(previews[kind]) === 0) &&
+    !rawFixGroups.some((group) =>
+      group.conflicts.some((conflict) => conflictDecisions[rawConflictKey(group.fileId, conflict)]?.choice === 'novo'),
+    )
   const percent = progress ? importBatchPercent(progress.fileIndex, progress.fileCount, progress.fraction) : 0
+  const rawLoading = step === 'ajustes' && rawStatus != null
+  const rawPercent = rawStatus ? importBatchPercent(rawStatus.fileIndex, rawStatus.fileCount, rawStatus.fraction) : 0
+  const rawPending = pendingRawFixes(rawFixGroups, conflictDecisions)
+  const rawPendingText = step === 'ajustes' && rawPending ? pendingRawMessage(rawPending) : null
+  const adjustTabs = buildAdjustTabs(adjustments, omitClassification, rawFixGroups, conflictDecisions)
+  const activeAdjustTab: AdjustTabId = adjustTabs.some((tab) => tab.id === adjustTab)
+    ? adjustTab
+    : adjustTabs[0]?.id ?? 'classificacao'
+  const visibleAdjustments = adjustments.filter((row) =>
+    activeAdjustTab === 'compartilhamento' ? row.kind === 'sharing' : row.kind !== 'sharing',
+  )
   const unmappedTotal = results.reduce((sum, result) => sum + result.unmapped, 0)
 
   return (
@@ -651,11 +1438,16 @@ export default function ImportWizardPage() {
       <Sidebar />
       <CadastroListPageShell>
         <CadastroListPageBody
+          scrollRef={scrollContainerRef}
           header={
             <CadastroListPageHero
               icon={<FileUp className="h-8 w-8" />}
               title="Importar"
-              subtitle="Uma leva, vários tipos. O ajuste de tag, subtag ou compartilhamento vale para todos os arquivos."
+              subtitle={
+                targetAccountName
+                  ? `Destino: conta “${targetAccountName}”. Uma leva, vários tipos. O ajuste de tag, subtag ou compartilhamento vale para todos os arquivos.`
+                  : 'Uma leva, vários tipos. O ajuste de tag, subtag ou compartilhamento vale para todos os arquivos.'
+              }
               actions={
                 <>
                   {step !== 'arquivos' && step !== 'resultado' ? (
@@ -666,7 +1458,7 @@ export default function ImportWizardPage() {
                       icon={<ChevronLeft size={18} />}
                     />
                   ) : null}
-                  {step === 'resultado' ? (
+                  {step === 'resultado' || nothingToImport ? (
                     <CadastroListPrimaryButton
                       label="Finalizar"
                       onClick={resetWizard}
@@ -683,7 +1475,14 @@ export default function ImportWizardPage() {
                     <button
                       type="button"
                       onClick={() => void goNext()}
-                      disabled={Boolean(block) || running}
+                      disabled={Boolean(block) || running || previewLoading || rawLoading || Boolean(rawPendingText)}
+                      title={
+                        previewLoading
+                          ? 'Aguarde o fim da pré-visualização'
+                          : rawLoading
+                            ? 'Aguarde a análise dos arquivos'
+                            : rawPendingText ?? undefined
+                      }
                       className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                       style={{ background: 'var(--color-create)', color: 'var(--on-color-create)' }}
                     >
@@ -710,7 +1509,11 @@ export default function ImportWizardPage() {
                     <button
                       type="button"
                       disabled={!done || running}
-                      onClick={() => done && setStep(id)}
+                      onClick={() => {
+                        if (!done) return
+                        cancelRawLoad()
+                        setStep(id)
+                      }}
                       aria-current={active ? 'step' : undefined}
                       title={skipped ? 'Esta etapa não se aplica a esta leva' : undefined}
                       className={`flex w-full items-center justify-center gap-2 px-3 py-2.5 text-xs font-semibold uppercase tracking-wider transition-colors disabled:cursor-default ${
@@ -753,12 +1556,12 @@ export default function ImportWizardPage() {
           ) : null}
 
           {step === 'arquivos' ? (
-            <section className="space-y-4">
-              <label
-                className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed px-6 py-10 text-center ${
+            <div className="space-y-4">
+              <div
+                className={`flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-8 ${
                   dragOver
-                    ? 'border-[var(--color-1)] bg-white dark:bg-gray-800'
-                    : 'border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-800'
+                    ? 'border-[var(--color-1)] bg-[color-mix(in_srgb,var(--color-1)_8%,transparent)]'
+                    : 'border-gray-300 bg-gray-50 dark:border-gray-600 dark:bg-gray-900/40'
                 }`}
                 onDragOver={(event) => {
                   event.preventDefault()
@@ -772,218 +1575,419 @@ export default function ImportWizardPage() {
                   void addFiles(event.dataTransfer.files)
                 }}
               >
-                <Upload className="mb-2 h-6 w-6 text-[var(--color-1)]" />
-                <span className="text-sm font-medium text-gray-800 dark:text-gray-100">
-                  Solte os arquivos ou clique para escolher
-                </span>
-                <span className="mt-1 text-xs text-gray-500">
-                  Planilhas XLSX exportadas pelo Plumo. A fila entra nesta ordem: contas, tags, compartilhamentos,
-                  cartões, mapeamentos, templates e extrato.
-                </span>
-                <input
-                  type="file"
-                  multiple
-                  accept=".xlsx"
-                  className="hidden"
-                  onChange={(event) => {
-                    if (event.target.files) void addFiles(event.target.files)
-                    event.target.value = ''
-                  }}
-                />
-              </label>
+                <Upload size={32} className="text-gray-400" />
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Arraste um ou mais arquivos ou clique para selecionar
+                </p>
+                <p className="text-xs text-gray-500">
+                  PDF (fatura, holerite ou informe), Excel (.xlsx, .xls), CSV de benefício ou planilhas do Plumo
+                </p>
+                <label
+                  className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium ${
+                    detecting ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                  }`}
+                  style={{ background: 'var(--color-1)', color: 'var(--on-color-1)' }}
+                >
+                  <FileUp size={18} />
+                  {detecting ? 'Identificando…' : 'Selecionar arquivos'}
+                  <input
+                    type="file"
+                    multiple
+                    accept=".xlsx,.xls,.pdf,.csv,application/pdf"
+                    disabled={detecting}
+                    className="hidden"
+                    onChange={(event) => {
+                      if (event.target.files) void addFiles(event.target.files)
+                      event.target.value = ''
+                    }}
+                  />
+                </label>
+              </div>
 
-              {orderedFiles.length > 0 ? (
-                <ul className="divide-y divide-gray-200 overflow-hidden rounded-xl border border-gray-200 bg-white dark:divide-gray-700 dark:border-gray-700 dark:bg-gray-800">
-                  {orderedFiles.map((file) => (
-                    <li
-                      key={file.id}
-                      className="flex flex-wrap items-center gap-3 bg-white px-4 py-3 dark:bg-gray-800"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{file.file.name}</p>
-                        <p className="text-xs text-gray-500">
-                          {KIND_LABEL[file.kind]}
-                          {file.payrollPreview ? ` · ${file.payrollPreview}` : ''}
-                          {isExcelKind(file.kind) ? ` · ${countParsedRows(file.parsedOriginal)} linhas` : ''}
-                        </p>
-                        {file.error && file.kind === 'blocked' ? (
-                          <p className="mt-1 text-xs text-red-600 dark:text-red-300">{file.error}</p>
-                        ) : null}
+              <CadastroFormSection
+                title={`Arquivos${orderedFiles.length > 0 ? ` (${orderedFiles.length})` : ''}`}
+                icon={<Upload size={13} />}
+              >
+                {orderedFiles.length === 0 ? (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Nenhum arquivo na fila. Use a área acima para adicionar extratos, faturas, CSVs de benefício,
+                    holerites, informes ou as planilhas exportadas pelo Plumo.
+                  </p>
+                ) : (
+                  <>
+                    <p className="mb-2 text-[11px] leading-snug text-gray-500 dark:text-gray-400">
+                      A fila entra nesta ordem: contas, tags, compartilhamentos, cartões, mapeamentos, templates, extrato
+                      e faturas do Plumo, extrato do banco, faturas PDF, benefícios, holerites e informes.
+                    </p>
+                    <section className="overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[52rem] table-fixed border-separate border-spacing-0 text-sm">
+                          <colgroup>
+                            <col className="w-10" />
+                            <col />
+                            <col className="w-[150px]" />
+                            <col className="w-[84px]" />
+                            <col className="w-[260px]" />
+                            <col className="w-14" />
+                          </colgroup>
+                          <thead>
+                            <tr className="bg-gray-50 dark:bg-gray-800/60 [&>th]:border-b-2 [&>th]:border-gray-200 dark:[&>th]:border-gray-600">
+                              <th className="px-3 py-3 text-left text-xs font-bold uppercase text-gray-500 dark:text-gray-400">
+                                #
+                              </th>
+                              <th className="px-3 py-3 text-left text-xs font-bold uppercase text-gray-500 dark:text-gray-400">
+                                Arquivo
+                              </th>
+                              <th className="px-3 py-3 text-center text-xs font-bold uppercase text-gray-500 dark:text-gray-400">
+                                Tipo
+                              </th>
+                              <th className="px-3 py-3 text-center text-xs font-bold uppercase text-gray-500 dark:text-gray-400">
+                                Importar
+                              </th>
+                              <th className="px-3 py-3 text-center text-xs font-bold uppercase text-gray-500 dark:text-gray-400">
+                                Config
+                              </th>
+                              <th className="px-2 py-3 text-center text-xs font-bold uppercase text-gray-500 dark:text-gray-400">
+                                Ação
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {orderedFiles.map((file, index) => (
+                              <tr
+                                key={file.id}
+                                className={`${listPageTableRowHoverCls} [&>td]:border-b [&>td]:border-gray-100 dark:[&>td]:border-gray-700/50`}
+                              >
+                                <td className="px-3 py-2.5 text-xs font-mono tabular-nums text-gray-500 dark:text-gray-400">
+                                  {index + 1}
+                                </td>
+                                <td className="px-3 py-2.5">
+                                  <div className="flex min-w-0 items-center gap-2">
+                                    {isPdfFileName(file.file.name) ? (
+                                      <FileText className="h-4 w-4 shrink-0 text-gray-600 dark:text-gray-400" aria-hidden />
+                                    ) : (
+                                      <FileSpreadsheet className="h-4 w-4 shrink-0 text-gray-600 dark:text-gray-400" aria-hidden />
+                                    )}
+                                    <span
+                                      className="truncate font-medium text-gray-800 dark:text-gray-100"
+                                      title={file.file.name}
+                                    >
+                                      {file.file.name}
+                                    </span>
+                                  </div>
+                                  {file.error && file.kind === 'blocked' ? (
+                                    <p className="mt-1 text-xs text-red-600 dark:text-red-300">{file.error}</p>
+                                  ) : null}
+                                </td>
+                                <td className="px-3 py-2.5 text-center">
+                                  <KindBadge
+                                    kind={file.kind}
+                                    info={{ issuer: file.issuer, issuerLabel: file.issuerLabel, cardLast4: file.cardLast4 }}
+                                  />
+                                </td>
+                                <td className="px-3 py-2.5 text-center">
+                                  <div className="flex justify-center">
+                                    <KindIcon kind={file.kind} />
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2.5 text-center">
+                                  {isExcelKind(file.kind) ? (
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                                      {countParsedRows(file.parsedOriginal)} linhas
+                                    </p>
+                                  ) : null}
+                                  {file.payrollPreview ? (
+                                    <p
+                                      className="truncate text-xs text-gray-600 dark:text-gray-300"
+                                      title={file.payrollPreview}
+                                    >
+                                      {file.payrollPreview}
+                                    </p>
+                                  ) : null}
+                                  {!isExcelKind(file.kind) &&
+                                  !file.payrollPreview &&
+                                  !file.needsPassword &&
+                                  file.kind !== 'fatura_bruta' &&
+                                  file.kind !== 'beneficio_csv' ? (
+                                    <span className="text-xs text-gray-400">—</span>
+                                  ) : null}
+                                  {file.needsPassword ? (
+                                    <input
+                                      type="password"
+                                      value={file.pdfPassword || ''}
+                                      placeholder="Senha do PDF"
+                                      className="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900"
+                                      onChange={(event) =>
+                                        setFiles((prev) =>
+                                          prev.map((item) =>
+                                            item.id === file.id ? { ...item, pdfPassword: event.target.value } : item,
+                                          ),
+                                        )
+                                      }
+                                      onBlur={(event) => void commitPdfPassword(file.id, event.target.value)}
+                                    />
+                                  ) : null}
+                                  {file.kind === 'fatura_bruta' ? (
+                                    <div className="flex justify-center gap-1.5">
+                                      <select
+                                        value={file.year || ''}
+                                        className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900"
+                                        onChange={(event) =>
+                                          setFiles((prev) =>
+                                            prev.map((item) =>
+                                              item.id === file.id ? { ...item, year: event.target.value } : item,
+                                            ),
+                                          )
+                                        }
+                                      >
+                                        <option value="">Ano</option>
+                                        {years.map((year) => (
+                                          <option key={year} value={year}>
+                                            {year}
+                                          </option>
+                                        ))}
+                                      </select>
+                                      <select
+                                        value={file.month || ''}
+                                        className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900"
+                                        onChange={(event) =>
+                                          setFiles((prev) =>
+                                            prev.map((item) =>
+                                              item.id === file.id ? { ...item, month: event.target.value } : item,
+                                            ),
+                                          )
+                                        }
+                                      >
+                                        <option value="">Mês</option>
+                                        {MONTHS.map((month) => (
+                                          <option key={month.value} value={month.value}>
+                                            {month.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  ) : null}
+                                  {file.kind === 'beneficio_csv' ? (
+                                    <select
+                                      value={file.creditCardId || ''}
+                                      className="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900"
+                                      onChange={(event) =>
+                                        setFiles((prev) =>
+                                          prev.map((item) =>
+                                            item.id === file.id
+                                              ? { ...item, creditCardId: Number(event.target.value) || undefined }
+                                              : item,
+                                          ),
+                                        )
+                                      }
+                                    >
+                                      <option value="">Cartão de benefício</option>
+                                      {benefitCards.map((card) => (
+                                        <option key={card.id} value={card.id}>
+                                          {card.name} ({card.number})
+                                        </option>
+                                      ))}
+                                    </select>
+                                  ) : null}
+                                </td>
+                                <td className="px-2 py-2.5 text-center">
+                                  <button
+                                    type="button"
+                                    className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
+                                    onClick={() => {
+                                      setFiles((prev) => prev.filter((item) => item.id !== file.id))
+                                      setFileVersion((version) => version + 1)
+                                      setAdjustVersion(-1)
+                                    }}
+                                    aria-label="Remover arquivo"
+                                    title="Remover arquivo"
+                                  >
+                                    <Trash2 size={15} />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
-                      {file.needsPassword ? (
-                        <input
-                          type="password"
-                          value={file.pdfPassword || ''}
-                          placeholder="Senha do PDF"
-                          className="w-40 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900"
-                          onChange={(event) =>
-                            setFiles((prev) =>
-                              prev.map((item) =>
-                                item.id === file.id ? { ...item, pdfPassword: event.target.value } : item,
-                              ),
-                            )
-                          }
-                          onBlur={(event) => void commitPdfPassword(file.id, event.target.value)}
-                        />
-                      ) : null}
-                      {file.kind === 'fatura_bruta' ? (
-                        <div className="flex gap-2">
-                          <select
-                            value={file.year || ''}
-                            className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900"
-                            onChange={(event) =>
-                              setFiles((prev) =>
-                                prev.map((item) => (item.id === file.id ? { ...item, year: event.target.value } : item)),
-                              )
-                            }
-                          >
-                            <option value="">Ano</option>
-                            {years.map((year) => (
-                              <option key={year} value={year}>
-                                {year}
-                              </option>
-                            ))}
-                          </select>
-                          <select
-                            value={file.month || ''}
-                            className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900"
-                            onChange={(event) =>
-                              setFiles((prev) =>
-                                prev.map((item) => (item.id === file.id ? { ...item, month: event.target.value } : item)),
-                              )
-                            }
-                          >
-                            <option value="">Mês</option>
-                            {MONTHS.map((month) => (
-                              <option key={month.value} value={month.value}>
-                                {month.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      ) : null}
-                      {file.kind === 'beneficio_csv' ? (
-                        <select
-                          value={file.creditCardId || ''}
-                          className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900"
-                          onChange={(event) =>
-                            setFiles((prev) =>
-                              prev.map((item) =>
-                                item.id === file.id
-                                  ? { ...item, creditCardId: Number(event.target.value) || undefined }
-                                  : item,
-                              ),
-                            )
-                          }
-                        >
-                          <option value="">Cartão de benefício</option>
-                          {benefitCards.map((card) => (
-                            <option key={card.id} value={card.id}>
-                              {card.name} ({card.number})
-                            </option>
-                          ))}
-                        </select>
-                      ) : null}
-                      <button
-                        type="button"
-                        className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700"
-                        onClick={() => {
-                          setFiles((prev) => prev.filter((item) => item.id !== file.id))
-                          setFileVersion((version) => version + 1)
-                          setAdjustVersion(-1)
-                        }}
-                        aria-label="Remover arquivo"
-                      >
-                        <X size={16} />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </section>
+                    </section>
+                  </>
+                )}
+              </CadastroFormSection>
+            </div>
           ) : null}
 
           {step === 'ajustes' ? (
-            <section className="space-y-3">
-              {omitClassification ? (
-                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
-                  Não há tags nem subtags na conta e nenhum arquivo de cadastro nesta leva. Os registros serão inseridos
-                  sem esses valores.
-                </p>
-              ) : (
-                <p className="text-sm text-gray-600 dark:text-gray-300">
-                  Tag e subtag são ajustadas juntas.
-                  {files.some((file) => file.kind === 'tags')
-                    ? ' As opções vêm da conta e do arquivo de tags e subtags desta leva. Um nome que já está nesse arquivo vale como está.'
-                    : ' As opções são as tags e subtags já cadastradas na conta.'}{' '}
-                  Se só a subtag mudou, mantenha a tag e escolha a nova subtag. Se as duas mudaram, escolha a tag e
-                  depois a subtag.
-                </p>
-              )}
-              {adjustments.length > 0 ? (
-              <ul className="space-y-3">
-                {adjustments.map((row) => (
-                  <li
-                    key={row.key}
-                    className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{adjustmentLabel(row)}</p>
-                        <p className="mt-1 text-xs text-gray-500">
-                          {row.total} registro(s) em {row.occurrences.length} arquivo(s):{' '}
-                          {row.occurrences.map((item) => item.fileName).join(', ')}
-                        </p>
-                      </div>
-                      <div className="w-full max-w-xl">
-                        <ReplacementSelect
-                          row={row}
-                          lookup={classLookup ?? lookup}
-                          onChange={(patch) =>
-                            setAdjustments((prev) =>
-                              prev.map((item) => (item.key === row.key ? { ...item, ...patch } : item)),
-                            )
-                          }
-                        />
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+            <div className="space-y-3">
+              {rawStatus ? (
+                <div
+                  role="progressbar"
+                  aria-valuenow={Math.round(rawPercent)}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800"
+                >
+                  <div className="mb-1.5 flex justify-between gap-3 text-sm">
+                    <span className="min-w-0 truncate">
+                      Carregando ajustes · etapa {rawStatus.fileIndex + 1} de {rawStatus.fileCount} ·{' '}
+                      {rawStatus.fileName}
+                    </span>
+                    <span className="font-semibold tabular-nums text-[var(--color-1)]">
+                      {rawPercent.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
+                    </span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+                    <div
+                      className="h-full rounded-full bg-[var(--color-1)] transition-[width]"
+                      style={{ width: `${rawPercent}%` }}
+                    />
+                  </div>
+                  <p className="mt-1.5 text-xs text-gray-500">
+                    {rawStatus.detail
+                      ? rawStatus.detail
+                      : rawStatus.fileIndex === 0
+                        ? 'Conferindo as referências das planilhas…'
+                        : rawStatus.total > 0
+                          ? `Linha ${rawStatus.processed.toLocaleString('pt-BR')} de ${rawStatus.total.toLocaleString('pt-BR')} · comparando com o que já está gravado`
+                          : 'Lendo arquivo…'}
+                  </p>
+                </div>
               ) : null}
-            </section>
-          ) : null}
-
-          {step === 'preview' ? (
-            <section>
-              <p className="mb-3 text-sm text-gray-600 dark:text-gray-300">
-                A pré-visualização e a gravação seguem a ordem da fila: contas, tags, compartilhamentos, cartões,
-                mapeamentos, templates e extrato.
-              </p>
-              {previewTab ? (
-                <CadastroListPageTabs
-                  tabs={excelKinds.map((kind) => ({
-                    key: kind,
-                    label: KIND_LABEL[kind],
-                    count: files.filter((file) => file.kind === kind).length,
-                  }))}
-                  active={previewTab}
-                  onChange={setPreviewTab}
+              {!rawStatus && adjustTabs.length > 0 ? (
+                <>
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    Revise o que precisa de ajuste antes da pré-visualização.
+                    {rawPendingText ? (
+                      <span className="font-medium text-amber-700 dark:text-amber-300"> {rawPendingText}</span>
+                    ) : null}
+                  </p>
+                  <CadastroListPageTabs
+                    tabs={adjustTabs.map((tab) => ({
+                      key: tab.id,
+                      label: ADJUST_TAB_LABEL[tab.id],
+                      count: tab.count,
+                      icon: tab.pending ? (
+                        <span className="h-2 w-2 rounded-full bg-amber-400" aria-label="Pendente" />
+                      ) : undefined,
+                    }))}
+                    active={activeAdjustTab}
+                    onChange={setAdjustTab}
+                  />
+                </>
+              ) : null}
+              {!rawStatus && isRawAdjustTab(activeAdjustTab) ? (
+                <RawImportAdjustments
+                  groups={rawFixGroups.filter((group) => group.kind === activeAdjustTab)}
+                  decisions={conflictDecisions}
+                  onDecide={(updates) => setConflictDecisions((prev) => ({ ...prev, ...updates }))}
                 />
               ) : null}
-              <div className="mt-4">
-                {previewTab ? (
-                  <PreviewPane kind={previewTab} slot={previews[previewTab]} files={orderedFiles} lookup={lookup} />
-                ) : null}
-              </div>
-            </section>
+              {!rawStatus && activeAdjustTab === 'classificacao' ? (
+                omitClassification ? (
+                  <p className="text-sm text-amber-800 dark:text-amber-200">
+                    Não há tags nem subtags na conta e nenhum arquivo de cadastro nesta leva. Os registros serão
+                    inseridos sem esses valores.
+                  </p>
+                ) : (
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    Ajuste tag e subtag juntas quando a planilha referencia um cadastro inexistente nesta conta.
+                    {files.some((file) => file.kind === 'tags')
+                      ? ' As opções vêm da conta e do arquivo de tags e subtags desta leva.'
+                      : ' As opções são as tags e subtags já cadastradas na conta.'}
+                  </p>
+                )
+              ) : null}
+              {!rawStatus && activeAdjustTab === 'compartilhamento' ? (
+                <p className="text-sm text-gray-600 dark:text-gray-300">
+                  Escolha um compartilhamento existente para cada conta parceira que a planilha cita e que não existe
+                  nesta conta.
+                </p>
+              ) : null}
+              {!rawStatus &&
+              (activeAdjustTab === 'classificacao' || activeAdjustTab === 'compartilhamento') &&
+              visibleAdjustments.length > 0 &&
+              (classLookup ?? lookup) ? (
+                <AdjustmentsTable
+                  rows={visibleAdjustments}
+                  lookup={(classLookup ?? lookup)!}
+                  onChange={(key, patch) =>
+                    setAdjustments((prev) => prev.map((item) => (item.key === key ? { ...item, ...patch } : item)))
+                  }
+                />
+              ) : null}
+            </div>
+          ) : null}
+
+          {step === 'preview' && previewTab ? (
+            <div>
+              <p className="mb-4 text-sm text-gray-600 dark:text-gray-300">
+                A pré-visualização e a gravação seguem a ordem da fila: contas, tags, compartilhamentos, cartões,
+                mapeamentos, templates, extrato e faturas.
+              </p>
+              {nothingToImport ? (
+                <p className="mb-4 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                  Nada a importar: nenhuma aba traz registros novos ou alterados. Clique em Finalizar para encerrar.
+                </p>
+              ) : null}
+              <CadastroListPageTabs
+                tabs={previewTabs.map((tab) => {
+                  const loading = tab.parts.some((part) => !part.slot || part.slot.loading)
+                  return {
+                    key: tab.id,
+                    label: tab.label,
+                    count: loading
+                      ? undefined
+                      : tab.parts.reduce((sum, part) => sum + (previewTabCount(part.slot) ?? 0), 0),
+                    icon: loading ? <PreviewTabSpinner /> : undefined,
+                  }
+                })}
+                active={previewTab}
+                onChange={setPreviewTab}
+              />
+              {(previewTabs.find((tab) => tab.id === previewTab)?.parts ?? []).map((part, index, parts) => (
+                <section key={part.kind} className={index > 0 ? 'mt-6' : undefined}>
+                  {parts.length > 1 ? (
+                    <h3 className="mb-3 text-sm font-semibold text-gray-800 dark:text-gray-100">
+                      {previewPartLabel(part.kind)}
+                    </h3>
+                  ) : null}
+                  {!part.slot || part.slot.loading ? (
+                    <div className="flex items-center gap-3 py-8 text-sm text-gray-500 dark:text-gray-400">
+                      <PreviewTabSpinner />
+                      Gerando pré-visualização…
+                      {part.slot?.progress ? <span className="tabular-nums">{part.slot.progress}</span> : null}
+                    </div>
+                  ) : part.slot.error ? (
+                    <p className="mb-4 text-sm text-red-600 dark:text-red-300">{part.slot.error}</p>
+                  ) : (
+                    <PreviewPane
+                      kind={part.kind}
+                      slot={part.slot}
+                      files={orderedFiles}
+                      lookup={lookup}
+                      tagIconOverrides={tagIconOverrides}
+                      onTagIconChange={(row, icon) => {
+                        const key = `${row.entity ?? ''}:${row.row}`
+                        setTagIconOverrides((prev) => (prev[key] === icon ? prev : { ...prev, [key]: icon }))
+                      }}
+                      decisionNotes={[
+                        ...rawDecisionNotes(part.kind, orderedFiles, rawFixGroups, conflictDecisions),
+                        ...exportDecisionNotes(part.kind, part.source, orderedFiles, rawFixGroups, conflictDecisions),
+                      ]}
+                    />
+                  )}
+                </section>
+              ))}
+            </div>
           ) : null}
 
           {step === 'executar' ? (
             <section className="space-y-4">
               <ul className="divide-y divide-gray-200 overflow-hidden rounded-xl border border-gray-200 bg-white dark:divide-gray-700 dark:border-gray-700 dark:bg-gray-800">
                 {orderedFiles.map((file, index) => {
-                  const rows = countParsedRows(file.parsed)
+                  const rows = isRawKind(file.kind)
+                    ? rawProcessedRef.current.get(file.id)?.rows.length ?? 0
+                    : countParsedRows(file.parsed)
                   return (
                     <li key={file.id} className="px-4 py-3 text-sm text-gray-800 dark:text-gray-100">
                       <span className="font-medium tabular-nums text-gray-500">{index + 1}.</span>{' '}
@@ -1091,6 +2095,22 @@ export default function ImportWizardPage() {
         </CadastroListPageBody>
       </CadastroListPageShell>
 
+      {showBackToTop ? (
+        <FloatingFooterBar>
+          <div className="flex items-center justify-end">
+            <button
+              type="button"
+              onClick={scrollToTop}
+              className="flex items-center gap-1.5 rounded-lg bg-color-primary px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90"
+              title="Voltar ao topo"
+            >
+              <ArrowUp size={14} />
+              Voltar ao Topo
+            </button>
+          </div>
+        </FloatingFooterBar>
+      ) : null}
+
       <ClosureEditImpactDialog
         isOpen={closureHold != null}
         impact={closureHold?.impact ?? null}
@@ -1130,115 +2150,229 @@ export default function ImportWizardPage() {
           setShowConflicts(false)
         }}
       />
+      <ConfirmComponent />
     </div>
   )
 }
 
-const selectClass =
-  'mt-1 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900'
+const adjustmentSelectCls = `${cadastroFilterFieldCls} ring-1 ring-amber-400/80`
 
-function ReplacementSelect({
-  row,
+function AdjustmentsTable({
+  rows,
   lookup,
   onChange,
 }: {
-  row: AdjustmentRow
-  lookup: MappingImportLookup | null
-  onChange: (patch: Partial<Pick<AdjustmentRow, 'replacementId' | 'replacementTagId' | 'replacementSubtagId'>>) => void
+  rows: AdjustmentRow[]
+  lookup: MappingImportLookup
+  onChange: (
+    key: string,
+    patch: Partial<Pick<AdjustmentRow, 'replacementId' | 'replacementTagId' | 'replacementSubtagId'>>,
+  ) => void
 }) {
-  if (!lookup) return null
-  if (row.kind === 'subtag') {
-    const tagId = row.replacementTagId
-    const subtags = lookup.subtags.filter((subtag) => {
-      if (tagId == null || subtag.tag_id !== tagId) return false
-      if (row.subtagType && subtag.type !== row.subtagType) return false
-      return true
-    })
-    return (
-      <div className="grid gap-2 sm:grid-cols-2">
-        <label className="block text-xs text-gray-500">
-          Tag
-          <select
-            value={tagId ?? ''}
-            className={selectClass}
-            onChange={(event) => {
-              const nextTagId = event.target.value ? Number(event.target.value) : null
-              const stillValid =
-                nextTagId != null &&
-                row.replacementSubtagId != null &&
-                lookup.subtags.some(
-                  (subtag) => subtag.id === row.replacementSubtagId && subtag.tag_id === nextTagId,
-                )
-              onChange({
-                replacementTagId: nextTagId,
-                replacementSubtagId: stillValid ? row.replacementSubtagId : null,
-              })
-            }}
-          >
-            <option value="">Escolher tag…</option>
-            {lookup.tags.map((tag) => (
-              <option key={tag.id} value={tag.id}>
-                {tag.id < 0 ? `${tag.name} · nesta leva` : tag.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="block text-xs text-gray-500">
-          Subtag
-          <select
-            value={row.replacementSubtagId ?? ''}
-            disabled={tagId == null}
-            className={selectClass}
-            onChange={(event) =>
-              onChange({ replacementSubtagId: event.target.value ? Number(event.target.value) : null })
-            }
-          >
-            <option value="">{tagId == null ? 'Escolha a tag primeiro' : 'Escolher subtag…'}</option>
-            {subtags.map((subtag) => (
-              <option key={subtag.id} value={subtag.id}>
-                {`${row.subtagType ? subtag.name : `${subtag.name} · ${subtag.type}`}${subtag.id < 0 ? ' · nesta leva' : ''}`}
-              </option>
-            ))}
-          </select>
-          {tagId != null && subtags.length === 0 ? (
-            <span className="mt-1 block text-xs text-amber-700 dark:text-amber-300">
-              Essa tag não tem subtag deste tipo.
-            </span>
-          ) : null}
-        </label>
-      </div>
-    )
-  }
-  if (row.kind === 'tag') {
-    return (
-      <select
-        value={row.replacementId ?? ''}
-        className="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900"
-        onChange={(event) => onChange({ replacementId: event.target.value ? Number(event.target.value) : null })}
-      >
-        <option value="">Substituir pela tag…</option>
-        {lookup.tags.map((tag) => (
-          <option key={tag.id} value={tag.id}>
-            {tag.id < 0 ? `${tag.name} · nesta leva` : tag.name}
-          </option>
-        ))}
-      </select>
-    )
-  }
   return (
-    <select
-      value={row.replacementId ?? ''}
-      className="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900"
-      onChange={(event) => onChange({ replacementId: event.target.value ? Number(event.target.value) : null })}
+    <ListPageTable
+      leadingMode="index-only"
+      minWidth={1180}
+      framed
+      colsRest={
+        <>
+          <ListTableSpacerCol />
+          <col style={{ width: '12%', minWidth: 110 }} />
+          <col style={{ width: '12%', minWidth: 110 }} />
+          <col style={{ width: '14%', minWidth: 130 }} />
+          <col style={{ width: 88, minWidth: 72 }} />
+          <col style={{ width: '16%', minWidth: 150 }} />
+          <col style={{ width: '16%', minWidth: 150 }} />
+          <col style={{ width: '18%', minWidth: 170 }} />
+        </>
+      }
+      head={
+        <tr>
+          <ListTableIndexHeader />
+          <ListTableSpacerHeader />
+          <th className={listPageTableThCls}>Tag</th>
+          <th className={listPageTableThCls}>Subtag</th>
+          <th className={listPageTableThCls}>Compartilhamento</th>
+          <th className={listPageTableThCls}>Tipo</th>
+          <th className={listPageTableThCls}>Nova tag</th>
+          <th className={listPageTableThCls}>Nova subtag</th>
+          <th className={listPageTableThCls}>Novo compartilhamento</th>
+        </tr>
+      }
     >
-      <option value="">Substituir pelo compartilhamento…</option>
-      {lookup.partners.map((partner) => (
-        <option key={partner.id} value={partner.id}>
-          {partner.shared_account?.name || partner.shared_account?.description || `Parceiro ${partner.id}`}
-        </option>
-      ))}
-    </select>
+      {rows.map((row, index) => {
+        const tagId = row.replacementTagId
+        const subtags = lookup.subtags.filter((subtag) => {
+          if (tagId == null || subtag.tag_id !== tagId) return false
+          if (row.subtagType && subtag.type !== row.subtagType) return false
+          return true
+        })
+        return (
+          <tr key={row.key} className={listPageTableRowHoverCls}>
+            <ListTableIndexCell index={index + 1} />
+            <td className="list-page-table-spacer-col" aria-hidden />
+            <td className={listPageTableTdCls}>{row.tagName || '—'}</td>
+            <td className={listPageTableTdCls}>{row.subtagName || '—'}</td>
+            <td className={listPageTableTdCls}>{row.partnerName || '—'}</td>
+            <td className={`${listPageTableTdCls} capitalize`}>{row.subtagType || '—'}</td>
+            <td className={listPageTableTdCls}>
+              {row.kind === 'subtag' ? (
+                <select
+                  className={adjustmentSelectCls}
+                  value={tagId ?? ''}
+                  onChange={(event) => {
+                    const nextTagId = event.target.value ? Number(event.target.value) : null
+                    const stillValid =
+                      nextTagId != null &&
+                      row.replacementSubtagId != null &&
+                      lookup.subtags.some(
+                        (subtag) => subtag.id === row.replacementSubtagId && subtag.tag_id === nextTagId,
+                      )
+                    onChange(row.key, {
+                      replacementTagId: nextTagId,
+                      replacementSubtagId: stillValid ? row.replacementSubtagId : null,
+                    })
+                  }}
+                >
+                  <option value="">Selecione…</option>
+                  {lookup.tags.map((tag) => (
+                    <option key={tag.id} value={tag.id}>
+                      {tag.id < 0 ? `${tag.name} · nesta leva` : tag.name}
+                    </option>
+                  ))}
+                </select>
+              ) : row.kind === 'tag' ? (
+                <select
+                  className={adjustmentSelectCls}
+                  value={row.replacementId ?? ''}
+                  onChange={(event) =>
+                    onChange(row.key, { replacementId: event.target.value ? Number(event.target.value) : null })
+                  }
+                >
+                  <option value="">Selecione…</option>
+                  {lookup.tags.map((tag) => (
+                    <option key={tag.id} value={tag.id}>
+                      {tag.id < 0 ? `${tag.name} · nesta leva` : tag.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="text-gray-500 dark:text-gray-400">—</span>
+              )}
+            </td>
+            <td className={listPageTableTdCls}>
+              {row.kind === 'subtag' ? (
+                <select
+                  className={adjustmentSelectCls}
+                  value={row.replacementSubtagId ?? ''}
+                  disabled={tagId == null}
+                  onChange={(event) =>
+                    onChange(row.key, {
+                      replacementSubtagId: event.target.value ? Number(event.target.value) : null,
+                    })
+                  }
+                >
+                  <option value="">{tagId == null ? 'Tag primeiro' : 'Selecione…'}</option>
+                  {subtags.map((subtag) => (
+                    <option key={subtag.id} value={subtag.id}>
+                      {`${row.subtagType ? subtag.name : `${subtag.name} · ${subtag.type}`}${subtag.id < 0 ? ' · nesta leva' : ''}`}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="text-gray-500 dark:text-gray-400">—</span>
+              )}
+            </td>
+            <td className={listPageTableTdCls}>
+              {row.kind === 'sharing' ? (
+                <select
+                  className={adjustmentSelectCls}
+                  value={row.replacementId ?? ''}
+                  onChange={(event) =>
+                    onChange(row.key, { replacementId: event.target.value ? Number(event.target.value) : null })
+                  }
+                >
+                  <option value="">Selecione…</option>
+                  {lookup.partners.map((partner) => (
+                    <option key={partner.id} value={partner.id}>
+                      {partner.shared_account?.name || partner.shared_account?.description || `Parceiro ${partner.id}`}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="text-gray-500 dark:text-gray-400">—</span>
+              )}
+            </td>
+          </tr>
+        )
+      })}
+    </ListPageTable>
   )
+}
+
+function unadjustedClassMessage(rows: AdjustmentRow[]): string {
+  const items = rows.reduce((sum, row) => sum + row.total, 0)
+  const shown = rows.slice(0, 8).map((row) => `· ${adjustmentLabel(row)}`)
+  const hidden = rows.length - shown.length
+  if (hidden > 0) {
+    shown.push(`· e mais ${hidden} ${hidden === 1 ? 'classificação' : 'classificações'}`)
+  }
+  const intro =
+    rows.length === 1
+      ? 'Esta classificação ficou sem nova tag e nova subtag no passo Ajustes:'
+      : 'Estas classificações ficaram sem nova tag e nova subtag no passo Ajustes:'
+  const outcome =
+    items === 1
+      ? 'O item que usa essa classificação será salvo vazio.'
+      : `Os ${items} itens que usam ${rows.length === 1 ? 'essa classificação' : 'essas classificações'} serão salvos vazios.`
+  return `${intro}\n${shown.join('\n')}\n\n${outcome}`
+}
+
+function PreviewTabSpinner() {
+  return (
+    <span
+      className="inline-block h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent"
+      aria-hidden
+    />
+  )
+}
+
+function previewTabCount(slot: PreviewSlot | undefined): number | undefined {
+  if (!slot || slot.loading || slot.error || !slot.data) return undefined
+  return slot.data.summary.creates + slot.data.summary.updates
+}
+
+function patchTagIcon(parsed: WizardParsed, entity: string | null | undefined, line: number, icon: string): WizardParsed {
+  if (parsed.kind !== 'tags') return parsed
+  if (entity === 'subtag') {
+    return {
+      ...parsed,
+      data: {
+        ...parsed.data,
+        subtags: parsed.data.subtags.map((item) => (item.row_index === line ? { ...item, icon } : item)),
+      },
+    }
+  }
+  return {
+    ...parsed,
+    data: {
+      ...parsed.data,
+      tags: parsed.data.tags.map((item) => (item.row_index === line ? { ...item, icon } : item)),
+    },
+  }
+}
+
+function withTagIcons(file: WizardFile, overrides: Record<string, string>): WizardFile {
+  if (file.kind !== 'tags' || !file.parsed || !Object.keys(overrides).length) return file
+  let parsed = file.parsed
+  for (const [key, icon] of Object.entries(overrides)) {
+    const split = key.indexOf(':')
+    const entity = key.slice(0, split)
+    const line = Number(key.slice(split + 1))
+    if (!Number.isFinite(line)) continue
+    parsed = patchTagIcon(parsed, entity, line, icon)
+  }
+  return parsed === file.parsed ? file : { ...file, parsed }
 }
 
 function PreviewPane({
@@ -1246,19 +2380,28 @@ function PreviewPane({
   slot,
   files,
   lookup,
+  tagIconOverrides,
+  onTagIconChange,
+  decisionNotes,
 }: {
   kind: WizardKind
   slot: PreviewSlot | undefined
   files: WizardFile[]
   lookup: MappingImportLookup | null
+  tagIconOverrides: Record<string, string>
+  onTagIconChange: (row: CadastroImportPreviewRow, icon: string) => void
+  decisionNotes: string[]
 }) {
-  if (!slot || slot.loading) {
-    return <p className="text-sm text-gray-500">Gerando pré-visualização…</p>
+  if (!slot || slot.loading || slot.error || !slot.data) return null
+  if (isRawKind(kind)) {
+    return (
+      <RawImportPreview
+        kind={kind}
+        data={slot.data as RawKindPreviewData}
+        notes={[...decisionNotes, ...rawPreviewNotes(kind, files)]}
+      />
+    )
   }
-  if (slot.error) {
-    return <p className="text-sm text-red-600 dark:text-red-300">{slot.error}</p>
-  }
-  if (!slot.data) return null
   if (kind === 'mapeamentos') {
     const merged = mergeParsed(kind, files)
     return (
@@ -1271,10 +2414,16 @@ function PreviewPane({
       />
     )
   }
-  if (kind === 'extrato_export') {
-    return <ExtratoVisualImportPreview data={slot.data as VisualImportPreviewData} />
+  if (kind === 'extrato_export' || kind === 'fatura_export') {
+    return <ExtratoVisualImportPreview data={slot.data as VisualImportPreviewData} notes={decisionNotes} />
   }
-  return <CadastroImportPreview data={slot.data as CadastroImportPreviewData} />
+  return (
+    <CadastroImportPreview
+      data={slot.data as CadastroImportPreviewData}
+      tagIconOverrides={kind === 'tags' ? tagIconOverrides : undefined}
+      onTagIconChange={kind === 'tags' ? onTagIconChange : undefined}
+    />
+  )
 }
 
 async function importFile(
@@ -1282,7 +2431,13 @@ async function importFile(
   confirmClosed: boolean,
   jobId: string,
   onProgress: (update: { processed: number; total: number; fraction: number }) => void,
-  options: { autoRunRemap: boolean; overwriteSharing: boolean },
+  options: {
+    autoRunRemap: boolean
+    overwriteSharing: boolean
+    processed?: RawProcessed
+    conflictDecisions: Record<string, ConflictDecision>
+    reviewedConflictKeys: Set<string>
+  },
 ): Promise<{ result: WizardFileResult; closure?: undefined } | { result?: undefined; closure: ClosureEditImpact }> {
   if (isExcelKind(file.kind)) {
     if (!file.parsed) throw new Error('Planilha sem dados.')
@@ -1364,39 +2519,59 @@ async function importFile(
     }
   }
 
+  const processed = options.processed
+  if (!processed || processed.key !== rawProcessKey(file) || processed.preview.error) {
+    throw new Error('Arquivo sem processamento válido. Volte ao Preview para processá-lo de novo.')
+  }
+
+  const rows = processed.rows
+  const finish = async (result: WizardFileResult) => ({
+    result: await applyConflictDecisions(file.id, result, options.conflictDecisions, options.reviewedConflictKeys),
+  })
+
   if (file.kind === 'extrato_bruto') {
-    const form = new FormData()
-    form.append('files', file.file)
-    form.append('enable_tracing', 'false')
-    const response = await postImportWithProgress<Record<string, unknown>>('/api/import/extrato', form, jobId, onProgress)
-    return { result: rawResult(file, response.data) }
+    const response = await postImportWithProgress<Record<string, unknown>>(
+      '/api/import/extrato/persist',
+      { rows, ignored_rows: processed.ignoredRows },
+      jobId,
+      onProgress,
+    )
+    return finish(rawResult(file, response.data))
   }
 
   if (file.kind === 'fatura_bruta') {
-    const form = new FormData()
-    form.append('files', file.file)
-    form.append('years', file.year || '')
-    form.append('months', file.month || '')
-    form.append('passwords', file.pdfPassword ?? '')
-    form.append('save_conversion_txt', 'false')
-    const response = await postImportWithProgress<Record<string, unknown>>('/api/import/cartao', form, jobId, onProgress)
-    return { result: rawResult(file, response.data, true) }
+    const response = await postImportWithProgress<Record<string, unknown>>(
+      '/api/import/cartao/persist',
+      { rows },
+      jobId,
+      onProgress,
+    )
+    return finish(rawResult(file, response.data, true))
   }
 
   if (file.kind === 'beneficio_csv') {
     if (!file.creditCardId) throw new Error('Selecione um cartão de benefícios.')
-    const form = new FormData()
-    form.append('file', file.file)
     const response = await postImportWithProgress<Record<string, unknown>>(
-      `/api/benefit-card-statements/importar-csv?credit_card_id=${file.creditCardId}`,
-      form,
+      '/api/benefit-card-statements/csv/persist',
+      { credit_card_id: file.creditCardId, rows },
       jobId,
       onProgress,
     )
-    return { result: rawResult(file, response.data) }
+    return finish(rawResult(file, response.data))
   }
 
   throw new Error('Tipo de arquivo sem gravação.')
+}
+
+function rawIssues(data: Record<string, unknown>): Array<{ row?: number; reason: string }> {
+  const skipped = Array.isArray(data.linhas_ignoradas_detalhe) ? data.linhas_ignoradas_detalhe : []
+  return skipped.map((item) => {
+    const row = item && typeof item === 'object' ? (item as { Linha?: unknown; Erro?: unknown }) : {}
+    return {
+      row: typeof row.Linha === 'number' ? row.Linha : undefined,
+      reason: typeof row.Erro === 'string' ? row.Erro.replace(/^Linha \d+:\s*/, '') : 'Linha ignorada',
+    }
+  })
 }
 
 function rawResult(file: WizardFile, data: Record<string, unknown>, pdf = false): WizardFileResult {
@@ -1419,7 +2594,7 @@ function rawResult(file: WizardFile, data: Record<string, unknown>, pdf = false)
     kind: file.kind,
     success: !failed,
     message,
-    issues: [],
+    issues: rawIssues(data),
     conflicts,
     unmapped,
   }

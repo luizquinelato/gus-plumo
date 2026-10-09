@@ -73,9 +73,9 @@ def classify_transaction_edit(
 ) -> ChangeKind:
     if _money(old_amount) != _money(new_amount) or _period_from_date(old_date) != _period_from_date(new_date):
         return "cash"
-    if (old_sharing_id or None) != (new_sharing_id or None) or _money(old_ownership or 100) != _money(
-        new_ownership or 100
-    ):
+    if (old_sharing_id or None) != (new_sharing_id or None) or _money(
+        100 if old_ownership is None else old_ownership
+    ) != _money(100 if new_ownership is None else new_ownership):
         return "split_only"
     if (old_subtag_id or None) != (new_subtag_id or None):
         return "classification"

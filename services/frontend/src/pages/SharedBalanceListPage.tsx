@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { DateField } from '../components/date'
-import { formatDateBR, parseLocalDate, dateToLocalString, getTodayLocalDate } from '../utils/dateUtils'
+import { formatDateBR, parseLocalDate, dateToLocalString, dateToLocalTimestamp, getTodayLocalDate } from '../utils/dateUtils'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
 import {
@@ -569,6 +569,15 @@ function getAccountDisplayName(account: Account | undefined) {
   return account.name || account.description || 'Sem nome'
 }
 
+/** Data no formato do input datetime-local (YYYY-MM-DDTHH:MM, horário local). */
+function toLocalDateTimeInput(date: Date = new Date()): string {
+  return dateToLocalTimestamp(date).slice(0, 16).replace(' ', 'T')
+}
+
+function nowLocalDateTimeInput(): string {
+  return toLocalDateTimeInput()
+}
+
 function closureReferenceLabel(closure: BalanceClosure): string {
   const { month, year } = closure
   if (!month || !year) return '—'
@@ -584,6 +593,15 @@ function closurePeriodEndRaw(closure: BalanceClosure): string {
 function parseClosureDateTime(raw: string): Date {
   const normalized = String(raw).includes('T') ? raw : String(raw).replace(' ', 'T')
   return new Date(normalized)
+}
+
+/** Default da quitação manual: fim do período do balanço (limitado a agora). */
+function closureSettleDefaultInput(closure: BalanceClosure): string {
+  const now = nowLocalDateTimeInput()
+  const end = parseClosureDateTime(closurePeriodEndRaw(closure))
+  if (Number.isNaN(end.getTime())) return now
+  const value = toLocalDateTimeInput(end)
+  return value > now ? now : value
 }
 
 const SharedBalanceListPage = () => {
@@ -720,6 +738,12 @@ const SharedBalanceListPage = () => {
   const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false)
   const [bulkDeleteClearPayments, setBulkDeleteClearPayments] = useState(true)
   const [bulkDeleteClearLoans, setBulkDeleteClearLoans] = useState(true)
+  const [bulkUnsettleClosures, setBulkUnsettleClosures] = useState<BalanceClosure[] | null>(null)
+  const [bulkUnsettleClearPayments, setBulkUnsettleClearPayments] = useState(true)
+  const [bulkUnsettleClearLoans, setBulkUnsettleClearLoans] = useState(true)
+  const [bulkSettleClosures, setBulkSettleClosures] = useState<BalanceClosure[] | null>(null)
+  const [bulkSettleMode, setBulkSettleMode] = useState<'today' | 'manual'>('today')
+  const [bulkSettleDates, setBulkSettleDates] = useState<Record<number, string>>({})
 
   // Estados para modais de detalhes
   interface ModalState {
@@ -814,14 +838,6 @@ const SharedBalanceListPage = () => {
     }
     loadInitialData()
   }, [])
-
-  const initialClosuresLoadDone = useRef(false)
-  useEffect(() => {
-    if (initialLoading || initialClosuresLoadDone.current) return
-    initialClosuresLoadDone.current = true
-    applyListFilters()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- auto-aplicar Todos na abertura
-  }, [initialLoading])
 
   useEffect(() => {
     const container = closuresScrollContainerRef.current
@@ -1645,41 +1661,67 @@ const SharedBalanceListPage = () => {
       return
     }
 
-    showConfirm(
-      'Remover Quitação em Massa',
-      `Deseja realmente remover a quitação de ${settledClosures.length} fechamento(s)?`,
-      async () => {
-        setBulkActionLoading(true)
-        try {
-          let successCount = 0
-          let errorCount = 0
+    setBulkUnsettleClearPayments(true)
+    setBulkUnsettleClearLoans(true)
+    setBulkUnsettleClosures(settledClosures)
+  }
 
-          for (const closure of settledClosures) {
-            try {
-              await axios.delete(`/api/balance/closures/${closure.id}/settle`)
-              successCount++
-            } catch {
-              errorCount++
+  const closeBulkUnsettleModal = () => {
+    if (bulkActionLoading) return
+    setBulkUnsettleClosures(null)
+  }
+
+  const handleConfirmBulkUnsettle = async () => {
+    const targets = bulkUnsettleClosures
+    if (!targets?.length) return
+    setBulkActionLoading(true)
+    try {
+      let successCount = 0
+      const failures: string[] = []
+
+      for (const closure of targets) {
+        try {
+          if (bulkUnsettleClearLoans) {
+            const loanIds = filterRegularLoanPayments(getClosureLoanPaymentsList(closure)).map(
+              (lp: { loan_id: number }) => lp.loan_id,
+            )
+            if (loanIds.length > 0) {
+              await axios.delete(`/api/balance/closures/${closure.id}/loan-payments`, {
+                data: { loan_ids: loanIds },
+              })
             }
           }
-
-          if (errorCount === 0) {
-            setToast({ show: true, message: `Quitação removida de ${successCount} fechamento(s)!`, type: 'success' })
-          } else {
-            setToast({ show: true, message: `${successCount} removido(s), ${errorCount} erro(s)`, type: 'warning' })
+          if (bulkUnsettleClearPayments) {
+            const hasPayments = (closure.closure_payments || []).some((p) => p.active !== false)
+            if (hasPayments) {
+              await axios.delete(`/api/balance/closures/${closure.id}/payments`)
+            }
           }
-
-          setSelectedClosureIds(new Set())
-          if (appliedYear != null) void loadClosures(appliedYear)
+          await axios.delete(`/api/balance/closures/${closure.id}/settle`)
+          successCount++
         } catch (error: any) {
-          setToast({ show: true, message: 'Erro ao remover quitações', type: 'error' })
-        } finally {
-          setBulkActionLoading(false)
+          const detail = error.response?.data?.detail
+          const message = typeof detail === 'string' ? detail : (detail?.message || 'erro ao reabrir')
+          failures.push(`${closureReferenceLabel(closure)}: ${message}`)
         }
-      },
-      'Remover Quitações',
-      'Cancelar'
-    )
+      }
+
+      if (failures.length === 0) {
+        setToast({ show: true, message: `Quitação removida de ${successCount} fechamento(s)!`, type: 'success' })
+      } else {
+        setToast({
+          show: true,
+          message: `${successCount} reaberto(s), ${failures.length} com erro — ${failures.join('; ')}`,
+          type: 'warning',
+        })
+      }
+
+      setBulkUnsettleClosures(null)
+      setSelectedClosureIds(new Set())
+      if (appliedYear != null) void loadClosures(appliedYear)
+    } finally {
+      setBulkActionLoading(false)
+    }
   }
 
   // Quitar fechamentos selecionados em massa
@@ -1694,43 +1736,65 @@ const SharedBalanceListPage = () => {
       return
     }
 
-    showConfirm(
-      'Quitar Fechamentos em Massa',
-      `Deseja realmente marcar ${unsettledClosures.length} fechamento(s) como quitado(s)?`,
-      async () => {
-        setBulkActionLoading(true)
+    setBulkSettleMode('today')
+    setBulkSettleDates(Object.fromEntries(unsettledClosures.map((c) => [c.id, closureSettleDefaultInput(c)])))
+    setBulkSettleClosures(unsettledClosures)
+  }
+
+  const closeBulkSettleModal = () => {
+    if (bulkActionLoading) return
+    setBulkSettleClosures(null)
+    setBulkSettleDates({})
+  }
+
+  const handleConfirmBulkSettle = async () => {
+    const targets = bulkSettleClosures
+    if (!targets?.length) return
+
+    if (bulkSettleMode === 'manual') {
+      const now = nowLocalDateTimeInput()
+      const missing = targets.filter((c) => !bulkSettleDates[c.id])
+      if (missing.length > 0) {
+        setToast({ show: true, message: 'Preencha a data/hora de pagamento de todos os balanços.', type: 'warning' })
+        return
+      }
+      const future = targets.filter((c) => bulkSettleDates[c.id] > now)
+      if (future.length > 0) {
+        setToast({ show: true, message: 'A data/hora de pagamento não pode ser futura.', type: 'warning' })
+        return
+      }
+    }
+
+    setBulkActionLoading(true)
+    try {
+      let successCount = 0
+      let errorCount = 0
+
+      for (const closure of targets) {
         try {
-          let successCount = 0
-          let errorCount = 0
-
-          for (const closure of unsettledClosures) {
-            try {
-              await axios.put(`/api/balance/closures/${closure.id}/settle`, {
-                settlement_notes: null
-              })
-              successCount++
-            } catch {
-              errorCount++
-            }
-          }
-
-          if (errorCount === 0) {
-            setToast({ show: true, message: `${successCount} fechamento(s) quitado(s) com sucesso!`, type: 'success' })
-          } else {
-            setToast({ show: true, message: `${successCount} quitado(s), ${errorCount} erro(s)`, type: 'warning' })
-          }
-
-          setSelectedClosureIds(new Set())
-          if (appliedYear != null) void loadClosures(appliedYear)
-        } catch (error: any) {
-          setToast({ show: true, message: 'Erro ao quitar fechamentos', type: 'error' })
-        } finally {
-          setBulkActionLoading(false)
+          await axios.put(`/api/balance/closures/${closure.id}/settle`, {
+            settlement_notes: null,
+            ...(bulkSettleMode === 'manual' ? { settlement_date: bulkSettleDates[closure.id] } : {}),
+          })
+          successCount++
+        } catch {
+          errorCount++
         }
-      },
-      'Quitar',
-      'Cancelar'
-    )
+      }
+
+      if (errorCount === 0) {
+        setToast({ show: true, message: `${successCount} fechamento(s) quitado(s) com sucesso!`, type: 'success' })
+      } else {
+        setToast({ show: true, message: `${successCount} quitado(s), ${errorCount} erro(s)`, type: 'warning' })
+      }
+
+      setBulkSettleClosures(null)
+      setBulkSettleDates({})
+      setSelectedClosureIds(new Set())
+      if (appliedYear != null) void loadClosures(appliedYear)
+    } finally {
+      setBulkActionLoading(false)
+    }
   }
 
   // Atalhos de teclado para modais (ESC para fechar/cancelar, Enter/Space para confirmar)
@@ -1907,8 +1971,8 @@ const SharedBalanceListPage = () => {
             {!closuresLoading && !filtersApplied && (
               <CadastroListPageEmptyCard
                 icon={<Filter size={32} className="text-gray-400" />}
-                title="Não foi possível carregar"
-                description="Recarregue a página ou clique em Aplicar nos filtros acima."
+                title="Selecione os filtros"
+                description="Escolha a conta compartilhada e o ano (ou deixe Todos) e clique em Aplicar para carregar os fechamentos."
               />
             )}
 
@@ -2077,13 +2141,13 @@ const SharedBalanceListPage = () => {
                           const settlementCreditTotal = getSettlementCreditTotal(closure)
                           const remainingBalance = closure.is_settled
                             ? 0
-                            : parseFloat(String(closure.remaining_balance ?? Math.abs(displayNetBalance)))
-                          const displayBalance =
-                            closure.is_settled && settlementCreditTotal > 0.01
-                              ? settlementCreditSigned
-                              : totalPaid > 0
-                                ? remainingBalance
-                                : displayNetBalance
+                            : Math.sign(displayNetBalance || 1) *
+                              Math.abs(parseFloat(String(closure.remaining_balance ?? displayNetBalance)))
+                          const displayBalance = closure.is_settled
+                            ? (settlementCreditTotal > 0.01 ? settlementCreditSigned : 0)
+                            : totalPaid > 0
+                              ? remainingBalance
+                              : displayNetBalance
                           const isRemainingView = !closure.is_settled && totalPaid > 0
                           const isCreditSettleView = closure.is_settled && settlementCreditTotal > 0.01
 
@@ -2134,13 +2198,12 @@ const SharedBalanceListPage = () => {
                                 >
                                   {periodRangeLabel}
                                 </p>
-                              </div>
-                              <div className="mx-0.5 hidden h-10 w-px shrink-0 bg-gray-200 dark:bg-gray-600 sm:block" />
-                              <div className="hidden min-w-0 shrink items-center gap-1.5 sm:flex">
-                                <div className="min-w-0 max-w-[8rem] shrink md:max-w-[9.5rem]">
+                                <div className="flex min-w-0 items-center gap-1.5">
+                                <div className="min-w-0 max-w-[45%] shrink">
                                   {viewerCard?.account_id ? (
                                     <SharedAccountDisplay
                                       compact
+                                      nameClassName="!text-xs text-gray-700 dark:text-gray-300"
                                       account={{
                                         id: viewerCard.account_id || 0,
                                         name: viewerCard.account_name,
@@ -2157,21 +2220,21 @@ const SharedBalanceListPage = () => {
                                   )}
                                 </div>
                                 <span
-                                  className="hidden shrink-0 text-gray-400 dark:text-gray-500 md:inline-flex"
+                                  className="inline-flex shrink-0 text-gray-400 dark:text-gray-500"
                                   title="Troca entre contas compartilhadas"
                                   aria-hidden
                                 >
-                                  <ArrowLeftRight size={16} strokeWidth={2} />
+                                  <ArrowLeftRight size={12} strokeWidth={2} />
                                 </span>
-                                <div className="hidden min-w-0 max-w-[8rem] shrink md:block md:max-w-[9.5rem]">
+                                <div className="min-w-0 max-w-[45%] shrink">
                                   {otherCard?.account_id ? (
                                     <SharedAccountDisplay
                                       compact
-                                      nameClassName={sharedAccountNameColorClass(
+                                      nameClassName={`!text-xs ${sharedAccountNameColorClass(
                                         closureAccountNameColors,
                                         otherCard.account_id,
                                         loggedAccountId,
-                                      )}
+                                      )}`}
                                       account={{
                                         id: otherCard.account_id || 0,
                                         name: otherCard.account_name,
@@ -2186,6 +2249,7 @@ const SharedBalanceListPage = () => {
                                   ) : (
                                     <span className="text-xs text-gray-400">—</span>
                                   )}
+                                </div>
                                 </div>
                               </div>
                               <div className="mx-0.5 hidden h-10 w-px shrink-0 bg-gray-200 dark:bg-gray-600 sm:block" />
@@ -2229,7 +2293,22 @@ const SharedBalanceListPage = () => {
                                 )}
                               </div>
                               <div className="mx-1 hidden h-10 w-px shrink-0 bg-gray-200 dark:bg-gray-600 md:block" />
-                              <div className="text-right self-start w-[110px]">
+                              <div className="hidden text-right self-start w-[110px] md:block" title="Valor apurado no fechamento">
+                                <p className="text-sm text-gray-500 dark:text-gray-400">Resultado</p>
+                                <p
+                                  className={`font-bold ${
+                                    displayNetBalance > 0
+                                      ? 'text-green-600 dark:text-green-400'
+                                      : displayNetBalance < 0
+                                        ? 'text-red-600 dark:text-red-400'
+                                        : 'text-gray-900 dark:text-gray-100'
+                                  }`}
+                                >
+                                  {formatSignedCurrency(displayNetBalance)}
+                                </p>
+                              </div>
+                              <div className="mx-1 hidden h-10 w-px shrink-0 bg-gray-200 dark:bg-gray-600 md:block" />
+                              <div className="text-right self-start w-[110px]" title="Quanto ainda falta pagar/receber">
                                 <p className="text-sm text-gray-500 dark:text-gray-400">Saldo</p>
                                 <p
                                   className={`font-bold ${
@@ -2869,6 +2948,162 @@ const SharedBalanceListPage = () => {
               saveIcon={hasPayments || hasLoans ? <Trash2 size={15} /> : <Unlock size={15} />}
             />
           </CadastroModalShell>
+          )
+        })()}
+        {/* Modal: Remover quitação em massa */}
+        {bulkUnsettleClosures && (() => {
+          const withPayments = bulkUnsettleClosures.filter(
+            (c) => (c.closure_payments || []).some((p) => p.active !== false),
+          ).length
+          const withLoans = bulkUnsettleClosures.filter(
+            (c) => filterRegularLoanPayments(getClosureLoanPaymentsList(c)).length > 0,
+          ).length
+          return (
+            <CadastroModalShell maxWidth="max-w-lg" onBackdropClick={closeBulkUnsettleModal} zClass="z-50">
+              <CadastroModalHeader
+                isEdit={true}
+                title="Remover quitação"
+                subtitle={`${bulkUnsettleClosures.length} fechamento(s) quitado(s) selecionado(s)`}
+                onClose={closeBulkUnsettleModal}
+                icon={<Unlock size={18} />}
+              />
+              <CadastroModalBody>
+                <CadastroFormSection title="O que limpar" icon={<Trash2 size={14} />} bodyClassName="p-0">
+                  <CadastroModalFieldsGrid>
+                    <CadastroModalFieldsRow>
+                      <label className={`${cadastroOptionLabelCls} items-start`}>
+                        <input
+                          type="checkbox"
+                          checked={bulkUnsettleClearPayments}
+                          onChange={(e) => setBulkUnsettleClearPayments(e.target.checked)}
+                          disabled={bulkActionLoading || withPayments === 0}
+                          className={`${cadastroAccentControlCls} mt-0.5 h-4 w-4 rounded border-gray-300`}
+                        />
+                        <span>
+                          <span className="block text-sm font-medium">Remover todos os pagamentos</span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            {withPayments > 0
+                              ? `Em ${withPayments} fechamento(s) com pagamento (inclui o lançado na quitação)`
+                              : 'Nenhum fechamento selecionado tem pagamento'}
+                          </span>
+                        </span>
+                      </label>
+                    </CadastroModalFieldsRow>
+                    <CadastroModalFieldsRow>
+                      <label className={`${cadastroOptionLabelCls} items-start`}>
+                        <input
+                          type="checkbox"
+                          checked={bulkUnsettleClearLoans}
+                          onChange={(e) => setBulkUnsettleClearLoans(e.target.checked)}
+                          disabled={bulkActionLoading || withLoans === 0}
+                          className={`${cadastroAccentControlCls} mt-0.5 h-4 w-4 rounded border-gray-300`}
+                        />
+                        <span>
+                          <span className="block text-sm font-medium">Limpar liquidações de empréstimo</span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            {withLoans > 0
+                              ? `Em ${withLoans} fechamento(s) — empréstimos reabertos`
+                              : 'Nenhum fechamento selecionado tem liquidação'}
+                          </span>
+                        </span>
+                      </label>
+                    </CadastroModalFieldsRow>
+                  </CadastroModalFieldsGrid>
+                </CadastroFormSection>
+              </CadastroModalBody>
+              <CadastroModalFooter
+                onClose={closeBulkUnsettleModal}
+                saving={bulkActionLoading}
+                onSave={() => void handleConfirmBulkUnsettle()}
+                saveLabel={`Reabrir ${bulkUnsettleClosures.length} fechamento(s)`}
+                saveIcon={<Unlock size={15} />}
+              />
+            </CadastroModalShell>
+          )
+        })()}
+        {/* Modal: Quitar fechamentos em massa */}
+        {bulkSettleClosures && (() => {
+          const maxDateTime = nowLocalDateTimeInput()
+          return (
+            <CadastroModalShell maxWidth="max-w-xl" onBackdropClick={closeBulkSettleModal} zClass="z-50">
+              <CadastroModalHeader
+                isEdit={true}
+                title="Quitar fechamentos"
+                subtitle={`${bulkSettleClosures.length} fechamento(s) não quitado(s) selecionado(s)`}
+                onClose={closeBulkSettleModal}
+                icon={<CheckCircle size={18} />}
+              />
+              <CadastroModalBody>
+                <CadastroFormSection title="Data de lançamento do pagamento" icon={<Calendar size={14} />} bodyClassName="p-0">
+                  <CadastroModalFieldsGrid>
+                    <CadastroModalFieldsRow>
+                      <div className="flex flex-wrap gap-4">
+                        <label className={cadastroOptionLabelCls}>
+                          <input
+                            type="radio"
+                            checked={bulkSettleMode === 'today'}
+                            onChange={() => setBulkSettleMode('today')}
+                            disabled={bulkActionLoading}
+                            className={cadastroAccentControlCls}
+                          />
+                          Hoje
+                        </label>
+                        <label className={cadastroOptionLabelCls}>
+                          <input
+                            type="radio"
+                            checked={bulkSettleMode === 'manual'}
+                            onChange={() => setBulkSettleMode('manual')}
+                            disabled={bulkActionLoading}
+                            className={cadastroAccentControlCls}
+                          />
+                          Preencher manual
+                        </label>
+                      </div>
+                    </CadastroModalFieldsRow>
+                    {bulkSettleMode === 'today' ? (
+                      <CadastroModalFieldsRow>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          Todos os pagamentos serão lançados com a data e hora do momento da quitação.
+                        </p>
+                      </CadastroModalFieldsRow>
+                    ) : (
+                      bulkSettleClosures.map((closure) => (
+                        <CadastroModalFieldsRow key={closure.id} cols={2}>
+                          <div className="min-w-0 self-center">
+                            <p className="truncate text-sm font-medium text-gray-900 dark:text-white" title={closureReferenceLabel(closure)}>
+                              {closureReferenceLabel(closure)}
+                            </p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                              Restante: {formatCurrency(Math.abs(Number(closure.remaining_balance ?? closure.net_balance ?? 0)))}
+                            </p>
+                          </div>
+                          <label className="block min-w-0">
+                            <CadastroFieldLabel required>Data/hora do pagamento</CadastroFieldLabel>
+                            <input
+                              type="datetime-local"
+                              value={bulkSettleDates[closure.id] ?? ''}
+                              max={maxDateTime}
+                              onChange={(e) =>
+                                setBulkSettleDates((prev) => ({ ...prev, [closure.id]: e.target.value }))
+                              }
+                              disabled={bulkActionLoading}
+                              className={`${cadastroFieldCls} mt-0.5`}
+                            />
+                          </label>
+                        </CadastroModalFieldsRow>
+                      ))
+                    )}
+                  </CadastroModalFieldsGrid>
+                </CadastroFormSection>
+              </CadastroModalBody>
+              <CadastroModalFooter
+                onClose={closeBulkSettleModal}
+                saving={bulkActionLoading}
+                onSave={() => void handleConfirmBulkSettle()}
+                saveLabel={`Quitar ${bulkSettleClosures.length} fechamento(s)`}
+                saveIcon={<CheckCircle size={15} />}
+              />
+            </CadastroModalShell>
           )
         })()}
         {/* Modal: Excluir fechamentos em massa */}

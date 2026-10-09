@@ -9,7 +9,6 @@ import {
   CadastroListPageHero,
   CadastroListPageShell,
   CadastroListPageTabs,
-  cadastroFilterFieldCls,
   cadastroRowIconBtnCls,
   cadastroRowIconDangerCls,
   listPageTableRowHoverCls,
@@ -41,6 +40,7 @@ import {
   ListTableStaticHeader,
 } from '../components/ListTableSelectColumns'
 import Badge from '../components/Badge'
+import { MultiSelectDropdown } from '../components/MultiSelectDropdown'
 import LoadingSpinner from '../components/LoadingSpinner'
 import SharedAccountDisplay from '../components/SharedAccountDisplay'
 import Toast from '../components/Toast'
@@ -1636,8 +1636,9 @@ const AccountClosuresPage = () => {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const activeTab: ClosureTab = location.pathname.endsWith('/fechados') ? 'closed' : 'open'
 
-  const [draftYear, setDraftYear] = useState('')
-  const [appliedYear, setAppliedYear] = useState<number | 'all' | null>(null)
+  const [draftYears, setDraftYears] = useState<number[]>([])
+  /** null = ainda não aplicado; [] = todos os anos. */
+  const [appliedYears, setAppliedYears] = useState<number[] | null>(null)
   const [filtersApplied, setFiltersApplied] = useState(false)
   const [filterOptions, setFilterOptions] = useState<AccountPeriodFilterOptions | null>(null)
   const [filtersLoading, setFiltersLoading] = useState(true)
@@ -1752,15 +1753,19 @@ const AccountClosuresPage = () => {
     }
   }, [])
 
-  const loadYear = useCallback(async (nextYear: number | 'all') => {
+  const loadYears = useCallback(async (years: number[]) => {
     setLoading(true)
     setError(null)
     try {
-      const data = nextYear === 'all'
-        ? await listAccountPeriodClosures(null, true)
-        : await listAccountPeriodClosures(nextYear)
+      const data = years.length === 1
+        ? await listAccountPeriodClosures(years[0])
+        : await listAccountPeriodClosures(null, true)
+      if (years.length > 1) {
+        const wanted = new Set(years)
+        data.months = data.months.filter((item) => wanted.has(item.year))
+      }
       setSeries(data)
-      setAppliedYear(nextYear)
+      setAppliedYears(years)
       setFiltersApplied(true)
       setSelectedKeys(new Set())
     } catch (err) {
@@ -1772,20 +1777,13 @@ const AccountClosuresPage = () => {
   }, [])
 
   const reloadApplied = useCallback(async () => {
-    if (appliedYear == null) return
-    await loadYear(appliedYear)
-  }, [appliedYear, loadYear])
+    if (appliedYears == null) return
+    await loadYears(appliedYears)
+  }, [appliedYears, loadYears])
 
   useEffect(() => {
     void loadOptions()
   }, [loadOptions])
-
-  const initialClosuresLoadDone = useRef(false)
-  useEffect(() => {
-    if (filtersLoading || initialClosuresLoadDone.current) return
-    initialClosuresLoadDone.current = true
-    void loadYear('all')
-  }, [filtersLoading, loadYear])
 
   useEffect(() => {
     const container = scrollContainerRef.current
@@ -1801,17 +1799,14 @@ const AccountClosuresPage = () => {
     navigate(tab === 'closed' ? '/fechamentos/conta/fechados' : '/fechamentos/conta')
   }
 
-  const hasActiveFilters = draftYear !== '' || (appliedYear !== null && appliedYear !== 'all')
+  const hasActiveFilters = draftYears.length > 0
 
   const applyFilters = () => {
-    void loadYear(draftYear === '' ? 'all' : Number(draftYear))
+    void loadYears([...draftYears].sort((a, b) => a - b))
   }
 
   const clearFilters = () => {
-    setDraftYear('')
-    setSelectedKeys(new Set())
-    setError(null)
-    void loadYear('all')
+    setDraftYears([])
   }
 
   const lastClosedYearMonth = series?.last_closed_year_month ?? filterOptions?.last_closed_year_month
@@ -2189,17 +2184,19 @@ const AccountClosuresPage = () => {
               resultHint={lastClosedHint}
             >
               <CadastroFilterField label="Ano" icon={<Calendar size={12} />}>
-                <select
-                  value={draftYear}
-                  onChange={(event) => setDraftYear(event.target.value)}
-                  className={cadastroFilterFieldCls}
+                <MultiSelectDropdown
+                  label="Ano"
+                  options={yearOptions.map((year) => ({
+                    id: year,
+                    name: String(year),
+                    icon: <Calendar size={14} />,
+                    color: 'var(--color-1)',
+                  }))}
+                  selectedIds={draftYears}
+                  onChange={setDraftYears}
+                  placeholder="Todos"
                   disabled={filtersLoading || loading}
-                >
-                  <option value="">Todos</option>
-                  {yearOptions.map((option) => (
-                    <option key={option} value={option}>{option}</option>
-                  ))}
-                </select>
+                />
               </CadastroFilterField>
             </CadastroListPageFilterCard>
           }
@@ -2223,9 +2220,9 @@ const AccountClosuresPage = () => {
           {!filtersLoading && !loading && !error && !filtersApplied && (
             <div className="rounded-xl border border-gray-200 bg-white p-12 text-center dark:border-gray-700 dark:bg-gray-800">
               <Filter size={48} className="mx-auto mb-4 text-gray-300 dark:text-gray-600" />
-              <h3 className="mb-2 text-lg font-semibold text-gray-900 dark:text-white">Não foi possível carregar</h3>
+              <h3 className="mb-2 text-lg font-semibold text-gray-900 dark:text-white">Selecione os filtros</h3>
               <p className="text-gray-600 dark:text-gray-400">
-                Recarregue a página ou clique em Aplicar nos filtros acima.
+                Escolha os anos (ou deixe Todos) e clique em Aplicar para carregar os fechamentos.
               </p>
             </div>
           )}

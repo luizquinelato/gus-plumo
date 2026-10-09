@@ -147,7 +147,7 @@ export async function parseTemplatesWorkbook(file: File) {
     id: numId(row.ID),
     name: str(row.Nome),
     description: str(row.Descrição) || null,
-    icon: str(row.Ícone) || 'FileText',
+    icon: str(row.Ícone) || null,
     active: row.Ativo === '' ? true : parseSim(row.Ativo),
   }))
   const items = sheetJson(wb, 'Itens').map((row, i) => ({

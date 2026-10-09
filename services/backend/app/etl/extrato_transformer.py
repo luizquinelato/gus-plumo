@@ -3,6 +3,7 @@
 ExtratoTransformer - Camada TRANSFORM do ETL
 Responsável por aplicar todas as transformações nos dados brutos.
 """
+import unicodedata
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 import pandas as pd
@@ -10,13 +11,24 @@ from ..utils.mapping_helper import MappingHelper
 from ..utils.datetime_helper import DatetimeHelper
 from ..utils.import_progress import report_row_progress
 
-# Transações do extrato bruto que não devem ser importadas (comparação case-insensitive).
-IGNORED_RAW_TRANSACTIONS = frozenset({"saque negado"})
+# Transações do extrato bruto que não devem ser importadas (chave case-insensitive -> motivo exibido).
+IGNORED_RAW_TRANSACTIONS = {
+    "saque negado": "Saque negado",
+    "compra no débito não autorizada": "Compra no débito não autorizada",
+}
+
+
+def _transaction_key(transacao: Any) -> str:
+    text = unicodedata.normalize("NFC", str(transacao or ""))
+    return " ".join(text.split()).casefold()
 
 
 def is_ignored_extrato_transaction(transacao: Any) -> bool:
-    label = str(transacao or "").strip().casefold()
-    return label in IGNORED_RAW_TRANSACTIONS
+    return _transaction_key(transacao) in IGNORED_RAW_TRANSACTIONS
+
+
+def ignored_extrato_transaction_reason(transacao: Any) -> str:
+    return IGNORED_RAW_TRANSACTIONS.get(_transaction_key(transacao), "Transação ignorada")
 
 
 class ExtratoTransformer:
@@ -120,7 +132,7 @@ class ExtratoTransformer:
             "transacao": str(raw_record.get("transacao") or "").strip(),
             "descricao": str(raw_record.get("descricao") or "").strip(),
             "valor": valor,
-            "motivo": "Saque negado",
+            "motivo": ignored_extrato_transaction_reason(raw_record.get("transacao")),
         }
     
     def _transform_single_record(self, raw_record: Dict[str, Any]) -> Dict[str, Any]:

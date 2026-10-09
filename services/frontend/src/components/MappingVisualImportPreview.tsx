@@ -1,20 +1,15 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { cadastroSectionsStackCls } from './CadastroFormLayout'
-import { CadastroListPageTabs } from './CadastroListPageLayout'
+import { useMemo } from 'react'
 import {
-  ImportPreviewIssuesSection,
-  MetricColumn,
-  MetricDivider,
-  PreviewCardLayout,
-  PreviewRowMeta,
-  importPreviewCreateCardCls,
-  importPreviewUpdateCardCls,
+  CollapsiblePreviewSection,
+  IssueActionBadge,
+  PreviewDataTable,
+  PreviewEmptyState,
 } from './ImportPreviewShared'
 import MappingImportCorrectionsTable, {
   type MappingImportCorrectionRow,
 } from './MappingImportCorrectionsTable'
 import type { ParsedMappingImportRow } from '../utils/parseMappingExportWorkbook'
-import { Eye, Pencil, PlusCircle, Wrench } from 'lucide-react'
+import type { MappingImportLookup } from '../utils/mappingImportCorrections'
 
 export interface MappingImportPreviewData {
   summary: {
@@ -25,151 +20,51 @@ export interface MappingImportPreviewData {
     issues: number
     corrections?: number
   }
-  creates: Array<{ row: number; mapping_id?: number | null; fields?: Record<string, unknown> }>
+  creates: Array<{ row: number; mapping_id?: number | null; label?: string; fields?: Record<string, string> }>
   updates: Array<{
     row: number
     mapping_id?: number | null
-    changes?: string[]
-    fields?: Record<string, unknown>
+    label?: string
+    changes?: Array<{ field: string; label: string; before: string; after: string }>
   }>
-  issues: Array<{ row: number; reason: string }>
+  issues: Array<{ row: number; reason: string; action?: string }>
   corrections?: MappingImportCorrectionRow[]
 }
 
-type PreviewTab = 'corrections' | 'updates' | 'creates'
+const CREATE_COLUMNS = [
+  { key: 'row', label: '#', width: '3.5rem' },
+  { key: 'match', label: 'Match', width: '6rem' },
+  { key: 'criterion', label: 'Critério', width: '22%' },
+  { key: 'mapped_description', label: 'Descrição mapeada', width: '18%' },
+  { key: 'classification', label: 'Tag/Subtag', width: '16%' },
+  { key: 'priority', label: 'Prior.', width: '5.5rem' },
+  { key: 'sharing', label: 'Compart.' },
+  { key: 'contribution', label: 'Contrib. %', width: '6rem' },
+  { key: 'sensitive', label: 'Sensível', width: '5.5rem' },
+]
 
-import type { MappingImportLookup } from '../utils/mappingImportCorrections'
+const ISSUE_COLUMNS = [
+  { key: 'index', label: '#' },
+  { key: 'row', label: 'Linha' },
+  { key: 'match', label: 'Match' },
+  { key: 'criterion', label: 'Critério' },
+  { key: 'mapped_description', label: 'Descrição mapeada' },
+  { key: 'classification', label: 'Tag/Subtag' },
+  { key: 'reason', label: 'Motivo' },
+  { key: 'action', label: 'Situação' },
+]
 
-const CHANGE_LABELS: Record<string, string> = {
-  subtag: 'Tag/Subtag',
-  prioridade: 'Prioridade',
-  compartilhamento: 'Compart.',
-  sensível: 'Sensível',
-  critério: 'Critério',
-  'tipo match': 'Tipo match',
+function sourceClassification(row: ParsedMappingImportRow | undefined): string {
+  if (!row) return '—'
+  const tag = row.tag_name?.trim()
+  const subtag = row.subtag_name?.trim()
+  if (tag && subtag) return `${tag}/${subtag}`
+  return tag || subtag || '—'
 }
 
-function mappingTypeLabel(value: unknown): string {
-  if (value === 'exact') return 'Exato'
-  if (value === 'pattern') return 'Padrão'
-  if (value === 'regex') return 'Regex'
-  return value ? String(value) : '—'
-}
-
-function mappingTitle(fields?: Record<string, unknown>): string {
-  if (!fields) return 'Mapeamento'
-  const mapped = fields.mapped_description
-  if (typeof mapped === 'string' && mapped.trim()) return mapped
-  const crit =
-    fields.original_description || fields.pattern || fields.regex_pattern
-  if (typeof crit === 'string' && crit.trim()) return crit
-  return 'Mapeamento'
-}
-
-function mappingCriterion(fields?: Record<string, unknown>): string | null {
-  if (!fields) return null
-  const crit = fields.original_description || fields.pattern || fields.regex_pattern
-  if (typeof crit === 'string' && crit.trim()) return crit
-  return null
-}
-
-function formatChanges(changes?: string[]): string {
-  if (!changes?.length) return '—'
-  return changes.map((c) => CHANGE_LABELS[c] ?? c).join(', ')
-}
-
-function mappingMetrics(fields?: Record<string, unknown>, changes?: string[]): ReactNode {
-  const nodes: ReactNode[] = []
-  let n = 0
-
-  const push = (node: ReactNode) => {
-    if (n > 0) nodes.push(<MetricDivider key={`div-${n}`} />)
-    nodes.push(node)
-    n += 1
-  }
-
-  if (changes?.length) {
-    push(
-      <MetricColumn key="changes" label="Alterações" className="min-w-[6rem] max-w-[14rem]">
-        <span className="whitespace-normal break-words font-bold normal-case">{formatChanges(changes)}</span>
-      </MetricColumn>,
-    )
-  }
-
-  if (fields?.mapping_type != null) {
-    push(
-      <MetricColumn key="type" label="Match">
-        {mappingTypeLabel(fields.mapping_type)}
-      </MetricColumn>,
-    )
-  }
-
-  const criterion = mappingCriterion(fields)
-  if (criterion) {
-    push(
-      <MetricColumn key="crit" label="Critério" className="min-w-[8rem] max-w-[20rem]">
-        <span className="block whitespace-normal break-words font-bold normal-case" title={criterion}>
-          {criterion}
-        </span>
-      </MetricColumn>,
-    )
-  }
-
-  if (fields?.priority != null && fields.priority !== '') {
-    push(
-      <MetricColumn key="prio" label="Prioridade">
-        {String(fields.priority)}
-      </MetricColumn>,
-    )
-  }
-
-  return nodes.length ? nodes : <MetricColumn label="Dados">conforme planilha</MetricColumn>
-}
-
-function MappingUpdateCard({
-  row,
-}: {
-  row: MappingImportPreviewData['updates'][number]
-}) {
-  const title = mappingTitle(row.fields)
-  return (
-    <article className={importPreviewUpdateCardCls}>
-      <PreviewCardLayout
-        info={
-          <>
-            <p className="truncate font-medium text-gray-900 dark:text-white" title={title}>
-              {title}
-            </p>
-            <PreviewRowMeta row={row.row} entity="mapeamento" recordId={row.mapping_id} />
-          </>
-        }
-        metrics={mappingMetrics(row.fields, row.changes)}
-      />
-    </article>
-  )
-}
-
-function MappingCreateCard({
-  row,
-}: {
-  row: MappingImportPreviewData['creates'][number]
-}) {
-  const title = mappingTitle(row.fields)
-  return (
-    <article className={importPreviewCreateCardCls}>
-      <PreviewCardLayout
-        info={
-          <>
-            <p className="truncate font-medium text-gray-900 dark:text-white" title={title}>
-              {title}
-            </p>
-            <PreviewRowMeta row={row.row} entity="mapeamento" recordId={row.mapping_id} />
-          </>
-        }
-        metrics={mappingMetrics(row.fields)}
-      />
-    </article>
-  )
+function cell(fields: Record<string, string> | undefined, key: string): string {
+  const value = fields?.[key]
+  return value && value !== '' ? value : '—'
 }
 
 export default function MappingVisualImportPreview({
@@ -185,7 +80,7 @@ export default function MappingVisualImportPreview({
   manualTabRows: MappingImportCorrectionRow[]
   onPatchManualRow: (rowIndex: number, patch: Partial<ParsedMappingImportRow>) => void
 }) {
-  const { creates, updates, issues } = data
+  const { creates, updates, issues, summary } = data
   const corrections = manualTabRows
   const correctionRowSet = useMemo(() => new Set(corrections.map((c) => c.row)), [corrections])
   const issuesOutsideCorrections = useMemo(
@@ -193,47 +88,32 @@ export default function MappingVisualImportPreview({
     [issues, correctionRowSet],
   )
 
-  const [tab, setTab] = useState<PreviewTab>(() =>
-    corrections.length > 0 ? 'corrections' : updates.length > 0 ? 'updates' : 'creates',
-  )
-
-  useEffect(() => {
-    if (corrections.length > 0) {
-      setTab('corrections')
-    }
-  }, [corrections.length])
-
-  const tabs = useMemo(() => {
-    const items = [
-      { key: 'updates' as const, label: 'Alterações', icon: <Pencil size={15} />, count: updates.length },
-      { key: 'creates' as const, label: 'Adições', icon: <PlusCircle size={15} />, count: creates.length },
-    ]
-    if (corrections.length > 0) {
-      items.unshift({
-        key: 'corrections' as const,
-        label: 'Preencher manual',
-        icon: <Wrench size={15} />,
-        count: corrections.length,
-      })
-    }
-    return items
-  }, [updates.length, creates.length, corrections.length])
-
-  const list = tab === 'updates' ? updates : tab === 'creates' ? creates : []
-
   const rowsByIndex = useMemo(() => {
     const m = new Map<number, ParsedMappingImportRow>()
     for (const r of parsedRows) m.set(r.row_index, r)
     return m
   }, [parsedRows])
 
-  return (
-    <div className={cadastroSectionsStackCls}>
-      <CadastroListPageTabs tabs={tabs} active={tab} onChange={(k) => setTab(k as PreviewTab)} />
+  const sortedUpdates = [...updates].sort((a, b) => a.row - b.row)
+  const sortedCreates = [...creates].sort((a, b) => a.row - b.row)
+  const updateRows = sortedUpdates.flatMap((row) =>
+    (row.changes ?? []).map((change) => ({
+      row: row.row,
+      registro: row.label || '—',
+      campo: change.label || change.field,
+      de: change.before || '—',
+      para: change.after || '—',
+    })),
+  )
 
-      <div className="min-h-[min(52vh,420px)] max-h-[min(72vh,680px)] overflow-y-auto">
-        {tab === 'corrections' ? (
-          lookup ? (
+  return (
+    <div className="space-y-4">
+      {!sortedUpdates.length && !sortedCreates.length && !corrections.length ? (
+        <PreviewEmptyState unchanged={summary.unchanged} />
+      ) : null}
+      {corrections.length > 0 ? (
+        <CollapsiblePreviewSection title={`Preencher manual (${corrections.length})`}>
+          {lookup ? (
             <MappingImportCorrectionsTable
               corrections={corrections}
               rowsByIndex={rowsByIndex}
@@ -243,38 +123,64 @@ export default function MappingVisualImportPreview({
               onPatchRow={onPatchManualRow}
             />
           ) : (
-            <p className="py-6 text-center text-sm text-gray-600 dark:text-gray-300">
-              Carregando tags e compartilhamentos…
-            </p>
-          )
-        ) : !list.length ? (
-          <p className="py-6 text-center text-sm text-gray-600 dark:text-gray-300">
-            {tab === 'updates'
-              ? 'Nenhuma alteração em mapeamentos existentes.'
-              : 'Nenhum mapeamento novo será criado.'}
-          </p>
-        ) : (
-          <div className="space-y-3">
-            {[...list]
-              .sort((a, b) => a.row - b.row)
-              .map((row) =>
-                tab === 'updates' ? (
-                  <MappingUpdateCard key={`u-${row.row}-${row.mapping_id ?? ''}`} row={row} />
-                ) : (
-                  <MappingCreateCard key={`c-${row.row}`} row={row} />
-                ),
-              )}
-          </div>
-        )}
-      </div>
+            <p className="text-sm text-gray-600 dark:text-gray-300">Carregando tags e compartilhamentos…</p>
+          )}
+        </CollapsiblePreviewSection>
+      ) : null}
+      {updateRows.length > 0 ? (
+        <CollapsiblePreviewSection title={`Alterações (${sortedUpdates.length})`}>
+          <PreviewDataTable
+            columns={[
+              { key: 'row', label: '#' },
+              { key: 'registro', label: 'Mapeamento' },
+              { key: 'campo', label: 'Campo' },
+              { key: 'de', label: 'De' },
+              { key: 'para', label: 'Para' },
+            ]}
+            rows={updateRows}
+          />
+        </CollapsiblePreviewSection>
+      ) : null}
+      {sortedCreates.length > 0 ? (
+        <CollapsiblePreviewSection title={`Adições (${sortedCreates.length})`}>
+          <PreviewDataTable
+            wrap
+            columns={CREATE_COLUMNS}
+            rows={sortedCreates.map((row) => ({
+              row: row.row,
+              match: cell(row.fields, 'match'),
+              criterion: cell(row.fields, 'criterion'),
+              mapped_description: cell(row.fields, 'mapped_description'),
+              classification: cell(row.fields, 'classification'),
+              priority: cell(row.fields, 'priority'),
+              sharing: cell(row.fields, 'sharing'),
+              contribution: cell(row.fields, 'contribution'),
+              sensitive: cell(row.fields, 'sensitive'),
+            }))}
+          />
+        </CollapsiblePreviewSection>
+      ) : null}
 
-      <ImportPreviewIssuesSection issues={issuesOutsideCorrections} />
-
-      {creates.length === 0 && updates.length === 0 && corrections.length === 0 ? (
-        <p className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
-          <Eye size={16} />
-          Nenhuma alteração detectada nas linhas válidas.
-        </p>
+      {issuesOutsideCorrections.length > 0 ? (
+        <CollapsiblePreviewSection title={`Problemas (${issuesOutsideCorrections.length})`} tone="warning">
+          <PreviewDataTable
+            columns={ISSUE_COLUMNS}
+            rows={issuesOutsideCorrections.map((issue, index) => {
+              const source = rowsByIndex.get(issue.row)
+              return {
+                index: index + 1,
+                row: issue.row || '—',
+                match: source?.match || '—',
+                criterion: source?.criterion || '—',
+                mapped_description: source?.mapped_description || '—',
+                classification: sourceClassification(source),
+                reason: issue.reason,
+                action: <IssueActionBadge action={issue.action} />,
+              }
+            })}
+            sortValues={issuesOutsideCorrections.map((issue) => ({ action: issue.action || '' }))}
+          />
+        </CollapsiblePreviewSection>
       ) : null}
     </div>
   )

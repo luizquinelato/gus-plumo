@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
-import { Users, Edit2, Tag as TagIcon, Calendar } from 'lucide-react'
+import { Users, Edit2, Tag as TagIcon, Calendar, CreditCard } from 'lucide-react'
 import Toast from './Toast'
 import ClosureEditImpactDialog from './ClosureEditImpactDialog'
 import type { ClosureEditImpact } from '../types/closureEditImpact'
@@ -29,6 +29,7 @@ import { dateToLocalString, dateToLocalTimestamp, parseLocalDateTime } from '../
 import { sharingPartnerLabel, sharingPercentForKind } from '../utils/accountFormatter'
 import OwnershipPercentField from './OwnershipPercentField'
 import { maskPercentInput, finalizePercentInput } from '../utils/percentInput'
+import type { InvoiceCardMoveOption } from './BatchMoveInvoiceCardModal'
 
 interface ToastState {
   show: boolean
@@ -109,6 +110,8 @@ interface EditExpenseModalProps {
   limitedMode?: boolean
   /** Faturas: edita valor, data, descrição e parcelas (cartão fixo) */
   invoiceItemMode?: boolean
+  /** Faturas: cartões de destino para mover o lançamento junto com a edição. */
+  cardMoveOptions?: InvoiceCardMoveOption[]
 }
 
 function parseAmountInput(raw: string): number {
@@ -126,9 +129,12 @@ const EditExpenseModal = ({
   onSuccess,
   limitedMode = false,
   invoiceItemMode = false,
+  cardMoveOptions = [],
 }: EditExpenseModalProps) => {
   const showCoreFields = !limitedMode || invoiceItemMode
   const lockCoreFields = limitedMode && !invoiceItemMode
+  const showCardMove = invoiceItemMode && expense?.source === 'card' && cardMoveOptions.length > 0
+  const [targetCardId, setTargetCardId] = useState<number | ''>('')
   const [tags, setTags] = useState<Tag[]>([])
   const [subtags, setSubtags] = useState<Subtag[]>([])
   const [cards, setCards] = useState<Card[]>([])
@@ -251,6 +257,7 @@ const EditExpenseModal = ({
 
       // Definir a data do expense
       setSelectedDate(new Date(expense.date))
+      setTargetCardId('')
 
       // Determinar se é compartilhado baseado nos dados do expense
       const isShared = expense.shared_partner_id !== null && expense.shared_partner_id !== undefined
@@ -442,7 +449,19 @@ const EditExpenseModal = ({
 
       const response = await axios.put(endpoint, payload)
       const impact = extractClosureImpactFromResponse(response.data)
-      onSuccess(buildEditSuccessPayload('Despesa atualizada com sucesso!', impact))
+      const moving = showCardMove && targetCardId !== ''
+      if (moving) {
+        await axios.patch('/api/expenses/batch-update', {
+          items: [{ id: expense.id, source: 'card' }],
+          target_credit_card_id: targetCardId,
+        })
+      }
+      onSuccess(
+        buildEditSuccessPayload(
+          moving ? 'Despesa atualizada e movida de cartão com sucesso!' : 'Despesa atualizada com sucesso!',
+          impact,
+        ),
+      )
       onClose()
     } catch (error: unknown) {
       console.error('Erro ao atualizar despesa:', error)
@@ -597,6 +616,37 @@ const EditExpenseModal = ({
                           placeholder="Opcional"
                           className={`${cadastroFieldCls} mt-0.5 disabled:opacity-50`}
                         />
+                      </label>
+                    </CadastroModalFieldsRow>
+                  ) : null}
+                  {showCardMove ? (
+                    <CadastroModalFieldsRow>
+                      <label className="block min-w-0">
+                        <CadastroFieldLabel>
+                          <span className="inline-flex items-center gap-1">
+                            <CreditCard size={12} />
+                            Mover para outro cartão
+                          </span>
+                        </CadastroFieldLabel>
+                        <select
+                          value={targetCardId === '' ? '' : String(targetCardId)}
+                          onChange={(e) => {
+                            const raw = e.target.value
+                            setTargetCardId(raw ? parseInt(raw, 10) : '')
+                          }}
+                          disabled={isLoading}
+                          className={`${cadastroFieldCls} mt-0.5 disabled:opacity-50`}
+                        >
+                          <option value="">Manter no cartão atual</option>
+                          {cardMoveOptions.map((card) => (
+                            <option key={card.cardId} value={card.cardId}>
+                              {card.cardName} (•••• {card.cardNumber.slice(-4)})
+                            </option>
+                          ))}
+                        </select>
+                        <span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">
+                          Apenas cartões que já possuem lançamentos neste mês da fatura.
+                        </span>
                       </label>
                     </CadastroModalFieldsRow>
                   ) : null}

@@ -4,11 +4,11 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
-from typing import Any, Literal, Optional
+from typing import Any, Literal, Optional, TypeVar
 
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.services.import_batch import ImportBatch
@@ -51,6 +51,23 @@ def _normalize_text(value: Any) -> str:
     if value is None:
         return ""
     return " ".join(str(value).strip().split())
+
+
+ISSUE_IGNORED = "Linha ignorada"
+ISSUE_NOT_CREATED = "Não será criado"
+ISSUE_NO_CLASSIFICATION = "Sem classificação"
+ISSUE_NO_SHARING = "Sem compartilhamento"
+
+
+def _tx_issue_detail(raw: dict[str, Any]) -> str | None:
+    parts = [_normalize_text(raw.get("date")), _normalize_text(raw.get("description"))]
+    amount = raw.get("amount")
+    if isinstance(amount, (int, float, Decimal)):
+        parts.append(f"R$ {float(amount):,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+    elif amount not in (None, ""):
+        parts.append(_normalize_text(amount))
+    text = " · ".join(p for p in parts if p)
+    return text or None
 
 
 def _parse_br_datetime(value: Any) -> Optional[datetime]:
@@ -105,6 +122,11 @@ def _parse_amount(value: Any) -> Optional[Decimal]:
         return None
 
 
+def _ownership_or_full(value: Any) -> Decimal:
+    """Parte da conta logada; 0% é válido (gerenciado), só a ausência vira 100%."""
+    return Decimal("100.00") if value is None or value == "" else Decimal(str(value))
+
+
 def _resolve_subtag(
     db: Session,
     tenant_id: int,
@@ -144,35 +166,53 @@ def _resolve_sharing(
     partner_name: str,
     ownership: Any,
 ) -> tuple[Optional[int], Optional[Decimal], Optional[str]]:
+    """Aceita a config direta (minha) ou a inversa (criada pelo parceiro), nessa ordem.
+
+    O percentual da planilha já vem na perspectiva da conta logada; sem ele, usa o
+    padrão da config (invertido quando a config pertence ao parceiro).
+    """
     partner_name = _normalize_text(partner_name)
     if not partner_name:
         return None, Decimal("100.00"), None
-    partner = (
-        db.query(Account)
+    partner_ids = [
+        int(pid)
+        for (pid,) in db.query(Account.id)
         .filter(
             Account.tenant_id == tenant_id,
             func.lower(Account.name) == partner_name.lower(),
             Account.active == True,
+            Account.id != account_id,
         )
-        .first()
-    )
-    if not partner:
+        .order_by(Account.id.asc())
+        .all()
+    ]
+    if not partner_ids:
         return None, None, f"Conta parceira não encontrada: {partner_name}"
-    setting = (
+    settings = (
         db.query(ExpenseSharingSetting)
         .filter(
             ExpenseSharingSetting.tenant_id == tenant_id,
-            ExpenseSharingSetting.account_id == account_id,
-            ExpenseSharingSetting.shared_account_id == partner.id,
             ExpenseSharingSetting.active == True,
+            or_(
+                and_(
+                    ExpenseSharingSetting.account_id == account_id,
+                    ExpenseSharingSetting.shared_account_id.in_(partner_ids),
+                ),
+                and_(
+                    ExpenseSharingSetting.account_id.in_(partner_ids),
+                    ExpenseSharingSetting.shared_account_id == account_id,
+                ),
+            ),
         )
-        .first()
+        .all()
     )
-    if not setting:
+    if not settings:
         return None, None, f"Compartilhamento não configurado com: {partner_name}"
+    setting = min(settings, key=lambda s: (s.account_id != account_id, s.id))
     pct = _parse_amount(ownership)
     if pct is None:
-        pct = Decimal(str(setting.my_contribution_percentage or 100))
+        default_pct = Decimal(str(setting.my_contribution_percentage if setting.my_contribution_percentage is not None else 100))
+        pct = default_pct if setting.account_id == account_id else Decimal("100.00") - default_pct
     return int(setting.id), pct, None
 
 
@@ -186,31 +226,53 @@ def _description_matches(db_description: str, normalized_lower: str) -> bool:
     return _normalize_text(db_description).lower() == normalized_lower
 
 
-def _find_bank_row(
+TxRow = TypeVar("TxRow", BankStatement, BenefitCardStatement)
+
+
+def _file_dates(rows: list[dict[str, Any]]) -> list[datetime]:
+    return [dt for dt in (_parse_br_datetime(raw.get("date")) for raw in rows) if dt]
+
+
+def _load_day_index(
     db: Session,
+    model: type[TxRow],
     tenant_id: int,
     account_id: int,
-    dt: datetime,
-    description: str,
-    amount: Decimal,
-    *,
-    exclude_ids: set[int] | None = None,
-) -> Optional[BankStatement]:
-    start, end = _day_range(dt)
-    desc_norm = _normalize_text(description).lower()
-    exclude_ids = exclude_ids or set()
-    amount_norm = closure_money(amount)
-    day_rows = (
-        db.query(BankStatement)
+    dates: list[datetime],
+) -> tuple[dict[date, list[TxRow]], dict[int, TxRow]]:
+    """Carrega de uma vez os lançamentos da conta no intervalo de datas do arquivo."""
+    by_day: dict[date, list[TxRow]] = {}
+    by_id: dict[int, TxRow] = {}
+    if not dates:
+        return by_day, by_id
+    start, _ = _day_range(min(dates))
+    _, end = _day_range(max(dates))
+    rows = (
+        db.query(model)
         .filter(
-            BankStatement.tenant_id == tenant_id,
-            BankStatement.account_id == account_id,
-            BankStatement.date >= start,
-            BankStatement.date < end,
+            model.tenant_id == tenant_id,
+            model.account_id == account_id,
+            model.date >= start,
+            model.date < end,
         )
-        .order_by(BankStatement.id.asc())
+        .order_by(model.id.asc())
         .all()
     )
+    for row in rows:
+        if row.date is None:
+            continue
+        by_day.setdefault(row.date.date(), []).append(row)
+        by_id[int(row.id)] = row
+    return by_day, by_id
+
+
+def _pick_day_match(
+    day_rows: list[TxRow],
+    description: str,
+    amount: Decimal,
+    exclude_ids: set[int],
+) -> Optional[TxRow]:
+    desc_norm = _normalize_text(description).lower()
     rows = [
         r
         for r in day_rows
@@ -220,84 +282,46 @@ def _find_bank_row(
         return None
     if len(rows) == 1:
         return rows[0]
+    amount_norm = closure_money(amount)
     for row in rows:
         if closure_money(row.amount) == amount_norm:
             return row
     return None
 
 
-def _find_benefit_row(
-    db: Session,
-    tenant_id: int,
-    account_id: int,
-    dt: datetime,
-    description: str,
-    amount: Decimal,
-    card_last4: str,
-    *,
-    exclude_ids: set[int] | None = None,
-) -> Optional[BenefitCardStatement]:
-    start, end = _day_range(dt)
-    desc_norm = _normalize_text(description).lower()
-    exclude_ids = exclude_ids or set()
-    amount_norm = closure_money(amount)
-    card_ids: list[int] | None = None
-    last4 = re.sub(r"\D", "", card_last4 or "")[-4:]
-    if last4:
-        cards = (
-            db.query(Cartao.id, Cartao.card_number)
+def _card_last4(value: Any) -> str:
+    return re.sub(r"\D", "", str(value or ""))[-4:]
+
+
+class _BenefitCards:
+    """Cartões de benefício ativos da conta, carregados uma vez por import."""
+
+    def __init__(self, db: Session, tenant_id: int, account_id: int):
+        rows = (
+            db.query(Cartao.id, Cartao.number)
             .filter(
                 Cartao.tenant_id == tenant_id,
                 Cartao.account_id == account_id,
                 Cartao.type == "beneficios",
                 Cartao.active == True,
             )
+            .order_by(Cartao.id.asc())
             .all()
         )
-        card_ids = [
-            int(cid)
-            for cid, num in cards
-            if num and str(num).replace(" ", "")[-4:] == last4
-        ]
-        if not card_ids:
+        self._cards = [(int(cid), str(num).replace(" ", "")[-4:] if num else "") for cid, num in rows]
+
+    def ids_for(self, card_last4: str) -> Optional[set[int]]:
+        """None = qualquer cartão; conjunto vazio = final informado sem cartão correspondente."""
+        last4 = _card_last4(card_last4)
+        if not last4:
             return None
-    q = db.query(BenefitCardStatement).filter(
-        BenefitCardStatement.tenant_id == tenant_id,
-        BenefitCardStatement.account_id == account_id,
-        BenefitCardStatement.date >= start,
-        BenefitCardStatement.date < end,
-    )
-    if card_ids is not None:
-        q = q.filter(BenefitCardStatement.credit_card_id.in_(card_ids))
-    day_rows = q.order_by(BenefitCardStatement.id.asc()).all()
-    rows = [
-        r
-        for r in day_rows
-        if r.id not in exclude_ids and _description_matches(r.description or "", desc_norm)
-    ]
-    if not rows:
-        return None
-    if len(rows) == 1:
-        return rows[0]
-    for row in rows:
-        if closure_money(row.amount) == amount_norm:
-            return row
-    return None
+        return {cid for cid, num in self._cards if num == last4}
 
-
-def _default_benefit_card_id(db: Session, tenant_id: int, account_id: int) -> Optional[int]:
-    row = (
-        db.query(Cartao.id)
-        .filter(
-            Cartao.tenant_id == tenant_id,
-            Cartao.account_id == account_id,
-            Cartao.type == "beneficios",
-            Cartao.active == True,
-        )
-        .order_by(Cartao.id.asc())
-        .first()
-    )
-    return int(row.id) if row else None
+    def resolve(self, card_last4: str) -> Optional[int]:
+        last4 = _card_last4(card_last4)
+        if last4:
+            return next((cid for cid, num in self._cards if num == last4), None)
+        return self._cards[0][0] if self._cards else None
 
 
 def _classify_bank_change(
@@ -367,18 +391,28 @@ def _subtag_label(db: Session, tenant_id: int, subtag_id: int | None) -> Optiona
     return f"{row.tag_name}/{row.name}" if row.tag_name else row.name
 
 
-def _sharing_label(db: Session, tenant_id: int, sharing_id: int | None) -> Optional[str]:
+def _sharing_label(
+    db: Session, tenant_id: int, sharing_id: int | None, account_id: int | None = None,
+) -> Optional[str]:
+    """Nome da contraparte; com account_id, resolve também configs criadas pelo parceiro."""
     if not sharing_id:
         return None
-    row = (
-        db.query(Account.name)
-        .join(ExpenseSharingSetting, ExpenseSharingSetting.shared_account_id == Account.id)
+    setting = (
+        db.query(ExpenseSharingSetting.account_id, ExpenseSharingSetting.shared_account_id)
         .filter(
             ExpenseSharingSetting.id == sharing_id,
             ExpenseSharingSetting.tenant_id == tenant_id,
         )
         .first()
     )
+    if not setting:
+        return None
+    partner_id = (
+        setting.account_id
+        if account_id is not None and setting.account_id != account_id
+        else setting.shared_account_id
+    )
+    row = db.query(Account.name).filter(Account.id == partner_id, Account.tenant_id == tenant_id).first()
     return row.name if row else None
 
 
@@ -394,30 +428,47 @@ def _file_classification_label(tag: str, subtag: str) -> str:
     return ""
 
 
-def _resolve_benefit_card_id(
-    db: Session,
-    tenant_id: int,
-    account_id: int,
-    card_last4: str,
-) -> Optional[int]:
-    card_id = _default_benefit_card_id(db, tenant_id, account_id)
-    last4 = re.sub(r"\D", "", card_last4 or "")[-4:]
-    if last4:
-        cards = (
-            db.query(Cartao)
-            .filter(
-                Cartao.tenant_id == tenant_id,
-                Cartao.account_id == account_id,
-                Cartao.type == "beneficios",
-                Cartao.active == True,
+class LookupCache:
+    """Memoiza subtag, compartilhamento e rótulos repetidos ao longo de um import."""
+
+    def __init__(self, db: Session, tenant_id: int, account_id: int):
+        self.db = db
+        self.tenant_id = tenant_id
+        self.account_id = account_id
+        self._subtags: dict[tuple[str, str, str], tuple[Optional[int], Optional[str]]] = {}
+        self._sharings: dict[tuple[str, str], tuple[Optional[int], Optional[Decimal], Optional[str]]] = {}
+        self._subtag_labels: dict[Optional[int], Optional[str]] = {}
+        self._sharing_labels: dict[Optional[int], Optional[str]] = {}
+
+    def subtag(self, tag_name: str, subtag_name: str, amount: Decimal) -> tuple[Optional[int], Optional[str]]:
+        key = (tag_name, subtag_name, "receita" if amount >= 0 else "despesa")
+        if key not in self._subtags:
+            self._subtags[key] = _resolve_subtag(
+                self.db, self.tenant_id, self.account_id, tag_name, subtag_name, amount,
             )
-            .all()
-        )
-        for c in cards:
-            if c.card_number and str(c.card_number).replace(" ", "")[-4:] == last4:
-                return int(c.id)
-        return None
-    return card_id
+        return self._subtags[key]
+
+    def sharing(
+        self, partner_name: str, ownership: Any,
+    ) -> tuple[Optional[int], Optional[Decimal], Optional[str]]:
+        key = (partner_name, str(ownership))
+        if key not in self._sharings:
+            self._sharings[key] = _resolve_sharing(
+                self.db, self.tenant_id, self.account_id, partner_name, ownership,
+            )
+        return self._sharings[key]
+
+    def subtag_label(self, subtag_id: Optional[int]) -> Optional[str]:
+        if subtag_id not in self._subtag_labels:
+            self._subtag_labels[subtag_id] = _subtag_label(self.db, self.tenant_id, subtag_id)
+        return self._subtag_labels[subtag_id]
+
+    def sharing_label(self, sharing_id: Optional[int]) -> Optional[str]:
+        if sharing_id not in self._sharing_labels:
+            self._sharing_labels[sharing_id] = _sharing_label(
+                self.db, self.tenant_id, sharing_id, self.account_id,
+            )
+        return self._sharing_labels[sharing_id]
 
 
 def _plan_visual_extrato_import(
@@ -433,8 +484,17 @@ def _plan_visual_extrato_import(
     issues: list[dict[str, Any]] = []
     planned: list[dict[str, Any]] = []
     skipped = 0
+    kept = 0
     used_bank_ids: set[int] = set()
     used_benefit_ids: set[int] = set()
+    lookup = LookupCache(db, tenant_id, account_id)
+    benefit_cards = _BenefitCards(db, tenant_id, account_id)
+    bank_by_day, bank_by_id = _load_day_index(
+        db, BankStatement, tenant_id, account_id, _file_dates(bank_rows),
+    )
+    benefit_by_day, benefit_by_id = _load_day_index(
+        db, BenefitCardStatement, tenant_id, account_id, _file_dates(benefit_rows),
+    )
 
     for idx, raw in enumerate(bank_rows):
         line = int(raw.get("row_index") or idx + 2)
@@ -442,32 +502,50 @@ def _plan_visual_extrato_import(
         description = _normalize_text(raw.get("description"))
         amount = _parse_amount(raw.get("amount"))
         if not dt or not description or amount is None:
-            issues.append({"source": "bank", "row": line, "reason": "Data, descrição ou valor inválidos"})
+            issues.append({
+                "source": "bank",
+                "row": line,
+                "reason": "Data, descrição ou valor inválidos",
+                "detail": _tx_issue_detail(raw),
+                "action": ISSUE_IGNORED,
+            })
             skipped += 1
             continue
         tag_file = str(raw.get("tag") or "")
         subtag_file = str(raw.get("subtag") or "")
         tipo = "receita" if amount >= 0 else "despesa"
-        subtag_id, sub_err = _resolve_subtag(db, tenant_id, account_id, tag_file, subtag_file, amount)
+        subtag_id, sub_err = lookup.subtag(tag_file, subtag_file, amount)
         if sub_err and not (batch and batch.has_subtag(tag_file, subtag_file, tipo)):
-            issues.append({"source": "bank", "row": line, "reason": sub_err})
+            issues.append({
+                "source": "bank",
+                "row": line,
+                "reason": sub_err,
+                "detail": _tx_issue_detail(raw),
+                "action": ISSUE_NO_CLASSIFICATION,
+            })
         elif sub_err:
             sub_err = None
         partner_file = str(raw.get("partner_name") or "")
-        sharing_id, ownership, share_err = _resolve_sharing(
-            db, tenant_id, account_id, partner_file, raw.get("ownership_percentage"),
-        )
+        sharing_id, ownership, share_err = lookup.sharing(partner_file, raw.get("ownership_percentage"))
         if share_err and not (batch and batch.has_sharing(partner_file)):
-            issues.append({"source": "bank", "row": line, "reason": share_err})
+            issues.append({
+                "source": "bank",
+                "row": line,
+                "reason": share_err,
+                "detail": _tx_issue_detail(raw),
+                "action": ISSUE_NO_SHARING,
+            })
             sharing_id = None
             ownership = Decimal("100.00")
         elif share_err:
             share_err = None
             sharing_id = None
             ownership = Decimal("100.00")
-        existing = _find_bank_row(
-            db, tenant_id, account_id, dt, description, amount, exclude_ids=used_bank_ids,
-        )
+        existing = _pick_day_match(bank_by_day.get(dt.date(), []), description, amount, used_bank_ids)
+        if existing and raw.get("keep_existing"):
+            used_bank_ids.add(int(existing.id))
+            kept += 1
+            continue
         meta = {
             "line": line,
             "dt": dt,
@@ -475,7 +553,7 @@ def _plan_visual_extrato_import(
             "amount": amount,
             "subtag_id": subtag_id,
             "sharing_id": sharing_id,
-            "ownership": ownership or Decimal("100.00"),
+            "ownership": _ownership_or_full(ownership),
             "tag_file": tag_file,
             "subtag_file": subtag_file,
             "partner_file": partner_file,
@@ -492,7 +570,7 @@ def _plan_visual_extrato_import(
                 dt=dt,
                 subtag_id=subtag_id,
                 sharing_id=sharing_id,
-                ownership=ownership or Decimal("100.00"),
+                ownership=_ownership_or_full(ownership),
             )
             mutations.append((kind, existing.date, dt))
             planned.append({"action": "update_bank", "id": existing.id, "kind": kind, **meta})
@@ -506,23 +584,39 @@ def _plan_visual_extrato_import(
         description = _normalize_text(raw.get("description"))
         amount = _parse_amount(raw.get("amount"))
         if not dt or not description or amount is None:
-            issues.append({"source": "benefit", "row": line, "reason": "Data, descrição ou valor inválidos"})
+            issues.append({
+                "source": "benefit",
+                "row": line,
+                "reason": "Data, descrição ou valor inválidos",
+                "detail": _tx_issue_detail(raw),
+                "action": ISSUE_IGNORED,
+            })
             skipped += 1
             continue
         tag_file = str(raw.get("tag") or "")
         subtag_file = str(raw.get("subtag") or "")
         tipo = "receita" if amount >= 0 else "despesa"
-        subtag_id, sub_err = _resolve_subtag(db, tenant_id, account_id, tag_file, subtag_file, amount)
+        subtag_id, sub_err = lookup.subtag(tag_file, subtag_file, amount)
         if sub_err and not (batch and batch.has_subtag(tag_file, subtag_file, tipo)):
-            issues.append({"source": "benefit", "row": line, "reason": sub_err})
+            issues.append({
+                "source": "benefit",
+                "row": line,
+                "reason": sub_err,
+                "detail": _tx_issue_detail(raw),
+                "action": ISSUE_NO_CLASSIFICATION,
+            })
         elif sub_err:
             sub_err = None
         partner_file = str(raw.get("partner_name") or "")
-        sharing_id, ownership, share_err = _resolve_sharing(
-            db, tenant_id, account_id, partner_file, raw.get("ownership_percentage"),
-        )
+        sharing_id, ownership, share_err = lookup.sharing(partner_file, raw.get("ownership_percentage"))
         if share_err and not (batch and batch.has_sharing(partner_file)):
-            issues.append({"source": "benefit", "row": line, "reason": share_err})
+            issues.append({
+                "source": "benefit",
+                "row": line,
+                "reason": share_err,
+                "detail": _tx_issue_detail(raw),
+                "action": ISSUE_NO_SHARING,
+            })
             sharing_id = None
             ownership = Decimal("100.00")
         elif share_err:
@@ -530,9 +624,15 @@ def _plan_visual_extrato_import(
             sharing_id = None
             ownership = Decimal("100.00")
         card_last4 = str(raw.get("card_last4") or "")
-        existing = _find_benefit_row(
-            db, tenant_id, account_id, dt, description, amount, card_last4, exclude_ids=used_benefit_ids,
-        )
+        card_ids = benefit_cards.ids_for(card_last4)
+        day_rows = benefit_by_day.get(dt.date(), [])
+        if card_ids is not None:
+            day_rows = [r for r in day_rows if r.credit_card_id in card_ids]
+        existing = _pick_day_match(day_rows, description, amount, used_benefit_ids)
+        if existing and raw.get("keep_existing"):
+            used_benefit_ids.add(int(existing.id))
+            kept += 1
+            continue
         meta = {
             "line": line,
             "dt": dt,
@@ -540,7 +640,7 @@ def _plan_visual_extrato_import(
             "amount": amount,
             "subtag_id": subtag_id,
             "sharing_id": sharing_id,
-            "ownership": ownership or Decimal("100.00"),
+            "ownership": _ownership_or_full(ownership),
             "tag_file": tag_file,
             "subtag_file": subtag_file,
             "partner_file": partner_file,
@@ -561,17 +661,22 @@ def _plan_visual_extrato_import(
                 old_sharing_id=existing.expense_sharing_id,
                 new_sharing_id=sharing_id,
                 old_ownership=existing.ownership_percentage,
-                new_ownership=ownership or Decimal("100.00"),
+                new_ownership=_ownership_or_full(ownership),
             )
             mutations.append((kind, existing.date, dt))
             planned.append({"action": "update_benefit", "id": existing.id, "kind": kind, **meta})
         else:
-            card_ok = _resolve_benefit_card_id(db, tenant_id, account_id, card_last4) is not None
+            card_ok = benefit_cards.resolve(card_last4) is not None
+            if not card_ok and batch and batch.has_benefit_card(card_last4):
+                card_ok = True
+                meta["card_err"] = "Cartão entra com o cadastro desta leva"
             if not card_ok:
                 issues.append({
                     "source": "benefit",
                     "row": line,
                     "reason": "Cartão de benefício não encontrado para criar lançamento",
+                    "detail": _tx_issue_detail(raw),
+                    "action": ISSUE_NOT_CREATED,
                 })
             mutations.append(("cash", None, dt))
             planned.append({"action": "create_benefit", "kind": "cash", "can_create": card_ok, **meta})
@@ -581,6 +686,11 @@ def _plan_visual_extrato_import(
         "issues": issues,
         "mutations": mutations,
         "skipped": skipped,
+        "kept": kept,
+        "lookup": lookup,
+        "benefit_cards": benefit_cards,
+        "bank_by_id": bank_by_id,
+        "benefit_by_id": benefit_by_id,
     }
 
 
@@ -604,6 +714,7 @@ def preview_visual_extrato_import(
     plan = _plan_visual_extrato_import(
         db, tenant_id, account_id, bank_rows=bank_rows, benefit_rows=benefit_rows, batch=batch,
     )
+    lookup: LookupCache = plan["lookup"]
     creates: list[dict[str, Any]] = []
     updates: list[dict[str, Any]] = []
     unchanged = 0
@@ -614,11 +725,17 @@ def preview_visual_extrato_import(
         if action == "create" and item["action"] == "create_benefit" and not item.get("can_create", True):
             continue
 
-        after_subtag = _subtag_label(db, tenant_id, item.get("subtag_id"))
-        after_sharing = _sharing_label(db, tenant_id, item.get("sharing_id"))
-        ownership = float(item.get("ownership") or 100)
+        after_subtag = lookup.subtag_label(item.get("subtag_id"))
+        after_sharing = lookup.sharing_label(item.get("sharing_id"))
+        ownership = float(_ownership_or_full(item.get("ownership")))
         null_fields = []
         file_cls = _file_classification_label(item.get("tag_file", ""), item.get("subtag_file", ""))
+        if item.get("card_err"):
+            null_fields.append({
+                "field": "card",
+                "file_value": item.get("card_last4") or None,
+                "reason": item["card_err"],
+            })
         if item.get("sub_err"):
             null_fields.append({
                 "field": "subtag",
@@ -655,7 +772,7 @@ def preview_visual_extrato_import(
             "classification_file": file_cls or None,
             "sharing_after": after_sharing,
             "sharing_file": _normalize_text(item.get("partner_file")) or None,
-            "ownership_after": ownership if after_sharing else 100.0,
+            "ownership_after": ownership if after_sharing else None,
             "ownership_file": item.get("ownership_percentage"),
             "null_fields": null_fields,
         }
@@ -665,33 +782,22 @@ def preview_visual_extrato_import(
             continue
 
         record_id = item["id"]
-        if item["action"] == "update_bank":
-            row = db.query(BankStatement).filter(
-                BankStatement.id == record_id, BankStatement.tenant_id == tenant_id,
-            ).first()
-        else:
-            row = db.query(BenefitCardStatement).filter(
-                BenefitCardStatement.id == record_id, BenefitCardStatement.tenant_id == tenant_id,
-            ).first()
+        by_id = plan["bank_by_id"] if item["action"] == "update_bank" else plan["benefit_by_id"]
+        row = by_id.get(int(record_id))
         if not row:
             continue
 
         changes: list[dict[str, Any]] = []
         _append_change(changes, "amount", float(row.amount), float(item["amount"]))
         _append_change(changes, "date", row.date.strftime("%d/%m/%Y %H:%M"), item["dt"].strftime("%d/%m/%Y %H:%M"))
-        _append_change(changes, "subtag", _subtag_label(db, tenant_id, row.subtag_id), after_subtag)
-        _append_change(
-            changes,
-            "sharing",
-            _sharing_label(db, tenant_id, row.expense_sharing_id),
-            after_sharing,
-        )
+        _append_change(changes, "subtag", lookup.subtag_label(row.subtag_id), after_subtag)
+        _append_change(changes, "sharing", lookup.sharing_label(row.expense_sharing_id), after_sharing)
         if after_sharing or row.expense_sharing_id:
             _append_change(
                 changes,
                 "ownership_pct",
-                float(row.ownership_percentage or 100),
-                ownership,
+                float(row.ownership_percentage) if row.expense_sharing_id else None,
+                ownership if after_sharing else None,
             )
 
         if not changes and item.get("kind") == "noop":
@@ -705,6 +811,7 @@ def preview_visual_extrato_import(
             "creates": len(creates),
             "updates": len(updates),
             "unchanged": unchanged,
+            "kept": plan["kept"],
             "skipped_invalid": plan["skipped"],
             "issues": len(plan["issues"]),
         },
@@ -753,6 +860,7 @@ def apply_visual_extrato_import(
         "bank_created": 0,
         "benefit_updated": 0,
         "benefit_created": 0,
+        "kept": plan["kept"],
         "skipped": plan["skipped"],
     }
 
@@ -767,10 +875,7 @@ def apply_visual_extrato_import(
 
     for item in planned:
         if item["action"] == "update_bank":
-            row = db.query(BankStatement).filter(
-                BankStatement.id == item["id"],
-                BankStatement.tenant_id == tenant_id,
-            ).first()
+            row = plan["bank_by_id"].get(int(item["id"]))
             if not row:
                 issues.append({"source": "bank", "row": item["line"], "reason": "Registro não encontrado"})
                 continue
@@ -781,7 +886,7 @@ def apply_visual_extrato_import(
             row.amount = item["amount"]
             row.subtag_id = item["subtag_id"]
             row.expense_sharing_id = item["sharing_id"]
-            row.ownership_percentage = item["ownership"] or Decimal("100.00")
+            row.ownership_percentage = _ownership_or_full(item["ownership"])
             if item.get("category"):
                 row.category = item["category"]
             if item.get("transaction"):
@@ -806,7 +911,7 @@ def apply_visual_extrato_import(
                 amount=item["amount"],
                 subtag_id=item["subtag_id"],
                 expense_sharing_id=item["sharing_id"],
-                ownership_percentage=item["ownership"] or Decimal("100.00"),
+                ownership_percentage=_ownership_or_full(item["ownership"]),
                 category=item.get("category") or None,
                 transaction=item.get("transaction") or None,
             )
@@ -818,10 +923,7 @@ def apply_visual_extrato_import(
                 seed = _downstream_closed_periods(closed, {period})
                 cash_periods.update(seed)
         elif item["action"] == "update_benefit":
-            row = db.query(BenefitCardStatement).filter(
-                BenefitCardStatement.id == item["id"],
-                BenefitCardStatement.tenant_id == tenant_id,
-            ).first()
+            row = plan["benefit_by_id"].get(int(item["id"]))
             if not row:
                 issues.append({"source": "benefit", "row": item["line"], "reason": "Registro não encontrado"})
                 continue
@@ -831,7 +933,7 @@ def apply_visual_extrato_import(
             row.amount = item["amount"]
             row.subtag_id = item["subtag_id"]
             row.expense_sharing_id = item["sharing_id"]
-            row.ownership_percentage = item["ownership"] or Decimal("100.00")
+            row.ownership_percentage = _ownership_or_full(item["ownership"])
             if item.get("payment_method"):
                 row.payment_method = item["payment_method"]
             db.flush()
@@ -844,7 +946,7 @@ def apply_visual_extrato_import(
             if not item.get("can_create", True):
                 stats["skipped"] += 1
                 continue
-            card_id = _resolve_benefit_card_id(db, tenant_id, account_id, str(item.get("card_last4") or ""))
+            card_id = plan["benefit_cards"].resolve(str(item.get("card_last4") or ""))
             if not card_id:
                 issues.append({
                     "source": "benefit",
@@ -863,7 +965,7 @@ def apply_visual_extrato_import(
                 amount=item["amount"],
                 subtag_id=item["subtag_id"],
                 expense_sharing_id=item["sharing_id"],
-                ownership_percentage=item["ownership"] or Decimal("100.00"),
+                ownership_percentage=_ownership_or_full(item["ownership"]),
                 payment_method=item.get("payment_method") or "Importado",
             )
             db.add(row)

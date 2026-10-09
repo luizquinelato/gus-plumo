@@ -49,6 +49,10 @@ from app.services.visual_extrato_import_service import (
     apply_visual_extrato_import,
     preview_visual_extrato_import,
 )
+from app.services.visual_fatura_import_service import (
+    apply_visual_fatura_import,
+    preview_visual_fatura_import,
+)
 from app.services.visual_mapping_import_service import (
     apply_visual_mapping_import,
     preview_visual_mapping_import,
@@ -3687,6 +3691,14 @@ async def batch_update_expenses(
     card_ids = [item.id for item in request.items if item.source == 'card']
     benefit_ids = [item.id for item in request.items if item.source == 'benefit']
 
+    has_field_update = (
+        request.clear_subtag
+        or request.subtag_id is not None
+        or request.expense_sharing_id is not None
+        or request.ownership_percentage is not None
+    )
+
+    moved = 0
     if request.target_credit_card_id is not None:
         if bank_ids or benefit_ids or not card_ids:
             raise HTTPException(
@@ -3739,12 +3751,13 @@ async def batch_update_expenses(
             {"credit_card_id": request.target_credit_card_id},
             synchronize_session=False,
         )
-        db.commit()
-        return BatchUpdateResponse(
-            success=True,
-            updated_count=moved,
-            message=f"{moved} lançamento(s) movido(s) para o cartão selecionado",
-        )
+        if not has_field_update:
+            db.commit()
+            return BatchUpdateResponse(
+                success=True,
+                updated_count=moved,
+                message=f"{moved} lançamento(s) movido(s) para o cartão selecionado",
+            )
 
     # Verificar se subtag existe (se fornecida)
     if request.subtag_id is not None:
@@ -3857,10 +3870,13 @@ async def batch_update_expenses(
 
     db.commit()
 
+    message = f"{updated_count} registro(s) atualizado(s) com sucesso"
+    if moved:
+        message += f"; {moved} movido(s) para o cartão selecionado"
     return BatchUpdateResponse(
         success=True,
         updated_count=updated_count,
-        message=f"{updated_count} registro(s) atualizado(s) com sucesso",
+        message=message,
         closure_impact=closure_impact,
     )
 
@@ -3881,6 +3897,7 @@ class VisualExtratoImportRow(BaseModel):
     transaction: str | None = None
     card_last4: str | None = None
     payment_method: str | None = None
+    keep_existing: bool = False
 
 
 class VisualExtratoImportRowsPayload(BaseModel):
@@ -3970,6 +3987,106 @@ async def visual_extrato_import(
         f"{stats.get('benefit_updated', 0)} benefício(s) atualizado(s), "
         f"{stats.get('benefit_created', 0)} criado(s)."
     )
+    if stats.get("kept"):
+        message += f" {stats['kept']} mantido(s) como estava."
+    db.commit()
+    return VisualExtratoImportResponse(
+        success=True,
+        stats=stats,
+        issues=result.get("issues") or [],
+        message=message,
+        closure_impact=result.get("closure_impact"),
+    )
+
+
+# ==================== VISUAL FATURA IMPORT (Excel exportado pelo relatório) ====================
+
+
+class VisualFaturaImportRow(BaseModel):
+    row_index: int | None = None
+    year_month: str | None = None
+    date: str
+    description: str
+    amount: float
+    card_last4: str | None = None
+    card_name: str | None = None
+    tag: str | None = None
+    subtag: str | None = None
+    partner_name: str | None = None
+    ownership_percentage: float | None = None
+    current_installment: int | None = None
+    total_installments: int | None = None
+    issuer: str | None = None
+    keep_existing: bool = False
+
+
+class VisualFaturaImportRowsPayload(BaseModel):
+    rows: List[VisualFaturaImportRow] = Field(default_factory=list)
+    batch: ImportBatchPayload | None = None
+
+
+class VisualFaturaImportRequest(VisualFaturaImportRowsPayload):
+    confirm_closed_closure_impact: bool = False
+
+
+@router.post("/invoices/visual-import/preview", response_model=VisualExtratoImportPreviewResponse)
+async def visual_fatura_import_preview(
+    request: VisualFaturaImportRowsPayload,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    """Pré-visualiza a planilha de faturas exportada pelo relatório."""
+    tenant_id = int(current_user.get("tenant_id") or 1)
+    account_id = current_user.get("account_id")
+    if account_id is None:
+        raise HTTPException(status_code=400, detail="Conta não selecionada")
+    if not request.rows:
+        raise HTTPException(status_code=400, detail="Nenhuma linha para analisar")
+    result = preview_visual_fatura_import(
+        db,
+        tenant_id,
+        int(account_id),
+        rows=[row.model_dump() for row in request.rows],
+        batch=ImportBatch(request.batch),
+    )
+    return VisualExtratoImportPreviewResponse(**result)
+
+
+@router.post("/invoices/visual-import", response_model=VisualExtratoImportResponse)
+async def visual_fatura_import(
+    request: VisualFaturaImportRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    """Grava a planilha de faturas exportada pelo relatório."""
+    tenant_id = int(current_user.get("tenant_id") or 1)
+    account_id = current_user.get("account_id")
+    if account_id is None:
+        raise HTTPException(status_code=400, detail="Conta não selecionada")
+    user_id = int(current_user.get("user_id") or current_user.get("id") or 0)
+    if not request.rows:
+        raise HTTPException(status_code=400, detail="Nenhuma linha para importar")
+    try:
+        result = apply_visual_fatura_import(
+            db,
+            tenant_id,
+            int(account_id),
+            user_id,
+            rows=[row.model_dump() for row in request.rows],
+            confirm_closed_closure_impact=request.confirm_closed_closure_impact,
+        )
+    except AccountPeriodClosedError as exc:
+        detail: dict | str = exc.message
+        if exc.payload:
+            detail = {"message": exc.message, **exc.payload}
+        raise HTTPException(status_code=409, detail=detail) from exc
+    stats = result.get("stats") or {}
+    message = (
+        f"Importação concluída: {stats.get('updated', 0)} lançamento(s) atualizado(s), "
+        f"{stats.get('created', 0)} criado(s)."
+    )
+    if stats.get("kept"):
+        message += f" {stats['kept']} mantido(s) como estava."
     db.commit()
     return VisualExtratoImportResponse(
         success=True,

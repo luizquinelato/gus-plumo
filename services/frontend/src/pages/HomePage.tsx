@@ -1,4 +1,5 @@
 import { useState, useEffect, type ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
 import {
@@ -9,7 +10,6 @@ import {
   listPageTableSectionCls,
 } from '../components/CadastroListPageLayout'
 import LoadingSpinner from '../components/LoadingSpinner'
-import UnifiedImportModal from '../components/UnifiedImportModal'
 import {
   Upload,
   TrendingUp,
@@ -178,22 +178,22 @@ function PanelCell({
 
 const HomePage = () => {
   const { hideBalanceValues, toggleBalanceVisibility } = useBalanceVisibility()
-  const [isImportModalOpen, setIsImportModalOpen] = useState(false)
+  const navigate = useNavigate()
   const [summary, setSummary] = useState<HomeExecutiveSummary | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   const now = new Date()
   const currentMonthLabel = `${MONTH_NAMES_FULL[now.getMonth()]} ${now.getFullYear()}`
 
-  const loadSummary = async (options?: { silent?: boolean }) => {
+  const loadSummary = async () => {
     try {
-      if (!options?.silent) setIsLoading(true)
+      setIsLoading(true)
       const response = await axios.get<HomeExecutiveSummary>('/api/dashboard/home')
       setSummary(response.data)
     } catch (error) {
       console.error('Erro ao carregar sumário:', error)
     } finally {
-      if (!options?.silent) setIsLoading(false)
+      setIsLoading(false)
     }
   }
 
@@ -227,7 +227,7 @@ const HomePage = () => {
               actions={
                 <CadastroListPrimaryButton
                   label="Importar"
-                  onClick={() => setIsImportModalOpen(true)}
+                  onClick={() => navigate('/importar')}
                   icon={<Upload size={18} />}
                 />
               }
@@ -410,16 +410,6 @@ const HomePage = () => {
           </div>
         </CadastroListPageBody>
       </CadastroListPageShell>
-
-      <UnifiedImportModal
-        isOpen={isImportModalOpen}
-        onClose={(info) => {
-          setIsImportModalOpen(false)
-          if (info?.dataChanged) {
-            void loadSummary({ silent: true })
-          }
-        }}
-      />
     </div>
   )
 }

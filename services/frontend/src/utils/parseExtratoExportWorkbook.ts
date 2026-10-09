@@ -2,8 +2,9 @@ import * as XLSX from 'xlsx'
 import { parseLocaleAmount } from './currency'
 import { excelSerialToBrString } from './excelCellFormat'
 
-const BANK_SHEET_NAMES = ['Extratos Bancários', 'Extratos Bancarios']
+const BANK_SHEET_NAMES = ['Extratos Bancários', 'Extratos Bancarios', 'Extratos']
 const BENEFIT_SHEET_NAMES = ['Benefícios', 'Beneficios']
+const FATURA_SHEET_NAMES = ['Faturas de Cartão', 'Faturas de Cartao', 'Faturas']
 
 const BANK_REQUIRED = ['Data e hora', 'Descrição', 'Valor']
 const BENEFIT_REQUIRED = ['Data', 'Movimentação', 'Valor']
@@ -21,6 +22,8 @@ export interface ParsedImportRow {
   transaction?: string
   card_last4?: string
   payment_method?: string
+  /** Decisão "Manter" nos Ajustes: o registro já existente não é alterado. */
+  keep_existing?: boolean
 }
 
 export interface ParsedExtratoWorkbook {
@@ -124,7 +127,7 @@ export async function parseExtratoExportWorkbook(file: File): Promise<ParsedExtr
   }
   if (!benefitSheet) {
     for (const name of wb.SheetNames) {
-      if (BENEFIT_SHEET_NAMES.includes(name)) continue
+      if (BENEFIT_SHEET_NAMES.includes(name) || FATURA_SHEET_NAMES.includes(name) || BANK_SHEET_NAMES.includes(name)) continue
       const sh = wb.Sheets[name]
       if (headersMatch(sh, BENEFIT_REQUIRED)) {
         benefitSheet = sh

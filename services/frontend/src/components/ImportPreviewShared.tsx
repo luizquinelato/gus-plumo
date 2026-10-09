@@ -1,7 +1,9 @@
-import type { ReactNode } from 'react'
-import { CadastroFormSection } from './CadastroFormLayout'
-import { listPageTableRowHoverCls, listPageTableSectionCls } from './CadastroListPageLayout'
-import { AlertCircle, AlertTriangle, Info, X } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
+import { CadastroListPageEmptyCard, listPageTableRowHoverCls, listPageTableSectionCls } from './CadastroListPageLayout'
+import { AlertCircle, AlertTriangle, ChevronDown, Inbox, Info, X } from 'lucide-react'
+import { ListTableSortableHeader, type ListTableSortDirection } from './ListTableSelectColumns'
+import Badge from './Badge'
+import { badgeVariantForColumnRole } from '../utils/badgeSurfaces'
 
 export type ImportModalMessageVariant = 'error' | 'warning' | 'info'
 
@@ -68,10 +70,8 @@ export const importPreviewCreateCardCls = `${importPreviewCardCls} border-l-gree
 
 const headCls =
   'bg-gray-100 dark:bg-gray-800/80 [&_th]:border-b-2 [&_th]:border-gray-200 dark:[&_th]:border-gray-600'
-const thCls =
-  'px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300'
-const tdCls = 'border-b border-gray-200 px-3 py-2 align-top dark:border-gray-600'
-const tdMutedCls = `${tdCls} text-xs text-gray-600 dark:text-gray-300`
+const tdCls = 'border-b border-gray-200 px-3 py-2 dark:border-gray-600'
+const tdWrapCls = 'border-b border-gray-200 px-2 py-2 break-words [overflow-wrap:anywhere] dark:border-gray-600'
 
 const ENTITY_LABELS: Record<string, string> = {
   conta: 'Conta',
@@ -175,32 +175,269 @@ export function PreviewRowMeta({
   )
 }
 
+const sectionToneCls = {
+  default: {
+    box: 'border-gray-200 dark:border-gray-700',
+    header: 'text-gray-900 dark:text-gray-100',
+    chevron: 'text-gray-500',
+    divider: 'border-gray-200 dark:border-gray-700',
+  },
+  warning: {
+    box: 'border-amber-300 border-l-4 border-l-amber-500 dark:border-amber-700 dark:border-l-amber-500',
+    header: 'bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-100',
+    chevron: 'text-amber-600 dark:text-amber-300',
+    divider: 'border-amber-200 dark:border-amber-800',
+  },
+}
+
+export function CollapsiblePreviewSection({
+  title,
+  children,
+  defaultOpen = false,
+  tone = 'default',
+}: {
+  title: string
+  children: ReactNode
+  defaultOpen?: boolean
+  tone?: keyof typeof sectionToneCls
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  const cls = sectionToneCls[tone]
+  return (
+    <section className={`overflow-hidden rounded-xl border bg-white dark:bg-gray-800 ${cls.box}`}>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        className={`flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium ${cls.header}`}
+      >
+        <ChevronDown size={16} className={`shrink-0 transition-transform ${cls.chevron} ${open ? '' : '-rotate-90'}`} />
+        {tone === 'warning' ? <AlertTriangle size={16} className={`shrink-0 ${cls.chevron}`} /> : null}
+        {title}
+      </button>
+      {open ? <div className={`border-t px-4 py-3 ${cls.divider}`}>{children}</div> : null}
+    </section>
+  )
+}
+
+const SKIPPED_ISSUE_ACTIONS = new Set(['Não será criado', 'Não será alterado', 'Linha ignorada'])
+
+export function IssueActionBadge({ action }: { action?: string | null }) {
+  if (!action) return <>—</>
+  return (
+    <Badge
+      variant={badgeVariantForColumnRole('scope')}
+      tone={SKIPPED_ISSUE_ACTIONS.has(action) ? 'danger' : 'warning'}
+      label={action}
+    />
+  )
+}
+
+export function PreviewEmptyState({ unchanged = 0 }: { unchanged?: number }) {
+  const description = unchanged
+    ? `${unchanged} ${unchanged === 1 ? 'registro já está igual' : 'registros já estão iguais'}.`
+    : 'Nenhuma adição ou alteração neste arquivo.'
+  return (
+    <CadastroListPageEmptyCard
+      icon={<Inbox size={32} className="text-gray-400" />}
+      title="Nada para gravar"
+      description={description}
+    />
+  )
+}
+
+export type PreviewSortValue = string | number | null | undefined
+
+function sortableNumber(text: string): number | null {
+  const date = text.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2}))?$/)
+  if (date) {
+    return new Date(
+      Number(date[3]),
+      Number(date[2]) - 1,
+      Number(date[1]),
+      Number(date[4] ?? 0),
+      Number(date[5] ?? 0),
+    ).getTime()
+  }
+  const cleaned = text.replace(/R\$\s?/, '').replace(/%$/, '').trim()
+  if (!/^-?[\d.,]+$/.test(cleaned)) return null
+  const normalized = cleaned.includes(',') ? cleaned.replace(/\./g, '').replace(',', '.') : cleaned
+  const n = Number(normalized)
+  return Number.isFinite(n) ? n : null
+}
+
+const PREVIEW_PAGE_SIZE = 200
+
+function compareSortValues(a: PreviewSortValue, b: PreviewSortValue): number {
+  const emptyA = a == null || a === '' || a === '—'
+  const emptyB = b == null || b === '' || b === '—'
+  if (emptyA || emptyB) return emptyA === emptyB ? 0 : emptyA ? 1 : -1
+  if (typeof a === 'number' && typeof b === 'number') return a - b
+  const textA = String(a)
+  const textB = String(b)
+  const numA = typeof a === 'number' ? a : sortableNumber(textA)
+  const numB = typeof b === 'number' ? b : sortableNumber(textB)
+  if (numA != null && numB != null) return numA - numB
+  return textA.localeCompare(textB, 'pt-BR', { numeric: true, sensitivity: 'base' })
+}
+
+function cellSortValue(cell: ReactNode): PreviewSortValue {
+  if (typeof cell === 'string' || typeof cell === 'number') return cell
+  return null
+}
+
+export function PreviewDataTable({
+  columns,
+  rows,
+  sortValues,
+  wrap = false,
+  verticalAlign = 'top',
+}: {
+  columns: Array<{ key: string; label: string; width?: string }>
+  rows: Array<Record<string, ReactNode>>
+  /** Valores de ordenação por linha quando a célula não é texto simples. */
+  sortValues?: Array<Record<string, PreviewSortValue>>
+  /** Cabe na largura disponível (sem scroll horizontal), quebrando texto nas células. */
+  wrap?: boolean
+  /** `middle` centraliza o texto quando a linha tem controles (botões, selects). */
+  verticalAlign?: 'top' | 'middle'
+}) {
+  const [sort, setSort] = useState<{ key: string; direction: ListTableSortDirection } | null>(null)
+  const [limit, setLimit] = useState(PREVIEW_PAGE_SIZE)
+
+  const order = rows.map((_, index) => index)
+  if (sort) {
+    const valueAt = (index: number) =>
+      sortValues?.[index]?.[sort.key] !== undefined
+        ? sortValues[index][sort.key]
+        : cellSortValue(rows[index][sort.key])
+    const factor = sort.direction === 'asc' ? 1 : -1
+    order.sort((a, b) => {
+      const cmp = compareSortValues(valueAt(a), valueAt(b))
+      return cmp === 0 ? a - b : cmp * factor
+    })
+  }
+
+  return (
+    <div className={`${listPageTableSectionCls} ${wrap ? 'overflow-hidden' : 'overflow-x-auto'}`}>
+      <table className={`w-full text-sm ${wrap ? 'table-fixed' : ''}`}>
+        {wrap ? (
+          <colgroup>
+            {columns.map((column) => (
+              <col key={column.key} style={column.width ? { width: column.width } : undefined} />
+            ))}
+          </colgroup>
+        ) : null}
+        <thead className={headCls}>
+          <tr>
+            {columns.map((column) =>
+              column.label === '#' ? (
+                <th
+                  key={column.key}
+                  scope="col"
+                  className={`${wrap ? 'px-2 py-2' : 'px-3 py-2'} text-left align-middle text-[11px] font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300`}
+                >
+                  #
+                </th>
+              ) : (
+                <ListTableSortableHeader
+                  key={column.key}
+                  label={column.label}
+                  className={wrap ? 'px-2 py-2 [&>span]:flex-wrap' : 'px-3 py-2'}
+                  active={sort?.key === column.key}
+                  direction={sort?.key === column.key ? sort.direction : 'asc'}
+                  onToggle={() =>
+                    setSort((current) =>
+                      current?.key === column.key
+                        ? { key: column.key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+                        : { key: column.key, direction: 'asc' },
+                    )
+                  }
+                />
+              ),
+            )}
+          </tr>
+        </thead>
+        <tbody>
+          {order.slice(0, limit).map((index) => (
+            <tr key={index} className={listPageTableRowHoverCls}>
+              {columns.map((column) => (
+                <td
+                  key={column.key}
+                  className={`${wrap ? tdWrapCls : tdCls} ${verticalAlign === 'middle' ? 'align-middle' : 'align-top'}`}
+                >
+                  {rows[index][column.key] ?? '—'}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {rows.length > limit ? (
+        <div className="flex flex-wrap items-center justify-center gap-3 border-t border-gray-200 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
+          <span className="tabular-nums">
+            Exibindo {limit.toLocaleString('pt-BR')} de {rows.length.toLocaleString('pt-BR')}
+          </span>
+          <button
+            type="button"
+            className="font-medium text-[var(--color-1)] hover:underline"
+            onClick={() => setLimit((current) => current + PREVIEW_PAGE_SIZE)}
+          >
+            Mostrar mais {Math.min(PREVIEW_PAGE_SIZE, rows.length - limit).toLocaleString('pt-BR')}
+          </button>
+          <button
+            type="button"
+            className="font-medium text-[var(--color-1)] hover:underline"
+            onClick={() => setLimit(rows.length)}
+          >
+            Mostrar todos
+          </button>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+export interface ImportPreviewIssue {
+  row: number
+  reason: string
+  source?: string
+  detail?: string | null
+  action?: string | null
+}
+
 export function ImportPreviewIssuesSection({
   issues,
+  sourceLabel,
 }: {
-  issues: Array<{ row: number; reason: string; source?: string }>
+  issues: ImportPreviewIssue[]
+  sourceLabel?: (source: string) => string
 }) {
   if (!issues.length) return null
+  const withSource = Boolean(sourceLabel) && issues.some((issue) => issue.source)
+  const withDetail = issues.some((issue) => issue.detail)
+  const withAction = issues.some((issue) => issue.action)
   return (
-    <CadastroFormSection title={`Problemas (${issues.length})`} icon={<AlertTriangle size={14} />}>
-      <div className={`${listPageTableSectionCls} overflow-x-auto`}>
-        <table className="w-full text-sm">
-          <thead className={headCls}>
-            <tr>
-              <th className={`${thCls} w-20`}>Linha</th>
-              <th className={thCls}>Motivo</th>
-            </tr>
-          </thead>
-          <tbody>
-            {issues.map((issue, i) => (
-              <tr key={`${issue.row}-${i}`} className={listPageTableRowHoverCls}>
-                <td className={`${tdCls} tabular-nums`}>{issue.row}</td>
-                <td className={tdMutedCls}>{issue.reason}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </CadastroFormSection>
+    <CollapsiblePreviewSection title={`Problemas (${issues.length})`} tone="warning">
+      <PreviewDataTable
+        columns={[
+          { key: 'index', label: '#' },
+          ...(withSource ? [{ key: 'source', label: 'Origem' }] : []),
+          { key: 'row', label: 'Linha' },
+          ...(withDetail ? [{ key: 'detail', label: 'Registro' }] : []),
+          { key: 'reason', label: 'Motivo' },
+          ...(withAction ? [{ key: 'action', label: 'Situação' }] : []),
+        ]}
+        rows={issues.map((issue, index) => ({
+          index: index + 1,
+          source: issue.source && sourceLabel ? sourceLabel(issue.source) : '—',
+          row: issue.row || '—',
+          detail: issue.detail || '—',
+          reason: issue.reason,
+          action: <IssueActionBadge action={issue.action} />,
+        }))}
+        sortValues={issues.map((issue) => ({ action: issue.action || '' }))}
+      />
+    </CollapsiblePreviewSection>
   )
 }

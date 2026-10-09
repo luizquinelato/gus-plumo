@@ -1,17 +1,14 @@
-import { useMemo, useState, type ReactNode } from 'react'
-import { cadastroSectionsStackCls } from './CadastroFormLayout'
-import { CadastroListPageTabs } from './CadastroListPageLayout'
 import {
+  CollapsiblePreviewSection,
   ImportPreviewIssuesSection,
-  MetricColumn,
-  MetricDivider,
-  PreviewCardLayout,
-  PreviewRowMeta,
-  StringChangeMetricColumn,
-  importPreviewCreateCardCls,
-  importPreviewUpdateCardCls,
+  PreviewDataTable,
+  PreviewEmptyState,
+  type ImportPreviewIssue,
 } from './ImportPreviewShared'
-import { Eye, Pencil, PlusCircle } from 'lucide-react'
+import CartoesImportPreview from './CartoesImportPreview'
+import TagsImportPreview from './TagsImportPreview'
+import TemplatesImportPreview from './TemplatesImportPreview'
+import { isTagEntity, useIconCatalog } from './ImportTagIcon'
 
 export interface CadastroImportChange {
   field: string
@@ -25,8 +22,32 @@ export interface CadastroImportPreviewRow {
   label?: string
   record_id?: number | null
   entity?: string | null
+  group?: string | null
+  name?: string | null
+  subtype?: string | null
   fields_after?: Record<string, string>
   changes?: CadastroImportChange[]
+}
+
+export interface CardGroupPreviewMeta {
+  name: string
+  status: 'create' | 'update' | 'unchanged'
+  closing_day?: number | string | null
+  due_day?: number | string | null
+}
+
+export interface TagGroupPreviewMeta {
+  name: string
+  status: 'create' | 'update' | 'unchanged'
+  icon?: string | null
+  description?: string | null
+}
+
+export interface TemplateGroupPreviewMeta {
+  name: string
+  status: 'create' | 'update' | 'unchanged'
+  icon?: string | null
+  description?: string | null
 }
 
 export interface CadastroImportPreviewData {
@@ -39,10 +60,11 @@ export interface CadastroImportPreviewData {
   }
   creates: CadastroImportPreviewRow[]
   updates: CadastroImportPreviewRow[]
-  issues: Array<{ row: number; reason: string }>
+  issues: ImportPreviewIssue[]
+  card_groups?: CardGroupPreviewMeta[]
+  tag_groups?: TagGroupPreviewMeta[]
+  template_groups?: TemplateGroupPreviewMeta[]
 }
-
-type PreviewTab = 'updates' | 'creates'
 
 const FIELD_DISPLAY_ORDER = [
   'Tag',
@@ -73,166 +95,117 @@ const FIELD_DISPLAY_ORDER = [
   'Cartões',
 ]
 
-const WIDE_FIELD_LABELS = new Set(['Descrição', 'Classificação', 'Conta parceira', 'Cartões'])
-
 function fieldOrderIndex(label: string): number {
   const i = FIELD_DISPLAY_ORDER.indexOf(label)
   return i === -1 ? 999 : i
 }
 
-function fieldsForCreateMetrics(
-  fields: Record<string, string> | undefined,
-  title: string | undefined,
-): Array<[string, string]> {
-  if (!fields) return []
-  return Object.entries(fields)
-    .filter(([k, v]) => Boolean(v) && v !== '—' && k !== 'Nome' && v !== title)
-    .sort((a, b) => fieldOrderIndex(a[0]) - fieldOrderIndex(b[0]))
+function createColumns(rows: CadastroImportPreviewRow[]): Array<{ key: string; label: string }> {
+  const keys = new Set<string>()
+  for (const row of rows) {
+    for (const [key, value] of Object.entries(row.fields_after ?? {})) {
+      if (value && value !== '—') keys.add(key)
+    }
+  }
+  const ordered = [...keys].sort((a, b) => fieldOrderIndex(a) - fieldOrderIndex(b))
+  return [{ key: 'row', label: '#' }, ...ordered.map((key) => ({ key, label: key }))]
 }
 
-function isWideChangeLabel(label: string): boolean {
-  return WIDE_FIELD_LABELS.has(label) || label.includes('Descrição')
-}
-
-function UpdatePreviewCard({ row }: { row: CadastroImportPreviewRow }) {
-  const changes = row.changes ?? []
-  const metrics: ReactNode[] = []
-
-  changes.forEach((c, i) => {
-    if (i > 0) metrics.push(<MetricDivider key={`d-${c.field}-${i}`} />)
-    metrics.push(
-      <StringChangeMetricColumn
-        key={c.field}
-        label={c.label || c.field}
-        before={c.before}
-        after={c.after}
-        wide={isWideChangeLabel(c.label || c.field)}
-      />,
-    )
-  })
-
+function CreateTable({ rows }: { rows: CadastroImportPreviewRow[] }) {
+  const sorted = [...rows].sort((a, b) => a.row - b.row)
+  const columns = createColumns(sorted)
   return (
-    <article className={importPreviewUpdateCardCls}>
-      <PreviewCardLayout
-        info={
-          <>
-            <p className="truncate font-medium text-gray-900 dark:text-white" title={row.label || '—'}>
-              {row.label || '—'}
-            </p>
-            <PreviewRowMeta row={row.row} entity={row.entity} recordId={row.record_id} />
-          </>
+    <PreviewDataTable
+      columns={columns}
+      rows={sorted.map((row) => {
+        const cells: Record<string, string | number> = { row: row.row }
+        for (const column of columns) {
+          if (column.key === 'row') continue
+          cells[column.key] = row.fields_after?.[column.key] || '—'
         }
-        metrics={metrics.length ? metrics : <MetricColumn label="Alteração">—</MetricColumn>}
-      />
-    </article>
+        return cells
+      })}
+    />
   )
 }
 
-function CreatePreviewCard({ row }: { row: CadastroImportPreviewRow }) {
-  const entries = fieldsForCreateMetrics(row.fields_after, row.label)
-  const metrics: ReactNode[] = []
-
-  entries.forEach(([label, value], i) => {
-    if (i > 0) metrics.push(<MetricDivider key={`d-${label}-${i}`} />)
-    const wide = WIDE_FIELD_LABELS.has(label)
-    metrics.push(
-      <MetricColumn key={label} label={label} className={wide ? 'min-w-[8rem] max-w-[18rem]' : undefined}>
-        <span className={`block ${wide ? 'whitespace-normal break-words' : 'truncate'}`} title={value}>
-          {value}
-        </span>
-      </MetricColumn>,
-    )
-  })
-
+function UpdateTable({ rows }: { rows: CadastroImportPreviewRow[] }) {
+  const sorted = [...rows].sort((a, b) => a.row - b.row)
+  const tableRows = sorted.flatMap((row) =>
+    (row.changes ?? []).map((change) => ({
+      row: row.row,
+      registro: row.label || '—',
+      campo: change.label || change.field,
+      de: change.before || '—',
+      para: change.after || '—',
+    })),
+  )
   return (
-    <article className={importPreviewCreateCardCls}>
-      <PreviewCardLayout
-        info={
-          <>
-            <p className="truncate font-medium text-gray-900 dark:text-white" title={row.label || '—'}>
-              {row.label || '—'}
-            </p>
-            <PreviewRowMeta row={row.row} entity={row.entity} recordId={row.record_id} />
-          </>
-        }
-        metrics={
-          metrics.length ? (
-            metrics
-          ) : (
-            <MetricColumn label="Dados">
-              <span className="font-normal text-gray-600 dark:text-gray-300">conforme planilha</span>
-            </MetricColumn>
-          )
-        }
-      />
-    </article>
+    <PreviewDataTable
+      columns={[
+        { key: 'row', label: '#' },
+        { key: 'registro', label: 'Registro' },
+        { key: 'campo', label: 'Campo' },
+        { key: 'de', label: 'De' },
+        { key: 'para', label: 'Para' },
+      ]}
+      rows={tableRows}
+    />
   )
 }
 
-function PreviewList({
-  rows,
-  variant,
-  emptyMessage,
+export default function CadastroImportPreview({
+  data,
+  tagIconOverrides = {},
+  onTagIconChange,
 }: {
-  rows: CadastroImportPreviewRow[]
-  variant: 'update' | 'create'
-  emptyMessage: string
+  data: CadastroImportPreviewData
+  tagIconOverrides?: Record<string, string>
+  onTagIconChange?: (row: CadastroImportPreviewRow, icon: string) => void
 }) {
-  if (!rows.length) {
-    return <p className="py-6 text-center text-sm text-gray-600 dark:text-gray-300">{emptyMessage}</p>
+  const { creates, updates, issues, summary } = data
+  const allRows = [...creates, ...updates]
+  const wantsIcons = allRows.some((row) => isTagEntity(row.entity))
+  const catalog = useIconCatalog(wantsIcons)
+  if (!creates.length && !updates.length) {
+    return (
+      <div className="space-y-4">
+        <PreviewEmptyState unchanged={summary.unchanged} />
+        <ImportPreviewIssuesSection issues={issues} />
+      </div>
+    )
   }
 
-  const sorted = [...rows].sort((a, b) => a.row - b.row)
+  if (wantsIcons) {
+    return (
+      <TagsImportPreview
+        data={data}
+        iconChoices={{ overrides: tagIconOverrides, onChange: onTagIconChange, ...catalog }}
+      />
+    )
+  }
+
+  if (allRows.some((row) => row.entity === 'cartao' || row.entity === 'grupo_fatura')) {
+    return <CartoesImportPreview data={data} />
+  }
+
+  if (allRows.some((row) => row.entity === 'template' || row.entity === 'template_item')) {
+    return <TemplatesImportPreview data={data} />
+  }
 
   return (
-    <div className="space-y-3">
-      {sorted.map((row) =>
-        variant === 'update' ? (
-          <UpdatePreviewCard key={`u-${row.row}-${row.record_id ?? row.label}`} row={row} />
-        ) : (
-          <CreatePreviewCard key={`c-${row.row}-${row.record_id ?? row.label}`} row={row} />
-        ),
-      )}
-    </div>
-  )
-}
-
-export default function CadastroImportPreview({ data }: { data: CadastroImportPreviewData }) {
-  const { creates, updates, issues } = data
-  const [tab, setTab] = useState<PreviewTab>(() => (updates.length > 0 ? 'updates' : 'creates'))
-
-  const tabs = useMemo(
-    () => [
-      { key: 'updates' as const, label: 'Alterações', icon: <Pencil size={15} />, count: updates.length },
-      { key: 'creates' as const, label: 'Adições', icon: <PlusCircle size={15} />, count: creates.length },
-    ],
-    [updates.length, creates.length],
-  )
-
-  return (
-    <div className={cadastroSectionsStackCls}>
-      <CadastroListPageTabs tabs={tabs} active={tab} onChange={(k) => setTab(k as PreviewTab)} />
-
-      <div className="min-h-[min(52vh,420px)] max-h-[min(72vh,680px)] overflow-y-auto">
-        {tab === 'updates' ? (
-          <PreviewList
-            rows={updates}
-            variant="update"
-            emptyMessage="Nenhuma alteração em registros existentes."
-          />
-        ) : (
-          <PreviewList rows={creates} variant="create" emptyMessage="Nenhum registro novo será criado." />
-        )}
-      </div>
-
-      <ImportPreviewIssuesSection issues={issues} />
-
-      {creates.length === 0 && updates.length === 0 ? (
-        <p className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
-          <Eye size={16} />
-          Nenhuma alteração detectada nas linhas válidas.
-        </p>
+    <div className="space-y-4">
+      {updates.length > 0 ? (
+        <CollapsiblePreviewSection title={`Alterações (${updates.length})`}>
+          <UpdateTable rows={updates} />
+        </CollapsiblePreviewSection>
       ) : null}
+      {creates.length > 0 ? (
+        <CollapsiblePreviewSection title={`Adições (${creates.length})`}>
+          <CreateTable rows={creates} />
+        </CollapsiblePreviewSection>
+      ) : null}
+      <ImportPreviewIssuesSection issues={issues} />
     </div>
   )
 }

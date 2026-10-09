@@ -7,7 +7,7 @@ import re
 from decimal import Decimal
 from typing import Any, Optional
 
-from sqlalchemy import String, cast, func
+from sqlalchemy import String, cast, func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.services.import_batch import ImportBatch
@@ -37,6 +37,21 @@ def _empty_preview() -> dict[str, Any]:
         "updates": [],
         "issues": [],
     }
+
+
+ISSUE_NOT_CREATED = "Não será criado"
+ISSUE_IGNORED = "Linha ignorada"
+ISSUE_KEEP_TAG = "Tag atual mantida"
+ISSUE_NO_CLASSIFICATION = "Sem classificação"
+ISSUE_NO_SHARING = "Sem compartilhamento"
+
+
+def _issue_detail(parent: Any, name: Any, *, sep: str = "/") -> str | None:
+    left = str(parent or "").strip()
+    right = str(name or "").strip()
+    if left and right:
+        return f"{left}{sep}{right}"
+    return left or right or None
 
 
 def _finish_preview(
@@ -136,17 +151,21 @@ def _resolve_sharing_for_partner(
     account_id: int,
     partner_account_id: int,
 ) -> Optional[int]:
-    row = (
-        db.query(ExpenseSharingSetting)
-        .filter(
-            ExpenseSharingSetting.tenant_id == tenant_id,
-            ExpenseSharingSetting.account_id == account_id,
-            ExpenseSharingSetting.shared_account_id == partner_account_id,
-            ExpenseSharingSetting.active == True,
+    """Config direta (minha) tem prioridade; senão, a inversa criada pelo parceiro."""
+    for owner_id, other_id in ((account_id, partner_account_id), (partner_account_id, account_id)):
+        row = (
+            db.query(ExpenseSharingSetting)
+            .filter(
+                ExpenseSharingSetting.tenant_id == tenant_id,
+                ExpenseSharingSetting.account_id == owner_id,
+                ExpenseSharingSetting.shared_account_id == other_id,
+                ExpenseSharingSetting.active == True,
+            )
+            .first()
         )
-        .first()
-    )
-    return int(row.id) if row else None
+        if row:
+            return int(row.id)
+    return None
 
 
 def _resolve_sharing_by_partner_label(
@@ -162,16 +181,23 @@ def _resolve_sharing_by_partner_label(
     label_lower = label.lower()
     settings = (
         db.query(ExpenseSharingSetting)
-        .options(joinedload(ExpenseSharingSetting.shared_account))
+        .options(
+            joinedload(ExpenseSharingSetting.shared_account),
+            joinedload(ExpenseSharingSetting.account),
+        )
         .filter(
             ExpenseSharingSetting.tenant_id == tenant_id,
-            ExpenseSharingSetting.account_id == account_id,
+            or_(
+                ExpenseSharingSetting.account_id == account_id,
+                ExpenseSharingSetting.shared_account_id == account_id,
+            ),
             ExpenseSharingSetting.active == True,
         )
         .all()
     )
+    settings.sort(key=lambda s: (s.account_id != account_id, s.id))
     for setting in settings:
-        partner = setting.shared_account
+        partner = _sharing_counterpart(setting, account_id)
         if not partner:
             continue
         for candidate in (partner.name, partner.description):
@@ -206,18 +232,40 @@ def _resolve_sharing_from_partner_name(
     return None, f"Não há compartilhamento ativo com {partner_name}. Cadastre em Compartilhamentos."
 
 
-def _sharing_partner_label(db: Session, sharing_id: int | None) -> str:
+def _template_subtag_label(db: Session, subtag_id: int | None) -> str:
+    if not subtag_id:
+        return "—"
+    row = (
+        db.query(Tag.name, Subtag.name)
+        .join(Subtag, Subtag.tag_id == Tag.id)
+        .filter(Subtag.id == subtag_id)
+        .first()
+    )
+    if not row:
+        return "—"
+    return f"{row[0]}/{row[1]}" if row[0] else row[1]
+
+
+def _sharing_counterpart(setting: ExpenseSharingSetting, account_id: int) -> Optional[Account]:
+    return setting.account if setting.account_id != account_id else setting.shared_account
+
+
+def _sharing_partner_label(db: Session, tenant_id: int, account_id: int, sharing_id: int | None) -> str:
     if not sharing_id:
         return "—"
     setting = (
         db.query(ExpenseSharingSetting)
-        .options(joinedload(ExpenseSharingSetting.shared_account))
-        .filter(ExpenseSharingSetting.id == sharing_id)
+        .options(
+            joinedload(ExpenseSharingSetting.shared_account),
+            joinedload(ExpenseSharingSetting.account),
+        )
+        .filter(ExpenseSharingSetting.id == sharing_id, ExpenseSharingSetting.tenant_id == tenant_id)
         .first()
     )
-    if not setting or not setting.shared_account:
+    partner = _sharing_counterpart(setting, account_id) if setting else None
+    if not partner:
         return f"#{sharing_id}"
-    return setting.shared_account.name or f"#{sharing_id}"
+    return partner.name or f"#{sharing_id}"
 
 
 def _resolve_card_expense_sharing_from_row(
@@ -234,6 +282,7 @@ def _resolve_card_expense_sharing_from_row(
     if raw_id == 0:
         return None, True, None
 
+    partner_name = (str(row.get("partner_name") or "")).strip()
     stale_sharing_id: int | None = None
     if raw_id not in (None, ""):
         try:
@@ -242,6 +291,7 @@ def _resolve_card_expense_sharing_from_row(
             return None, True, f"ID compartilhamento inválido: {raw_id}"
         setting = (
             db.query(ExpenseSharingSetting)
+            .options(joinedload(ExpenseSharingSetting.shared_account), joinedload(ExpenseSharingSetting.account))
             .filter(
                 ExpenseSharingSetting.id == sid,
                 ExpenseSharingSetting.tenant_id == tenant_id,
@@ -249,11 +299,11 @@ def _resolve_card_expense_sharing_from_row(
             )
             .first()
         )
-        if setting:
+        counterpart = _sharing_counterpart(setting, account_id) if setting else None
+        if setting and (not partner_name or (counterpart and _same_name(counterpart.name, partner_name))):
             return sid, True, None
         stale_sharing_id = sid
 
-    partner_name = (str(row.get("partner_name") or "")).strip()
     if not partner_name:
         if stale_sharing_id is not None:
             return (
@@ -270,6 +320,12 @@ def _resolve_card_expense_sharing_from_row(
             return None, True, f"{err} (ID {stale_sharing_id} da planilha não existe aqui.)"
         return None, True, err
     return sid, True, None
+
+
+def _template_ownership(row: dict[str, Any]) -> Any:
+    """Parte da conta logada; 0% é válido (gerenciado), só a ausência vira 100%."""
+    value = row.get("ownership_percentage")
+    return 100 if value is None or value == "" else value
 
 
 def _display_val(value: Any) -> str:
@@ -298,6 +354,25 @@ def _display_account_number(value: Any) -> str:
         return _display_val(value)
 
 
+def _cmp_key(value: Any) -> str:
+    if isinstance(value, bool):
+        return "sim" if value else "nao"
+    if value is None:
+        return ""
+    if isinstance(value, (int, float, Decimal)):
+        try:
+            return format(Decimal(str(value)).quantize(Decimal("0.01")), "f")
+        except Exception:
+            pass
+    text = str(value).strip()
+    if text in ("", "—", "None"):
+        return ""
+    try:
+        return format(Decimal(text.replace(",", ".")).quantize(Decimal("0.01")), "f")
+    except Exception:
+        return text
+
+
 def _append_field_change(
     changes: list[dict[str, Any]],
     field: str,
@@ -307,11 +382,10 @@ def _append_field_change(
     *,
     fmt: Any | None = None,
 ) -> None:
+    if _cmp_key(before) == _cmp_key(after):
+        return
     display = fmt or _display_val
-    b = display(before)
-    a = display(after)
-    if b != a:
-        changes.append({"field": field, "label": label, "before": b, "after": a})
+    changes.append({"field": field, "label": label, "before": display(before), "after": display(after)})
 
 
 def _preview_create_row(
@@ -392,6 +466,39 @@ def _find_tag_in_account_by_name(db: Session, account_id: int, name: str) -> Tag
     )
 
 
+def _same_name(a: str | None, b: str | None) -> bool:
+    return (a or "").strip().lower() == (b or "").strip().lower()
+
+
+def _tag_by_file_id(db: Session, tenant_id: int, account_id: int, tag_id: Any, name: str) -> Tag | None:
+    """IDs da planilha podem vir de outra conta/base: só vale se o nome também bater."""
+    if not tag_id:
+        return None
+    tag = (
+        db.query(Tag)
+        .filter(Tag.id == tag_id, Tag.tenant_id == tenant_id, Tag.account_id == account_id)
+        .first()
+    )
+    return tag if tag and _same_name(tag.name, name) else None
+
+
+def _subtag_by_file_id(
+    db: Session, tenant_id: int, account_id: int, subtag_id: Any, name: str, stype: str | None,
+) -> Subtag | None:
+    if not subtag_id:
+        return None
+    sub = (
+        db.query(Subtag)
+        .filter(Subtag.id == subtag_id, Subtag.tenant_id == tenant_id, Subtag.account_id == account_id)
+        .first()
+    )
+    if not sub or not _same_name(sub.name, name):
+        return None
+    if stype and sub.type != stype:
+        return None
+    return sub
+
+
 def _tag_id_by_name_lookup(tag_id_by_name: dict[str, int], tag_name: str) -> int | None:
     n = (tag_name or "").strip()
     if not n:
@@ -415,6 +522,8 @@ def _resolve_import_tag_for_subtag(
     by_id: Tag | None = None
     if tag_id:
         by_id = db.query(Tag).filter(Tag.id == tag_id, Tag.account_id == account_id).first()
+        if by_id and name_key and not _same_name(by_id.name, name_key):
+            by_id = None
 
     if by_name_db and by_id and by_name_db.id != by_id.id and name_key:
         return by_name_db
@@ -455,41 +564,74 @@ def preview_tags_subtags_import(
     issues: list[dict] = []
     skipped = unchanged = 0
     pending_tag_names = _pending_tag_names_index(tags)
+    tag_meta: dict[str, dict[str, Any]] = {}
+
+    def _remember_tag(name: str, status: str, icon: Any, description: Any) -> None:
+        current = tag_meta.get(name.lower())
+        if current and current["status"] != "unchanged":
+            return
+        tag_meta[name.lower()] = {
+            "name": name,
+            "status": status,
+            "icon": icon or None,
+            "description": description or None,
+        }
+
+    def _with_group(row: dict[str, Any], tag_name: str, *, name: str, subtype: str | None = None):
+        row["group"] = tag_name
+        row["name"] = name
+        if subtype:
+            row["subtype"] = subtype
+        return row
 
     for row in tags:
         line = int(row.get("row_index") or 0)
         name = (row.get("name") or "").strip()
         if not name:
-            issues.append({"row": line, "reason": "Nome da tag vazio"})
+            issues.append({"row": line, "reason": "Nome da tag vazio", "action": ISSUE_IGNORED})
             skipped += 1
             continue
-        tid = row.get("id")
-        existing = None
-        if tid:
-            existing = db.query(Tag).filter(Tag.id == tid, Tag.account_id == account_id).first()
+        existing = _tag_by_file_id(db, tenant_id, account_id, row.get("id"), name)
         if not existing:
             existing = _find_tag_in_account_by_name(db, account_id, name)
         if existing:
             changes: list[dict[str, Any]] = []
-            _append_field_change(changes, "description", "Descrição", existing.description, row.get("description"))
-            _append_field_change(changes, "icon", "Ícone", existing.icon, row.get("icon"))
+            if row.get("description") is not None:
+                _append_field_change(changes, "description", "Descrição", existing.description, row.get("description"))
+            if row.get("icon") is not None:
+                _append_field_change(changes, "icon", "Ícone", existing.icon, row.get("icon"))
+            _remember_tag(
+                existing.name,
+                "update" if changes else "unchanged",
+                row.get("icon") or existing.icon,
+                row.get("description") or existing.description,
+            )
             if changes:
                 updates.append(
-                    _preview_update_row(line, name, existing.id, changes, entity="tag"),
+                    _with_group(
+                        _preview_update_row(line, existing.name, existing.id, changes, entity="tag"),
+                        existing.name,
+                        name=existing.name,
+                    ),
                 )
             else:
                 unchanged += 1
         else:
+            _remember_tag(name, "create", row.get("icon"), row.get("description"))
             creates.append(
-                _preview_create_row(
-                    line,
+                _with_group(
+                    _preview_create_row(
+                        line,
+                        name,
+                        entity="tag",
+                        fields_after={
+                            "Nome": name,
+                            "Descrição": _display_val(row.get("description")),
+                            "Ícone": _display_val(row.get("icon")),
+                        },
+                    ),
                     name,
-                    entity="tag",
-                    fields_after={
-                        "Nome": name,
-                        "Descrição": _display_val(row.get("description")),
-                        "Ícone": _display_val(row.get("icon")),
-                    },
+                    name=name,
                 )
             )
 
@@ -498,15 +640,17 @@ def preview_tags_subtags_import(
         name = (row.get("name") or "").strip()
         stype = _parse_subtag_type(str(row.get("type") or ""))
         if not name or not stype:
-            issues.append({"row": line, "reason": "Subtag exige nome e tipo"})
+            issues.append({
+                "row": line,
+                "reason": "Subtag exige nome e tipo",
+                "detail": _issue_detail(row.get("tag_name"), name),
+                "action": ISSUE_IGNORED,
+            })
             skipped += 1
             continue
         tag_id = row.get("tag_id")
         tag_name = (row.get("tag_name") or "").strip()
-        sid = row.get("id")
-        existing = None
-        if sid:
-            existing = db.query(Subtag).filter(Subtag.id == sid, Subtag.account_id == account_id).first()
+        existing = _subtag_by_file_id(db, tenant_id, account_id, row.get("id"), name, stype)
         tag = _resolve_import_tag_for_subtag(
             db,
             account_id,
@@ -522,15 +666,26 @@ def preview_tags_subtags_import(
                         f"Tag não encontrada: {tag_name or tag_id}. "
                         "Subtag existente atualizada sem alterar a tag."
                     ),
+                    "detail": _issue_detail(tag_name, name),
+                    "action": ISSUE_KEEP_TAG,
                 })
                 changes = []
                 _append_field_change(changes, "description", "Descrição", existing.description, row.get("description"))
                 _append_field_change(changes, "icon", "Ícone", existing.icon, row.get("icon"))
                 if changes:
                     old_tag = db.query(Tag).filter(Tag.id == existing.tag_id).first()
-                    label = f"{old_tag.name if old_tag else '—'}/{name}"
+                    old_tag_name = old_tag.name if old_tag else "—"
+                    if old_tag:
+                        _remember_tag(old_tag.name, "unchanged", old_tag.icon, old_tag.description)
                     updates.append(
-                        _preview_update_row(line, label, existing.id, changes, entity="subtag"),
+                        _with_group(
+                            _preview_update_row(
+                                line, f"{old_tag_name}/{name}", existing.id, changes, entity="subtag",
+                            ),
+                            old_tag_name,
+                            name=name,
+                            subtype=stype,
+                        ),
                     )
                 else:
                     unchanged += 1
@@ -541,6 +696,8 @@ def preview_tags_subtags_import(
                         f"Tag não encontrada: {tag_name or tag_id}. "
                         "Subtag nova não importada (tag é obrigatória)."
                     ),
+                    "detail": _issue_detail(tag_name, name),
+                    "action": ISSUE_NOT_CREATED,
                 })
                 skipped += 1
             continue
@@ -556,6 +713,8 @@ def preview_tags_subtags_import(
                 )
                 .first()
             )
+        if isinstance(tag, Tag):
+            _remember_tag(tag.name, "unchanged", tag.icon, tag.description)
         if existing:
             changes = []
             old_tag = db.query(Tag).filter(Tag.id == existing.tag_id).first()
@@ -564,27 +723,39 @@ def preview_tags_subtags_import(
             _append_field_change(changes, "icon", "Ícone", existing.icon, row.get("icon"))
             if changes:
                 updates.append(
-                    _preview_update_row(line, f"{tag.name}/{name}", existing.id, changes, entity="subtag"),
+                    _with_group(
+                        _preview_update_row(line, f"{tag.name}/{name}", existing.id, changes, entity="subtag"),
+                        tag.name,
+                        name=name,
+                        subtype=stype,
+                    ),
                 )
             else:
                 unchanged += 1
         else:
             creates.append(
-                _preview_create_row(
-                    line,
-                    f"{tag.name}/{name}",
-                    entity="subtag",
-                    fields_after={
-                        "Tag": tag.name,
-                        "Nome": name,
-                        "Tipo": stype,
-                        "Descrição": _display_val(row.get("description")),
-                        "Ícone": _display_val(row.get("icon")),
-                    },
+                _with_group(
+                    _preview_create_row(
+                        line,
+                        f"{tag.name}/{name}",
+                        entity="subtag",
+                        fields_after={
+                            "Tag": tag.name,
+                            "Nome": name,
+                            "Tipo": stype,
+                            "Descrição": _display_val(row.get("description")),
+                            "Ícone": _display_val(row.get("icon")),
+                        },
+                    ),
+                    tag.name,
+                    name=name,
+                    subtype=stype,
                 )
             )
 
-    return _finish_preview(creates, updates, unchanged, skipped, issues)
+    preview = _finish_preview(creates, updates, unchanged, skipped, issues)
+    preview["tag_groups"] = sorted(tag_meta.values(), key=lambda g: g["name"].lower())
+    return preview
 
 
 def apply_tags_subtags_import(
@@ -604,10 +775,7 @@ def apply_tags_subtags_import(
         name = (row.get("name") or "").strip()
         if not name:
             continue
-        tid = row.get("id")
-        tag = None
-        if tid:
-            tag = db.query(Tag).filter(Tag.id == tid, Tag.account_id == account_id).first()
+        tag = _tag_by_file_id(db, tenant_id, account_id, row.get("id"), name)
         if not tag:
             tag = _find_tag_in_account_by_name(db, account_id, name)
         if tag:
@@ -647,10 +815,7 @@ def apply_tags_subtags_import(
         tag = resolved if isinstance(resolved, Tag) else None
         if not tag and isinstance(resolved, _ImportTagRef):
             tag = _find_tag_in_account_by_name(db, account_id, resolved.name)
-        sid = row.get("id")
-        sub = None
-        if sid:
-            sub = db.query(Subtag).filter(Subtag.id == sid, Subtag.account_id == account_id).first()
+        sub = _subtag_by_file_id(db, tenant_id, account_id, row.get("id"), name, stype)
         if not tag:
             if sub:
                 sub.description = row.get("description")
@@ -703,12 +868,17 @@ def preview_contas_import(
         line = int(row.get("row_index") or 0)
         name = (row.get("name") or "").strip()
         if not name:
-            issues.append({"row": line, "reason": "Nome vazio"})
+            issues.append({"row": line, "reason": "Nome vazio", "action": ISSUE_IGNORED})
             skipped += 1
             continue
         bank_code = (row.get("bank_code") or "").strip()
         if bank_code and not _resolve_bank_id(db, bank_code):
-            issues.append({"row": line, "reason": f"Banco não encontrado: {bank_code}"})
+            issues.append({
+                "row": line,
+                "reason": f"Banco não encontrado: {bank_code}",
+                "detail": name,
+                "action": ISSUE_IGNORED,
+            })
             skipped += 1
             continue
         cid = row.get("id")
@@ -894,7 +1064,12 @@ def preview_compartilhamentos_import(
             db, tenant_id, account_id, row, batch,
         )
         if partner_err or not partner:
-            issues.append({"row": line, "reason": partner_err or "Conta parceira não encontrada"})
+            issues.append({
+                "row": line,
+                "reason": partner_err or "Conta parceira não encontrada",
+                "detail": str(row.get("partner_name") or "").strip() or None,
+                "action": ISSUE_IGNORED,
+            })
             skipped += 1
             continue
         rid = row.get("id")
@@ -1054,6 +1229,23 @@ def _resolve_subtag(
     return int(row.id) if row else None
 
 
+def _template_by_file(
+    db: Session, tenant_id: int, account_id: int, template_id: Any, name: str,
+) -> ExpenseTemplate | None:
+    """ID da planilha só vale se o nome bater (ou se a linha não trouxer nome)."""
+    base = db.query(ExpenseTemplate).filter(
+        ExpenseTemplate.tenant_id == tenant_id,
+        ExpenseTemplate.account_id == account_id,
+    )
+    if template_id:
+        tpl = base.filter(ExpenseTemplate.id == template_id).first()
+        if tpl and (not name or _same_name(tpl.name, name)):
+            return tpl
+    if name:
+        return base.filter(ExpenseTemplate.name == name).first()
+    return None
+
+
 def preview_templates_import(
     db: Session,
     tenant_id: int,
@@ -1065,67 +1257,82 @@ def preview_templates_import(
 ) -> dict[str, Any]:
     creates, updates, issues = [], [], []
     skipped = unchanged = 0
-    tpl_ids: set[int] = set()
+    tpl_meta: dict[str, dict[str, Any]] = {}
+
+    def _remember_template(name: str, status: str, icon: Any, description: Any) -> None:
+        current = tpl_meta.get(name.lower())
+        if current and current["status"] != "unchanged":
+            return
+        tpl_meta[name.lower()] = {
+            "name": name,
+            "status": status,
+            "icon": icon or None,
+            "description": description or None,
+        }
+
     for row in templates:
         line = int(row.get("row_index") or 0)
         name = (row.get("name") or "").strip()
         if not name:
-            issues.append({"row": line, "reason": "Nome do template vazio"})
+            issues.append({"row": line, "reason": "Nome do template vazio", "action": ISSUE_IGNORED})
             skipped += 1
             continue
-        tid = row.get("id")
-        existing = None
-        if tid:
-            existing = (
-                db.query(ExpenseTemplate)
-                .filter(ExpenseTemplate.id == tid, ExpenseTemplate.account_id == account_id)
-                .first()
-            )
-            if existing:
-                tpl_ids.add(existing.id)
-        if not existing:
-            existing = (
-                db.query(ExpenseTemplate)
-                .filter(ExpenseTemplate.account_id == account_id, ExpenseTemplate.name == name)
-                .first()
-            )
+        existing = _template_by_file(db, tenant_id, account_id, row.get("id"), name)
         if existing:
             changes = []
             _append_field_change(changes, "description", "Descrição", existing.description, row.get("description"))
-            _append_field_change(changes, "icon", "Ícone", existing.icon, row.get("icon"))
+            if row.get("icon"):
+                _append_field_change(changes, "icon", "Ícone", existing.icon, row.get("icon"))
             _append_field_change(changes, "active", "Ativo", existing.active, row.get("active", True))
+            _remember_template(
+                existing.name,
+                "update" if changes else "unchanged",
+                row.get("icon") or existing.icon,
+                row.get("description"),
+            )
             if changes:
-                updates.append(
-                    _preview_update_row(line, name, existing.id, changes, entity="template"),
-                )
+                update_row = _preview_update_row(line, existing.name, existing.id, changes, entity="template")
+                update_row["group"] = existing.name
+                updates.append(update_row)
             else:
                 unchanged += 1
-            tpl_ids.add(existing.id)
         else:
-            creates.append(
-                _preview_create_row(
-                    line,
-                    name,
-                    entity="template",
-                    fields_after={
-                        "Nome": name,
-                        "Descrição": _display_val(row.get("description")),
-                        "Ícone": _display_val(row.get("icon")),
-                        "Ativo": _display_val(row.get("active", True)),
-                    },
-                )
+            _remember_template(name, "create", row.get("icon") or "FileText", row.get("description"))
+            create_row = _preview_create_row(
+                line,
+                name,
+                entity="template",
+                fields_after={
+                    "Nome": name,
+                    "Descrição": _display_val(row.get("description")),
+                    "Ícone": _display_val(row.get("icon")),
+                    "Ativo": _display_val(row.get("active", True)),
+                },
             )
+            create_row["group"] = name
+            creates.append(create_row)
 
     for row in items:
         line = int(row.get("row_index") or 0)
         desc = (row.get("description") or "").strip()
         if not desc:
-            issues.append({"row": line, "reason": "Descrição do item vazia"})
+            issues.append({
+                "row": line,
+                "reason": "Descrição do item vazia",
+                "detail": str(row.get("template_name") or "").strip() or None,
+                "action": ISSUE_IGNORED,
+            })
             skipped += 1
             continue
+        item_detail = _issue_detail(row.get("template_name"), desc, sep=" · ")
         stype = _parse_subtag_type(str(row.get("subtag_type") or ""))
         if row.get("subtag_name") and not stype:
-            issues.append({"row": line, "reason": "Tipo inválido no item"})
+            issues.append({
+                "row": line,
+                "reason": "Tipo inválido no item",
+                "detail": item_detail,
+                "action": ISSUE_IGNORED,
+            })
             skipped += 1
             continue
         subtag_label = "—"
@@ -1145,12 +1352,15 @@ def preview_templates_import(
                 issues.append({
                     "row": line,
                     "reason": "Subtag não encontrada; item importado sem classificação.",
+                    "detail": item_detail,
+                    "action": ISSUE_NO_CLASSIFICATION,
                 })
             else:
                 tag_part = str(row.get("tag_name") or "").strip()
                 subtag_label = f"{tag_part}/{row.get('subtag_name')}" if tag_part else str(row.get("subtag_name"))
 
         sharing_label = "—"
+        sharing_id_preview: int | None = None
         partner_name = str(row.get("partner_name") or "").strip()
         if partner_name:
             partner = _resolve_partner_account(
@@ -1173,22 +1383,29 @@ def preview_templates_import(
                         f"Compartilhamento não encontrado ({partner_name}); "
                         "item importado sem compartilhamento."
                     ),
+                    "detail": item_detail,
+                    "action": ISSUE_NO_SHARING,
                 })
             elif sharing_id_preview:
-                sharing_label = _sharing_partner_label(db, sharing_id_preview)
+                sharing_label = _sharing_partner_label(db, tenant_id, account_id, sharing_id_preview)
             else:
                 sharing_label = partner_name
 
-        tpl_name = (row.get("template_name") or "").strip() or f"Template #{row.get('template_id')}"
+        file_tpl_name = (row.get("template_name") or "").strip()
+        tpl = _template_by_file(db, tenant_id, account_id, row.get("template_id"), file_tpl_name)
+        tpl_name = tpl.name if tpl else (file_tpl_name or f"Template #{row.get('template_id')}")
+        if tpl:
+            _remember_template(tpl.name, "unchanged", tpl.icon, tpl.description)
         item_id = row.get("item_id")
-        tpl_id = row.get("template_id")
         existing_item = None
-        if item_id and tpl_id:
+        if item_id and tpl:
             existing_item = (
                 db.query(ExpenseTemplateItem)
                 .filter(
                     ExpenseTemplateItem.id == item_id,
-                    ExpenseTemplateItem.expense_template_id == tpl_id,
+                    ExpenseTemplateItem.expense_template_id == tpl.id,
+                    ExpenseTemplateItem.tenant_id == tenant_id,
+                    ExpenseTemplateItem.account_id == account_id,
                 )
                 .first()
             )
@@ -1198,30 +1415,48 @@ def preview_templates_import(
             _append_field_change(changes, "description", "Descrição", existing_item.description, desc)
             _append_field_change(changes, "amount", "Valor", existing_item.amount, row.get("amount"))
             _append_field_change(changes, "day", "Dia", existing_item.day_of_month, row.get("day_of_month"))
+            _append_field_change(
+                changes, "ownership", "Parte (%)", existing_item.ownership_percentage, _template_ownership(row),
+            )
+            _append_field_change(
+                changes, "order", "Ordem", existing_item.display_order, row.get("display_order") or 0,
+            )
+            before_subtag = _template_subtag_label(db, existing_item.subtag_id)
+            same_subtag_name = subtag_label != "—" and before_subtag.casefold() == subtag_label.casefold()
+            if not same_subtag_name and (existing_item.subtag_id or None) != (sid or None):
+                _append_field_change(changes, "subtag", "Tag/Subtag", before_subtag, subtag_label)
+            before_sharing = _sharing_partner_label(db, tenant_id, account_id, existing_item.expense_sharing_id)
+            same_sharing_name = sharing_label != "—" and before_sharing.casefold() == sharing_label.casefold()
+            if not same_sharing_name and (existing_item.expense_sharing_id or None) != (sharing_id_preview or None):
+                _append_field_change(changes, "sharing", "Compartilhamento", before_sharing, sharing_label)
             if changes:
-                updates.append(
-                    _preview_update_row(line, label, existing_item.id, changes, entity="template_item"),
-                )
+                update_row = _preview_update_row(line, label, existing_item.id, changes, entity="template_item")
+                update_row["group"] = tpl_name
+                update_row["name"] = desc
+                updates.append(update_row)
             else:
                 unchanged += 1
         else:
-            creates.append(
-                _preview_create_row(
-                    line,
-                    label,
-                    entity="template_item",
-                    fields_after={
-                        "Template": tpl_name,
-                        "Descrição": desc,
-                        "Valor": _display_val(row.get("amount")),
-                        "Dia": _display_val(row.get("day_of_month")),
-                        "Classificação": subtag_label,
-                        "Compartilhamento": sharing_label,
-                        "Parte (%)": _display_val(row.get("ownership_percentage") or 100),
-                    },
-                )
+            create_row = _preview_create_row(
+                line,
+                label,
+                entity="template_item",
+                fields_after={
+                    "Template": tpl_name,
+                    "Descrição": desc,
+                    "Valor": _display_val(row.get("amount")),
+                    "Dia": _display_val(row.get("day_of_month")),
+                    "Classificação": subtag_label,
+                    "Compartilhamento": sharing_label,
+                    "Parte (%)": _display_val(_template_ownership(row)),
+                },
             )
-    return _finish_preview(creates, updates, unchanged, skipped, issues)
+            create_row["group"] = tpl_name
+            create_row["name"] = desc
+            creates.append(create_row)
+    preview = _finish_preview(creates, updates, unchanged, skipped, issues)
+    preview["template_groups"] = sorted(tpl_meta.values(), key=lambda g: g["name"].lower())
+    return preview
 
 
 def apply_templates_import(
@@ -1241,20 +1476,7 @@ def apply_templates_import(
         name = (row.get("name") or "").strip()
         if not name:
             continue
-        tid = row.get("id")
-        tpl = None
-        if tid:
-            tpl = (
-                db.query(ExpenseTemplate)
-                .filter(ExpenseTemplate.id == tid, ExpenseTemplate.account_id == account_id)
-                .first()
-            )
-        if not tpl:
-            tpl = (
-                db.query(ExpenseTemplate)
-                .filter(ExpenseTemplate.account_id == account_id, ExpenseTemplate.name == name)
-                .first()
-            )
+        tpl = _template_by_file(db, tenant_id, account_id, row.get("id"), name)
         if tpl:
             tpl.description = row.get("description")
             tpl.icon = row.get("icon") or tpl.icon
@@ -1277,21 +1499,10 @@ def apply_templates_import(
         desc = (row.get("description") or "").strip()
         if not desc:
             continue
-        tpl_id = row.get("template_id")
         tpl_name = (row.get("template_name") or "").strip()
-        tpl = None
-        if tpl_id:
-            tpl = (
-                db.query(ExpenseTemplate)
-                .filter(ExpenseTemplate.id == tpl_id, ExpenseTemplate.account_id == account_id)
-                .first()
-            )
-        if not tpl and tpl_name:
-            tpl = tpl_by_name.get(tpl_name) or (
-                db.query(ExpenseTemplate)
-                .filter(ExpenseTemplate.account_id == account_id, ExpenseTemplate.name == tpl_name)
-                .first()
-            )
+        tpl = tpl_by_name.get(tpl_name) if tpl_name else None
+        if not tpl:
+            tpl = _template_by_file(db, tenant_id, account_id, row.get("template_id"), tpl_name)
         if not tpl:
             continue
         stype = _parse_subtag_type(str(row.get("subtag_type") or ""))
@@ -1335,7 +1546,7 @@ def apply_templates_import(
             item.day_of_month = row.get("day_of_month")
             item.subtag_id = subtag_id
             item.expense_sharing_id = sharing_id
-            item.ownership_percentage = Decimal(str(row.get("ownership_percentage") or 100))
+            item.ownership_percentage = Decimal(str(_template_ownership(row)))
             item.display_order = int(row.get("display_order") or 0)
         else:
             db.add(
@@ -1349,7 +1560,7 @@ def apply_templates_import(
                     day_of_month=row.get("day_of_month"),
                     subtag_id=subtag_id,
                     expense_sharing_id=sharing_id,
-                    ownership_percentage=Decimal(str(row.get("ownership_percentage") or 100)),
+                    ownership_percentage=Decimal(str(_template_ownership(row))),
                     display_order=int(row.get("display_order") or 0),
                 )
             )
@@ -1372,27 +1583,26 @@ def _resolve_invoice_group(
     group_name: str,
     group_by_name: dict[str, CreditCardInvoiceGroup],
 ) -> CreditCardInvoiceGroup | None:
-    if group_id:
-        grp = (
+    """Pelo nome do grupo; o ID da planilha só é usado sem nome (IDs mudam entre ambientes)."""
+    name = (group_name or "").strip()
+    if name:
+        if name in group_by_name:
+            return group_by_name[name]
+        return (
             db.query(CreditCardInvoiceGroup)
             .filter(
-                CreditCardInvoiceGroup.id == group_id,
                 CreditCardInvoiceGroup.account_id == account_id,
+                CreditCardInvoiceGroup.name == name,
             )
             .first()
         )
-        if grp:
-            return grp
-    name = (group_name or "").strip()
-    if not name:
+    if not group_id:
         return None
-    if name in group_by_name:
-        return group_by_name[name]
     return (
         db.query(CreditCardInvoiceGroup)
         .filter(
+            CreditCardInvoiceGroup.id == group_id,
             CreditCardInvoiceGroup.account_id == account_id,
-            CreditCardInvoiceGroup.name == name,
         )
         .first()
     )
@@ -1438,6 +1648,67 @@ def _import_set_group_cards(
         apply_group_calendar_to_card(card, group)
 
 
+def _card_final(value: Any) -> str:
+    digits = re.sub(r"\D", "", str(value or ""))
+    return digits[-4:] if len(digits) >= 4 else digits
+
+
+def _account_cards(db: Session, tenant_id: int, account_id: int) -> list[Cartao]:
+    return (
+        db.query(Cartao)
+        .filter(Cartao.tenant_id == tenant_id, Cartao.account_id == account_id)
+        .order_by(Cartao.id)
+        .all()
+    )
+
+
+def _match_existing_card(account_cards: list[Cartao], row: dict[str, Any]) -> Cartao | None:
+    """IDs mudam entre ambientes: o ID da planilha só vale se o final bater; senão casa pelo final (e nome)."""
+    final = _card_final(row.get("number"))
+    name = (row.get("name") or "").strip()
+    cid = row.get("id")
+    if cid:
+        by_id = next((c for c in account_cards if c.id == cid), None)
+        if by_id and _card_final(by_id.number) == final:
+            return by_id
+    if not final:
+        return None
+    candidates = [c for c in account_cards if _card_final(c.number) == final]
+    if len(candidates) > 1:
+        candidates = [c for c in candidates if _same_name(c.name, name)] or candidates
+    return candidates[0] if candidates else None
+
+
+def _match_existing_group(query: Any, row: dict[str, Any]) -> CreditCardInvoiceGroup | None:
+    """O ID da planilha só vale se o nome bater (IDs mudam entre ambientes)."""
+    name = (row.get("name") or "").strip()
+    gid = row.get("id")
+    if gid:
+        by_id = query.filter(CreditCardInvoiceGroup.id == gid).first()
+        if by_id and _same_name(by_id.name, name):
+            return by_id
+    return query.filter(CreditCardInvoiceGroup.name == name).first() if name else None
+
+
+def _file_card_id_map(account_cards: list[Cartao], cards: list[dict[str, Any]]) -> dict[int, int]:
+    """ID do cartão na planilha → ID do cartão correspondente nesta conta."""
+    mapping: dict[int, int] = {}
+    for row in cards:
+        file_id = row.get("id")
+        if not file_id:
+            continue
+        match = _match_existing_card(account_cards, row)
+        if match:
+            mapping[int(file_id)] = int(match.id)
+    return mapping
+
+
+def _translate_card_ids(raw_ids: Any, id_map: dict[int, int]) -> list[int]:
+    if not isinstance(raw_ids, list):
+        return []
+    return sorted({id_map[int(x)] for x in raw_ids if int(x) in id_map})
+
+
 def preview_cartoes_import(
     db: Session,
     tenant_id: int,
@@ -1449,73 +1720,123 @@ def preview_cartoes_import(
 ) -> dict[str, Any]:
     creates, updates, issues = [], [], []
     skipped = unchanged = 0
+    group_meta: dict[str, dict[str, Any]] = {}
+
+    def _group_query():
+        return db.query(CreditCardInvoiceGroup).filter(
+            CreditCardInvoiceGroup.tenant_id == tenant_id,
+            CreditCardInvoiceGroup.account_id == account_id,
+        )
+
+    def _card_names(ids: list[int]) -> str:
+        if not ids:
+            return "—"
+        rows = (
+            db.query(Cartao)
+            .filter(Cartao.tenant_id == tenant_id, Cartao.account_id == account_id, Cartao.id.in_(ids))
+            .order_by(Cartao.name)
+            .all()
+        )
+        return ", ".join(f"{c.name} · {c.number}" for c in rows) or "—"
+
+    account_cards = _account_cards(db, tenant_id, account_id)
+    card_id_map = _file_card_id_map(account_cards, cards)
+
     for row in groups:
         line = int(row.get("row_index") or 0)
         name = (row.get("name") or "").strip()
         if not name:
             continue
-        gid = row.get("id")
-        existing = None
-        if gid:
-            existing = (
-                db.query(CreditCardInvoiceGroup)
-                .filter(CreditCardInvoiceGroup.id == gid, CreditCardInvoiceGroup.account_id == account_id)
-                .first()
-            )
-        card_ids = row.get("card_ids") or []
+        existing = _match_existing_group(_group_query(), row)
+        card_ids = _translate_card_ids(row.get("card_ids"), card_id_map)
         if existing:
             changes = []
             _append_field_change(changes, "closing", "Fechamento", existing.closing_day, row.get("closing_day"))
             _append_field_change(changes, "due", "Vencimento", existing.due_day, row.get("due_day"))
             _append_field_change(changes, "active", "Ativo", existing.active, row.get("active", True))
             if card_ids:
-                _append_field_change(
-                    changes,
-                    "card_ids",
-                    "IDs cartões",
-                    "—",
-                    ", ".join(str(x) for x in card_ids),
+                current_ids = sorted(
+                    c.id
+                    for c in db.query(Cartao.id).filter(
+                        Cartao.tenant_id == tenant_id,
+                        Cartao.account_id == account_id,
+                        Cartao.invoice_group_id == existing.id,
+                    )
                 )
+                if current_ids != card_ids:
+                    changes.append({
+                        "field": "card_ids",
+                        "label": "Cartões",
+                        "before": _card_names(current_ids),
+                        "after": _card_names(card_ids),
+                    })
+            group_meta[name] = {
+                "name": name,
+                "status": "update" if changes else "unchanged",
+                "closing_day": row.get("closing_day") or existing.closing_day,
+                "due_day": row.get("due_day") or existing.due_day,
+            }
             if changes:
-                updates.append(
-                    _preview_update_row(line, name, existing.id, changes, entity="grupo_fatura"),
-                )
+                update_row = _preview_update_row(line, name, existing.id, changes, entity="grupo_fatura")
+                update_row["group"] = name
+                updates.append(update_row)
             else:
                 unchanged += 1
         else:
-            creates.append(
-                _preview_create_row(
-                    line,
-                    name,
-                    entity="grupo_fatura",
-                    fields_after={
-                        "Nome": name,
-                        "Fechamento": _display_val(row.get("closing_day")),
-                        "Vencimento": _display_val(row.get("due_day")),
-                        "IDs cartões": _display_val(", ".join(str(x) for x in card_ids) if card_ids else None),
-                        "Ativo": _display_val(row.get("active", True)),
-                    },
-                )
+            group_meta[name] = {
+                "name": name,
+                "status": "create",
+                "closing_day": row.get("closing_day") or 14,
+                "due_day": row.get("due_day") or 14,
+            }
+            create_row = _preview_create_row(
+                line,
+                name,
+                entity="grupo_fatura",
+                fields_after={
+                    "Nome": name,
+                    "Fechamento": _display_val(row.get("closing_day")),
+                    "Vencimento": _display_val(row.get("due_day")),
+                    "Cartões": _card_names(card_ids),
+                    "Ativo": _display_val(row.get("active", True)),
+                },
             )
+            create_row["group"] = name
+            creates.append(create_row)
 
     for row in cards:
         line = int(row.get("row_index") or 0)
         name = (row.get("name") or "").strip()
         number = (row.get("number") or "").strip()
         if not name or not number:
-            issues.append({"row": line, "reason": "Cartão exige nome e final"})
+            issues.append({
+                "row": line,
+                "reason": "Cartão exige nome e final",
+                "detail": name or number or None,
+                "action": ISSUE_IGNORED,
+            })
             skipped += 1
             continue
-        cid = row.get("id")
-        existing = None
-        if cid:
-            existing = (
-                db.query(Cartao)
-                .filter(Cartao.id == cid, Cartao.account_id == account_id, Cartao.tenant_id == tenant_id)
-                .first()
-            )
+        existing = _match_existing_card(account_cards, row)
         gname = (row.get("group_name") or "").strip()
         grp_label = gname or (str(row.get("group_id")) if row.get("group_id") else "—")
+        target_group: str | None = None
+        if gname and gname in group_meta:
+            target_group = gname
+        else:
+            target = None
+            if gname:
+                target = _group_query().filter(CreditCardInvoiceGroup.name == gname).first()
+            elif row.get("group_id"):
+                target = _group_query().filter(CreditCardInvoiceGroup.id == row.get("group_id")).first()
+            if target:
+                target_group = target.name
+                group_meta.setdefault(target.name, {
+                    "name": target.name,
+                    "status": "unchanged",
+                    "closing_day": target.closing_day,
+                    "due_day": target.due_day,
+                })
         sharing_id, apply_sharing, share_err = _resolve_card_expense_sharing_from_row(
             db, tenant_id, account_id, row,
         )
@@ -1524,6 +1845,8 @@ def preview_cartoes_import(
             issues.append({
                 "row": line,
                 "reason": f"{share_err} Cartão importado sem compartilhamento.",
+                "detail": f"{name} · {number}",
+                "action": ISSUE_NO_SHARING,
             })
             sharing_id = None
             apply_sharing = True
@@ -1537,6 +1860,7 @@ def preview_cartoes_import(
                 )
                 old_grp = grp_row.name if grp_row else "—"
             changes = []
+            _append_field_change(changes, "name", "Nome", existing.name, name)
             _append_field_change(changes, "description", "Descrição", existing.description, row.get("description"))
             _append_field_change(changes, "closing", "Fechamento", existing.closing_day, row.get("closing_day"))
             _append_field_change(changes, "due", "Vencimento", existing.due_day, row.get("due_day"))
@@ -1546,8 +1870,8 @@ def preview_cartoes_import(
                     changes,
                     "sharing",
                     "Compartilhamento",
-                    _sharing_partner_label(db, existing.expense_sharing_id),
-                    _sharing_partner_label(db, sharing_id),
+                    _sharing_partner_label(db, tenant_id, account_id, existing.expense_sharing_id),
+                    _sharing_partner_label(db, tenant_id, account_id, sharing_id),
                 )
             if row.get("expense_ownership_percentage") is not None:
                 _append_field_change(
@@ -1567,33 +1891,35 @@ def preview_cartoes_import(
                 )
             _append_field_change(changes, "active", "Ativo", existing.active, row.get("active", True))
             if changes:
-                updates.append(
-                    _preview_update_row(line, f"{name} · {number}", existing.id, changes, entity="cartao"),
-                )
+                update_row = _preview_update_row(line, f"{name} · {number}", existing.id, changes, entity="cartao")
+                update_row["group"] = target_group
+                updates.append(update_row)
             else:
                 unchanged += 1
         else:
-            share_label = _sharing_partner_label(db, sharing_id) if apply_sharing else "—"
-            creates.append(
-                _preview_create_row(
-                    line,
-                    f"{name} · {number}",
-                    entity="cartao",
-                    fields_after={
-                        "Nome": name,
-                        "Final": number,
-                        "Tipo": _parse_card_type(str(row.get("type") or "")),
-                        "Grupo": grp_label,
-                        "Compartilhamento": share_label,
-                        "Parte despesa (%)": _display_val(row.get("expense_ownership_percentage")),
-                        "Parte receita (%)": _display_val(row.get("revenue_ownership_percentage")),
-                        "Fechamento": _display_val(row.get("closing_day")),
-                        "Vencimento": _display_val(row.get("due_day")),
-                        "Ativo": _display_val(row.get("active", True)),
-                    },
-                )
+            share_label = _sharing_partner_label(db, tenant_id, account_id, sharing_id) if apply_sharing else "—"
+            create_row = _preview_create_row(
+                line,
+                f"{name} · {number}",
+                entity="cartao",
+                fields_after={
+                    "Nome": name,
+                    "Final": number,
+                    "Tipo": _parse_card_type(str(row.get("type") or "")),
+                    "Grupo": grp_label,
+                    "Compartilhamento": share_label,
+                    "Parte despesa (%)": _display_val(row.get("expense_ownership_percentage")),
+                    "Parte receita (%)": _display_val(row.get("revenue_ownership_percentage")),
+                    "Fechamento": _display_val(row.get("closing_day")),
+                    "Vencimento": _display_val(row.get("due_day")),
+                    "Ativo": _display_val(row.get("active", True)),
+                },
             )
-    return _finish_preview(creates, updates, unchanged, skipped, issues)
+            create_row["group"] = target_group
+            creates.append(create_row)
+    preview = _finish_preview(creates, updates, unchanged, skipped, issues)
+    preview["card_groups"] = sorted(group_meta.values(), key=lambda g: g["name"].lower())
+    return preview
 
 
 def apply_cartoes_import(
@@ -1610,28 +1936,18 @@ def apply_cartoes_import(
     )
     group_by_name: dict[str, CreditCardInvoiceGroup] = {}
     group_members_from_sheet: list[tuple[CreditCardInvoiceGroup, list[int]]] = []
+    group_query = db.query(CreditCardInvoiceGroup).filter(
+        CreditCardInvoiceGroup.tenant_id == tenant_id,
+        CreditCardInvoiceGroup.account_id == account_id,
+    )
+    account_cards = _account_cards(db, tenant_id, account_id)
+    sheet_cards: dict[int, Cartao] = {}
 
     for row in groups:
         name = (row.get("name") or "").strip()
         if not name:
             continue
-        gid = row.get("id")
-        grp = None
-        if gid:
-            grp = (
-                db.query(CreditCardInvoiceGroup)
-                .filter(CreditCardInvoiceGroup.id == gid, CreditCardInvoiceGroup.account_id == account_id)
-                .first()
-            )
-        if not grp:
-            grp = (
-                db.query(CreditCardInvoiceGroup)
-                .filter(
-                    CreditCardInvoiceGroup.account_id == account_id,
-                    CreditCardInvoiceGroup.name == name,
-                )
-                .first()
-            )
+        grp = _match_existing_group(group_query, row)
         if grp:
             grp.closing_day = int(row.get("closing_day") or 14)
             grp.due_day = int(row.get("due_day") or 14)
@@ -1675,28 +1991,11 @@ def apply_cartoes_import(
         )
         group_id = grp.id if grp else None
 
-        cid = row.get("id")
-        card = None
-        if cid:
-            card = (
-                db.query(Cartao)
-                .filter(Cartao.id == cid, Cartao.account_id == account_id, Cartao.tenant_id == tenant_id)
-                .first()
-            )
-        if not card:
-            card = (
-                db.query(Cartao)
-                .filter(
-                    Cartao.tenant_id == tenant_id,
-                    Cartao.account_id == account_id,
-                    Cartao.name == name,
-                    Cartao.number == number,
-                )
-                .first()
-            )
+        card = _match_existing_card(account_cards, row)
         closing = int(row["closing_day"]) if row.get("closing_day") is not None else 14
         due = int(row["due_day"]) if row.get("due_day") is not None else 14
         if card:
+            card.name = name
             card.description = row.get("description")
             card.type = ctype
             card.closing_day = closing
@@ -1710,26 +2009,32 @@ def apply_cartoes_import(
             card.invoice_group_id = group_id
             card.active = row.get("active", True)
         else:
-            db.add(
-                Cartao(
-                    tenant_id=tenant_id,
-                    account_id=account_id,
-                    created_by=user_id,
-                    name=name,
-                    description=row.get("description"),
-                    number=number,
-                    type=ctype,
-                    closing_day=closing,
-                    due_day=due,
-                    expense_sharing_id=sharing_id if apply_sharing else None,
-                    expense_ownership_percentage=row.get("expense_ownership_percentage"),
-                    revenue_ownership_percentage=row.get("revenue_ownership_percentage"),
-                    invoice_group_id=group_id,
-                    active=row.get("active", True),
-                )
+            card = Cartao(
+                tenant_id=tenant_id,
+                account_id=account_id,
+                created_by=user_id,
+                name=name,
+                description=row.get("description"),
+                number=number,
+                type=ctype,
+                closing_day=closing,
+                due_day=due,
+                expense_sharing_id=sharing_id if apply_sharing else None,
+                expense_ownership_percentage=row.get("expense_ownership_percentage"),
+                revenue_ownership_percentage=row.get("revenue_ownership_percentage"),
+                invoice_group_id=group_id,
+                active=row.get("active", True),
             )
+            db.add(card)
+            account_cards.append(card)
+        if row.get("id"):
+            sheet_cards[int(row["id"])] = card
 
     db.flush()
+    card_id_map = {file_id: int(card.id) for file_id, card in sheet_cards.items()}
+    group_members_from_sheet = [
+        (grp, _translate_card_ids(member_ids, card_id_map)) for grp, member_ids in group_members_from_sheet
+    ]
     for grp, member_ids in group_members_from_sheet:
         if len(member_ids) >= 2:
             _import_set_group_cards(db, tenant_id, account_id, grp, member_ids)

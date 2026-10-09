@@ -83,20 +83,3 @@ export function matchBenefitCardIdFromFileName(
 
   return scored[0].id
 }
-
-export function applyBenefitCardMatchToConfigs<T extends { detectedType: string; file: File; credit_card_id?: number }>(
-  configs: T[],
-  cards: BenefitCardForMatch[],
-): T[] {
-  if (cards.length === 0) return configs
-
-  return configs.map((config) => {
-    if (config.detectedType !== 'beneficio_csv') return config
-    if (config.credit_card_id) return config
-
-    const matchedId = matchBenefitCardIdFromFileName(config.file.name, cards)
-    if (!matchedId) return config
-
-    return { ...config, credit_card_id: matchedId }
-  })
-}

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import Sidebar from '../components/Sidebar'
 import {
   CadastroListCreateButton,
@@ -46,7 +45,6 @@ import {
   CadastroModalShell,
   cadastroAccentControlCls,
   cadastroFieldCls,
-  cadastroOptionLabelCls,
 } from '../components/CadastroFormLayout'
 import Badge from '../components/Badge'
 import { badgeVariantForColumnRole } from '../utils/badgeSurfaces'
@@ -147,8 +145,14 @@ const cardCartoesTableColsEqual = (
     <col />
     <col />
     <col />
+    <col />
   </>
 )
+
+function formatCardPercent(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(Number(value))) return '—'
+  return `${Number(value).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`
+}
 
 function CardNestedTableHead({
   checkboxState,
@@ -167,8 +171,9 @@ function CardNestedTableHead({
       <ListTableStaticHeader label="Final" className="px-3 py-2" />
       <ListTableStaticHeader label="Fech." className="px-2 py-2 text-center" />
       <ListTableStaticHeader label="Venc." className="px-2 py-2 text-center" />
-      <ListTableStaticHeader label="Propriedade" className="px-3 py-2" />
       <ListTableStaticHeader label="Compart." className="px-3 py-2" />
+      <ListTableStaticHeader label="% Despesa" className="px-2 py-2 text-center" />
+      <ListTableStaticHeader label="% Receita" className="px-2 py-2 text-center" />
       <ListTableStaticHeader label="Status" className="px-3 py-2" />
       <ListTableStaticHeader label="Ações" className="px-2 py-2" />
     </tr>
@@ -206,7 +211,6 @@ function ActiveSwitch({
 }
 
 const CartoesPage = () => {
-  const navigate = useNavigate()
   const [cartoes, setCartoes] = useState<Cartao[]>([])
   const [invoiceGroups, setInvoiceGroups] = useState<InvoiceGroup[]>([])
   const [showGroupModal, setShowGroupModal] = useState(false)
@@ -796,6 +800,12 @@ const CartoesPage = () => {
     else handleReativar(cartao.id)
   }
 
+  const sharedCardPercent = (cartao: Cartao, kind: 'expense' | 'revenue'): number | null => {
+    if (cartao.ownership_type !== 'compartilhado' || !cartao.expense_sharing) return null
+    const own = kind === 'expense' ? cartao.expense_ownership_percentage : cartao.revenue_ownership_percentage
+    return own ?? sharingPercentForKind(cartao.expense_sharing, kind)
+  }
+
   const renderSharingCell = (cartao: Cartao) => {
     if (cartao.ownership_type === 'compartilhado' && cartao.expense_sharing?.shared_account) {
       return (
@@ -867,14 +877,13 @@ const CartoesPage = () => {
         <td className="whitespace-nowrap px-2 py-2 text-center text-sm tabular-nums text-gray-600 dark:text-gray-300">
           {isBenefit ? '—' : cartao.due_day || 14}
         </td>
-        <td className="whitespace-nowrap px-3 py-2">
-          <Badge
-            variant={badgeVariantForColumnRole('classificationSecondary')}
-            tone={ownershipTone(cartao.ownership_type)}
-            label={getOwnershipTypeLabel(cartao.ownership_type)}
-          />
-        </td>
         <td className="max-w-0 px-3 py-2">{renderSharingCell(cartao)}</td>
+        <td className="whitespace-nowrap px-2 py-2 text-center text-sm tabular-nums text-gray-600 dark:text-gray-300">
+          {formatCardPercent(sharedCardPercent(cartao, 'expense'))}
+        </td>
+        <td className="whitespace-nowrap px-2 py-2 text-center text-sm tabular-nums text-gray-600 dark:text-gray-300">
+          {formatCardPercent(sharedCardPercent(cartao, 'revenue'))}
+        </td>
         <td className="whitespace-nowrap px-3 py-2" onClick={(e) => e.stopPropagation()}>
           <StatusSwitch
             checked={cartao.active}
@@ -925,7 +934,6 @@ const CartoesPage = () => {
                 <CadastroListHeaderActions
                   menu={{
                     exportDisabled: cartoesFiltrados.length === 0 && invoiceGroups.length === 0,
-                    onImportExcel: () => navigate('/importar'),
                     onExportExcel: () => exportCartoesToExcel(cartoesFiltrados, invoiceGroups, cartoes),
                   }}
                 >
@@ -1411,7 +1419,7 @@ const CartoesPage = () => {
                       </span>
                       <ActiveSwitch
                         checked={formData.active}
-                        onClick={() => setFormData({ ...formData, active: !formData.active })}
+                        onToggle={() => setFormData({ ...formData, active: !formData.active })}
                         title={formData.active ? 'Ativo' : 'Inativo'}
                       />
                     </div>

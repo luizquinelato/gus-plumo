@@ -57,6 +57,7 @@ function tagBefore(conflict: ImportConflict) {
 
 function tagAfter(conflict: ImportConflict) {
   if (conflict.tag_conflict) {
+    if (conflict.tag_conflict.new_subtag_id == null) return 'Sem classificação'
     return formatTagPair(conflict.tag_conflict.new_tag_name, conflict.tag_conflict.new_subtag_name)
   }
   return formatTagPair(conflict.new_tag_name, conflict.new_subtag_name)
@@ -180,6 +181,7 @@ const ConflictReviewModal = ({ isOpen, onClose, conflicts, onResolve }: Conflict
           accept_tag_change: acceptTag,
           accept_amount_change: acceptAmount,
           new_subtag_id: conflict.new_subtag_id ?? conflict.tag_conflict?.new_subtag_id,
+          clear_subtag: !!conflict.tag_conflict && conflict.tag_conflict.new_subtag_id == null,
           new_amount: conflict.new_amount ?? conflict.amount_conflict?.new_amount,
           selected_from_multiple: isMultipleMatch && !!selectedMatchId && selected,
         }

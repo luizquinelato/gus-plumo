@@ -217,7 +217,7 @@ Componentes compartilhados entre páginas. Destaques:
 | `ProtectedRoute.tsx` | Guard de autenticação |
 | `date/` (`DateField`, `DateCalendar`) | **Único** componente de data do app. `DateField`: campo dd/mm/aaaa (valor `YYYY-MM-DD`; com `withTime`, `YYYY-MM-DD HH:mm`). `DateCalendar`: calendário avulso (`mode="range"` para períodos). Não usar `<input type="date">` nem libs de datepicker |
 | `ReportFilters.tsx` | Filtros de relatório |
-| `UnifiedImportModal.tsx` | Importação de arquivos |
+| `RawImportPreview.tsx` / `ImportFileKindBadge.tsx` | Preview dos arquivos brutos (extrato, fatura PDF, benefício CSV, holerite/informe) e badge/ícone por tipo no wizard `/importar` (`pages/ImportWizardPage.tsx`). A Home redireciona para o wizard |
 | `*Modal.tsx` | Modais de edição, export, conflitos, etc. |
 | `Toast.tsx` / `AlertDialog.tsx` / `ConfirmDialog.tsx` | Feedback e confirmação |
 
@@ -312,7 +312,7 @@ Arquivos `.backup`, `.sql`, `.dump` do banco
 `.gitignore`, `dev_server.py`, `requirements/install.txt`
 
 ### `services/frontend/src/components/` (29 arquivos)
-`AlertDialog.tsx`, `ApplyTemplateModal.tsx`, `BalanceDetailsModal.tsx`, `BatchEditExpenseModal.tsx`, `ColorCustomizerUnified.tsx`, `ColorVariantsPreview.tsx`, `ConfirmDialog.tsx`, `ConflictReviewModal.tsx`, `CustomDateFilterModal.tsx`, `EditExpenseModal.tsx`, `ExportClosureModal.tsx`, `ExportModal.tsx`, `GroupDetailsModal.tsx`, `IconPicker.tsx`, `JsonTreeViewer.tsx`, `LoadingSpinner.tsx`, `ManualTransactionModal.tsx`, `MonthlyHistoryDetailsModal.tsx`, `MultiSelectDropdown.tsx`, `ProtectedRoute.tsx`, `QuickCreateTagSubtag.tsx`, `ReportFilters.tsx`, `SendToLoanModal.tsx`, `SharedAccountDisplay.tsx`, `Sidebar.tsx`, `SplitExpenseModal.tsx`, `TemplateFormModal.tsx`, `Toast.tsx`, `UnifiedImportModal.tsx`, `UnmappedRecordsModal.tsx`, `date/DateField.tsx`, `date/DateCalendar.tsx`, `date/index.ts`
+`AlertDialog.tsx`, `ApplyTemplateModal.tsx`, `BalanceDetailsModal.tsx`, `BatchEditExpenseModal.tsx`, `ColorCustomizerUnified.tsx`, `ColorVariantsPreview.tsx`, `ConfirmDialog.tsx`, `ConflictReviewModal.tsx`, `CustomDateFilterModal.tsx`, `EditExpenseModal.tsx`, `ExportClosureModal.tsx`, `ExportModal.tsx`, `GroupDetailsModal.tsx`, `IconPicker.tsx`, `JsonTreeViewer.tsx`, `LoadingSpinner.tsx`, `ManualTransactionModal.tsx`, `MonthlyHistoryDetailsModal.tsx`, `MultiSelectDropdown.tsx`, `ProtectedRoute.tsx`, `QuickCreateTagSubtag.tsx`, `ReportFilters.tsx`, `SendToLoanModal.tsx`, `SharedAccountDisplay.tsx`, `Sidebar.tsx`, `SplitExpenseModal.tsx`, `TemplateFormModal.tsx`, `Toast.tsx`, `RawImportPreview.tsx`, `ImportFileKindBadge.tsx`, `UnmappedRecordsModal.tsx`, `date/DateField.tsx`, `date/DateCalendar.tsx`, `date/index.ts`
 
 ### `services/frontend/src/pages/` (18 + 1 tab)
 `BalancoPage.tsx`, `CartoesPage.tsx`, `ColorSettingsPage.tsx`, `CompartilhamentosPage.tsx`, `ContasPage.tsx`, `CuradoriaPage.tsx`, `EmprestimosPage.tsx`, `ExpenseTemplatesPage.tsx`, `ExtratoPage.tsx`, `FaturasPage.tsx`, `GrupoPage.tsx`, `HomePage.tsx`, `LoginPage.tsx`, `MappingsPage.tsx`, `ProfilePage.tsx`, `SelectAccountPage.tsx`, `SettingsPage.tsx`, `TagsSubtagsPage.tsx`, `tabs/TransactionMappingsTab.tsx`

@@ -1,5 +1,4 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import Sidebar from '../components/Sidebar'
 import {
   CadastroListCreateButton,
@@ -58,7 +57,6 @@ interface ToastState {
 const TEMPLATE_TABLE_COL_SPAN = 8
 
 const ExpenseTemplatesPage = () => {
-  const navigate = useNavigate()
   const { showConfirm, ConfirmComponent } = useConfirm()
   const { AlertComponent } = useAlert()
 
@@ -425,7 +423,6 @@ const ExpenseTemplatesPage = () => {
                 <CadastroListHeaderActions
                   menu={{
                     exportDisabled: filteredTemplates.length === 0,
-                    onImportExcel: () => navigate('/importar'),
                     onExportExcel: () => exportTemplatesToExcel(filteredTemplates),
                   }}
                 >

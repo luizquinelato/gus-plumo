@@ -70,7 +70,7 @@ gus-expenses-platform/
 
 **Components** (`src/components/`)
 - `Sidebar.tsx` - Menu lateral
-- `UnifiedImportModal.tsx` - Modal de importação unificado
+- `RawImportPreview.tsx` / `ImportFileKindBadge.tsx` - Preview e tipo dos arquivos brutos no wizard `/importar`
 - `UnmappedRecordsModal.tsx` - Modal de curadoria
 - `ColorCustomizerUnified.tsx` - Editor de cores
 

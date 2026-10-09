@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Menu, Upload, FileSpreadsheet, Loader2 } from 'lucide-react'
+import { Menu, FileSpreadsheet, Loader2 } from 'lucide-react'
 
 export type CadastroExcelMenuExtraItem = {
   id: string
@@ -13,8 +13,6 @@ export type CadastroExcelMenuExtraItem = {
 export interface CadastroExcelMenuProps {
   disabled?: boolean
   exportDisabled?: boolean
-  /** Omitir para esconder Importar */
-  onImportExcel?: () => void
   onExportExcel?: () => void
   extraItems?: CadastroExcelMenuExtraItem[]
   menuTitle?: string
@@ -23,10 +21,9 @@ export interface CadastroExcelMenuProps {
 export default function CadastroExcelMenu({
   disabled = false,
   exportDisabled = false,
-  onImportExcel,
   onExportExcel,
   extraItems = [],
-  menuTitle = 'Importar e exportar',
+  menuTitle = 'Exportar',
 }: CadastroExcelMenuProps) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -62,12 +59,6 @@ export default function CadastroExcelMenu({
       </button>
       {open ? (
         <div className="absolute right-0 z-50 mt-2 min-w-[220px] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-600 dark:bg-gray-800">
-          {onImportExcel ? (
-            <button type="button" className={itemCls} onClick={() => closeAnd(onImportExcel)}>
-              <Upload size={16} />
-              Importar Excel
-            </button>
-          ) : null}
           {onExportExcel ? (
             <button
               type="button"

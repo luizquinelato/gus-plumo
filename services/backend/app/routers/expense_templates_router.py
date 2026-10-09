@@ -154,6 +154,45 @@ class ApplyTemplateResponse(BaseModel):
     bank_statements: List[int]  # IDs dos bank_statements criados
 
 
+def _account_info(account: Account | None) -> dict | None:
+    return AccountInfo.model_validate(account).model_dump() if account else None
+
+
+def _sharing_info_for_account(setting: ExpenseSharingSetting, account_id: int) -> dict:
+    """Compartilhamento visto pela conta logada (inverte quando a config pertence ao parceiro)."""
+    info = ExpenseSharingInfo.model_validate(setting).model_dump()
+    if setting.account_id == account_id:
+        return info
+    info["shared_account_id"] = setting.account_id
+    info["shared_account"] = _account_info(setting.account)
+    info["my_contribution_percentage"] = Decimal("100.00") - (setting.my_contribution_percentage or Decimal("0"))
+    return info
+
+
+def _enrich_template_items(template: ExpenseTemplate, template_dict: dict, account_id: int) -> dict:
+    for i, item in enumerate(template.items):
+        if item.subtag:
+            template_dict['items'][i]['subtag'] = SubtagInfo(
+                id=item.subtag.id,
+                name=item.subtag.name,
+                type=item.subtag.type,
+                icon=item.subtag.icon,
+                tag_id=item.subtag.tag_id,
+                tag_name=item.subtag.tag.name if item.subtag.tag else None
+            )
+        if item.expense_sharing:
+            template_dict['items'][i]['expense_sharing'] = _sharing_info_for_account(item.expense_sharing, account_id)
+    return template_dict
+
+
+def _template_items_options():
+    return selectinload(ExpenseTemplate.items).options(
+        joinedload(ExpenseTemplateItem.subtag).joinedload(Subtag.tag),
+        joinedload(ExpenseTemplateItem.expense_sharing).joinedload(ExpenseSharingSetting.shared_account).joinedload(Account.bank),
+        joinedload(ExpenseTemplateItem.expense_sharing).joinedload(ExpenseSharingSetting.account).joinedload(Account.bank),
+    )
+
+
 # ==================== ENDPOINTS ====================
 
 @router.get("/", response_model=List[ExpenseTemplateResponse])
@@ -169,12 +208,9 @@ async def listar_templates(
     if not account_id:
         raise HTTPException(status_code=400, detail="account_id não encontrado no token")
 
-    query = db.query(ExpenseTemplate).options(
-        selectinload(ExpenseTemplate.items).options(
-            joinedload(ExpenseTemplateItem.subtag).joinedload(Subtag.tag),
-            joinedload(ExpenseTemplateItem.expense_sharing).joinedload(ExpenseSharingSetting.shared_account).joinedload(Account.bank)
-        )
-    ).filter(ExpenseTemplate.account_id == account_id)
+    query = db.query(ExpenseTemplate).options(_template_items_options()).filter(
+        ExpenseTemplate.account_id == account_id
+    )
 
     if not incluir_inativos:
         query = query.filter(ExpenseTemplate.active == True)
@@ -185,20 +221,7 @@ async def listar_templates(
     result = []
     for template in templates:
         template_dict = ExpenseTemplateResponse.model_validate(template).model_dump()
-
-        # Enriquecer cada item com informações da subtag e tag
-        for i, item in enumerate(template.items):
-            if item.subtag:
-                template_dict['items'][i]['subtag'] = SubtagInfo(
-                    id=item.subtag.id,
-                    name=item.subtag.name,
-                    type=item.subtag.type,
-                    icon=item.subtag.icon,
-                    tag_id=item.subtag.tag_id,
-                    tag_name=item.subtag.tag.name if item.subtag.tag else None
-                )
-
-        result.append(template_dict)
+        result.append(_enrich_template_items(template, template_dict, account_id))
 
     return result
 
@@ -272,12 +295,7 @@ async def obter_template(
     if not account_id:
         raise HTTPException(status_code=400, detail="account_id não encontrado no token")
 
-    template = db.query(ExpenseTemplate).options(
-        selectinload(ExpenseTemplate.items).options(
-            joinedload(ExpenseTemplateItem.subtag).joinedload(Subtag.tag),
-            joinedload(ExpenseTemplateItem.expense_sharing).joinedload(ExpenseSharingSetting.shared_account).joinedload(Account.bank)
-        )
-    ).filter(
+    template = db.query(ExpenseTemplate).options(_template_items_options()).filter(
         ExpenseTemplate.id == template_id,
         ExpenseTemplate.account_id == account_id
     ).first()
@@ -285,21 +303,8 @@ async def obter_template(
     if not template:
         raise HTTPException(status_code=404, detail="Template não encontrado")
 
-    # Enriquecer dados
     template_dict = ExpenseTemplateResponse.model_validate(template).model_dump()
-
-    for i, item in enumerate(template.items):
-        if item.subtag:
-            template_dict['items'][i]['subtag'] = SubtagInfo(
-                id=item.subtag.id,
-                name=item.subtag.name,
-                type=item.subtag.type,
-                icon=item.subtag.icon,
-                tag_id=item.subtag.tag_id,
-                tag_name=item.subtag.tag.name if item.subtag.tag else None
-            )
-
-    return template_dict
+    return _enrich_template_items(template, template_dict, account_id)
 
 
 @router.post("/", response_model=ExpenseTemplateResponse, status_code=201)

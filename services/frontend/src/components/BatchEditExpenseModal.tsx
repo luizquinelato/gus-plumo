@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
-import { Users, Tag as TagIcon, Pencil } from 'lucide-react'
+import { Users, Tag as TagIcon, Pencil, CreditCard } from 'lucide-react'
 import Toast from './Toast'
 import {
   CadastroModalShell,
@@ -27,6 +27,7 @@ import {
   parseAxiosClosureConflict,
   type ExpenseEditSuccessPayload,
 } from '../utils/closureEditImpact'
+import type { InvoiceCardMoveOption } from './BatchMoveInvoiceCardModal'
 
 interface ToastState {
   show: boolean
@@ -86,9 +87,12 @@ interface BatchEditExpenseModalProps {
   isOpen: boolean
   onClose: () => void
   selectedItems: SelectedItem[]
-  expenseType: 'despesa' | 'receita'
+  /** null = seleção mista (despesas e receitas): tag/subtag fica indisponível. */
+  expenseType: 'despesa' | 'receita' | null
   /** Oculta tag/subtag; só compartilhamento (seleção global em Faturas). */
   sharingOnly?: boolean
+  /** Lançamentos de fatura: cartões de destino para mover junto com a edição. */
+  cardMoveOptions?: InvoiceCardMoveOption[]
   onSuccess: (result: ExpenseEditSuccessPayload) => void
 }
 
@@ -98,8 +102,11 @@ const BatchEditExpenseModal = ({
   selectedItems,
   expenseType,
   sharingOnly = false,
+  cardMoveOptions = [],
   onSuccess,
 }: BatchEditExpenseModalProps) => {
+  const showClassification = !sharingOnly && expenseType !== null
+  const showCardMove = cardMoveOptions.length > 0
   const [tags, setTags] = useState<Tag[]>([])
   const [subtags, setSubtags] = useState<Subtag[]>([])
   const [partners, setPartners] = useState<Partner[]>([])
@@ -122,6 +129,7 @@ const BatchEditExpenseModal = ({
   // Checkboxes para limpar valores
   const [clearSubtag, setClearSubtag] = useState(false)
   const [clearSharing, setClearSharing] = useState(false)
+  const [targetCardId, setTargetCardId] = useState<number | ''>('')
 
   useEscapeKey(onClose, isOpen)
 
@@ -147,6 +155,7 @@ const BatchEditExpenseModal = ({
       // Reset checkboxes de limpar
       setClearSubtag(false)
       setClearSharing(false)
+      setTargetCardId('')
       // Reset toast
       setToast({ show: false, message: '', type: 'success' })
 
@@ -203,16 +212,18 @@ const BatchEditExpenseModal = ({
     e.preventDefault()
 
     // Verificar se pelo menos um campo foi preenchido ou marcado para limpar
-    const hasSubtag = formData.subtag_id > 0
+    const hasSubtag = showClassification && formData.subtag_id > 0
+    const hasClearSubtag = showClassification && clearSubtag
     const hasAdjustment = formData.adjustment_type !== ''
+    const hasCardMove = showCardMove && targetCardId !== ''
 
-    if (sharingOnly) {
-      if (!hasAdjustment && !clearSharing) {
-        showToast('Escolha um compartilhamento ou marque para limpar', 'warning')
-        return
-      }
-    } else if (!hasSubtag && !hasAdjustment && !clearSubtag && !clearSharing) {
-      showToast('Preencha pelo menos um campo para atualizar ou marque para limpar', 'warning')
+    if (!hasSubtag && !hasClearSubtag && !hasAdjustment && !clearSharing && !hasCardMove) {
+      showToast(
+        showClassification
+          ? 'Preencha pelo menos um campo para atualizar ou marque para limpar'
+          : 'Escolha um compartilhamento, um cartão de destino ou marque para limpar',
+        'warning',
+      )
       return
     }
 
@@ -220,7 +231,11 @@ const BatchEditExpenseModal = ({
       items: selectedItems.map(item => ({ id: item.id, source: item.source })),
     }
 
-    if (!sharingOnly) {
+    if (hasCardMove) {
+      payload.target_credit_card_id = targetCardId
+    }
+
+    if (showClassification) {
       if (clearSubtag) {
         payload.clear_subtag = true
       } else if (hasSubtag) {
@@ -251,7 +266,14 @@ const BatchEditExpenseModal = ({
       const body = { ...payload, confirm_closed_closure_impact: confirmClosedClosureImpact }
       const response = await axios.patch('/api/expenses/batch-update', body)
       const impact = extractClosureImpactFromResponse(response.data)
-      const base = `${selectedItems.length} registro(s) atualizado(s) com sucesso!`
+      const moving = payload.target_credit_card_id != null
+      const onlyMoving = moving && Object.keys(payload).length === 2
+      const n = selectedItems.length
+      const base = onlyMoving
+        ? `${n} lançamento(s) movido(s) com sucesso!`
+        : moving
+          ? `${n} registro(s) atualizado(s) e movido(s) com sucesso!`
+          : `${n} registro(s) atualizado(s) com sucesso!`
       onClose()
       onSuccess(buildEditSuccessPayload(base, impact))
     } catch (error: unknown) {
@@ -295,18 +317,25 @@ const BatchEditExpenseModal = ({
 
           <CadastroModalHeader
             isEdit
-            title={sharingOnly ? 'Compartilhamento em lote' : 'Editar em Lote'}
+            title={sharingOnly && !showCardMove ? 'Compartilhamento em lote' : 'Editar em Lote'}
             subtitle={
               sharingOnly
                 ? `${selectedItems.length} lançamento(s) selecionado(s) no filtro atual`
-                : `${selectedItems.length} ${expenseType === 'despesa' ? 'despesa(s)' : 'receita(s)'} selecionada(s)`
+                : expenseType === null
+                  ? `${selectedItems.length} lançamento(s) selecionado(s)`
+                  : `${selectedItems.length} ${expenseType === 'despesa' ? 'despesa(s)' : 'receita(s)'} selecionada(s)`
             }
             onClose={onClose}
             icon={<Pencil size={18} />}
           />
           <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col" id="batch-edit-expense-form">
             <CadastroModalBody>
-              {!sharingOnly ? (
+              {!sharingOnly && expenseType === null ? (
+                <p className="text-xs text-amber-700 dark:text-amber-400">
+                  A seleção tem despesas e receitas: tag/subtag só pode ser alterada selecionando um tipo por vez.
+                </p>
+              ) : null}
+              {showClassification ? (
               <CadastroFormSection title="Classificação" icon={<TagIcon size={14} />}>
                 <CadastroModalFieldsGrid>
                   <CadastroModalFieldsRow cols={2}>
@@ -484,6 +513,37 @@ const BatchEditExpenseModal = ({
                   </CadastroModalFieldsRow>
                 </CadastroModalFieldsGrid>
               </CadastroFormSection>
+
+              {showCardMove ? (
+                <CadastroFormSection title="Mover para outro cartão" icon={<CreditCard size={14} />}>
+                  <CadastroModalFieldsGrid>
+                    <CadastroModalFieldsRow>
+                      <label className="block min-w-0">
+                        <CadastroFieldLabel>Cartão de destino</CadastroFieldLabel>
+                        <select
+                          value={targetCardId === '' ? '' : String(targetCardId)}
+                          onChange={(e) => {
+                            const raw = e.target.value
+                            setTargetCardId(raw ? parseInt(raw, 10) : '')
+                          }}
+                          disabled={isLoading}
+                          className={`${cadastroFieldCls} mt-0.5 disabled:opacity-50`}
+                        >
+                          <option value="">Manter no cartão atual</option>
+                          {cardMoveOptions.map((card) => (
+                            <option key={card.cardId} value={card.cardId}>
+                              {card.cardName} (•••• {card.cardNumber.slice(-4)})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </CadastroModalFieldsRow>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Apenas cartões que já possuem lançamentos neste mês da fatura.
+                    </p>
+                  </CadastroModalFieldsGrid>
+                </CadastroFormSection>
+              ) : null}
             </CadastroModalBody>
             <CadastroModalFooter
               onClose={onClose}

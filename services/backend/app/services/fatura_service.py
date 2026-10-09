@@ -20,8 +20,15 @@ from app.utils.sharing_percentage import resolve_ownership_percentage
 from app.converters.fatura_pdf import normalize_invoice_issuer
 from app.database import DATABASE_URL
 from app.utils.import_progress import report_row_progress
+from app.utils.import_rows import mapping_hint, subtag_override
 
 logger = logging.getLogger(__name__)
+
+
+def _installment_label(current, total) -> str:
+    if current and total:
+        return f"{current}/{total}"
+    return ""
 
 
 class FaturaService:
@@ -465,7 +472,7 @@ class FaturaService:
         return datetime(ano_real, mes_compra, dia_compra, 0, 0, 0)
     
     @staticmethod
-    def salvar_faturas_do_dataframe(db: Session, df: pd.DataFrame, tenant_id: int = 1, user_id: int = None, account_id: int = None) -> Dict[str, int]:
+    def salvar_faturas_do_dataframe(db: Session, df: pd.DataFrame, tenant_id: int = 1, user_id: int = None, account_id: int = None, commit: bool = True, collect_details: bool = False) -> Dict[str, int]:
         """
         Salva faturas do DataFrame no banco de dados.
 
@@ -481,6 +488,8 @@ class FaturaService:
             tenant_id: ID do tenant (padrão: 1)
             user_id: ID do usuário (obrigatório para created_by)
             account_id: ID da conta logada (obrigatório para filtrar subtags)
+            commit: Se False, apenas executa os inserts/updates na transação (o chamador faz rollback)
+            collect_details: Se True, retorna preview_creates / preview_updates / preview_skipped
 
         Returns:
             Dicionário com estatísticas: {
@@ -499,6 +508,10 @@ class FaturaService:
         cartoes_processados = set()
         unmapped_count = 0
         unmapped_records = []
+        unchanged_count = 0
+        preview_creates = []
+        preview_updates = []
+        preview_skipped = []
 
         logger.info(f"⚡ [OTIMIZADO] Iniciando importação de {len(df)} faturas...")
 
@@ -648,6 +661,13 @@ class FaturaService:
                     CardHelper.normalize_card_number(str(cartao_number))
                 ) or cartao_cache.get(str(cartao_number))
                 if not cartao_id:
+                    if collect_details:
+                        preview_skipped.append({
+                            'line': idx + 1,
+                            'description': str(row.get('Descrição', '')),
+                            'amount': float(row['Valor']) if row.get('Valor') else 0.0,
+                            'reason': f"Cartão final {cartao_number} não cadastrado",
+                        })
                     continue
 
                 # Adiciona cartão ao conjunto de cartões processados
@@ -685,6 +705,10 @@ class FaturaService:
                 # PRIORIDADE 3: Se não encontrou, deixa NULL
                 # subtag_id permanece None
 
+                has_override, override_subtag_id = subtag_override(row, subtag_id_to_info)
+                if has_override:
+                    subtag_id = override_subtag_id
+
                 # Rastreia se não foi mapeado (subtag_id é NULL)
                 is_unmapped = (subtag_id is None)
 
@@ -703,6 +727,13 @@ class FaturaService:
                     )
                 except ValueError as e:
                     logger.warning(f"⚠️  [FATURA_SERVICE] Linha ignorada - {str(e)}")
+                    if collect_details:
+                        preview_skipped.append({
+                            'line': idx + 1,
+                            'description': descricao,
+                            'amount': valor,
+                            'reason': str(e),
+                        })
                     continue
 
                 # Formata year_month no formato YYYY-MM
@@ -740,11 +771,10 @@ class FaturaService:
                     existing_subtag_id = existing_data.get('subtag_id')
 
                     # Detecta conflitos de tag/subtag apenas
-                    # NOTA: Para PDF, não detectamos conflito de tag se o novo subtag_id é None
-                    # (significa que não há mapeamento, então o registro foi categorizado manualmente)
+                    # Novo subtag_id None (sem mapeamento) sobre registro classificado também é conflito:
+                    # o usuário decide se limpa a classificação manual.
                     has_tag_conflict = (
                         existing_subtag_id is not None and
-                        subtag_id is not None and
                         existing_subtag_id != subtag_id
                     )
 
@@ -809,6 +839,34 @@ class FaturaService:
                         })
                         consumed_ids.add(existing_id)
                         linhas_atualizadas += 1
+                        changed = (
+                            existing_subtag_id != subtag_id
+                            or existing_data.get('current_installment') != parcela_atual
+                            or existing_data.get('total_installments') != total_parcelas
+                        )
+                        if not changed:
+                            unchanged_count += 1
+                        elif collect_details:
+                            preview_updates.append({
+                                'line': idx + 1,
+                                'id': existing_id,
+                                'date': data_compra,
+                                'description': descricao_limpa,
+                                'amount': valor_invertido,
+                                'card': row.get('Cartão', ''),
+                                'year_month': year_month,
+                                'before': {
+                                    'subtag_id': existing_subtag_id,
+                                    'installments': _installment_label(
+                                        existing_data.get('current_installment'),
+                                        existing_data.get('total_installments'),
+                                    ),
+                                },
+                                'after': {
+                                    'subtag_id': subtag_id,
+                                    'installments': _installment_label(parcela_atual, total_parcelas),
+                                },
+                            })
                 else:
                     # Busca configurações de ajuste do cartão (cache)
                     # Propaga configurações de compartilhamento do cartão
@@ -850,6 +908,29 @@ class FaturaService:
                     }
                     records_to_insert.append(insert_record)
                     linhas_salvas += 1
+                    if collect_details:
+                        preview_creates.append({
+                            'line': idx + 1,
+                            'row_index': idx,
+                            'date': data_compra,
+                            'description': descricao_limpa,
+                            'amount': valor_invertido,
+                            'card': row.get('Cartão', ''),
+                            'year_month': year_month,
+                            'installments': _installment_label(parcela_atual, total_parcelas),
+                            'subtag_id': subtag_id,
+                            'expense_sharing_id': final_expense_sharing_id,
+                            'ownership_percentage': float(final_ownership_percentage),
+                            'mapping_hint': (
+                                mapping_hint(
+                                    mapping_helper,
+                                    (descricao, str(row.get('Descrição Limpa', '') or '')),
+                                    tipo,
+                                )
+                                if subtag_id is None and not has_override
+                                else None
+                            ),
+                        })
 
                     # Adiciona aos registros não mapeados se necessário
                     if is_unmapped:
@@ -881,7 +962,8 @@ class FaturaService:
         if records_to_update:
             db.bulk_update_mappings(CreditCardInvoice, records_to_update)
 
-        db.commit()
+        if commit:
+            db.commit()
 
         # Fecha conexão psycopg2 do MappingHelper
         psycopg2_conn.close()
@@ -898,6 +980,12 @@ class FaturaService:
             'linhas_nao_mapeadas': unmapped_count,
             'registros_nao_mapeados': unmapped_records[:20],  # Limita a 20 registros
             'conflicts': conflicts,
-            'conflicts_count': len(conflicts)
+            'conflicts_count': len(conflicts),
+            'linhas_sem_alteracao': unchanged_count,
+            **({
+                'preview_creates': preview_creates,
+                'preview_updates': preview_updates,
+                'preview_skipped': preview_skipped,
+            } if collect_details else {}),
         }
 

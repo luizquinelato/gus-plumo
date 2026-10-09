@@ -74,6 +74,7 @@ class ExpenseDetail(BaseModel):
     card_name: str | None = None
     credit_card_id: int | None = None
     category: str | None = None
+    transaction: str | None = None
     subtag_id: int | None = None
     subtag_name: str | None = None
     tag_name: str | None = None
@@ -1815,6 +1816,7 @@ def _get_bank_expenses_by_date(
         BankStatement.description,
         BankStatement.amount,
         BankStatement.category,
+        BankStatement.transaction,
         BankStatement.subtag_id,
         BankStatement.ownership_percentage,
         BankStatement.expense_sharing_id,
@@ -1953,6 +1955,7 @@ def _get_bank_expenses_by_date(
             source="bank",
             card_number=None,
             category=r.category,
+            transaction=r.transaction,
             subtag_id=r.subtag_id,
             subtag_name=r.subtag_name,
             tag_name=r.tag_name,

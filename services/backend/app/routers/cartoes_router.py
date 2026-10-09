@@ -199,6 +199,42 @@ def _serialize_cartao(cartao: Cartao) -> dict:
     }
 
 
+def _shared_account_info(account) -> dict | None:
+    if account is None:
+        return None
+    return {
+        "id": account.id,
+        "name": account.name,
+        "description": account.description,
+        "bank": {"id": account.bank.id, "code": account.bank.code, "name": account.bank.name} if account.bank else None,
+        "agency": str(account.agency) if account.agency is not None else None,
+        "account_number": str(account.account_number) if account.account_number is not None else None,
+    }
+
+
+def _sharing_info_for_account(setting: ExpenseSharingSetting, account_id: int | None) -> dict:
+    """Compartilhamento visto pela conta do cartão (inverte quando a config pertence ao parceiro)."""
+    my_pct = float(setting.my_contribution_percentage) if setting.my_contribution_percentage is not None else 0.0
+    revenue_pct = (
+        float(setting.revenue_contribution_percentage)
+        if setting.revenue_contribution_percentage is not None
+        else None
+    )
+    inverted = account_id is not None and setting.account_id != account_id
+    return {
+        "id": setting.id,
+        "account_id": setting.shared_account_id if inverted else setting.account_id,
+        "shared_account_id": setting.account_id if inverted else setting.shared_account_id,
+        "my_contribution_percentage": 100.0 - my_pct if inverted else my_pct,
+        "revenue_contribution_percentage": (
+            100.0 - revenue_pct if inverted and revenue_pct is not None else revenue_pct
+        ),
+        "description": setting.description,
+        "active": setting.active,
+        "shared_account": _shared_account_info(setting.account if inverted else setting.shared_account),
+    }
+
+
 def _current_account_id(current_user: dict) -> int | None:
     account_id = current_user.get("account_id")
     return int(account_id) if account_id is not None else None
@@ -359,6 +395,7 @@ async def listar_cartoes(
     query = db.query(Cartao).options(
         joinedload(Cartao.account).joinedload(Account.bank),
         joinedload(Cartao.expense_sharing).joinedload(ExpenseSharingSetting.shared_account).joinedload(Account.bank),
+        joinedload(Cartao.expense_sharing).joinedload(ExpenseSharingSetting.account).joinedload(Account.bank),
         joinedload(Cartao.invoice_group),
     ).filter(Cartao.tenant_id == tenant_id)
 
@@ -396,36 +433,7 @@ async def listar_cartoes(
         # Incluir dados completos do expense_sharing (já carregado via joinedload)
         if cartao.expense_sharing:
             try:
-                cartao_dict["expense_sharing"] = {
-                    "id": cartao.expense_sharing.id,
-                    "account_id": cartao.expense_sharing.account_id,
-                    "shared_account_id": cartao.expense_sharing.shared_account_id,
-                    "my_contribution_percentage": float(cartao.expense_sharing.my_contribution_percentage) if cartao.expense_sharing.my_contribution_percentage else 0.0,
-                    "revenue_contribution_percentage": float(cartao.expense_sharing.revenue_contribution_percentage) if cartao.expense_sharing.revenue_contribution_percentage is not None else None,
-                    "description": cartao.expense_sharing.description,
-                    "active": cartao.expense_sharing.active,
-                    "shared_account": None
-                }
-
-                # Incluir dados da shared_account se disponível
-                if cartao.expense_sharing.shared_account:
-                    shared_acc = cartao.expense_sharing.shared_account
-                    cartao_dict["expense_sharing"]["shared_account"] = {
-                        "id": shared_acc.id,
-                        "name": shared_acc.name,
-                        "description": shared_acc.description,
-                        "bank": None,
-                        "agency": str(shared_acc.agency) if shared_acc.agency is not None else None,
-                        "account_number": str(shared_acc.account_number) if shared_acc.account_number is not None else None
-                    }
-
-                    # Incluir dados do banco se disponível
-                    if shared_acc.bank:
-                        cartao_dict["expense_sharing"]["shared_account"]["bank"] = {
-                            "id": shared_acc.bank.id,
-                            "code": shared_acc.bank.code,
-                            "name": shared_acc.bank.name
-                        }
+                cartao_dict["expense_sharing"] = _sharing_info_for_account(cartao.expense_sharing, cartao.account_id)
             except Exception as e:
                 print(f"Erro ao processar expense_sharing para cartão {cartao.id}: {e}")
                 cartao_dict["expense_sharing"] = None

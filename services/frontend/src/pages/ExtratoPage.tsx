@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
 import {
@@ -211,7 +211,6 @@ const ORIGIN_OPTIONS = [
 ]
 
 const ExtratoPage = () => {
-  const navigate = useNavigate()
   // Hook para ler navigation state
   const location = useLocation()
   const navigationState = location.state as NavigationState | null
@@ -1127,7 +1126,6 @@ const ExtratoPage = () => {
                     onClick={() => setIsManualTransactionModalOpen(true)}
                   />
                   <ExtratoReportMenu
-                    onImportExcel={() => navigate('/importar')}
                     onExportExcel={() => {
                       if (!exportExpenses || exportExpenses.length === 0) {
                         handleShowToast('Nenhum dado para exportar', 'error')
@@ -1786,9 +1784,7 @@ const ExtratoPage = () => {
 
                               {/* Ações */}
                               <td
-                                className={`${listPageTableStickyActionsCellCls} px-4 py-4 text-left whitespace-nowrap ${
-                                  isDailyBalance ? dailyBalanceRowClass(expense) : ''
-                                }`}
+                                className={`${listPageTableStickyActionsCellCls} px-4 py-4 text-left whitespace-nowrap`}
                               >
                                 {isDailyBalance ? (
                                   <span className="text-xs text-gray-500 dark:text-gray-400">Resumo</span>

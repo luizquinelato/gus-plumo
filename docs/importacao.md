@@ -13,12 +13,26 @@ O sistema foi otimizado para importação em larga escala (~5800 registros):
 
 **Resultado**: Importação de 5800 registros em **5-20 segundos** (vs. 2-7 minutos antes das otimizações).
 
-## Modal de Importação Unificado
+## Wizard de Importação (`/importar`)
 
-Interface única para importar todos os tipos de arquivos financeiros.
+Interface única para importar todos os tipos de arquivos financeiros. O botão Importar da Home leva ao wizard.
 
-### Componente
-`UnifiedImportModal.tsx`
+### Componentes
+`pages/ImportWizardPage.tsx`, `components/RawImportPreview.tsx`, `components/ImportFileKindBadge.tsx`
+
+### Dois momentos para arquivos brutos
+
+1. **Processar** (sem salvar): `POST /api/import/extrato/process`, `/api/import/cartao/process`,
+   `/api/benefit-card-statements/csv/process`. O save roda com `commit=False` e é desfeito com rollback;
+   a resposta traz as linhas processadas (`rows`) e o preview (adições, alterações, conflitos, problemas,
+   ignoradas pela política). Holerite/informe usam `/api/payroll/classify-pdfs` (indica criar ou atualizar).
+2. **Persistir**: `POST /api/import/extrato/persist`, `/api/import/cartao/persist`,
+   `/api/benefit-card-statements/csv/persist` recebem as linhas já processadas. Tenant e conta vêm do token,
+   e os mapeamentos são reaplicados no save (inclusive os gravados antes, na mesma leva).
+   Holerite/informe reenviam o PDF para `/api/payroll/import-pdfs`.
+
+Os endpoints antigos (`/api/import/extrato`, `/api/import/cartao`, `/api/benefit-card-statements/importar-csv`)
+continuam funcionando sobre as mesmas funções.
 
 ### Tipos de Arquivo Suportados
 

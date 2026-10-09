@@ -91,6 +91,12 @@ class ClassifyFileResult(BaseModel):
     month: Optional[int] = None
     calendar_year: Optional[int] = None
     report_year: Optional[int] = None
+    action: Optional[str] = None  # created | updated (prévia do import)
+    existing_id: Optional[int] = None
+    net_amount: Optional[Decimal] = None
+    gross_earnings: Optional[Decimal] = None
+    total_deductions: Optional[Decimal] = None
+    line_count: Optional[int] = None
 
 
 class ClassifyPayrollResponse(BaseModel):
@@ -272,6 +278,33 @@ def _replace_income_report_lines(
             )
         )
         report_row_progress(index + 1, total_lines)
+
+
+def _peek_existing_payslip(
+    db: Session,
+    *,
+    tenant_id: int,
+    account_id: int,
+    year: Optional[int],
+    month: Optional[int],
+    payslip_kind: str,
+) -> Optional[Payslip]:
+    """Versão somente leitura de _find_existing_payslip (não remove duplicatas)."""
+    if year is None or month is None:
+        return None
+    return (
+        db.query(Payslip)
+        .filter(
+            Payslip.tenant_id == tenant_id,
+            Payslip.account_id == account_id,
+            Payslip.year == year,
+            Payslip.month == month,
+            Payslip.payslip_kind == payslip_kind,
+            Payslip.active == True,
+        )
+        .order_by(Payslip.id.desc())
+        .first()
+    )
 
 
 def _find_existing_payslip(
@@ -610,6 +643,8 @@ async def classify_payroll_pdfs(
         raise HTTPException(status_code=400, detail="Nenhum arquivo fornecido")
 
     default_password = _account_default_pdf_password(db, current_user)
+    tenant_id = current_user.get("tenant_id")
+    account_id = current_user.get("account_id")
     temp_dir = tempfile.mkdtemp()
     results: List[ClassifyFileResult] = []
 
@@ -643,6 +678,14 @@ async def classify_payroll_pdfs(
                     line_items = parsed.get("line_items", [])
                     payslip_kind = detect_payslip_kind(line_items)
                     source_provider = parsed.get("source_provider") or detect_payslip_format(raw_text)
+                    existing_payslip = _peek_existing_payslip(
+                        db,
+                        tenant_id=tenant_id,
+                        account_id=account_id,
+                        year=parsed.get("year"),
+                        month=parsed.get("month"),
+                        payslip_kind=payslip_kind,
+                    )
                     results.append(
                         ClassifyFileResult(
                             filename=filename,
@@ -655,10 +698,26 @@ async def classify_payroll_pdfs(
                             source_provider=source_provider,
                             year=parsed.get("year"),
                             month=parsed.get("month"),
+                            action="updated" if existing_payslip else "created",
+                            existing_id=existing_payslip.id if existing_payslip else None,
+                            net_amount=parsed.get("net_amount"),
+                            gross_earnings=parsed.get("gross_earnings"),
+                            total_deductions=parsed.get("total_deductions"),
+                            line_count=len(line_items),
                         )
                     )
                 else:
                     parsed = parse_income_report_text(raw_text)
+                    existing_report = _find_existing_income_report(
+                        db,
+                        tenant_id=tenant_id,
+                        account_id=account_id,
+                        calendar_year=parsed.get("calendar_year"),
+                        beneficiary_cpf=parsed.get("beneficiary_cpf"),
+                        beneficiary_name=parsed.get("beneficiary_name"),
+                        payer_cnpj=parsed.get("payer_cnpj"),
+                        payer_name=parsed.get("payer_name"),
+                    )
                     results.append(
                         ClassifyFileResult(
                             filename=filename,
@@ -668,6 +727,9 @@ async def classify_payroll_pdfs(
                             beneficiary_name=parsed.get("beneficiary_name"),
                             calendar_year=parsed.get("calendar_year"),
                             report_year=parsed.get("report_year"),
+                            action="updated" if existing_report else "created",
+                            existing_id=existing_report.id if existing_report else None,
+                            line_count=len(parsed.get("line_items", [])),
                         )
                     )
             except (PdfPasswordRequired, PdfPasswordInvalid) as ex:

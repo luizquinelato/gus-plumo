@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import Sidebar from '../components/Sidebar'
 import {
   CadastroListCreateButton,
@@ -99,7 +98,6 @@ const contasTableColsEqual = (
 )
 
 const ContasPage = () => {
-  const navigate = useNavigate()
   const [contas, setContas] = useState<Conta[]>([])
   const [bancos, setBancos] = useState<Bank[]>([])
   const [loading, setLoading] = useState(true)
@@ -482,7 +480,6 @@ const ContasPage = () => {
                 <CadastroListHeaderActions
                   menu={{
                     exportDisabled: contasFiltradas.length === 0,
-                    onImportExcel: () => navigate('/importar'),
                     onExportExcel: () => exportContasToExcel(contasFiltradas),
                   }}
                 >

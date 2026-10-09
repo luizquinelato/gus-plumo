@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import { Plus, Edit2, Trash2, Tag, Tags, AlertCircle, Eye, EyeOff, X, ArrowUpCircle, ArrowDownCircle, Map, ArrowUpDown, Users, Zap, Play, ArrowUp, ArrowDown, Filter, Loader2 } from 'lucide-react'
 import MappingsReportMenu from '../../components/MappingsReportMenu'
@@ -297,7 +296,6 @@ function compareMappings(
 }
 
 const TransactionMappingsTab = () => {
-  const navigate = useNavigate()
   const [tags, setTags] = useState<Tag[]>([])
   const [subtags, setSubtags] = useState<Subtag[]>([])
   const [partners, setPartners] = useState<ExpenseSharing[]>([])
@@ -1729,7 +1727,6 @@ const TransactionMappingsTab = () => {
           <MappingsReportMenu
             exportDisabled={!filtersApplied || sortedFilteredMappings.length === 0}
             clearing={isClearingClassifications}
-            onImportExcel={() => navigate('/importar')}
             onExportExcel={handleExportExcel}
             onClearClassifications={handleClearTransactionClassifications}
           />

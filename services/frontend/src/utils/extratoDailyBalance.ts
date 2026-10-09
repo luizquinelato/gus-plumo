@@ -250,7 +250,7 @@ export function sortExtratoExpenses<T extends ExtratoExpenseRow>(
 /** Fundo neutro para saldo cumulativo; destaque no fechamento do mês. */
 export function dailyBalanceRowClass(row?: Pick<ExtratoExpenseRow, 'daily_month_end'>): string {
   if (row?.daily_month_end) {
-    return 'bg-amber-50/95 dark:bg-amber-950/35 border-l-amber-500 dark:border-l-amber-400'
+    return 'table-row-daily-balance table-row-daily-balance-month-end bg-amber-50/95 dark:bg-amber-950/35 border-l-amber-500 dark:border-l-amber-400'
   }
-  return 'bg-sky-50/90 dark:bg-sky-950/35 border-l-sky-500 dark:border-l-sky-400'
+  return 'table-row-daily-balance bg-sky-50/90 dark:bg-sky-950/35 border-l-sky-500 dark:border-l-sky-400'
 }

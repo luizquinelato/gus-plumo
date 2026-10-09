@@ -24,6 +24,7 @@ export interface ExpenseExportData {
   card_number: string | null
   card_name: string | null
   category: string | null
+  transaction?: string | null
   subtag_id: number | null
   subtag_name: string | null
   tag_name: string | null
@@ -43,6 +44,7 @@ export interface ExpenseExportData {
   account_agency: string | null
   account_number: string | null
   year_month: string | null  // Ano/mês da fatura (YYYY-MM) - usado apenas para faturas de cartão
+  issuer?: 'btg' | 'mercadopago' | null
 }
 
 /**
@@ -118,7 +120,7 @@ function convertBankStatements(expenses: ExpenseExportData[], options: ExportOpt
       'Mês': Number(month),
       'Data e hora': expenseDateToExcelSerial(exp.date),
       'Categoria': exp.category || '',
-      'Transação': exp.amount >= 0 ? 'Crédito' : 'Débito',
+      'Transação': exp.transaction || '',
       'Descrição': exp.description,
       'Valor': roundExportMoney(exp.amount),
       'Tag': exp.tag_name || '',
@@ -174,7 +176,8 @@ function convertCardInvoices(expenses: ExpenseExportData[], options: ExportOptio
       'Descrição Limpa': exp.description,
       'Valor': roundExportMoney(valorExportado),
       'Tag': exp.tag_name || '',
-      'Subtag': exp.subtag_name || ''
+      'Subtag': exp.subtag_name || '',
+      'Emissor': exp.issuer === 'mercadopago' ? 'Mercado Pago' : exp.issuer === 'btg' ? 'BTG' : '',
     }
     return addSharingColumns(record, exp, options.includeSharing || false)
   })
@@ -266,6 +269,69 @@ export function exportToExcel(expenses: ExpenseExportData[], filename?: string, 
 
   // Faz download
   XLSX.writeFile(wb, finalFilename)
+}
+
+export interface FaturaReportExportItem {
+  date: string
+  description: string
+  amount: number
+  card_number: string
+  card_name: string
+  tag_name?: string
+  subtag_name?: string
+  current_installment?: number | null
+  total_installments?: number | null
+  year_month: string
+  ownership_percentage?: number
+  shared_partner_name?: string
+  issuer?: 'btg' | 'mercadopago' | null
+}
+
+/** Excel do relatório de faturas, no formato que o wizard /importar reimporta. */
+export function exportFaturasReport(items: FaturaReportExportItem[]): void {
+  const expenses: ExpenseExportData[] = items.map((item, index) => ({
+    id: index,
+    date: item.date,
+    description: item.description,
+    amount: item.amount,
+    source: 'card',
+    card_number: item.card_number,
+    card_name: item.card_name,
+    category: null,
+    subtag_id: null,
+    subtag_name: item.subtag_name ?? null,
+    tag_name: item.tag_name ?? null,
+    current_installment: item.current_installment ?? null,
+    total_installments: item.total_installments ?? null,
+    adjustment_type: null,
+    ownership_percentage: item.ownership_percentage ?? null,
+    shared_partner_id: item.shared_partner_name ? 1 : null,
+    shared_partner_name: item.shared_partner_name ?? null,
+    shared_partner_bank: null,
+    shared_partner_agency: null,
+    shared_partner_account_number: null,
+    account_id: null,
+    account_name: null,
+    bank_code: null,
+    bank_name: null,
+    account_agency: null,
+    account_number: null,
+    year_month: item.year_month,
+    issuer: item.issuer ?? null,
+  }))
+  const data = convertCardInvoices(expenses, { includeSharing: true })
+  const wb = XLSX.utils.book_new()
+  const ws = jsonToFormattedSheet(data, {
+    Ano: '0',
+    Mês: '00',
+    Data: EXCEL_FMT_DATE,
+    Valor: EXCEL_FMT_MONEY,
+    'Parte na sua conta (%)': EXCEL_FMT_PERCENT,
+  })
+  XLSX.utils.book_append_sheet(wb, ws, 'Faturas de Cartão')
+  const today = new Date()
+  const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`
+  XLSX.writeFile(wb, `faturas_${dateStr}.xlsx`)
 }
 
 // ─── Exportação de Fechamento de Balanço ─────────────────────────────────────

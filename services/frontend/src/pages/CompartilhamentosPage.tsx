@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import Sidebar from '../components/Sidebar'
 import {
   CadastroListCreateButton,
@@ -96,7 +95,6 @@ interface ToastState {
 }
 
 const CompartilhamentosPage = () => {
-  const navigate = useNavigate()
   const [compartilhamentos, setCompartilhamentos] = useState<ExpenseSharing[]>([])
   const [minhasOutrasContas, setMinhasOutrasContas] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
@@ -497,7 +495,6 @@ const CompartilhamentosPage = () => {
                 <CadastroListHeaderActions
                   menu={{
                     exportDisabled: compartilhamentosFiltrados.length === 0,
-                    onImportExcel: () => navigate('/importar'),
                     onExportExcel: () => exportCompartilhamentosToExcel(compartilhamentosFiltrados),
                   }}
                 >

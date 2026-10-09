@@ -30,7 +30,9 @@ from ..utils.pdf_password import (
 )
 from ..utils.invoice_import_diagnostics import explain_empty_cartao_import_batch
 from ..utils import MappingHelper
+from ..utils.import_rows import df_to_rows, json_safe, rows_to_df
 from ..services.fatura_service import FaturaService
+from ..services.raw_import_preview import build_raw_preview, extrato_other_account_warnings
 from ..etl import ExtratoETL
 from ..database import get_db, DATABASE_URL
 from ..routers.excel_import_router import save_extrato_records
@@ -175,29 +177,8 @@ def import_extrato(
         deactivate_import_job(scope)
 
 
-def _import_extrato_work(
-    files: List[UploadFile],
-    account_id: Optional[int],
-    enable_tracing: Optional[str],
-    db: Session,
-    current_user: dict,
-):
-    """
-    Importa arquivos de extrato bancário (.xls ou .xlsx) e salva no banco de dados.
-
-    Args:
-        files: Lista de arquivos de extrato para processar
-        account_id: ID da conta bancária (opcional - usa account_id do JWT se não fornecido)
-        enable_tracing: Se "true", gera arquivo JSON com debug de cada linha processada
-        db: Sessão do banco de dados
-
-    Returns:
-        JSON com estatísticas da importação
-    """
-    if not files:
-        raise HTTPException(status_code=400, detail="Nenhum arquivo fornecido")
-
-    # Extrai user_id e tenant_id do token JWT
+def _resolve_extrato_account(db: Session, current_user: dict, account_id: Optional[int]) -> tuple:
+    """(tenant_id, user_id, account_id) validando que a conta é do usuário logado."""
     tenant_id = current_user.get("tenant_id")
     user_id = current_user.get("user_id") or current_user.get("id")
 
@@ -223,10 +204,23 @@ def _import_extrato_work(
             status_code=404,
             detail="Conta não encontrada ou não pertence ao usuário logado"
         )
+    return tenant_id, user_id, account_id
+
+
+def _run_extrato_etl(
+    files: List[UploadFile],
+    db: Session,
+    tenant_id: int,
+    user_id: int,
+    account_id: int,
+) -> dict:
+    """Extract + Transform dos extratos brutos. Retorna dataframe, ignored_rows e arquivos_processados."""
+    if not files:
+        raise HTTPException(status_code=400, detail="Nenhum arquivo fornecido")
 
     # Valida extensões
     for file in files:
-        if not file.filename.endswith(('.xls', '.xlsx')):
+        if not (file.filename or "").lower().endswith(('.xls', '.xlsx')):
             raise HTTPException(
                 status_code=400,
                 detail=f"Arquivo {file.filename} não é um arquivo Excel válido (.xls ou .xlsx)"
@@ -235,16 +229,16 @@ def _import_extrato_work(
     # Cria diretórios temporários
     temp_dir = tempfile.mkdtemp()
     input_dir = os.path.join(temp_dir, "input")
-    output_dir = os.path.join(temp_dir, "output")
     os.makedirs(input_dir, exist_ok=True)
-    os.makedirs(output_dir, exist_ok=True)
 
     psycopg2_conn = None
     try:
         # Salva arquivos enviados
         file_paths = []
-        for file in files:
-            file_path = os.path.join(input_dir, file.filename)
+        for index, file in enumerate(files):
+            file_dir = os.path.join(input_dir, str(index))
+            os.makedirs(file_dir, exist_ok=True)
+            file_path = os.path.join(file_dir, os.path.basename(file.filename))
             with open(file_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
             file_paths.append(file_path)
@@ -283,61 +277,172 @@ def _import_extrato_work(
         if df_transformed is None or (df_transformed.empty and not ignored_rows):
             raise HTTPException(status_code=400, detail="Nenhum dado foi processado")
 
-        # Converte enable_tracing de string para boolean
-        tracing_enabled = enable_tracing.lower() == "true" if enable_tracing else False
-
-        # Lista de nomes de arquivos originais para o log de debug
-        original_filenames = [f.filename for f in files]
-
-        save_result = {
-            "created": 0,
-            "duplicates": 0,
-            "skipped": 0,
-            "unmapped": 0,
-            "unmapped_records": [],
-            "conflicts": [],
-            "conflicts_count": 0,
+        return {
+            "dataframe": df_transformed,
+            "ignored_rows": ignored_rows,
+            "arquivos_processados": result["arquivos_processados"],
         }
-        if df_transformed is not None and not df_transformed.empty:
-            # Usa a mesma função de insert/update do excel_import_router
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao processar extratos: {str(e)}")
+    finally:
+        if psycopg2_conn:
+            psycopg2_conn.close()
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+EMPTY_EXTRATO_SAVE = {
+    "created": 0,
+    "duplicates": 0,
+    "skipped": 0,
+    "unmapped": 0,
+    "unmapped_records": [],
+    "conflicts": [],
+    "conflicts_count": 0,
+}
+
+
+def _extrato_import_response(save_result: dict, ignored_rows: list, arquivos_processados: int) -> dict:
+    return {
+        "success": True,
+        "message": "Extratos importados com sucesso via ETL",
+        "arquivos_processados": arquivos_processados,
+        "linhas_salvas": save_result["created"],
+        "linhas_atualizadas": save_result["duplicates"],
+        "registros_atualizados_detalhe": save_result.get("updated_records", []),
+        "linhas_com_erro": save_result["skipped"],
+        "linhas_ignoradas_detalhe": save_result.get("skippedRows", []),
+        "linhas_nao_mapeadas": save_result.get("unmapped", 0),
+        "registros_nao_mapeados": save_result.get("unmapped_records", []),
+        "conflicts": save_result.get("conflicts", []),
+        "conflicts_count": save_result.get("conflicts_count", 0),
+        "linhas_ignoradas_politica": ignored_rows,
+        "linhas_ignoradas_politica_count": len(ignored_rows),
+        "debug_data": save_result.get("debug_data")  # Dados de debug para salvar após resolução
+    }
+
+
+def _import_extrato_work(
+    files: List[UploadFile],
+    account_id: Optional[int],
+    enable_tracing: Optional[str],
+    db: Session,
+    current_user: dict,
+):
+    """
+    Importa arquivos de extrato bancário (.xls ou .xlsx) e salva no banco de dados.
+
+    Args:
+        files: Lista de arquivos de extrato para processar
+        account_id: ID da conta bancária (opcional - usa account_id do JWT se não fornecido)
+        enable_tracing: Se "true", gera arquivo JSON com debug de cada linha processada
+        db: Sessão do banco de dados
+
+    Returns:
+        JSON com estatísticas da importação
+    """
+    if not files:
+        raise HTTPException(status_code=400, detail="Nenhum arquivo fornecido")
+
+    tenant_id, user_id, account_id = _resolve_extrato_account(db, current_user, account_id)
+    etl = _run_extrato_etl(files, db, tenant_id, user_id, account_id)
+    df_transformed = etl["dataframe"]
+
+    # Converte enable_tracing de string para boolean
+    tracing_enabled = enable_tracing.lower() == "true" if enable_tracing else False
+
+    save_result = EMPTY_EXTRATO_SAVE
+    if not df_transformed.empty:
+        try:
             # detect_conflicts=True permite detectar mudanças de tag/subtag e valor
             save_result = save_extrato_records(
                 df_transformed, db, tenant_id=tenant_id, account_id=account_id, user_id=user_id,
-                detect_conflicts=True, enable_tracing=tracing_enabled, original_filenames=original_filenames
+                detect_conflicts=True, enable_tracing=tracing_enabled,
+                original_filenames=[f.filename for f in files],
             )
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Erro ao processar extratos: {str(e)}")
 
-        # Fecha conexão psycopg2
-        psycopg2_conn.close()
+    return _extrato_import_response(save_result, etl["ignored_rows"], etl["arquivos_processados"])
 
-        # Limpa diretório temporário
-        shutil.rmtree(temp_dir, ignore_errors=True)
 
-        # Retorna estatísticas
+class RawRowsPersistRequest(BaseModel):
+    rows: List[dict]
+    ignored_rows: List[dict] = []
+    progress_job_id: Optional[str] = None
+
+
+EXTRATO_ROW_COLUMNS = ("Data e hora", "Descrição", "Valor")
+
+
+@router.post("/extrato/process")
+def process_extrato(
+    files: List[UploadFile] = File(...),
+    progress_job_id: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    """Processa extratos brutos sem salvar: devolve as linhas transformadas e o preview."""
+    scope = activate_import_job(progress_job_id, current_user)
+    try:
+        tenant_id, user_id, account_id = _resolve_extrato_account(db, current_user, None)
+        etl = _run_extrato_etl(files, db, tenant_id, user_id, account_id)
+        df = etl["dataframe"].drop(columns=["subtag_id"], errors="ignore")
+        rows = df_to_rows(df)
+        save_result = EMPTY_EXTRATO_SAVE
+        unchanged = 0
+        if rows:
+            try:
+                save_result = save_extrato_records(
+                    df.copy(), db, tenant_id=tenant_id, account_id=account_id, user_id=user_id,
+                    detect_conflicts=True, commit=False, collect_details=True,
+                )
+                unchanged = save_result.get("unchanged", 0)
+            finally:
+                db.rollback()
         return {
-            "success": True,
-            "message": "Extratos importados com sucesso via ETL",
-            "arquivos_processados": result["arquivos_processados"],
-            "linhas_salvas": save_result["created"],
-            "linhas_atualizadas": save_result["duplicates"],
-            "registros_atualizados_detalhe": save_result.get("updated_records", []),
-            "linhas_com_erro": save_result["skipped"],
-            "linhas_ignoradas_detalhe": save_result.get("skippedRows", []),
-            "linhas_nao_mapeadas": save_result.get("unmapped", 0),
-            "registros_nao_mapeados": save_result.get("unmapped_records", []),
-            "conflicts": save_result.get("conflicts", []),
-            "conflicts_count": save_result.get("conflicts_count", 0),
-            "linhas_ignoradas_politica": ignored_rows,
-            "linhas_ignoradas_politica_count": len(ignored_rows),
-            "debug_data": save_result.get("debug_data")  # Dados de debug para salvar após resolução
+            "rows": rows,
+            "ignored_rows": json_safe(etl["ignored_rows"]),
+            "arquivos_processados": etl["arquivos_processados"],
+            "preview": build_raw_preview(
+                db, tenant_id, account_id, save_result,
+                unchanged=unchanged, ignored_rows=etl["ignored_rows"],
+                warnings=extrato_other_account_warnings(db, tenant_id, user_id, account_id, save_result),
+            ),
         }
+    finally:
+        deactivate_import_job(scope)
 
-    except Exception as e:
-        # Fecha conexão psycopg2 em caso de erro
-        if psycopg2_conn:
-            psycopg2_conn.close()
-        # Limpa diretório temporário em caso de erro
-        shutil.rmtree(temp_dir, ignore_errors=True)
-        raise HTTPException(status_code=500, detail=f"Erro ao processar extratos: {str(e)}")
+
+@router.post("/extrato/persist")
+def persist_extrato(
+    body: RawRowsPersistRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    """Grava as linhas de extrato já processadas (mapeamentos são reaplicados no save)."""
+    scope = activate_import_job(body.progress_job_id, current_user)
+    try:
+        tenant_id, user_id, account_id = _resolve_extrato_account(db, current_user, None)
+        save_result = EMPTY_EXTRATO_SAVE
+        if body.rows:
+            df = rows_to_df(body.rows)
+            missing = [c for c in EXTRATO_ROW_COLUMNS if c not in df.columns]
+            if missing:
+                raise HTTPException(status_code=400, detail=f"Linhas de extrato sem as colunas: {', '.join(missing)}")
+            try:
+                save_result = save_extrato_records(
+                    df, db, tenant_id=tenant_id, account_id=account_id, user_id=user_id,
+                    detect_conflicts=True,
+                )
+            except Exception as e:
+                db.rollback()
+                raise HTTPException(status_code=500, detail=f"Erro ao gravar extratos: {str(e)}")
+        return _extrato_import_response(save_result, body.ignored_rows, 1)
+    finally:
+        deactivate_import_job(scope)
 
 
 @router.get("/cartao/conversion-txt/{filename}")
@@ -501,7 +606,7 @@ def import_cartao(
         deactivate_import_job(scope)
 
 
-def _import_cartao_work(
+def _convert_cartao_pdfs(
     files: List[UploadFile],
     years: List[str],
     months: List[str],
@@ -509,21 +614,12 @@ def _import_cartao_work(
     save_conversion_txt: Optional[str],
     db: Session,
     current_user: dict,
-):
+    temp_dir: str,
+) -> dict:
     """
-    Importa arquivos de fatura de cartão de crédito (PDF).
+    Converte os PDFs de fatura em DataFrame (sem gravar).
 
-    Os cartões são identificados automaticamente a partir do PDF e suas contas associadas são buscadas.
-    Os mapeamentos são filtrados por user_id (usuário logado).
-
-    Args:
-        files: Lista de arquivos PDF de fatura para processar
-        years: Lista de anos correspondentes a cada arquivo
-        months: Lista de meses correspondentes a cada arquivo
-        save_conversion_txt: Se "true", salva o TXT da conversão PDF para download
-
-    Returns:
-        Dados da importação (linhas salvas, atualizadas, não mapeadas)
+    Retorna {"df", "conversion_txt", "empty_invoice"}; levanta HTTPException quando não há dados.
     """
     if not files:
         raise HTTPException(status_code=400, detail="Nenhum arquivo fornecido")
@@ -542,13 +638,12 @@ def _import_cartao_work(
                 detail=f"Arquivo {file.filename} não é um arquivo PDF válido"
             )
 
-    # Cria diretórios temporários
-    temp_dir = tempfile.mkdtemp()
     input_dir = os.path.join(temp_dir, "input")
     output_dir = os.path.join(temp_dir, "output")
     os.makedirs(input_dir, exist_ok=True)
     os.makedirs(output_dir, exist_ok=True)
 
+    psycopg2_conn = None
     try:
         # Salva arquivos enviados com ano e mês no nome
         file_paths = []
@@ -558,7 +653,7 @@ def _import_cartao_work(
 
         for i, file in enumerate(files):
             # Adiciona ano e mês ao nome do arquivo: "2017_09_Fatura Dez.pdf"
-            base_name = os.path.splitext(file.filename)[0]
+            base_name = os.path.splitext(os.path.basename(file.filename))[0]
             new_filename = f"{years[i]}_{months[i]}_{base_name}.pdf"
             file_path = os.path.join(input_dir, new_filename)
 
@@ -619,21 +714,7 @@ def _import_cartao_work(
                     raise _card_not_registered_error(last4)
                 if not last4 and not registered:
                     raise _card_not_registered_error()
-                shutil.rmtree(temp_dir, ignore_errors=True)
-                return {
-                    "success": True,
-                    "message": "Fatura sem compras para importar",
-                    "empty_invoice": True,
-                    "arquivos_processados": len(files),
-                    "linhas_salvas": 0,
-                    "linhas_atualizadas": 0,
-                    "cartoes_distintos": 0,
-                    "linhas_nao_mapeadas": 0,
-                    "registros_nao_mapeados": [],
-                    "conflicts": [],
-                    "conflicts_count": 0,
-                    "conversion_txt": conversion_txt_files,
-                }
+                return {"df": combined_df, "conversion_txt": conversion_txt_files, "empty_invoice": True}
             if combined_df.attrs.get("mp_garbled"):
                 raise HTTPException(
                     status_code=400,
@@ -654,42 +735,187 @@ def _import_cartao_work(
             logger.warning("Importação cartão sem dados: %s", detail_msg.replace("\n", " | "))
             raise HTTPException(status_code=400, detail=detail_msg)
 
-        # Salva faturas no banco de dados
+        return {"df": combined_df, "conversion_txt": conversion_txt_files, "empty_invoice": False}
+    finally:
+        if psycopg2_conn:
+            psycopg2_conn.close()
+
+
+def _empty_invoice_response(files_count: int, conversion_txt: list) -> dict:
+    return {
+        "success": True,
+        "message": "Fatura sem compras para importar",
+        "empty_invoice": True,
+        "arquivos_processados": files_count,
+        "linhas_salvas": 0,
+        "linhas_atualizadas": 0,
+        "cartoes_distintos": 0,
+        "linhas_nao_mapeadas": 0,
+        "registros_nao_mapeados": [],
+        "conflicts": [],
+        "conflicts_count": 0,
+        "conversion_txt": conversion_txt,
+    }
+
+
+def _ensure_invoice_cards_registered(stats: dict, df: pd.DataFrame) -> None:
+    if stats.get("cartoes_distintos", 0) == 0:
+        cards = sorted({
+            str(c)[-4:] for c in df.get("Cartão", pd.Series(dtype=str)).dropna().unique() if str(c).strip()
+        })
+        raise _card_not_registered_error(" / ".join(cards) if cards else None)
+
+
+def _cartao_import_response(stats: dict, files_count: int, conversion_txt: list) -> dict:
+    conflicts = stats.get('conflicts', [])
+    return {
+        "success": True,
+        "message": "Faturas importadas com sucesso!" if len(conflicts) == 0 else "Importação com conflitos pendentes",
+        "arquivos_processados": files_count,
+        "linhas_salvas": stats['linhas_salvas'],
+        "linhas_atualizadas": stats['linhas_atualizadas'],
+        "cartoes_distintos": stats['cartoes_distintos'],
+        "linhas_nao_mapeadas": stats.get('linhas_nao_mapeadas', 0),
+        "registros_nao_mapeados": stats.get('registros_nao_mapeados', []),
+        "conflicts": conflicts,
+        "conflicts_count": len(conflicts),
+        "conversion_txt": conversion_txt,
+    }
+
+
+def _import_cartao_work(
+    files: List[UploadFile],
+    years: List[str],
+    months: List[str],
+    passwords: List[str],
+    save_conversion_txt: Optional[str],
+    db: Session,
+    current_user: dict,
+):
+    """
+    Importa arquivos de fatura de cartão de crédito (PDF).
+
+    Os cartões são identificados automaticamente a partir do PDF e suas contas associadas são buscadas.
+    Os mapeamentos são filtrados por user_id (usuário logado).
+
+    Args:
+        files: Lista de arquivos PDF de fatura para processar
+        years: Lista de anos correspondentes a cada arquivo
+        months: Lista de meses correspondentes a cada arquivo
+        save_conversion_txt: Se "true", salva o TXT da conversão PDF para download
+
+    Returns:
+        Dados da importação (linhas salvas, atualizadas, não mapeadas)
+    """
+    temp_dir = tempfile.mkdtemp()
+    try:
+        converted = _convert_cartao_pdfs(
+            files, years, months, passwords, save_conversion_txt, db, current_user, temp_dir,
+        )
+        if converted["empty_invoice"]:
+            return _empty_invoice_response(len(files), converted["conversion_txt"])
+
+        tenant_id = current_user.get("tenant_id")
+        user_id = current_user.get("user_id") or current_user.get("id")
         account_id = current_user.get("account_id")
+        combined_df = converted["df"]
         stats = FaturaService.salvar_faturas_do_dataframe(db, combined_df, tenant_id, user_id, account_id)
-
-        if stats.get("cartoes_distintos", 0) == 0:
-            cards = sorted({
-                str(c)[-4:] for c in combined_df.get("Cartão", pd.Series(dtype=str)).dropna().unique() if str(c).strip()
-            })
-            raise _card_not_registered_error(" / ".join(cards) if cards else None)
-
-        # Limpa diretório temporário
-        shutil.rmtree(temp_dir, ignore_errors=True)
-
-        # Retorna mensagem de sucesso com estatísticas corretas
-        conflicts = stats.get('conflicts', [])
-        return {
-            "success": True,
-            "message": "Faturas importadas com sucesso!" if len(conflicts) == 0 else "Importação com conflitos pendentes",
-            "arquivos_processados": len(files),
-            "linhas_salvas": stats['linhas_salvas'],
-            "linhas_atualizadas": stats['linhas_atualizadas'],
-            "cartoes_distintos": stats['cartoes_distintos'],
-            "linhas_nao_mapeadas": stats.get('linhas_nao_mapeadas', 0),
-            "registros_nao_mapeados": stats.get('registros_nao_mapeados', []),
-            "conflicts": conflicts,
-            "conflicts_count": len(conflicts),
-            "conversion_txt": conversion_txt_files,
-        }
-
+        _ensure_invoice_cards_registered(stats, combined_df)
+        return _cartao_import_response(stats, len(files), converted["conversion_txt"])
     except HTTPException:
-        shutil.rmtree(temp_dir, ignore_errors=True)
         raise
     except Exception as e:
-        # Limpa diretório temporário em caso de erro
-        shutil.rmtree(temp_dir, ignore_errors=True)
         raise HTTPException(status_code=500, detail=f"Erro ao processar faturas: {str(e)}")
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+CARTAO_ROW_COLUMNS = ("Cartão", "Data", "Descrição", "Valor", "Ano", "Mês")
+
+
+@router.post("/cartao/process")
+def process_cartao(
+    files: List[UploadFile] = File(...),
+    years: List[str] = Form(...),
+    months: List[str] = Form(...),
+    passwords: List[str] = Form([]),
+    progress_job_id: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    """Converte as faturas PDF sem salvar: devolve as linhas extraídas e o preview."""
+    scope = activate_import_job(progress_job_id, current_user)
+    temp_dir = tempfile.mkdtemp()
+    try:
+        tenant_id = current_user.get("tenant_id")
+        user_id = current_user.get("user_id") or current_user.get("id")
+        account_id = current_user.get("account_id")
+        converted = _convert_cartao_pdfs(
+            files, years, months, passwords, "false", db, current_user, temp_dir,
+        )
+        if converted["empty_invoice"]:
+            return {
+                "rows": [],
+                "empty_invoice": True,
+                "preview": build_raw_preview(db, tenant_id, account_id, {}),
+            }
+        combined_df = converted["df"]
+        rows = df_to_rows(combined_df)
+        try:
+            stats = FaturaService.salvar_faturas_do_dataframe(
+                db, combined_df.copy(), tenant_id, user_id, account_id,
+                commit=False, collect_details=True,
+            )
+        finally:
+            db.rollback()
+        return {
+            "rows": rows,
+            "empty_invoice": False,
+            "preview": build_raw_preview(
+                db, tenant_id, account_id, stats,
+                unchanged=stats.get("linhas_sem_alteracao", 0),
+            ),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao processar faturas: {str(e)}")
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        deactivate_import_job(scope)
+
+
+@router.post("/cartao/persist")
+def persist_cartao(
+    body: RawRowsPersistRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    """Grava as linhas de fatura já processadas (mapeamentos são reaplicados no save)."""
+    scope = activate_import_job(body.progress_job_id, current_user)
+    try:
+        if not body.rows:
+            return _empty_invoice_response(1, [])
+        df = rows_to_df(body.rows)
+        missing = [c for c in CARTAO_ROW_COLUMNS if c not in df.columns]
+        if missing:
+            raise HTTPException(status_code=400, detail=f"Linhas de fatura sem as colunas: {', '.join(missing)}")
+        df["Cartão"] = df["Cartão"].fillna("").astype(str)
+        if "Descrição Limpa" in df.columns:
+            df["Descrição Limpa"] = df["Descrição Limpa"].fillna(df["Descrição"])
+
+        tenant_id = current_user.get("tenant_id")
+        user_id = current_user.get("user_id") or current_user.get("id")
+        account_id = current_user.get("account_id")
+        try:
+            stats = FaturaService.salvar_faturas_do_dataframe(db, df, tenant_id, user_id, account_id)
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Erro ao gravar faturas: {str(e)}")
+        _ensure_invoice_cards_registered(stats, df)
+        return _cartao_import_response(stats, 1, [])
+    finally:
+        deactivate_import_job(scope)
 
 
 def _save_debug_json(debug_data: dict, resolution_info: dict = None):
@@ -740,7 +966,7 @@ async def resolve_import_conflicts(
                 "record_type": "bank_statement",  // ou "credit_card_invoice" ou "benefit_card_statement"
                 "accept_tag_change": true,
                 "accept_amount_change": false,
-                "new_subtag_id": 45,
+                "new_subtag_id": 45,          // null + "clear_subtag": true remove a classificação
                 "new_amount": 150.00
             },
             ...
@@ -819,10 +1045,11 @@ async def resolve_import_conflicts(
                 continue
 
             # Aplica as mudanças aceitas e conta estatísticas
-            if resolution.get("new_subtag_id") is not None:
+            if resolution.get("new_subtag_id") is not None or resolution.get("clear_subtag"):
                 if accept_tag:
-                    logger.info(f"   ✅ Aplicando tag: {record.subtag_id} → {resolution['new_subtag_id']}")
-                    record.subtag_id = resolution["new_subtag_id"]
+                    new_subtag_id = resolution.get("new_subtag_id")
+                    logger.info(f"   ✅ Aplicando tag: {record.subtag_id} → {new_subtag_id}")
+                    record.subtag_id = new_subtag_id
                     accepted_tags += 1
                 else:
                     logger.info(f"   ❌ Tag rejeitada (mantendo {record.subtag_id})")

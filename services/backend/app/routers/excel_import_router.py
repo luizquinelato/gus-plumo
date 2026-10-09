@@ -23,6 +23,7 @@ from app.services.fatura_service import FaturaService
 from app.services.account_period_closure_service import closed_periods
 from app.utils.card_helper import CardHelper
 from app.utils.import_progress import report_row_progress
+from app.utils.import_rows import mapping_hint, subtag_override
 from app.utils.mapping_helper import MappingHelper
 from app.utils.sharing_percentage import resolve_ownership_percentage, card_adjustment_config
 from app.core.logging_config import get_logger
@@ -454,7 +455,7 @@ def _extrato_row_has_changes(
     return False
 
 
-def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_id: int, force_retag: bool = False, user_id: int = None, detect_conflicts: bool = True, enable_tracing: bool = False, original_filenames: list = None) -> dict:
+def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_id: int, force_retag: bool = False, user_id: int = None, detect_conflicts: bool = True, enable_tracing: bool = False, original_filenames: list = None, commit: bool = True, collect_details: bool = False) -> dict:
     """
     Função única de insert/update para extratos bancários.
     Usada após ETL de extrato bruto (import_router).
@@ -475,6 +476,8 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
         detect_conflicts: Se True, detecta conflitos de tag/subtag e valor ao invés de atualizar diretamente
         enable_tracing: Se True, gera arquivo JSON com debug de cada linha processada
         original_filenames: Lista de nomes dos arquivos originais (para o log de debug)
+        commit: Se False, apenas executa os inserts/updates na transação (o chamador faz rollback)
+        collect_details: Se True, retorna preview_creates / preview_updates linha a linha
 
     Returns:
         Dicionário com estatísticas: created, duplicates, skipped, errors, conflicts
@@ -491,6 +494,9 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
     updated_records = []  # DE-PARA dos registros atualizados (match sem conflito)
     errors = []
     conflicts = []  # Lista de conflitos detectados (tag/subtag ou valor diferente)
+    unchanged_count = 0
+    preview_creates = []
+    preview_updates = []
 
     # DEBUG: Lista de todos os registros processados para rastreamento (só se tracing ativo)
     debug_all_records = [] if enable_tracing else None
@@ -585,12 +591,16 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
     # Se bater → verifica se é único ou múltiplo
     # Se múltiplos → busca por valor para identificar o correto
     existing_keys = {}  # chave -> lista de IDs
+    # Categoria/transação podem divergir (banco recategoriza; export antigo gravava "Débito"/"Crédito"):
+    # o fallback casa por data + descrição + valor; cada registro existente é usado por uma linha só.
+    existing_keys_by_description = {}
     existing_records_data = {}  # id -> {subtag_id, amount, tag_name, subtag_name}
     for e in existing_keys_query:
         key = (e.date, e.category or '', e.transaction or '', e.description or '')
         if key not in existing_keys:
             existing_keys[key] = []
         existing_keys[key].append(e.id)
+        existing_keys_by_description.setdefault((e.date, e.description or ''), []).append(e.id)
         existing_records_data[e.id] = {
             'subtag_id': e.subtag_id,
             'amount': float(e.amount) if e.amount else 0.0,
@@ -611,6 +621,7 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
 
     records_to_insert = []
     records_to_update = []
+    recategorized_claimed: set[int] = set()
 
     # Converte DataFrame para lista de dicts (muito mais rápido que iterrows)
     records = df.to_dict('records')
@@ -738,6 +749,10 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
                     mapped_description = mapping_result.get('mapped_description')
                     is_sensitive = mapping_result.get('is_sensitive', False)
 
+            has_override, override_subtag_id = subtag_override(row, subtag_id_to_info)
+            if has_override:
+                subtag_id = override_subtag_id
+
             # Aplica substituição de descrição se houver mapeamento
             final_description = description
             if mapped_description is not None:
@@ -764,6 +779,20 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
             if not existing_ids and final_description != description:
                 key_original = (date_obj, category or '', transaction or '', description or '')
                 existing_ids = existing_keys.get(key_original, [])
+
+            if not existing_ids:
+                file_amount = float(amount_decimal)
+                for candidate_description in dict.fromkeys((final_description or '', description or '')):
+                    candidates = [
+                        eid
+                        for eid in existing_keys_by_description.get((date_obj, candidate_description), [])
+                        if eid not in recategorized_claimed
+                        and abs(existing_records_data[eid]['amount'] - file_amount) <= 0.01
+                    ]
+                    if candidates:
+                        existing_ids = candidates[:1]
+                        recategorized_claimed.add(candidates[0])
+                        break
 
             # DEBUG: Log para rastrear "Koelle" especificamente
             if 'koelle' in (final_description or '').lower():
@@ -902,7 +931,6 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
                 has_tag_conflict = (
                     detect_conflicts and
                     existing_subtag_id is not None and
-                    subtag_id is not None and
                     existing_subtag_id != subtag_id
                 )
                 # Conflito de valor: verifica se há diferença no valor (tolerância de 0.001 para erros de float)
@@ -982,6 +1010,7 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
                         apply_description_update=apply_description_update,
                     )
                     if not has_changes:
+                        unchanged_count += 1
                         if enable_tracing and debug_all_records is not None:
                             debug_all_records.append({
                                 "linha": idx + 2,
@@ -1004,6 +1033,32 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
                             update_record['description'] = final_description
                         records_to_update.append(update_record)
                         duplicate_count += 1
+                        if collect_details:
+                            preview_updates.append({
+                                'line': idx + 2,
+                                'id': existing_id,
+                                'date': date_obj,
+                                'description': final_description,
+                                'amount': float(amount_decimal),
+                                'before': {
+                                    'subtag_id': existing_subtag_id,
+                                    'amount': existing_amount,
+                                    'description': existing_data.get('description') or '',
+                                    'category': existing_data.get('category') or '',
+                                    'transaction': existing_data.get('transaction') or '',
+                                    'expense_sharing_id': existing_data.get('expense_sharing_id'),
+                                    'ownership_percentage': existing_data.get('ownership_percentage'),
+                                },
+                                'after': {
+                                    'subtag_id': subtag_id,
+                                    'amount': float(amount_decimal),
+                                    'description': final_description if apply_description_update else (existing_data.get('description') or ''),
+                                    'category': category or '',
+                                    'transaction': transaction or '',
+                                    'expense_sharing_id': expense_sharing_id,
+                                    'ownership_percentage': float(ownership_percentage),
+                                },
+                            })
 
                         existing_subtag_ctx = subtag_id_to_info.get(existing_subtag_id, {})
                         new_subtag_ctx = subtag_id_to_info.get(subtag_id, {})
@@ -1056,6 +1111,24 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
                     'created_by': user_id  # ✅ Campo obrigatório do BaseEntity
                 })
                 created_count += 1
+                if collect_details:
+                    preview_creates.append({
+                        'line': idx + 2,
+                        'row_index': idx,
+                        'date': date_obj,
+                        'description': final_description,
+                        'amount': float(amount_decimal),
+                        'category': category or '',
+                        'transaction': transaction or '',
+                        'subtag_id': subtag_id,
+                        'expense_sharing_id': expense_sharing_id,
+                        'ownership_percentage': float(ownership_percentage),
+                        'mapping_hint': (
+                            mapping_hint(mapping_helper, (description, final_description), tipo)
+                            if subtag_id is None and not has_override
+                            else None
+                        ),
+                    })
                 # DEBUG: Registra como criado (se tracing ativo)
                 if enable_tracing and debug_all_records is not None:
                     debug_all_records.append({
@@ -1129,7 +1202,8 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
     if records_to_update:
         db.bulk_update_mappings(BankStatement, records_to_update)
 
-    db.commit()
+    if commit:
+        db.commit()
 
     # Fecha conexão psycopg2
     psycopg2_conn.close()
@@ -1210,5 +1284,7 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
         "errors": errors[:10],
         "conflicts": conflicts,  # Lista de conflitos pendentes
         "conflicts_count": len(conflicts),
-        "debug_data": debug_data  # Dados de debug para salvar após resolução
+        "unchanged": unchanged_count,
+        "debug_data": debug_data,  # Dados de debug para salvar após resolução
+        **({"preview_creates": preview_creates, "preview_updates": preview_updates} if collect_details else {}),
     }

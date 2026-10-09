@@ -15,7 +15,9 @@ interface IconPickerProps {
   value: string
   onChange: (iconName: string) => void
   availableIcons: string[]
-  iconNamesPt?: Record<string, string>  // Mapeamento de nomes em português
+  iconNamesPt?: Record<string, string>
+  /** Sem rótulo, para uso dentro de tabela. */
+  compact?: boolean
 }
 
 // Categorias de ícones
@@ -98,7 +100,7 @@ const iconCategories: Record<string, string[]> = {
   ]
 }
 
-const IconPicker = ({ value, onChange, availableIcons, iconNamesPt = {} }: IconPickerProps) => {
+const IconPicker = ({ value, onChange, availableIcons, iconNamesPt = {}, compact = false }: IconPickerProps) => {
   const [isOpen, setIsOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
 
@@ -142,15 +144,14 @@ const IconPicker = ({ value, onChange, availableIcons, iconNamesPt = {} }: IconP
 
   return (
     <div className="relative">
-      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-        Ícone
-      </label>
+      {compact ? null : (
+        <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">Ícone</label>
+      )}
 
-      {/* Botão para abrir o picker */}
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-600 text-sm"
+        className={`${compact ? 'w-auto' : 'w-full'} flex items-center justify-between gap-2 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600`}
       >
         <div className="flex items-center gap-2">
           <SelectedIcon size={16} />

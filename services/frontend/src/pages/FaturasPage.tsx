@@ -28,9 +28,11 @@ import {
 } from '../utils/tableDateSort'
 import { useConfirm } from '../hooks/useConfirm'
 import { MultiSelectDropdown, SourceMultiSelectDropdown } from '../components/MultiSelectDropdown'
-import { CreditCard, Calendar, FileText, Receipt, Filter, X, Search, Tag, Tags, Users, ArrowUp, Edit2, Trash2, CheckSquare, Square, MinusSquare, ChevronDown, ChevronRight, Landmark, Link2, Layers, Plus, ArrowRightLeft } from 'lucide-react'
+import { CreditCard, Calendar, FileText, Receipt, Filter, X, Search, Tag, Tags, Users, ArrowUp, Edit2, Trash2, CheckSquare, Square, MinusSquare, ChevronDown, ChevronRight, Landmark, Link2, Layers, Plus, ArrowRightLeft, ArrowUpDown } from 'lucide-react'
 import type { InvoiceMatchPreview } from '../types/invoiceReconcile'
 import { descriptionMatchesSearch, resolveDescriptionSearchState } from '../utils/descriptionSearch'
+import { CadastroListHeaderActions } from '../components/CadastroExcelMenu'
+import { exportFaturasReport } from '../utils/exportToExcel'
 
 // Interface para state de navegação
 interface NavigationState {
@@ -247,6 +249,8 @@ const FaturasPage = () => {
   const [selectedSubtagIds, setSelectedSubtagIds] = useState<number[]>([])
   const [selectedPartnerIds, setSelectedPartnerIds] = useState<number[]>([])
   const [selectedIssuerIds, setSelectedIssuerIds] = useState<number[]>([])
+  const [selectedTransactionType, setSelectedTransactionType] = useState<'all' | 'despesa' | 'receita'>('all')
+  const [appliedTransactionType, setAppliedTransactionType] = useState<'all' | 'despesa' | 'receita'>('all')
 
   // Estados de busca
   const [searchTerm, setSearchTerm] = useState('')
@@ -561,6 +565,7 @@ const FaturasPage = () => {
   const loadInvoiceData = async (options?: LoadInvoiceDataOptions) => {
     setLoading(true)
     setError(null)
+    setAppliedTransactionType(options?.filters ? 'all' : selectedTransactionType)
     const tabsToRestore = options?.preserveTabs
       ? { year: activeYear, month: activeMonth }
       : null
@@ -636,6 +641,7 @@ const FaturasPage = () => {
     setSelectedSubtagIds([])
     setSelectedPartnerIds([])
     setSelectedIssuerIds([])
+    setSelectedTransactionType('all')
     setSearchTerm('')
     setSearchAmount('')
   }
@@ -663,7 +669,7 @@ const FaturasPage = () => {
   // Verifica se há filtros ativos
   const hasActiveFilters = selectedCardIds.length > 0 || selectedYears.length > 0 || selectedMonths.length > 0 ||
     selectedTagIds.length > 0 || selectedSubtagIds.length > 0 || selectedPartnerIds.length > 0 ||
-    selectedIssuerIds.length > 0 ||
+    selectedIssuerIds.length > 0 || selectedTransactionType !== 'all' ||
     searchTerm !== '' || searchAmount !== ''
 
   const handleEdit = (item: InvoiceItem) => {
@@ -690,6 +696,11 @@ const FaturasPage = () => {
         return false
       }
 
+      if (appliedTransactionType !== 'all') {
+        const isExpense = Number(item.amount) < 0
+        if ((appliedTransactionType === 'despesa') !== isExpense) return false
+      }
+
       const matchesText = descriptionMatchesSearch(item.description, searchTerm)
 
       let matchesAmount = true
@@ -703,7 +714,7 @@ const FaturasPage = () => {
 
       return matchesText && matchesAmount
     })
-  }, [invoiceData, searchTerm, searchAmount, creditCardIds])
+  }, [invoiceData, searchTerm, searchAmount, creditCardIds, appliedTransactionType])
 
   const currentItems = useMemo(() => {
     if (!activeMonth) return []
@@ -827,15 +838,24 @@ const FaturasPage = () => {
     [monthCardBuckets],
   )
 
-  const invoiceCardMoveOptions = useMemo(
-    () =>
-      monthCardBuckets.map((b) => ({
-        cardId: b.cardId,
-        cardName: b.cardName,
-        cardNumber: b.cardNumber,
-      })),
-    [monthCardBuckets],
-  )
+  /** Cartões com lançamentos no mês ativo, independente dos filtros de tela (tipo, tag, etc.). */
+  const invoiceCardMoveOptions = useMemo(() => {
+    if (!activeMonth || !invoiceData?.items) return []
+    const byCard = new Map<number, { cardId: number; cardName: string; cardNumber: string }>()
+    for (const item of invoiceData.items) {
+      if (item.year_month !== activeMonth || byCard.has(item.card_id)) continue
+      if (creditCardIds.size > 0 && !creditCardIds.has(item.card_id)) continue
+      const meta = cardsById.get(item.card_id)
+      byCard.set(item.card_id, {
+        cardId: item.card_id,
+        cardName: item.card_name || meta?.name || 'Cartão',
+        cardNumber: item.card_number || meta?.number || '',
+      })
+    }
+    return Array.from(byCard.values()).sort((a, b) =>
+      (a.cardNumber || '').localeCompare(b.cardNumber || '', 'pt-BR'),
+    )
+  }, [invoiceData, activeMonth, cardsById, creditCardIds])
 
   const expandedCardsKey = useMemo(
     () => [...expandedCards].sort().join('\0'),
@@ -894,7 +914,14 @@ const FaturasPage = () => {
     return filteredItems.filter((item) => idSet.has(item.id))
   }, [selectedItems, filteredItems])
 
-  /** Edição em lote exige um único tipo (tag receita vs despesa); mover/excluir aceita misto. */
+  const batchCardMoveOptions = useMemo(() => {
+    const sourceCards = new Set(selectedInvoiceItems.map((item) => item.card_id))
+    if (sourceCards.size !== 1) return invoiceCardMoveOptions
+    const [sourceCardId] = sourceCards
+    return invoiceCardMoveOptions.filter((c) => c.cardId !== sourceCardId)
+  }, [selectedInvoiceItems, invoiceCardMoveOptions])
+
+  /** Tag/subtag em lote exige um único tipo (receita vs despesa); null = seleção mista. */
   const batchEditExpenseType = useMemo((): 'despesa' | 'receita' | null => {
     if (selectedInvoiceItems.length === 0) return null
     let hasDespesa = false
@@ -1367,6 +1394,39 @@ const FaturasPage = () => {
               icon={<FileText className="w-8 h-8" />}
               title="Relatório de Faturas"
               subtitle="Visualize e analise suas faturas de cartão de crédito consolidadas"
+              actions={
+                <CadastroListHeaderActions
+                  menu={{
+                    menuTitle: 'Exportar',
+                    onExportExcel: () => {
+                      if (!filteredItems.length) {
+                        handleShowToast('Nenhum dado para exportar', 'error')
+                        return
+                      }
+                      exportFaturasReport(
+                        filteredItems.map((item) => ({
+                          date: item.date,
+                          description: item.description,
+                          amount: item.amount,
+                          card_number: item.card_number,
+                          card_name: item.card_name,
+                          tag_name: item.tag_name,
+                          subtag_name: item.subtag_name,
+                          current_installment: item.current_installment,
+                          total_installments: item.total_installments,
+                          year_month: item.year_month,
+                          ownership_percentage: item.ownership_percentage,
+                          shared_partner_name: item.shared_partner_name,
+                          issuer: item.issuer,
+                        })),
+                      )
+                      handleShowToast(`Excel exportado (${filteredItems.length} lançamentos)`, 'success')
+                    },
+                  }}
+                >
+                  {null}
+                </CadastroListHeaderActions>
+              }
             />
           }
           tabs={
@@ -1394,7 +1454,7 @@ const FaturasPage = () => {
             {/* Linha 1: Filtros principais + Botão Aplicar */}
             <div className="flex flex-col lg:flex-row gap-3">
               {/* Grid de Filtros - ocupa o espaço disponível */}
-              <div className="flex-1 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
+              <div className="flex-1 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 gap-3">
                 {/* Ano */}
                 <div>
                   <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
@@ -1475,6 +1535,23 @@ const FaturasPage = () => {
                   />
                 </div>
 
+                {/* Tipo (Receita/Despesa) */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                    <ArrowUpDown size={12} className="inline mr-1 text-color-primary" />
+                    Tipo
+                  </label>
+                  <select
+                    value={selectedTransactionType}
+                    onChange={(e) => setSelectedTransactionType(e.target.value as 'all' | 'despesa' | 'receita')}
+                    className="w-full px-2 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-color-primary focus:border-color-primary transition-all"
+                  >
+                    <option value="all">Selecione...</option>
+                    <option value="despesa">Despesas</option>
+                    <option value="receita">Receitas</option>
+                  </select>
+                </div>
+
                 {/* Tag */}
                 <div>
                   <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
@@ -1530,7 +1607,7 @@ const FaturasPage = () => {
               {/* Botão Aplicar - fixo no canto direito */}
               <div className="flex items-end flex-shrink-0">
                 <button
-                  onClick={loadInvoiceData}
+                  onClick={() => loadInvoiceData()}
                   className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-all hover:opacity-90"
                   style={{ backgroundColor: 'var(--crud-create)', color: 'var(--on-crud-create)' }}
                 >
@@ -1946,28 +2023,16 @@ const FaturasPage = () => {
                     setBatchEditSharingOnly(false)
                     setIsBatchEditModalOpen(true)
                   }}
-                  disabled={!batchEditExpenseType}
-                  className="px-3 py-1.5 text-white rounded-lg transition-colors flex items-center gap-1.5 hover:opacity-90 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                  className="px-3 py-1.5 text-white rounded-lg transition-colors flex items-center gap-1.5 hover:opacity-90 text-sm font-semibold"
                   style={{ backgroundColor: 'var(--crud-edit)' }}
                   title={
-                    batchEditExpenseType
-                      ? 'Editar categoria e compartilhamento em lote'
-                      : 'Selecione apenas despesas ou apenas receitas para editar em lote'
+                    batchCardMoveOptions.length > 0
+                      ? 'Editar categoria, compartilhamento e cartão em lote'
+                      : 'Editar categoria e compartilhamento em lote'
                   }
                 >
                   <Edit2 size={14} />
                   Editar em Lote
-                </button>
-              )}
-              {invoiceCardMoveOptions.length > 1 && (
-                <button
-                  onClick={() => openMoveCardModal(getSelectedItemsForApi(), null)}
-                  className="px-3 py-1.5 text-white rounded-lg transition-colors flex items-center gap-1.5 hover:opacity-90 text-sm font-semibold"
-                  style={{ backgroundColor: 'var(--color-1)' }}
-                  title="Mover lançamentos para outro cartão desta fatura"
-                >
-                  <ArrowRightLeft size={14} />
-                  Mover
                 </button>
               )}
               <button
@@ -2034,8 +2099,9 @@ const FaturasPage = () => {
           setBatchEditSharingOnly(false)
         }}
         selectedItems={getSelectedItemsForApi()}
-        expenseType={batchEditExpenseType || 'despesa'}
+        expenseType={batchEditExpenseType}
         sharingOnly={batchEditSharingOnly}
+        cardMoveOptions={batchCardMoveOptions}
         onSuccess={(result) => {
           clearSelection()
           handleExpenseEditSuccess(result)
@@ -2069,6 +2135,9 @@ const FaturasPage = () => {
         isOpen={isEditModalOpen}
         onClose={() => { setIsEditModalOpen(false); setItemToEdit(null) }}
         invoiceItemMode
+        cardMoveOptions={
+          itemToEdit ? invoiceCardMoveOptions.filter((c) => c.cardId !== itemToEdit.card_id) : []
+        }
         expense={itemToEdit ? {
           id: itemToEdit.id,
           source: 'card',

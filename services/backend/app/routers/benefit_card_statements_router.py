@@ -23,6 +23,7 @@ from app.services.closed_period_edit_service import (
     ensure_benefit_curadoria_update_allowed,
 )
 from app.utils.import_progress import activate_import_job, deactivate_import_job, report_row_progress
+from app.utils.import_rows import mapping_hint, subtag_override
 from app.utils.mapping_helper import MappingHelper
 from app.utils.sharing_percentage import resolve_ownership_percentage
 import psycopg2
@@ -245,6 +246,130 @@ def importar_csv(
         deactivate_import_job(scope)
 
 
+class BenefitCsvPersistRequest(BaseModel):
+    credit_card_id: int
+    rows: List[dict]
+    progress_job_id: Optional[str] = None
+
+
+@router.post("/csv/process")
+def processar_csv(
+    credit_card_id: int = Form(...),
+    file: UploadFile = File(...),
+    progress_job_id: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    """Lê o CSV de benefícios sem salvar: devolve as linhas do arquivo e o preview."""
+    from app.services.raw_import_preview import build_raw_preview
+    from app.utils.import_rows import df_to_rows
+
+    scope = activate_import_job(progress_job_id, current_user)
+    try:
+        tenant_id = current_user.get("tenant_id", 1)
+        account_id = current_user.get("account_id")
+        cartao = _load_benefit_card(db, tenant_id, credit_card_id, account_id)
+        try:
+            df = _parse_benefit_csv(file.file.read())
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Erro ao ler CSV: {str(e)}")
+        rows = df_to_rows(df)
+        result: dict = {}
+        if rows:
+            try:
+                result = save_benefit_dataframe(
+                    db, current_user, cartao, df.copy(), commit=False, collect_details=True,
+                )
+            finally:
+                db.rollback()
+        return {
+            "rows": rows,
+            "preview": build_raw_preview(
+                db, tenant_id, cartao.account_id, result,
+                unchanged=result.get("registros_sem_alteracao", 0),
+            ),
+        }
+    finally:
+        deactivate_import_job(scope)
+
+
+@router.post("/csv/persist")
+def persistir_csv(
+    body: BenefitCsvPersistRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    """Grava as linhas do CSV de benefícios já processadas (mapeamentos são reaplicados no save)."""
+    from app.utils.import_rows import rows_to_df
+
+    scope = activate_import_job(body.progress_job_id, current_user)
+    try:
+        tenant_id = current_user.get("tenant_id", 1)
+        cartao = _load_benefit_card(db, tenant_id, body.credit_card_id, current_user.get("account_id"))
+        if not body.rows:
+            return {
+                "message": "Importação concluída com sucesso",
+                "registros_importados": 0,
+                "registros_atualizados": 0,
+                "unmapped": 0,
+                "unmapped_records": [],
+                "conflicts": [],
+                "conflicts_count": 0,
+            }
+        df = rows_to_df(body.rows)
+        missing = [c for c in BENEFIT_CSV_REQUIRED_HEADERS if c not in df.columns]
+        if missing:
+            raise HTTPException(status_code=400, detail=f"Linhas do CSV sem as colunas: {', '.join(missing)}")
+        return save_benefit_dataframe(db, current_user, cartao, df)
+    finally:
+        deactivate_import_job(scope)
+
+
+BENEFIT_CSV_REQUIRED_HEADERS = ['Data', 'Hora', 'Movimentação', 'Valor', 'Meio de Pagamento', 'Saldo']
+
+
+def _load_benefit_card(db: Session, tenant_id: int, credit_card_id: int, account_id: Optional[int] = None) -> Cartao:
+    """Carrega o cartão de benefícios (com expense_sharing). Com account_id, exige que seja da conta."""
+    from sqlalchemy.orm import joinedload
+    query = db.query(Cartao).options(
+        joinedload(Cartao.expense_sharing)
+    ).filter(
+        Cartao.id == credit_card_id,
+        Cartao.tenant_id == tenant_id,
+        Cartao.active == True
+    )
+    if account_id is not None:
+        query = query.filter(Cartao.account_id == account_id)
+    cartao = query.first()
+
+    if not cartao:
+        raise HTTPException(status_code=404, detail="Cartão não encontrado")
+
+    if cartao.type != 'beneficios':
+        raise HTTPException(status_code=400, detail="Cartão deve ser do tipo 'beneficios'")
+    return cartao
+
+
+def _parse_benefit_csv(contents: bytes):
+    """Valida o cabeçalho e carrega o CSV de benefícios em DataFrame (colunas originais)."""
+    import pandas as pd
+
+    decoded = contents.decode('utf-8')
+    csv_reader = csv.DictReader(io.StringIO(decoded))
+    actual_headers = [h.strip() for h in (csv_reader.fieldnames or [])]
+    required = BENEFIT_CSV_REQUIRED_HEADERS
+    if actual_headers[:len(required)] != required:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cabeçalho CSV inválido. Esperado começar com: {required}, Recebido: {actual_headers}"
+        )
+    df = pd.read_csv(io.StringIO(decoded))
+    print(f"   📊 {len(df)} registros carregados do CSV de benefícios")
+    return df
+
+
 def _importar_csv_work(
     credit_card_id: int,
     file: UploadFile,
@@ -258,24 +383,33 @@ def _importar_csv_work(
     Exemplo: 18/01/2026,12:15,SAVEGNAGO LOJA 45 RIO CLARO BRA,"-R$ 216,38",Cartão,"R$ 130,77"
     """
     tenant_id = current_user.get("tenant_id", 1)
+    cartao = _load_benefit_card(db, tenant_id, credit_card_id)
+    try:
+        df = _parse_benefit_csv(file.file.read())
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Erro ao importar CSV: {str(e)}")
+    return save_benefit_dataframe(db, current_user, cartao, df)
+
+
+def save_benefit_dataframe(
+    db: Session,
+    current_user: dict,
+    cartao: Cartao,
+    df,
+    commit: bool = True,
+    collect_details: bool = False,
+) -> dict:
+    """
+    Insert/update de extratos de benefícios a partir do DataFrame com as colunas do CSV.
+
+    commit=False apenas executa os comandos na transação (o chamador faz rollback);
+    collect_details=True retorna preview_creates / preview_updates linha a linha.
+    """
+    tenant_id = current_user.get("tenant_id", 1)
     user_id = current_user.get("user_id") or current_user.get("id")
-
-    # Verifica se o cartão existe e é do tipo benefícios
-    # Usa joinedload para carregar o relacionamento expense_sharing em uma única query
-    from sqlalchemy.orm import joinedload
-    cartao = db.query(Cartao).options(
-        joinedload(Cartao.expense_sharing)
-    ).filter(
-        Cartao.id == credit_card_id,
-        Cartao.tenant_id == tenant_id,
-        Cartao.active == True
-    ).first()
-
-    if not cartao:
-        raise HTTPException(status_code=404, detail="Cartão não encontrado")
-
-    if cartao.type != 'beneficios':
-        raise HTTPException(status_code=400, detail="Cartão deve ser do tipo 'beneficios'")
+    credit_card_id = cartao.id
 
     # Busca configurações de compartilhamento do cartão para propagar aos itens
     card_expense_sharing_id = cartao.expense_sharing_id
@@ -288,49 +422,16 @@ def _importar_csv_work(
             kind='expense', sharing=cartao.expense_sharing, card=cartao
         )
 
+    has_sharing_cols = 'Conta Parceira' in df.columns
+    has_contribution_col = 'Minha Contribuição (%)' in df.columns
+    unchanged_count = 0
+    preview_creates = []
+    preview_updates = []
+
     try:
         import time
         import pandas as pd
         start_time = time.time()
-
-        # Lê o conteúdo do arquivo
-        contents = file.file.read()
-        decoded = contents.decode('utf-8')
-
-        # ========================================
-        # ETAPA 1: VALIDAÇÃO DE CABEÇALHO
-        # ========================================
-        csv_reader = csv.DictReader(io.StringIO(decoded))
-        required_headers = ['Data', 'Hora', 'Movimentação', 'Valor', 'Meio de Pagamento', 'Saldo']
-        optional_headers = ['Conta Parceira', 'Minha Contribuição (%)']
-        actual_headers = [h.strip() for h in (csv_reader.fieldnames or [])]
-
-        print(f"🔍 DEBUG - Headers obrigatórios: {required_headers}")
-        print(f"🔍 DEBUG - Headers opcionais: {optional_headers}")
-        print(f"🔍 DEBUG - Headers recebidos: {actual_headers}")
-
-        # Verifica se todos os headers obrigatórios estão presentes (na ordem)
-        required_present = actual_headers[:len(required_headers)] == required_headers
-        if not required_present:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Cabeçalho CSV inválido. Esperado começar com: {required_headers}, Recebido: {actual_headers}"
-            )
-
-        # Detecta colunas opcionais de compartilhamento
-        has_sharing_cols = 'Conta Parceira' in actual_headers
-        has_contribution_col = 'Minha Contribuição (%)' in actual_headers
-        if has_sharing_cols:
-            print(f"   📊 Detectada coluna 'Conta Parceira'")
-        if has_contribution_col:
-            print(f"   📊 Detectada coluna 'Minha Contribuição (%)'")
-
-        # ========================================
-        # ETAPA 2: CONVERSÃO PARA DATAFRAME (VETORIZADO)
-        # ========================================
-        print(f"⚡ [OTIMIZADO] Carregando CSV em DataFrame...")
-        df = pd.read_csv(io.StringIO(decoded))
-        print(f"   📊 {len(df)} registros carregados")
 
         # ========================================
         # ETAPA 3: PREPARAÇÃO DE DADOS (VETORIZADO)
@@ -480,6 +581,10 @@ def _importar_csv_work(
                         else:
                             final_description = mapped_description
 
+                has_override, override_subtag_id = subtag_override(row, subtag_id_to_info)
+                if has_override:
+                    subtag_id = override_subtag_id
+
                 # Verifica se é duplicata (lookup em dict - O(1))
                 # Chave: (date, description) → pode ter múltiplos registros!
                 key_mapped = (date_obj, final_description)
@@ -591,7 +696,6 @@ def _importar_csv_work(
                     # Detecta conflitos de tag/subtag e valor
                     has_tag_conflict = (
                         existing_subtag_id is not None and
-                        subtag_id is not None and
                         existing_subtag_id != subtag_id
                     )
                     has_amount_conflict = (
@@ -646,6 +750,31 @@ def _importar_csv_work(
                             update_record['description'] = final_description
                         records_to_update.append(update_record)
                         registros_atualizados += 1
+                        changed = (
+                            existing_subtag_id != subtag_id
+                            or abs(float(amount_decimal) - existing_amount) > 0.005
+                            or final_description != description
+                        )
+                        if not changed:
+                            unchanged_count += 1
+                        elif collect_details:
+                            preview_updates.append({
+                                'line': linha_numero,
+                                'id': existing_id,
+                                'date': date_obj,
+                                'description': final_description,
+                                'amount': float(amount_decimal),
+                                'before': {
+                                    'subtag_id': existing_subtag_id,
+                                    'amount': existing_amount,
+                                    'description': description,
+                                },
+                                'after': {
+                                    'subtag_id': subtag_id,
+                                    'amount': float(amount_decimal),
+                                    'description': final_description,
+                                },
+                            })
                 # CASO 3: Nenhum match - registro novo
                 else:
                     # Novo registro - adiciona para INSERT
@@ -664,6 +793,23 @@ def _importar_csv_work(
                         'created_by': user_id  # Campo obrigatório do BaseEntity
                     })
                     registros_importados += 1
+                    if collect_details:
+                        preview_creates.append({
+                            'line': linha_numero,
+                            'row_index': idx,
+                            'date': date_obj,
+                            'description': final_description,
+                            'amount': float(amount_decimal),
+                            'payment_method': payment_method,
+                            'subtag_id': subtag_id,
+                            'expense_sharing_id': expense_sharing_id,
+                            'ownership_percentage': float(ownership_percentage),
+                            'mapping_hint': (
+                                mapping_hint(mapping_helper, (description,), tipo)
+                                if subtag_id is None and not has_override
+                                else None
+                            ),
+                        })
 
                     # Rastreia se não foi mapeado (subtag_id é NULL)
                     if subtag_id is None:
@@ -701,7 +847,8 @@ def _importar_csv_work(
         if records_to_update:
             db.bulk_update_mappings(BenefitCardStatement, records_to_update)
 
-        db.commit()
+        if commit:
+            db.commit()
 
         # Fecha conexão psycopg2 do MappingHelper
         psycopg2_conn.close()
@@ -718,7 +865,9 @@ def _importar_csv_work(
             "unmapped": unmapped_count,
             "unmapped_records": unmapped_records[:20],  # Limita a 20 registros
             "conflicts": conflicts,
-            "conflicts_count": len(conflicts)
+            "conflicts_count": len(conflicts),
+            "registros_sem_alteracao": unchanged_count,
+            **({"preview_creates": preview_creates, "preview_updates": preview_updates} if collect_details else {}),
         }
 
     except Exception as e:

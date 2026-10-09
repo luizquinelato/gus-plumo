@@ -323,6 +323,23 @@ body {
   tr.table-row-selected:hover > td.list-page-table-sticky-actions {
     background-color: var(--row-hover-bg);
   }
+  /* Saldo diário (extrato): coluna fixa precisa de cor opaca equivalente ao fundo translúcido da linha */
+  tr.table-row-daily-balance > td.list-page-table-sticky-actions,
+  tr.table-row-daily-balance:hover > td.list-page-table-sticky-actions {
+    background-color: color-mix(in srgb, #f0f9ff 90%, #ffffff);
+  }
+  tr.table-row-daily-balance-month-end > td.list-page-table-sticky-actions,
+  tr.table-row-daily-balance-month-end:hover > td.list-page-table-sticky-actions {
+    background-color: color-mix(in srgb, #fffbeb 95%, #ffffff);
+  }
+  .dark tr.table-row-daily-balance > td.list-page-table-sticky-actions,
+  .dark tr.table-row-daily-balance:hover > td.list-page-table-sticky-actions {
+    background-color: color-mix(in srgb, #082f49 35%, rgb(31 41 55));
+  }
+  .dark tr.table-row-daily-balance-month-end > td.list-page-table-sticky-actions,
+  .dark tr.table-row-daily-balance-month-end:hover > td.list-page-table-sticky-actions {
+    background-color: color-mix(in srgb, #451a03 35%, rgb(31 41 55));
+  }
   .table-row-hover-soft {
     transition: background-color 0.15s ease, box-shadow 0.15s ease;
   }

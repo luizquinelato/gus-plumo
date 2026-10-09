@@ -9,6 +9,7 @@ import { parseMappingRowTipo, sharingResolved, subtagResolved, tagIdFromName } f
 import { detectFileType, fileExtension, isSupportedImportFileName } from './fileTypeDetector'
 import { parseMappingExportWorkbook, type ParsedMappingImportRow } from './parseMappingExportWorkbook'
 import { parseExtratoExportWorkbook, type ParsedExtratoWorkbook, type ParsedImportRow } from './parseExtratoExportWorkbook'
+import { parseFaturaExportWorkbook, type ParsedFaturaRow, type ParsedFaturaWorkbook, FATURA_SHEET_NAMES } from './parseFaturaExportWorkbook'
 import {
   parseCartoesWorkbook,
   parseCompartilhamentosWorkbook,
@@ -24,6 +25,7 @@ export type WizardKind =
   | 'holerite'
   | 'informe'
   | 'extrato_export'
+  | 'fatura_export'
   | 'mapeamentos'
   | 'tags'
   | 'templates'
@@ -39,8 +41,9 @@ export const KIND_LABEL: Record<WizardKind, string> = {
   holerite: 'Holerite',
   informe: 'Informe',
   extrato_export: 'Extrato',
+  fatura_export: 'Faturas',
   mapeamentos: 'Mapeamentos',
-  tags: 'Tags',
+  tags: 'Tag/Subtag',
   templates: 'Templates',
   contas: 'Contas',
   compartilhamentos: 'Compartilhamentos',
@@ -56,6 +59,7 @@ export const KIND_ORDER: WizardKind[] = [
   'mapeamentos',
   'templates',
   'extrato_export',
+  'fatura_export',
   'extrato_bruto',
   'fatura_bruta',
   'beneficio_csv',
@@ -72,6 +76,7 @@ export function sortWizardFiles<T extends { kind: WizardKind }>(items: T[]): T[]
 
 const EXCEL_KINDS = new Set<WizardKind>([
   'extrato_export',
+  'fatura_export',
   'mapeamentos',
   'tags',
   'templates',
@@ -80,7 +85,7 @@ const EXCEL_KINDS = new Set<WizardKind>([
   'cartoes',
 ])
 
-const REF_KINDS = new Set<WizardKind>(['extrato_export', 'mapeamentos', 'templates', 'cartoes'])
+const REF_KINDS = new Set<WizardKind>(['extrato_export', 'fatura_export', 'mapeamentos', 'templates', 'cartoes'])
 
 export function isExcelKind(kind: WizardKind): boolean {
   return EXCEL_KINDS.has(kind)
@@ -103,6 +108,7 @@ export function isRawKind(kind: WizardKind): boolean {
 export type WizardParsed =
   | { kind: 'mapeamentos'; rows: ParsedMappingImportRow[] }
   | { kind: 'extrato_export'; data: ParsedExtratoWorkbook }
+  | { kind: 'fatura_export'; data: ParsedFaturaWorkbook }
   | { kind: 'tags'; data: Awaited<ReturnType<typeof parseTagsSubtagsWorkbook>> }
   | { kind: 'templates'; data: Awaited<ReturnType<typeof parseTemplatesWorkbook>> }
   | { kind: 'contas'; data: Awaited<ReturnType<typeof parseContasWorkbook>> }
@@ -123,6 +129,9 @@ export interface WizardFile {
   needsPassword?: boolean
   creditCardId?: number
   payrollPreview?: string
+  issuer?: string
+  issuerLabel?: string
+  cardLast4?: string
 }
 
 export type AdjustmentKind = 'tag' | 'subtag' | 'sharing'
@@ -157,24 +166,48 @@ function subtagKey(tag: string, subtag: string, type: string): string {
   return `${norm(tag)}|${norm(subtag)}|${typed}`
 }
 
-async function kindFromWorkbookSheets(file: File): Promise<WizardKind | null> {
+const EXTRATO_SHEET_NAMES = ['Extratos Bancários', 'Extratos Bancarios', 'Extratos', 'Benefícios', 'Beneficios']
+
+function sheetHeaders(sheet: XLSX.WorkSheet): string[] {
+  const rows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, defval: '' }) as string[][]
+  return (rows[0] || []).map((cell) => String(cell).trim().toLowerCase())
+}
+
+function headersHave(headers: string[], columns: string[]): boolean {
+  return columns.every((column) => headers.includes(column))
+}
+
+async function kindsFromWorkbookSheets(file: File): Promise<WizardKind[]> {
   const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' })
   const names = new Set(wb.SheetNames)
-  if (names.has('Mapeamentos')) return 'mapeamentos'
-  if (names.has('Tags') || names.has('Subtags')) return 'tags'
-  if (names.has('Templates') || names.has('Itens')) return 'templates'
-  if (names.has('Compartilhamentos')) return 'compartilhamentos'
-  if (names.has('Cartões') || names.has('Cartoes') || names.has('Grupos')) return 'cartoes'
-  if (
-    names.has('Extratos Bancários') ||
-    names.has('Extratos Bancarios') ||
-    names.has('Benefícios') ||
-    names.has('Beneficios')
-  ) {
-    return 'extrato_export'
+  if (names.has('Mapeamentos')) return ['mapeamentos']
+  if (names.has('Tags') || names.has('Subtags')) return ['tags']
+  if (names.has('Templates') || names.has('Itens')) return ['templates']
+  if (names.has('Compartilhamentos')) return ['compartilhamentos']
+  if (names.has('Cartões') || names.has('Cartoes') || names.has('Grupos')) return ['cartoes']
+  if (names.has('Contas')) return ['contas']
+
+  let extrato = EXTRATO_SHEET_NAMES.some((name) => names.has(name))
+  let fatura = FATURA_SHEET_NAMES.some((name) => names.has(name))
+  if (!extrato || !fatura) {
+    for (const name of wb.SheetNames) {
+      const headers = sheetHeaders(wb.Sheets[name])
+      if (
+        !extrato &&
+        (headersHave(headers, ['data e hora', 'descrição', 'valor']) ||
+          headersHave(headers, ['movimentação', 'meio de pagamento', 'valor']))
+      ) {
+        extrato = true
+      }
+      if (!fatura && headersHave(headers, ['descrição limpa', 'titular', 'valor'])) {
+        fatura = true
+      }
+    }
   }
-  if (names.has('Contas')) return 'contas'
-  return null
+  const kinds: WizardKind[] = []
+  if (extrato) kinds.push('extrato_export')
+  if (fatura) kinds.push('fatura_export')
+  return kinds
 }
 
 export async function parseForKind(kind: WizardKind, file: File): Promise<WizardParsed> {
@@ -183,6 +216,8 @@ export async function parseForKind(kind: WizardKind, file: File): Promise<Wizard
       return { kind, rows: await parseMappingExportWorkbook(file) }
     case 'extrato_export':
       return { kind, data: await parseExtratoExportWorkbook(file) }
+    case 'fatura_export':
+      return { kind, data: await parseFaturaExportWorkbook(file) }
     case 'tags':
       return { kind, data: await parseTagsSubtagsWorkbook(file) }
     case 'templates':
@@ -199,34 +234,37 @@ export async function parseForKind(kind: WizardKind, file: File): Promise<Wizard
 }
 
 export async function classifySpreadsheet(file: File): Promise<{ kind: WizardKind; error?: string }> {
+  const kinds = await classifySpreadsheetKinds(file)
+  return kinds[0] ?? { kind: 'blocked', error: 'Planilha não reconhecida.' }
+}
+
+/** Um Excel do relatório pode trazer extrato e faturas; cada um vira um passo da fila. */
+export async function classifySpreadsheetKinds(file: File): Promise<Array<{ kind: WizardKind; error?: string }>> {
   const ext = fileExtension(file.name)
   if (!isSupportedImportFileName(file.name)) {
-    return { kind: 'blocked', error: 'Use PDF, XLSX, XLS ou CSV.' }
+    return [{ kind: 'blocked', error: 'Use PDF, XLSX, XLS ou CSV.' }]
   }
   if (ext === '.csv') {
     try {
       const detected = await detectFileType(file)
-      if (detected.detectedType === 'beneficio_csv') return { kind: 'beneficio_csv' }
-      return { kind: 'blocked', error: detected.detectionError || 'CSV não reconhecido.' }
+      if (detected.detectedType === 'beneficio_csv') return [{ kind: 'beneficio_csv' }]
+      return [{ kind: 'blocked', error: detected.detectionError || 'CSV não reconhecido.' }]
     } catch (error) {
-      return { kind: 'blocked', error: error instanceof Error ? error.message : 'CSV inválido.' }
+      return [{ kind: 'blocked', error: error instanceof Error ? error.message : 'CSV inválido.' }]
     }
   }
   if (ext === '.xlsx' || ext === '.xls') {
     try {
-      const fromSheets = await kindFromWorkbookSheets(file)
-      if (fromSheets) return { kind: fromSheets }
+      const fromSheets = await kindsFromWorkbookSheets(file)
+      if (fromSheets.length) return fromSheets.map((kind) => ({ kind }))
       const detected = await detectFileType(file)
-      if (detected.detectedType === 'extrato_bruto') return { kind: 'extrato_bruto' }
-      return {
-        kind: 'blocked',
-        error: detected.detectionError || 'Planilha não reconhecida.',
-      }
+      if (detected.detectedType === 'extrato_bruto') return [{ kind: 'extrato_bruto' }]
+      return [{ kind: 'blocked', error: detected.detectionError || 'Planilha não reconhecida.' }]
     } catch (error) {
-      return { kind: 'blocked', error: error instanceof Error ? error.message : 'Não foi possível ler a planilha.' }
+      return [{ kind: 'blocked', error: error instanceof Error ? error.message : 'Não foi possível ler a planilha.' }]
     }
   }
-  return { kind: 'blocked', error: 'PDF aguardando identificação.' }
+  return [{ kind: 'blocked', error: 'PDF aguardando identificação.' }]
 }
 
 function bump(map: Map<string, AdjustmentOccurrence>, fileId: string, fileName: string) {
@@ -347,6 +385,36 @@ function noteSubtag(
     partnerName: '',
   })
   bump(bucket.files, file.id, file.file.name)
+}
+
+function amountTipo(amount: number): string {
+  return amount >= 0 ? 'receita' : 'despesa'
+}
+
+/** Linha sem tipo é a mesma classificação quando já existe uma linha com tipo. */
+function mergeBareSubtagBuckets(buckets: Map<string, PendingBucket>) {
+  const byPair = new Map<string, PendingBucket[]>()
+  for (const bucket of buckets.values()) {
+    if (bucket.kind !== 'subtag') continue
+    const pair = `${norm(bucket.tagName)}|${norm(bucket.subtagName)}`
+    const list = byPair.get(pair) ?? []
+    list.push(bucket)
+    byPair.set(pair, list)
+  }
+  for (const list of byPair.values()) {
+    const bare = list.filter((bucket) => !bucket.subtagType)
+    const typed = list.filter((bucket) => bucket.subtagType)
+    if (!bare.length || typed.length !== 1) continue
+    const target = typed[0]
+    for (const extra of bare) {
+      for (const [fileId, occurrence] of extra.files) {
+        const current = target.files.get(fileId)
+        if (current) current.count += occurrence.count
+        else target.files.set(fileId, { ...occurrence })
+      }
+      buckets.delete(`subtag:${subtagKey(extra.tagName, extra.subtagName, '')}`)
+    }
+  }
 }
 
 function noteClassOrTag(
@@ -476,6 +544,9 @@ export function filesCarryClassification(files: WizardFile[]): boolean {
       const rows = [...parsed.data.bank_rows, ...parsed.data.benefit_rows]
       if (rows.some((row) => (row.tag || '').trim() || (row.subtag || '').trim())) return true
     }
+    if (parsed.kind === 'fatura_export' && parsed.data.rows.some((row) => (row.tag || '').trim() || (row.subtag || '').trim())) {
+      return true
+    }
     if (parsed.kind === 'templates' && parsed.data.items.some((row) => row.tag_name.trim() || row.subtag_name.trim())) {
       return true
     }
@@ -501,10 +572,15 @@ export function collectAdjustments(
         }
         notePartner(buckets, file, row.partner_name, lookup, batch.partners)
       }
-    } else if (parsed.kind === 'extrato_export') {
-      const rows = [...parsed.data.bank_rows, ...parsed.data.benefit_rows]
+    } else if (parsed.kind === 'extrato_export' || parsed.kind === 'fatura_export') {
+      const rows =
+        parsed.kind === 'extrato_export'
+          ? [...parsed.data.bank_rows, ...parsed.data.benefit_rows]
+          : parsed.data.rows
       for (const row of rows) {
-        if (!options?.skipClass) noteClassOrTag(buckets, file, row.tag || '', row.subtag || '', '', lookup, batch)
+        if (!options?.skipClass) {
+          noteClassOrTag(buckets, file, row.tag || '', row.subtag || '', amountTipo(row.amount), lookup, batch)
+        }
         notePartner(buckets, file, row.partner_name || '', lookup, batch.partners)
       }
     } else if (parsed.kind === 'templates') {
@@ -520,6 +596,8 @@ export function collectAdjustments(
       }
     }
   }
+
+  mergeBareSubtagBuckets(buckets)
 
   return [...buckets.entries()]
     .map(([key, bucket]) => {
@@ -552,25 +630,42 @@ function rewriteMaps(rows: AdjustmentRow[], lookup: MappingImportLookup): Rewrit
   const tags = new Map<string, string>()
   const subtags = new Map<string, { tag: string; subtag: string; type: string }>()
   const partners = new Map<string, string>()
+  const typedPairs = new Map<string, number>()
+  for (const row of rows) {
+    if (row.kind !== 'subtag' || !row.subtagType) continue
+    const pair = `${norm(row.tagName)}|${norm(row.subtagName)}`
+    typedPairs.set(pair, (typedPairs.get(pair) ?? 0) + 1)
+  }
+  const rememberSubtag = (row: AdjustmentRow, replacement: { tag: string; subtag: string; type: string }) => {
+    subtags.set(subtagKey(row.tagName, row.subtagName, row.subtagType), replacement)
+    const pair = `${norm(row.tagName)}|${norm(row.subtagName)}`
+    if (!row.subtagType || typedPairs.get(pair) === 1) {
+      subtags.set(subtagKey(row.tagName, row.subtagName, ''), replacement)
+    }
+  }
   for (const row of rows) {
     if (row.kind === 'tag') {
-      if (row.replacementId == null) continue
+      if (row.replacementId == null) {
+        tags.set(norm(row.tagName), '')
+        continue
+      }
       const tag = lookup.tags.find((item) => item.id === row.replacementId)
       if (tag) tags.set(norm(row.tagName), tag.name)
     } else if (row.kind === 'subtag') {
-      if (row.replacementSubtagId == null) continue
+      if (row.replacementTagId == null || row.replacementSubtagId == null) {
+        rememberSubtag(row, { tag: '', subtag: '', type: '' })
+        continue
+      }
       const subtag = lookup.subtags.find((item) => item.id === row.replacementSubtagId)
-      if (!subtag) continue
-      if (row.replacementTagId != null && subtag.tag_id !== row.replacementTagId) continue
+      if (!subtag || subtag.tag_id !== row.replacementTagId) {
+        rememberSubtag(row, { tag: '', subtag: '', type: '' })
+        continue
+      }
       const tagName =
         lookup.tags.find((tag) => tag.id === subtag.tag_id)?.name ||
         subtag.tag_name?.trim() ||
         row.tagName
-      subtags.set(subtagKey(row.tagName, row.subtagName, row.subtagType), {
-        tag: tagName,
-        subtag: subtag.name,
-        type: subtag.type,
-      })
+      rememberSubtag(row, { tag: tagName, subtag: subtag.name, type: subtag.type })
     } else if (row.kind === 'sharing') {
       if (row.replacementId == null) continue
       const partner = lookup.partners.find((item) => item.id === row.replacementId)
@@ -597,7 +692,7 @@ function rewriteClass(
     nextSubtag = sub.subtag
     nextType = sub.type
   } else if (tag.trim() && maps.tags.has(norm(tag))) {
-    nextTag = maps.tags.get(norm(tag)) || tag
+    nextTag = maps.tags.get(norm(tag)) ?? tag
   }
   let nextPartner = partner
   if (partner.trim() && maps.partners.has(norm(partner))) {
@@ -607,7 +702,17 @@ function rewriteClass(
 }
 
 function rewriteExtratoRow(row: ParsedImportRow, maps: RewriteMaps): ParsedImportRow {
-  const next = rewriteClass(row.tag || '', row.subtag || '', '', row.partner_name || '', maps)
+  const next = rewriteClass(row.tag || '', row.subtag || '', amountTipo(row.amount), row.partner_name || '', maps)
+  return {
+    ...row,
+    tag: next.tag || undefined,
+    subtag: next.subtag || undefined,
+    partner_name: next.partner || undefined,
+  }
+}
+
+function rewriteFaturaRow(row: ParsedFaturaRow, maps: RewriteMaps): ParsedFaturaRow {
+  const next = rewriteClass(row.tag || '', row.subtag || '', amountTipo(row.amount), row.partner_name || '', maps)
   return {
     ...row,
     tag: next.tag || undefined,
@@ -620,7 +725,7 @@ export function stripClassification(parsed: WizardParsed): WizardParsed {
   if (parsed.kind === 'mapeamentos') {
     return {
       kind: 'mapeamentos',
-      rows: parsed.rows.map((row) => ({ ...row, tag_name: '', subtag_name: '', subtag_type: '' })),
+      rows: parsed.rows.map((row) => ({ ...row, tag_name: '', subtag_name: '' })),
     }
   }
   if (parsed.kind === 'extrato_export') {
@@ -631,6 +736,14 @@ export function stripClassification(parsed: WizardParsed): WizardParsed {
         ...parsed.data,
         bank_rows: parsed.data.bank_rows.map(clear),
         benefit_rows: parsed.data.benefit_rows.map(clear),
+      },
+    }
+  }
+  if (parsed.kind === 'fatura_export') {
+    return {
+      kind: 'fatura_export',
+      data: {
+        rows: parsed.data.rows.map((row) => ({ ...row, tag: undefined, subtag: undefined })),
       },
     }
   }
@@ -677,6 +790,12 @@ export function applyAdjustments(
       },
     }
   }
+  if (parsed.kind === 'fatura_export') {
+    return {
+      kind: 'fatura_export',
+      data: { rows: parsed.data.rows.map((row) => rewriteFaturaRow(row, maps)) },
+    }
+  }
   if (parsed.kind === 'templates') {
     return {
       kind: 'templates',
@@ -688,7 +807,7 @@ export function applyAdjustments(
             ...row,
             tag_name: next.tag,
             subtag_name: next.subtag,
-            subtag_type: next.type || row.subtag_type,
+            subtag_type: next.type,
             partner_name: next.partner || null,
           }
         }),
@@ -714,6 +833,7 @@ export function importBatchFromFiles(files: WizardFile[]) {
   const subtags: { tag_name: string; name: string; type: string }[] = []
   const accounts: string[] = []
   const sharings: string[] = []
+  const cards: { name: string; number: string; type: string }[] = []
   for (const file of files) {
     const parsed = file.parsed ?? file.parsedOriginal
     if (!parsed) continue
@@ -729,9 +849,15 @@ export function importBatchFromFiles(files: WizardFile[]) {
       for (const row of parsed.data.rows) {
         if (row.partner_name.trim()) sharings.push(row.partner_name.trim())
       }
+    } else if (parsed.kind === 'cartoes') {
+      for (const row of parsed.data.cards) {
+        if (row.name.trim() || row.number.trim()) {
+          cards.push({ name: row.name.trim(), number: row.number.trim(), type: row.type.trim() })
+        }
+      }
     }
   }
-  return { subtags, accounts, sharings }
+  return { subtags, accounts, sharings, cards }
 }
 
 export function previewBody(parsed: WizardParsed, files: WizardFile[] = []): Record<string, unknown> {
@@ -741,6 +867,8 @@ export function previewBody(parsed: WizardParsed, files: WizardFile[] = []): Rec
       return { rows: parsed.rows, batch }
     case 'extrato_export':
       return { bank_rows: parsed.data.bank_rows, benefit_rows: parsed.data.benefit_rows, batch }
+    case 'fatura_export':
+      return { rows: parsed.data.rows, batch }
     case 'tags':
       return parsed.data
     case 'templates':
@@ -760,6 +888,8 @@ export function previewUrl(kind: WizardKind): string | null {
       return '/api/expenses/mappings/visual-import/preview'
     case 'extrato_export':
       return '/api/expenses/visual-import/preview'
+    case 'fatura_export':
+      return '/api/expenses/invoices/visual-import/preview'
     case 'tags':
       return '/api/cadastro-import/tags-subtags/preview'
     case 'templates':
@@ -781,6 +911,8 @@ export function applyUrl(kind: WizardKind): string | null {
       return '/api/expenses/mappings/visual-import'
     case 'extrato_export':
       return '/api/expenses/visual-import'
+    case 'fatura_export':
+      return '/api/expenses/invoices/visual-import'
     case 'tags':
       return '/api/cadastro-import/tags-subtags'
     case 'templates':
@@ -819,6 +951,9 @@ export function applyBody(parsed: WizardParsed, options: ExcelApplyOptions): Rec
       ...confirm,
     }
   }
+  if (parsed.kind === 'fatura_export') {
+    return { rows: parsed.data.rows, ...confirm }
+  }
   return { ...previewBody(parsed), ...confirm }
 }
 
@@ -839,6 +974,12 @@ export function mergeParsed(kind: WizardKind, files: WizardFile[]): WizardParsed
         benefit_rows: parts.flatMap((part) => (part.kind === 'extrato_export' ? part.data.benefit_rows : [])),
         skipped_sheets: parts.flatMap((part) => (part.kind === 'extrato_export' ? part.data.skipped_sheets : [])),
       },
+    }
+  }
+  if (kind === 'fatura_export') {
+    return {
+      kind: 'fatura_export',
+      data: { rows: parts.flatMap((part) => (part.kind === 'fatura_export' ? part.data.rows : [])) },
     }
   }
   if (kind === 'tags') {
@@ -890,6 +1031,8 @@ export function countParsedRows(parsed: WizardParsed | undefined): number {
       return parsed.rows.length
     case 'extrato_export':
       return parsed.data.bank_rows.length + parsed.data.benefit_rows.length
+    case 'fatura_export':
+      return parsed.data.rows.length
     case 'tags':
       return parsed.data.tags.length + parsed.data.subtags.length
     case 'templates':

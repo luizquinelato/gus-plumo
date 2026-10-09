@@ -417,13 +417,7 @@ export default function EmprestimosPage() {
   }
 
   useEffect(() => {
-    void (async () => {
-      await loadPartners()
-      setAppliedFilterType('all')
-      setAppliedFilterPartner(null)
-      setFiltersApplied(true)
-      await loadLoans()
-    })()
+    void loadPartners()
   }, [])
 
   // Máscara BRL: dígitos brutos → "1.234,56"
@@ -799,11 +793,7 @@ export default function EmprestimosPage() {
     )
   }
 
-  const hasActiveFilters =
-    draftFilterType !== 'all' ||
-    draftFilterPartner != null ||
-    appliedFilterType !== 'all' ||
-    appliedFilterPartner != null
+  const hasActiveFilters = draftFilterType !== 'all' || draftFilterPartner != null
 
   const applyFilters = async () => {
     setSearchTerm('')
@@ -816,12 +806,6 @@ export default function EmprestimosPage() {
   const clearFilters = () => {
     setDraftFilterType('all')
     setDraftFilterPartner(null)
-    setAppliedFilterType('all')
-    setAppliedFilterPartner(null)
-    setSearchTerm('')
-    setListTab('open')
-    setFiltersApplied(true)
-    void loadLoans()
   }
 
   const filteredLoans = filtersApplied
@@ -1025,9 +1009,9 @@ export default function EmprestimosPage() {
           ) : !filtersApplied ? (
             <div className="rounded-xl border border-gray-200 bg-white p-12 text-center shadow-sm dark:border-gray-700 dark:bg-gray-800">
               <Filter size={48} className="mx-auto mb-4 text-gray-300 dark:text-gray-600" />
-              <h3 className="mb-2 text-lg font-semibold text-gray-900 dark:text-white">Não foi possível carregar</h3>
+              <h3 className="mb-2 text-lg font-semibold text-gray-900 dark:text-white">Selecione os filtros</h3>
               <p className="text-gray-600 dark:text-gray-400">
-                Recarregue a página ou clique em Aplicar nos filtros acima.
+                Escolha o tipo e o parceiro (ou deixe Todos) e clique em Aplicar para carregar os empréstimos.
               </p>
             </div>
           ) : loans.length === 0 ? (
@@ -1388,7 +1372,6 @@ export default function EmprestimosPage() {
         {showCreateModal && (
           <CadastroModalShell
             maxWidth="max-w-lg"
-            onBackdropClick={() => { setShowCreateModal(false); resetForm() }}
             zClass="z-50"
           >
             <CadastroModalHeader

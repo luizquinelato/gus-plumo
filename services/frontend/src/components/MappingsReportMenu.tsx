@@ -6,7 +6,7 @@ interface MappingsReportMenuProps extends Omit<CadastroExcelMenuProps, 'extraIte
   onClearClassifications: () => void
 }
 
-/** Menu de mapeamentos: import/export + limpar categorias (com fluxo de fechamento no import dedicado). */
+/** Menu de mapeamentos: exportar + limpar categorias. */
 export default function MappingsReportMenu({
   clearing = false,
   onClearClassifications,
@@ -15,7 +15,7 @@ export default function MappingsReportMenu({
   return (
     <CadastroExcelMenu
       {...rest}
-      menuTitle="Importar, exportar e limpar"
+      menuTitle="Exportar e limpar"
       extraItems={[
         {
           id: 'clear',
