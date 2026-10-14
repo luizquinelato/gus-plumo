@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict jtSdzp6nCbkRLd4QX60aui0Ugp4wcFe2q3J4iblUPyzr7f1derO4ZsIseezdrm3
+\restrict kMnh9n69egkAa0YirRn3R0lkctp0yK1gXaIDaHCd1FEkPDHhL0c2GPq6vOs5DH0
 
 -- Dumped from database version 18.4 (Debian 18.4-1.pgdg13+1)
 -- Dumped by pg_dump version 18.4 (Debian 18.4-1.pgdg13+1)
@@ -2644,7 +2644,6 @@ COPY public.bank_statements (id, category, transaction, description, date, amoun
 6187	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Rafaella Villela Dos Reis	2026-10-08 11:13:00	-63.00	101	100.00	\N	\N	1	1	1	2026-10-09 09:37:23.706609	2026-10-09 09:39:47.266931	\N	\N
 6193	Compras	Pix enviado por Natália Cristina Polezel Quinelato	Rais Moveis Planejados	2026-10-06 17:20:00	-10.00	101	100.00	\N	\N	1	1	1	2026-10-09 09:39:15.928876	2026-10-09 09:39:47.266949	\N	\N
 6194	\N	\N	Ajuste de fechamento 09/2026	2026-09-30 23:59:00	1328.44	100	100.00	\N	\N	1	1	1	2026-10-09 09:43:41.337186	2026-10-09 09:44:00.683847	\N	\N
-6192	Crédito e Financiamento	Pagamento de boleto	Ratam Airlines	2026-10-02 08:20:00	-4446.59	126	100.00	\N	\N	1	1	1	2026-10-09 09:39:15.928849	2026-10-09 09:48:15.338714	\N	\N
 6048	Transferência	Débito	Amanda Sandoval Marques	2026-08-31 09:40:00	-273.00	101	100.00	\N	\N	1	1	1	2026-10-08 17:55:56.479415	2026-10-08 19:01:01.326539	\N	\N
 6056	Transferência	Débito	Elaine Regina Contiero Conde	2026-09-06 07:55:00	-85.00	101	100.00	\N	\N	1	1	1	2026-10-08 17:55:56.482983	2026-10-08 19:01:01.32654	\N	\N
 6058	Alimentação	Débito	Jose Roberto Lunardi	2026-09-07 17:15:00	-8.00	101	100.00	\N	\N	1	1	1	2026-10-08 17:55:56.484217	2026-10-08 19:01:01.326541	\N	\N
@@ -2694,8 +2693,19 @@ COPY public.bank_statements (id, category, transaction, description, date, amoun
 6225	\N	Débito	Reembolso Integral	2026-04-01 00:00:00	-1200.00	268	0.00	1	\N	2	1	1	2026-10-09 15:03:26.602572	2026-10-09 15:03:26.602576	\N	\N
 6226	\N	Débito	Reembolso Integral	2026-03-01 00:00:00	-1200.00	268	0.00	1	\N	2	1	1	2026-10-09 15:03:26.603606	2026-10-09 15:03:26.60361	\N	\N
 6227	\N	Débito	Reembolso Integral	2026-02-16 00:00:00	-1285.00	268	0.00	1	\N	2	1	1	2026-10-09 15:03:26.604664	2026-10-09 15:03:26.604668	\N	\N
+6239	Crédito e Financiamento	Pagamento de boleto	Rodobens Adm De Consorcio	2026-10-02 08:20:00	-4446.59	128	100.00	\N	\N	1	1	1	2026-10-14 08:52:29.836547	2026-10-14 08:52:29.836553	\N	\N
+6240	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Ana Carolina Gomes Falcao Otero	2026-10-09 18:31:00	-55.00	\N	100.00	\N	\N	1	1	1	2026-10-14 08:52:29.838207	2026-10-14 08:52:29.838213	\N	\N
+6241	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Maria Izabel Vazzoler De Torres	2026-10-09 19:47:00	-155.00	\N	100.00	\N	\N	1	1	1	2026-10-14 08:52:29.838215	2026-10-14 08:52:29.838217	\N	\N
+6242	Compras	Pix enviado	Alfaletrando	2026-10-10 08:58:00	-7.90	\N	100.00	\N	\N	1	1	1	2026-10-14 08:52:29.838218	2026-10-14 08:52:29.838219	\N	\N
 6178	\N	\N	Ajuste de fechamento 12/2025	2025-12-31 23:59:00	2031.64	100	100.00	\N	\N	1	1	1	2026-10-09 08:48:39.388358	2026-10-09 08:48:39.388366	\N	\N
 3174	Transferência	Pix enviado	Carla Weygand Sabino	2021-10-02 18:41:00	-150.00	133	100.00	\N	\N	1	1	1	2026-10-08 17:55:55.422702	2026-10-08 17:55:55.422706	\N	\N
+6243	Compras	Compra no débito autorizada	A Brasileira	2026-10-10 09:31:00	-6.00	\N	100.00	\N	\N	1	1	1	2026-10-14 08:52:29.838221	2026-10-14 08:52:29.838222	\N	\N
+6244	Compras	Pix enviado por Natália Cristina Polezel Quinelato	Casagrande Nalin Comercio E Servicos Ltda	2026-10-10 16:22:00	-440.00	\N	100.00	\N	\N	1	1	1	2026-10-14 08:52:29.838223	2026-10-14 08:52:29.838224	\N	\N
+6245	Lazer e Entretenimento	Pagamento de boleto	Andrade E Andrade Rosa Ss Ltda	2026-10-13 07:53:00	-231.00	\N	100.00	\N	\N	1	1	1	2026-10-14 08:52:29.838226	2026-10-14 08:52:29.838228	\N	\N
+6246	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Elisabete Beatriz Abila	2026-10-13 09:58:00	-175.00	14	100.00	\N	\N	1	1	1	2026-10-14 08:52:29.839523	2026-10-14 08:52:29.839526	\N	\N
+6247	Seguro	Pix enviado por Natália Cristina Polezel Quinelato	39 478 424 Elisandra Carina Felipe	2026-10-13 14:34:00	-128.00	\N	100.00	\N	\N	1	1	1	2026-10-14 08:52:29.840321	2026-10-14 08:52:29.840324	\N	\N
+6248	Outra Categoria	Pix enviado por Natália Cristina Polezel Quinelato	Milon Rio Claro	2026-10-13 21:04:00	-103.92	167	100.00	\N	\N	1	1	1	2026-10-14 08:52:29.840972	2026-10-14 08:52:29.840975	\N	\N
+6249	Saúde	Pix enviado	Clínica Veterinaria Mariana Sanmartin Sanvet	2026-10-14 08:26:00	-350.00	139	100.00	\N	\N	1	1	1	2026-10-14 08:52:29.840976	2026-10-14 08:52:29.840977	\N	\N
 3187	Contas	Pagamento de boleto	Itaucard	2021-10-07 14:15:00	-446.12	40	100.00	\N	\N	1	1	1	2026-10-08 17:55:55.432918	2026-10-08 17:55:55.432921	\N	\N
 3191	Contas	Pagamento de fatura do cartão	Fatura do cartão BTG Pactual	2021-10-07 14:26:00	-14624.87	40	100.00	\N	\N	1	1	1	2026-10-08 17:55:55.432931	2026-10-08 17:55:55.432932	\N	\N
 3195	Saúde	Pix enviado	Espaco Do Bem E Administracao	2021-10-14 05:36:00	-132.75	115	100.00	\N	\N	1	1	1	2026-10-08 17:55:55.435518	2026-10-08 17:55:55.435521	\N	\N
@@ -17463,7 +17473,7 @@ COPY public.transaction_mappings (id, mapping_type, original_description, patter
 --
 
 COPY public.users (id, email, first_name, last_name, role, is_admin, auth_provider, password_hash, theme_mode, high_contrast_mode, reduce_motion, colorblind_safe_palette, accessibility_level, profile_image_filename, last_login_at, tenant_id, created_at, last_updated_at, active, sidebar_collapsed, hide_balance_values) FROM stdin;
-1	gustavoquinelato@gmail.com	Gustavo	Quinelato	admin	t	local	4f1c21e3d4b262d25cd6bd2c2e478d66b9621cace99cf6c57d8359e949307e00	light	f	f	f	regular	\N	2026-10-08 20:48:54.167977	1	2026-10-08 17:48:44.672272	2026-10-08 17:48:44.672272	t	f	f
+1	gustavoquinelato@gmail.com	Gustavo	Quinelato	admin	t	local	4f1c21e3d4b262d25cd6bd2c2e478d66b9621cace99cf6c57d8359e949307e00	light	f	f	f	regular	\N	2026-10-14 11:51:52.2504	1	2026-10-08 17:48:44.672272	2026-10-08 17:48:44.672272	t	f	f
 \.
 
 
@@ -17529,6 +17539,10 @@ COPY public.users_sessions (id, token_hash, expires_at, ip_address, user_agent, 
 7	50ff8ffa916d7bcd8de5ccc75fb1a2328c2615b203225d987143e7d2b7a081eb	2026-10-10 15:08:29.126077	\N	\N	1	1	\N	2026-10-09 15:08:29.097714	2026-10-09 15:08:29.097714	t
 8	5e24761ea8fca682373efffada03750df3bdf8c99be704482c6f7f344acab657	2026-10-10 15:09:32.062098	\N	\N	1	1	\N	2026-10-09 15:09:32.049383	2026-10-09 15:09:32.049383	t
 9	6e2e66eab61b4fd0a506846597390dfe3d623de1c81f8d54fdaee3eb9296d6b1	2026-10-10 15:13:59.062692	\N	\N	1	1	\N	2026-10-09 15:13:59.047435	2026-10-09 15:13:59.047435	t
+10	35e604dc4100a383802d1e61fe3f30bf8d4f06a6fd72a5c1398b6aba7ca5d144	2026-10-13 20:12:43.578766	\N	\N	1	1	\N	2026-10-12 20:12:43.581164	2026-10-12 20:12:43.581164	t
+11	822ca68cd40cd3fac35391e4af3d8a36deb60c5ea9fa1f1f803cab3fc3670bdd	2026-10-13 20:12:46.752956	\N	\N	1	1	\N	2026-10-12 20:12:46.731952	2026-10-12 20:12:46.731952	t
+12	702efb82b805fd2801a1ad72cf694810663f2ccbec2c383d0f7f8a10de579506	2026-10-15 08:51:52.286753	\N	\N	1	1	\N	2026-10-14 08:51:52.287324	2026-10-14 08:51:52.287324	t
+13	f75d933087dbb3104a044a1557e289ba2cff1f6a91381d613c41a25386393b6e	2026-10-15 08:51:54.677011	\N	\N	1	1	\N	2026-10-14 08:51:54.659746	2026-10-14 08:51:54.659746	t
 \.
 
 
@@ -17564,7 +17578,7 @@ SELECT pg_catalog.setval('public.balance_closures_id_seq', 36, true);
 -- Name: bank_statements_id_seq; Type: SEQUENCE SET; Schema: public; Owner: plumo
 --
 
-SELECT pg_catalog.setval('public.bank_statements_id_seq', 6227, true);
+SELECT pg_catalog.setval('public.bank_statements_id_seq', 6249, true);
 
 
 --
@@ -17760,7 +17774,7 @@ SELECT pg_catalog.setval('public.users_permissions_id_seq', 40, true);
 -- Name: users_sessions_id_seq; Type: SEQUENCE SET; Schema: public; Owner: plumo
 --
 
-SELECT pg_catalog.setval('public.users_sessions_id_seq', 9, true);
+SELECT pg_catalog.setval('public.users_sessions_id_seq', 13, true);
 
 
 --
@@ -20067,5 +20081,5 @@ GRANT ALL ON SCHEMA public TO PUBLIC;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict jtSdzp6nCbkRLd4QX60aui0Ugp4wcFe2q3J4iblUPyzr7f1derO4ZsIseezdrm3
+\unrestrict kMnh9n69egkAa0YirRn3R0lkctp0yK1gXaIDaHCd1FEkPDHhL0c2GPq6vOs5DH0
 
