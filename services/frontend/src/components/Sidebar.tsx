@@ -1,4 +1,4 @@
-import { Home, Palette, TrendingUp, Sun, Moon, CreditCard, LogOut, Tags, ClipboardCheck, FolderTree, Settings, ChevronRight, ChevronLeft, Building2, Users, User, FileText, RefreshCw, Copy, Scale, Layers, Wallet, Feather, Camera, FolderOpen, Link2, Landmark, Activity, FileUp } from 'lucide-react'
+import { Home, Palette, TrendingUp, Sun, Moon, CreditCard, LogOut, Tags, ClipboardCheck, FolderTree, Settings, ChevronRight, ChevronLeft, Building2, Users, User, FileText, RefreshCw, Copy, Scale, Layers, Wallet, Feather, Camera, FolderOpen, Link2, Landmark, Activity, FileUp, CalendarDays } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -52,13 +52,15 @@ const relatoriosSubmenu = [
   { icon: FileText, label: 'Extrato', path: '/relatorios/extrato' },
   { icon: CreditCard, label: 'Faturas', path: '/relatorios/faturas' },
   { icon: Layers, label: 'Grupo', path: '/relatorios/grupo' },
+  { icon: CalendarDays, label: 'Projeção Mensal', path: '/relatorios/projecao-mensal' },
+  { icon: Wallet, label: 'Saldo Parcelado', path: '/relatorios/saldo-parcelado' },
+  { icon: Activity, label: 'Saúde Financeira', path: '/relatorios/saude' },
 ]
 
 const fechamentosSubmenu = [
   { icon: Scale, label: 'Compartilhado', path: '/fechamentos/compartilhado' },
   { icon: Landmark, label: 'Conta', path: '/fechamentos/conta' },
   { icon: Link2, label: 'Reconciliação de Faturas', path: '/fechamentos/faturas' },
-  { icon: Activity, label: 'Saúde financeira', path: '/fechamentos/saude' },
 ]
 
 const topLevelMenuItems = [

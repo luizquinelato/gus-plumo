@@ -3,17 +3,29 @@
  * Gera arquivo com 3 abas no formato compatível com importação
  */
 
-import * as XLSX from 'xlsx'
 import { filterRegularLoanPayments, getSettlementCreditEntries } from './closureCreditUtils'
+import { expenseDateToExcelSerial, percentToExcel, roundExportMoney } from './excelCellFormat'
+import { EXTRATO_DAILY_BALANCE_SOURCE as DAILY_BALANCE_SOURCE, localDateKeyFromIso } from './extratoDailyBalance'
 import {
-  EXCEL_FMT_DATE,
-  EXCEL_FMT_DATETIME,
-  EXCEL_FMT_MONEY,
-  EXCEL_FMT_PERCENT,
-  expenseDateToExcelSerial,
-  jsonToFormattedSheet,
-  roundExportMoney,
-} from './excelCellFormat'
+  downloadExcel,
+  downloadExcelSafe,
+  excelDateStamp,
+  type ExcelCell,
+  type ExcelColumnKind,
+  type ExcelSheetSpec,
+} from './excelExportClient'
+
+// Planilhas reimportáveis pelo wizard /importar: números sem símbolo de moeda.
+const SHARING_KINDS: Record<string, ExcelColumnKind> = { 'Parte na sua conta (%)': 'percent' }
+const BANK_KINDS: Record<string, ExcelColumnKind> = {
+  Ano: 'int', Mês: 'month', 'Data e hora': 'datetime', Valor: 'money', ...SHARING_KINDS,
+}
+const CARD_KINDS: Record<string, ExcelColumnKind> = {
+  Ano: 'int', Mês: 'month', Data: 'date', Valor: 'money', ...SHARING_KINDS,
+}
+const BENEFIT_KINDS: Record<string, ExcelColumnKind> = {
+  Data: 'datetime', Valor: 'money', ...SHARING_KINDS,
+}
 
 export interface ExpenseExportData {
   id: number
@@ -45,31 +57,8 @@ export interface ExpenseExportData {
   account_number: string | null
   year_month: string | null  // Ano/mês da fatura (YYYY-MM) - usado apenas para faturas de cartão
   issuer?: 'btg' | 'mercadopago' | null
-}
-
-/**
- * Formata data no formato brasileiro
- */
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr)
-  const day = String(date.getDate()).padStart(2, '0')
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const year = date.getFullYear()
-  return `${day}/${month}/${year}`
-}
-
-/**
- * Formata data e hora com segundos
- */
-function formatDateTime(dateStr: string): string {
-  const date = new Date(dateStr)
-  const day = String(date.getDate()).padStart(2, '0')
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const year = date.getFullYear()
-  const hours = String(date.getHours()).padStart(2, '0')
-  const minutes = String(date.getMinutes()).padStart(2, '0')
-  const seconds = String(date.getSeconds()).padStart(2, '0')
-  return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`
+  /** Saldo diário: última linha do mês civil. */
+  daily_month_end?: boolean
 }
 
 /**
@@ -87,7 +76,12 @@ function extractYearMonth(dateStr: string): { year: string; month: string } {
  * Opções de exportação
  */
 export interface ExportOptions {
+  /** Colunas de compartilhamento; padrão: true. */
   includeSharing?: boolean
+  /** 'separate' (padrão): uma aba por fonte; 'unified': uma única aba. */
+  mode?: 'unified' | 'separate'
+  /** Linhas de saldo diário, adicionadas a cada aba. */
+  dailyBalanceRows?: ExpenseExportData[]
 }
 
 /**
@@ -103,7 +97,7 @@ function addSharingColumns(record: any, exp: ExpenseExportData, includeSharing: 
   return {
     ...record,
     'Conta Parceira': hasSharing ? exp.shared_partner_name : '',
-    'Parte na sua conta (%)': hasSharing && exp.ownership_percentage != null ? Number(exp.ownership_percentage) : ''
+    'Parte na sua conta (%)': hasSharing && exp.ownership_percentage != null ? percentToExcel(Number(exp.ownership_percentage)) : ''
   }
 }
 
@@ -161,10 +155,8 @@ function convertCardInvoices(expenses: ExpenseExportData[], options: ExportOptio
       descricaoCompleta = `${exp.description} (${exp.current_installment}/${exp.total_installments})`
     }
 
-    // IMPORTANTE: Inverte o sinal do valor para manter compatibilidade com arquivo original
-    // Arquivo original de fatura: positivo = despesa, negativo = receita
-    // Banco de dados: negativo = despesa, positivo = receita
-    const valorExportado = -exp.amount
+    // Mesmo sinal do banco: negativo = despesa, positivo = estorno/receita
+    const valorExportado = exp.amount
 
     const record = {
       'Ano': Number(year),
@@ -209,66 +201,99 @@ function convertBenefits(expenses: ExpenseExportData[], options: ExportOptions =
   })
 }
 
+const UNIFIED_KINDS: Record<string, ExcelColumnKind> = {
+  'Data e hora': 'datetime', Valor: 'money', ...SHARING_KINDS,
+}
+
+const UNIFIED_SOURCE_LABEL: Record<string, string> = {
+  bank: 'Extrato', card: 'Fatura', benefit: 'Benefício',
+}
+
 /**
- * Exporta dados filtrados para Excel com 3 abas
+ * Mescla as linhas da aba com o saldo diário, ordenadas por data.
+ * O saldo só entra nos dias em que a própria aba tem lançamento, e o destaque de "fim do mês"
+ * vai para o último desses dias em cada mês (não necessariamente o último dia do calendário).
  */
-export function exportToExcel(expenses: ExpenseExportData[], filename?: string, options: ExportOptions = {}): void {
-  // Separa por fonte
+export function withDailyBalance(rows: ExpenseExportData[], daily: ExpenseExportData[]): ExpenseExportData[] {
+  if (daily.length === 0) return rows
+  const dayOf = (r: ExpenseExportData) => r.year_month && r.source === DAILY_BALANCE_SOURCE ? r.year_month : localDateKeyFromIso(r.date)
+  const daysWithEntries = new Set(rows.map(r => localDateKeyFromIso(r.date)))
+  const kept = daily.filter(d => daysWithEntries.has(dayOf(d)))
+
+  const lastDayByMonth = new Map<string, string>()
+  for (const d of kept) {
+    const day = dayOf(d)
+    if (!day) continue
+    const month = day.slice(0, 7)
+    if (!lastDayByMonth.has(month) || day > lastDayByMonth.get(month)!) lastDayByMonth.set(month, day)
+  }
+  const marked = kept.map(d => {
+    const day = dayOf(d)
+    const isEnd = !!day && lastDayByMonth.get(day.slice(0, 7)) === day
+    const base = d.description.replace(' · Final do mês', '')
+    const label = base.split(' · ').pop()
+    const description = base.startsWith('Saldo cumulativo')
+      ? `Saldo cumulativo${isEnd ? ' · Final do mês' : ''} · ${label}`
+      : d.description
+    return { ...d, daily_month_end: isEnd, description }
+  })
+  return [...rows, ...marked].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+}
+
+/** Estilo de linha enviado ao motor: saldo diário comum e saldo de fim de mês. */
+export function rowStyles(rows: ExpenseExportData[]): string[] {
+  return rows.map(r => (r.source !== DAILY_BALANCE_SOURCE ? '' : r.daily_month_end ? 'daily_month_end' : 'daily'))
+}
+
+/** Uma única aba com extrato e benefícios (e faturas, se houver), já ordenados por data. */
+function convertUnified(expenses: ExpenseExportData[], options: ExportOptions): any[] {
+  return expenses
+    .map(exp => addSharingColumns({
+      'Data e hora': expenseDateToExcelSerial(exp.date),
+      'Fonte': UNIFIED_SOURCE_LABEL[exp.source] ?? 'Saldo diário',
+      'Descrição': exp.description,
+      'Valor': roundExportMoney(exp.amount),
+      'Tag': exp.tag_name || '',
+      'Subtag': exp.subtag_name || '',
+    }, exp, options.includeSharing ?? true))
+}
+
+/**
+ * Exporta dados filtrados para Excel.
+ * - 'separate' (padrão): uma aba por fonte (extrato, benefícios e faturas, se houver).
+ * - 'unified': uma única aba com tudo.
+ * Linhas de saldo diário (options.dailyBalanceRows) entram em cada aba.
+ */
+export async function exportToExcel(expenses: ExpenseExportData[], filename?: string, options: ExportOptions = {}): Promise<void> {
+  const opts: ExportOptions = { ...options, includeSharing: options.includeSharing ?? true }
+  const daily = opts.dailyBalanceRows ?? []
+
   const bankStatements = expenses.filter(e => e.source === 'bank')
   const cardInvoices = expenses.filter(e => e.source === 'card')
   const benefits = expenses.filter(e => e.source === 'benefit')
 
-  // Cria workbook
-  const wb = XLSX.utils.book_new()
-
-  const sharingFormats = options.includeSharing
-    ? { 'Parte na sua conta (%)': EXCEL_FMT_PERCENT }
-    : {}
-
-  // Aba 1: Extratos Bancários
-  if (bankStatements.length > 0) {
-    const bankData = convertBankStatements(bankStatements, options)
-    const wsBank = jsonToFormattedSheet(bankData, {
-      Ano: '0',
-      Mês: '00',
-      'Data e hora': EXCEL_FMT_DATETIME,
-      Valor: EXCEL_FMT_MONEY,
-      ...sharingFormats,
-    })
-    XLSX.utils.book_append_sheet(wb, wsBank, 'Extratos Bancários')
+  const sheets: ExcelSheetSpec[] = []
+  if (opts.mode === 'unified') {
+    if (expenses.length > 0) {
+      const merged = withDailyBalance([...expenses].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()), daily)
+      sheets.push({ name: 'Extrato e Benefícios', rows: convertUnified(merged, opts), kinds: UNIFIED_KINDS, row_styles: rowStyles(merged) })
+    }
+  } else {
+    if (bankStatements.length > 0) {
+      const merged = withDailyBalance(bankStatements, daily)
+      sheets.push({ name: 'Extratos Bancários', rows: convertBankStatements(merged, opts), kinds: BANK_KINDS, row_styles: rowStyles(merged) })
+    }
+    if (cardInvoices.length > 0) {
+      sheets.push({ name: 'Faturas de Cartão', rows: convertCardInvoices(cardInvoices, opts), kinds: CARD_KINDS })
+    }
+    if (benefits.length > 0) {
+      const merged = withDailyBalance(benefits, daily)
+      sheets.push({ name: 'Benefícios', rows: convertBenefits(merged, opts), kinds: BENEFIT_KINDS, row_styles: rowStyles(merged) })
+    }
   }
+  if (sheets.length === 0) return
 
-  // Aba 2: Faturas de Cartão
-  if (cardInvoices.length > 0) {
-    const cardData = convertCardInvoices(cardInvoices, options)
-    const wsCard = jsonToFormattedSheet(cardData, {
-      Ano: '0',
-      Mês: '00',
-      Data: EXCEL_FMT_DATE,
-      Valor: EXCEL_FMT_MONEY,
-      ...sharingFormats,
-    })
-    XLSX.utils.book_append_sheet(wb, wsCard, 'Faturas de Cartão')
-  }
-
-  // Aba 3: Benefícios
-  if (benefits.length > 0) {
-    const benefitData = convertBenefits(benefits, options)
-    const wsBenefit = jsonToFormattedSheet(benefitData, {
-      Data: EXCEL_FMT_DATETIME,
-      Valor: EXCEL_FMT_MONEY,
-      ...sharingFormats,
-    })
-    XLSX.utils.book_append_sheet(wb, wsBenefit, 'Benefícios')
-  }
-
-  // Gera nome do arquivo
-  const today = new Date()
-  const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`
-  const finalFilename = filename || `extrato_exportado_${dateStr}.xlsx`
-
-  // Faz download
-  XLSX.writeFile(wb, finalFilename)
+  await downloadExcel(filename || `extrato_exportado_${excelDateStamp()}.xlsx`, sheets)
 }
 
 export interface FaturaReportExportItem {
@@ -288,8 +313,33 @@ export interface FaturaReportExportItem {
 }
 
 /** Excel do relatório de faturas, no formato que o wizard /importar reimporta. */
-export function exportFaturasReport(items: FaturaReportExportItem[]): void {
-  const expenses: ExpenseExportData[] = items.map((item, index) => ({
+export async function exportFaturasReport(
+  items: FaturaReportExportItem[],
+  options: { mode?: 'unified' | 'separate' } = {},
+): Promise<void> {
+  const cardKey = (i: FaturaReportExportItem) => `${i.card_name} ${i.card_number}`
+  const byCardThenDate = (a: FaturaReportExportItem, b: FaturaReportExportItem) =>
+    a.year_month.localeCompare(b.year_month) ||
+    cardKey(a).localeCompare(cardKey(b)) ||
+    new Date(a.date).getTime() - new Date(b.date).getTime()
+  const toSheet = (name: string, list: FaturaReportExportItem[]): ExcelSheetSpec => ({
+    name,
+    rows: convertCardInvoices(toCardExpenses([...list].sort(byCardThenDate)), { includeSharing: true }),
+    kinds: CARD_KINDS,
+  })
+  if (options.mode !== 'unified') {
+    const months = [...new Set(items.map((i) => i.year_month))].sort().reverse()
+    await downloadExcel(
+      `faturas_${excelDateStamp()}.xlsx`,
+      months.map((ym) => toSheet(ym, items.filter((i) => i.year_month === ym))),
+    )
+    return
+  }
+  await downloadExcel(`faturas_${excelDateStamp()}.xlsx`, [toSheet('Faturas de Cartão', items)])
+}
+
+function toCardExpenses(items: FaturaReportExportItem[]): ExpenseExportData[] {
+  return items.map((item, index) => ({
     id: index,
     date: item.date,
     description: item.description,
@@ -319,19 +369,6 @@ export function exportFaturasReport(items: FaturaReportExportItem[]): void {
     year_month: item.year_month,
     issuer: item.issuer ?? null,
   }))
-  const data = convertCardInvoices(expenses, { includeSharing: true })
-  const wb = XLSX.utils.book_new()
-  const ws = jsonToFormattedSheet(data, {
-    Ano: '0',
-    Mês: '00',
-    Data: EXCEL_FMT_DATE,
-    Valor: EXCEL_FMT_MONEY,
-    'Parte na sua conta (%)': EXCEL_FMT_PERCENT,
-  })
-  XLSX.utils.book_append_sheet(wb, ws, 'Faturas de Cartão')
-  const today = new Date()
-  const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`
-  XLSX.writeFile(wb, `faturas_${dateStr}.xlsx`)
 }
 
 // ─── Exportação de Fechamento de Balanço ─────────────────────────────────────
@@ -398,7 +435,7 @@ interface BalanceClosureForExcel {
 /**
  * Exporta fechamento de balanço para Excel com 3 abas: Extrato, Cartão e Benefício
  */
-export function exportBalanceClosureToExcel(closure: BalanceClosureForExcel, absoluteValues: boolean = false, isCounterpart: boolean = false): void {
+export async function exportBalanceClosureToExcel(closure: BalanceClosureForExcel, absoluteValues: boolean = false, isCounterpart: boolean = false): Promise<void> {
   const mainCard = closure.closure_data?.main_account_card
   const partnerCard = closure.closure_data?.partner_account_card
   if (!mainCard || !partnerCard) return
@@ -492,21 +529,27 @@ export function exportBalanceClosureToExcel(closure: BalanceClosureForExcel, abs
       return row
     })
 
-  const wb = XLSX.utils.book_new()
+  const sheets: ExcelSheetSpec[] = []
+  const itemKinds: Record<string, ExcelColumnKind> = {
+    Valor: 'money',
+    [mainName]: 'money',
+    [partnerName]: 'money',
+    'Nº Cartão': 'text',
+  }
 
   // Aba 1: Extrato (apenas se houver itens)
   if (bankItems.length > 0) {
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(toRows(bankItems)), 'Extrato')
+    sheets.push({ name: 'Extrato', rows: toRows(bankItems), kinds: itemKinds })
   }
 
   // Aba 2: Cartão (apenas se houver itens)
   if (cardItems.length > 0) {
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(toRows(cardItems, true)), 'Cartão')
+    sheets.push({ name: 'Cartão', rows: toRows(cardItems, true), kinds: itemKinds })
   }
 
   // Aba 3: Benefício (apenas se houver itens)
   if (benefitItems.length > 0) {
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(toRows(benefitItems, true)), 'Benefício')
+    sheets.push({ name: 'Benefício', rows: toRows(benefitItems, true), kinds: itemKinds })
   }
 
   // Aba 4: Empréstimos (liquidações do período; sem crédito da quitação)
@@ -534,8 +577,11 @@ export function exportBalanceClosureToExcel(closure: BalanceClosureForExcel, abs
         'Status': lp.is_settled ? 'Quitado' : 'Parcial',
       }
     })
-    const wsLoans = XLSX.utils.json_to_sheet(loanRows)
-    XLSX.utils.book_append_sheet(wb, wsLoans, 'Empréstimos')
+    sheets.push({
+      name: 'Empréstimos',
+      rows: loanRows,
+      kinds: { Principal: 'money', 'Saldo Antes': 'money', 'Valor Quitado': 'money', 'Saldo Após': 'money' },
+    })
   }
 
   // Aba 5: Pagamentos Parciais (apenas se houver pagamentos)
@@ -561,13 +607,12 @@ export function exportBalanceClosureToExcel(closure: BalanceClosureForExcel, abs
     // Saldo restante: mesmo sinal que o fechamento (reduz conforme pagamentos)
     const remainingDisplay = absoluteValues ? Math.max(0, remainingAbs) : sign * Math.max(0, remainingAbs)
 
-    // Linhas de resumo no topo da aba
-    const summaryRows: Record<string, any>[] = [
-      { 'Campo': 'Saldo do fechamento', 'Valor': parseFloat(netBalanceDisplay.toFixed(2)) },
-      { 'Campo': 'Total pago', 'Valor': parseFloat(totalPaid.toFixed(2)) },
-      { 'Campo': 'Saldo restante', 'Valor': parseFloat(remainingDisplay.toFixed(2)) },
-      { 'Campo': 'Status', 'Valor': isSettled ? 'Quitado' : 'Em aberto' },
-      { 'Campo': '', 'Valor': '' }, // linha em branco separadora
+    // Linhas de resumo no topo da aba (acima do cabeçalho da tabela de pagamentos)
+    const summaryRows: ExcelCell[][] = [
+      ['Saldo do fechamento', Number(netBalanceDisplay.toFixed(2))],
+      ['Total pago', Number(totalPaid.toFixed(2))],
+      ['Saldo restante', Number(remainingDisplay.toFixed(2))],
+      ['Status', isSettled ? 'Quitado' : 'Em aberto'],
     ]
 
     // Linhas de pagamentos com saldo acumulado (do mais antigo para o mais novo)
@@ -593,10 +638,13 @@ export function exportBalanceClosureToExcel(closure: BalanceClosureForExcel, abs
       }
     })
 
-    // Combinar resumo + pagamentos em uma única sheet
-    const wsSummary = XLSX.utils.json_to_sheet(summaryRows)
-    XLSX.utils.sheet_add_json(wsSummary, paymentRows, { origin: summaryRows.length + 1, skipHeader: false })
-    XLSX.utils.book_append_sheet(wb, wsSummary, 'Pagamentos')
+    // Resumo + pagamentos em uma única sheet
+    sheets.push({
+      name: 'Pagamentos',
+      rows: paymentRows,
+      preamble: summaryRows,
+      kinds: { 'Valor Pago': 'money', Acumulado: 'money', 'Saldo Restante': 'money' },
+    })
   }
 
   // Aba 6: Saldo gerado no pagamento a maior (após pagamentos, como no PDF)
@@ -610,11 +658,11 @@ export function exportBalanceClosureToExcel(closure: BalanceClosureForExcel, abs
     const creditRows = settlementCredits.map(credit => {
       const amount = Math.abs(parseNum(credit.original_amount ?? credit.remaining_after ?? 0))
       const signed = -amount // borrowed na mandante (mesma perspectiva do PDF)
-      return [
-        credit.description || 'Crédito da quitação',
-        credit.loan_id ?? '',
-        formatSignedCredit(signed),
-      ] as [string, string | number, number]
+      return {
+        'Descrição': credit.description || 'Crédito da quitação',
+        'Empréstimo': credit.loan_id ?? '',
+        'Saldo a Pagar': formatSignedCredit(signed),
+      }
     })
 
     const totalSigned = -settlementCredits.reduce(
@@ -622,16 +670,13 @@ export function exportBalanceClosureToExcel(closure: BalanceClosureForExcel, abs
       0
     )
 
-    const wsData: (string | number)[][] = [
-      [`Saldo a pagar na mandante (${mainName}) — crédito para o próximo fechamento`, '', ''],
-      ['', '', ''],
-      ['Descrição', 'Empréstimo', 'Saldo a Pagar'],
-      ...creditRows,
-      ['TOTAL', '', formatSignedCredit(totalSigned)],
-    ]
-
-    const wsCredits = XLSX.utils.aoa_to_sheet(wsData)
-    XLSX.utils.book_append_sheet(wb, wsCredits, 'Saldo Gerado')
+    sheets.push({
+      name: 'Saldo Gerado',
+      rows: creditRows,
+      preamble: [[`Saldo a pagar na mandante (${mainName}) — crédito para o próximo fechamento`]],
+      footer: [['TOTAL', '', formatSignedCredit(totalSigned)]],
+      kinds: { 'Empréstimo': 'int', 'Saldo a Pagar': 'money' },
+    })
   }
 
   // Nome do arquivo
@@ -649,88 +694,8 @@ export function exportBalanceClosureToExcel(closure: BalanceClosureForExcel, abs
   }
 
   const fileName = `fechamento_${sanitize(mainName)}_${sanitize(partnerName)}_${fmtDate(closure.period_start_date)}_a_${fmtDate(closure.closing_date)}.xlsx`
-  XLSX.writeFile(wb, fileName)
-}
-
-// ─── Resultado da exportação separada ────────────────────────────────────────
-
-/**
- * Resultado da exportação separada
- */
-export interface ExportSeparadoResult {
-  extratos: number
-  faturas: number
-  beneficios: number
-  total: number
-}
-
-/**
- * Exporta dados filtrados para 3 arquivos Excel separados (um por tipo)
- * Análise externa ou backup (não use para reimportar no Plumo)
- */
-export function exportToExcelSeparado(expenses: ExpenseExportData[], options: ExportOptions = {}): ExportSeparadoResult {
-  // Separa por fonte
-  const bankStatements = expenses.filter(e => e.source === 'bank')
-  const cardInvoices = expenses.filter(e => e.source === 'card')
-  const benefits = expenses.filter(e => e.source === 'benefit')
-
-  // Gera prefixo com data
-  const today = new Date()
-  const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`
-
-  const sharingFormats = options.includeSharing
-    ? { 'Parte na sua conta (%)': EXCEL_FMT_PERCENT }
-    : {}
-
-  // Arquivo 1: Extratos Bancários
-  if (bankStatements.length > 0) {
-    const wb = XLSX.utils.book_new()
-    const data = convertBankStatements(bankStatements, options)
-    const ws = jsonToFormattedSheet(data, {
-      Ano: '0',
-      Mês: '00',
-      'Data e hora': EXCEL_FMT_DATETIME,
-      Valor: EXCEL_FMT_MONEY,
-      ...sharingFormats,
-    })
-    XLSX.utils.book_append_sheet(wb, ws, 'Extratos')
-    XLSX.writeFile(wb, `extratos_${dateStr}.xlsx`)
-  }
-
-  // Arquivo 2: Faturas de Cartão
-  if (cardInvoices.length > 0) {
-    const wb = XLSX.utils.book_new()
-    const data = convertCardInvoices(cardInvoices, options)
-    const ws = jsonToFormattedSheet(data, {
-      Ano: '0',
-      Mês: '00',
-      Data: EXCEL_FMT_DATE,
-      Valor: EXCEL_FMT_MONEY,
-      ...sharingFormats,
-    })
-    XLSX.utils.book_append_sheet(wb, ws, 'Faturas')
-    XLSX.writeFile(wb, `faturas_${dateStr}.xlsx`)
-  }
-
-  // Arquivo 3: Benefícios
-  if (benefits.length > 0) {
-    const wb = XLSX.utils.book_new()
-    const data = convertBenefits(benefits, options)
-    const ws = jsonToFormattedSheet(data, {
-      Data: EXCEL_FMT_DATETIME,
-      Valor: EXCEL_FMT_MONEY,
-      ...sharingFormats,
-    })
-    XLSX.utils.book_append_sheet(wb, ws, 'Benefícios')
-    XLSX.writeFile(wb, `beneficios_${dateStr}.xlsx`)
-  }
-
-  return {
-    extratos: bankStatements.length,
-    faturas: cardInvoices.length,
-    beneficios: benefits.length,
-    total: expenses.length
-  }
+  if (sheets.length === 0) return
+  await downloadExcelSafe(fileName, sheets)
 }
 
 // ─── Exportação de mapeamentos de transação ───────────────────────────────────
@@ -787,16 +752,15 @@ const mappingExportContribution = (item: TransactionMappingExportItem): number |
       ? (item.revenue_contribution_percentage ?? item.my_contribution_percentage)
       : item.my_contribution_percentage
   if (pct == null || Number.isNaN(Number(pct))) return ''
-  return Number(pct)
+  return percentToExcel(Number(pct))
 }
 
-export function exportTransactionMappingsToExcel(
+export async function exportTransactionMappingsToExcel(
   items: TransactionMappingExportItem[],
   options: TransactionMappingExportOptions = {},
-): void {
+): Promise<void> {
   if (!items.length) return
 
-  const wb = XLSX.utils.book_new()
   const now = new Date()
 
   const rows = items.map((item) => ({
@@ -813,16 +777,6 @@ export function exportTransactionMappingsToExcel(
     Sensível: item.is_sensitive ? 'Sim' : 'Não',
   }))
 
-  const ws = XLSX.utils.json_to_sheet(rows)
-  // Critério regex como texto puro — evita Excel alterar \\b, \\s, etc.
-  const CRITERION_COL = 2
-  items.forEach((item, idx) => {
-    if (item.mapping_type !== 'regex' || item.is_sensitive) return
-    const ref = XLSX.utils.encode_cell({ r: idx + 1, c: CRITERION_COL })
-    ws[ref] = { t: 's', v: item.regex_pattern ?? '' }
-  })
-  XLSX.utils.book_append_sheet(wb, ws, 'Mapeamentos')
-
   const metaRows: { Campo: string; Valor: string }[] = [
     { Campo: 'Gerado em', Valor: now.toLocaleString('pt-BR') },
     { Campo: 'Total', Valor: String(items.length) },
@@ -833,9 +787,15 @@ export function exportTransactionMappingsToExcel(
   if (options.searchTerm?.trim()) {
     metaRows.push({ Campo: 'Busca', Valor: options.searchTerm.trim() })
   }
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(metaRows), 'Info')
 
-  const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
-  XLSX.writeFile(wb, `mapeamentos_${dateStr}_${items.length}.xlsx`)
+  await downloadExcelSafe(`mapeamentos_${excelDateStamp(now)}_${items.length}.xlsx`, [
+    {
+      name: 'Mapeamentos',
+      rows,
+      // Critério regex como texto puro — evita Excel alterar \b, \s, etc.
+      kinds: { ID: 'int', Critério: 'text', 'Contribuição (%)': 'percent' },
+    },
+    { name: 'Info', rows: metaRows, kinds: { Valor: 'text' } },
+  ])
 }
 

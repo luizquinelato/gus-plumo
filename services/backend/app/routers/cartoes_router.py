@@ -684,7 +684,6 @@ async def obter_cartao(
     query = db.query(Cartao).options(joinedload(Cartao.invoice_group)).filter(
         Cartao.id == cartao_id,
         Cartao.tenant_id == tenant_id,
-        Cartao.active == True
     )
 
     # Se account_id estiver disponível, filtra por ele

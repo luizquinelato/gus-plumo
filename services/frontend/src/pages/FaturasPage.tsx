@@ -32,7 +32,8 @@ import { CreditCard, Calendar, FileText, Receipt, Filter, X, Search, Tag, Tags, 
 import type { InvoiceMatchPreview } from '../types/invoiceReconcile'
 import { descriptionMatchesSearch, resolveDescriptionSearchState } from '../utils/descriptionSearch'
 import { CadastroListHeaderActions } from '../components/CadastroExcelMenu'
-import { exportFaturasReport } from '../utils/exportToExcel'
+import type { FaturaReportExportItem } from '../utils/exportToExcel'
+import FaturasExportModal from '../components/FaturasExportModal'
 
 // Interface para state de navegação
 interface NavigationState {
@@ -47,6 +48,7 @@ interface CreditCardOption {
   type: string
   invoice_group_id?: number | null
   invoice_group_name?: string | null
+  active?: boolean
 }
 
 function isCreditCardForInvoiceReport(type?: string | null): boolean {
@@ -105,6 +107,24 @@ function computeInvoiceAmountTotals(items: InvoiceItem[]): InvoiceAmountTotals {
     totalExpenses,
     totalExpensesCount,
   }
+}
+
+function buildFaturaExportItems(items: InvoiceItem[]): FaturaReportExportItem[] {
+  return items.map((item) => ({
+    date: item.date,
+    description: item.description,
+    amount: item.amount,
+    card_number: item.card_number,
+    card_name: item.card_name,
+    tag_name: item.tag_name,
+    subtag_name: item.subtag_name,
+    current_installment: item.current_installment,
+    total_installments: item.total_installments,
+    year_month: item.year_month,
+    ownership_percentage: item.ownership_percentage,
+    shared_partner_name: item.shared_partner_name,
+    issuer: item.issuer,
+  }))
 }
 
 const MONTH_SHORT = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'] as const
@@ -465,7 +485,7 @@ const FaturasPage = () => {
     setCardsLoading(true)
     try {
       const [cartoesRes, groupsRes] = await Promise.all([
-        axios.get('/api/cartoes'),
+        axios.get('/api/cartoes', { params: { incluir_inativos: true } }),
         axios.get('/api/cartoes/invoice-groups'),
       ])
       const creditCards = (
@@ -476,6 +496,7 @@ const FaturasPage = () => {
           type?: string
           invoice_group_id?: number | null
           invoice_group_name?: string | null
+          active?: boolean
         }>
       ).filter((c) => isCreditCardForInvoiceReport(c.type))
 
@@ -487,6 +508,7 @@ const FaturasPage = () => {
           type: c.type || 'credito',
           invoice_group_id: c.invoice_group_id ?? null,
           invoice_group_name: c.invoice_group_name ?? null,
+          active: c.active !== false,
         })),
       )
       setSelectedCardIds((prev) => prev.filter((id) => creditCards.some((c) => c.id === id)))
@@ -682,6 +704,8 @@ const FaturasPage = () => {
     setToastType(type)
     setShowToast(true)
   }
+
+  const [exportModalFormat, setExportModalFormat] = useState<'excel' | 'pdf' | null>(null)
 
   const descriptionSearch = useMemo(() => resolveDescriptionSearchState(searchTerm), [searchTerm])
 
@@ -1403,25 +1427,22 @@ const FaturasPage = () => {
                         handleShowToast('Nenhum dado para exportar', 'error')
                         return
                       }
-                      exportFaturasReport(
-                        filteredItems.map((item) => ({
-                          date: item.date,
-                          description: item.description,
-                          amount: item.amount,
-                          card_number: item.card_number,
-                          card_name: item.card_name,
-                          tag_name: item.tag_name,
-                          subtag_name: item.subtag_name,
-                          current_installment: item.current_installment,
-                          total_installments: item.total_installments,
-                          year_month: item.year_month,
-                          ownership_percentage: item.ownership_percentage,
-                          shared_partner_name: item.shared_partner_name,
-                          issuer: item.issuer,
-                        })),
-                      )
-                      handleShowToast(`Excel exportado (${filteredItems.length} lançamentos)`, 'success')
+                      setExportModalFormat('excel')
                     },
+                    extraItems: [
+                      {
+                        id: 'pdf',
+                        label: 'Exportar PDF',
+                        icon: <FileText size={16} />,
+                        onClick: () => {
+                          if (!filteredItems.length) {
+                            handleShowToast('Nenhum dado para exportar', 'error')
+                            return
+                          }
+                          setExportModalFormat('pdf')
+                        },
+                      },
+                    ],
                   }}
                 >
                   {null}
@@ -1526,6 +1547,7 @@ const FaturasPage = () => {
                     options={cards.map(c => ({
                       id: c.id,
                       name: `${c.name} • ${c.number}`,
+                      badge: c.active === false ? 'Inativo' : undefined,
                       icon: <CreditCard size={14} />,
                       color: 'var(--color-2)',
                     }))}
@@ -2075,6 +2097,15 @@ const FaturasPage = () => {
       )}
 
       <ConfirmComponent />
+
+      <FaturasExportModal
+        isOpen={exportModalFormat !== null}
+        format={exportModalFormat ?? 'excel'}
+        onClose={() => setExportModalFormat(null)}
+        items={buildFaturaExportItems(filteredItems)}
+        onSuccess={(message) => handleShowToast(message, 'success')}
+        onError={(message) => handleShowToast(message, 'error')}
+      />
 
       {showToast && (
         <Toast

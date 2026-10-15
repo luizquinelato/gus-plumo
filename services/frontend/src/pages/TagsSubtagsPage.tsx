@@ -50,6 +50,7 @@ import {
 import { getIconComponent } from '../utils/iconMapper'
 import { selectionHeaderState } from '../utils/listTableSelection'
 import { useConfirm } from '../hooks/useConfirm'
+import { useExportRunner } from '../hooks/useExportRunner'
 import { CadastroListHeaderActions } from '../components/CadastroExcelMenu'
 import { exportTagsSubtagsToExcel } from '../utils/exportCadastroExcel'
 
@@ -290,6 +291,8 @@ const TagsSubtagsPage = () => {
   const showToast = (message: string, type: 'success' | 'error' | 'warning') => {
     setToast({ show: true, message, type })
   }
+
+  const exportRunner = useExportRunner((message) => showToast(message, 'error'))
 
   // Estados de expansão
   const [expandedTags, setExpandedTags] = useState<Set<number>>(new Set())
@@ -972,7 +975,7 @@ const TagsSubtagsPage = () => {
                     onExportExcel: () => {
                       const tags = hierarchicalData.map((h) => h.tag)
                       const subtags = hierarchicalData.flatMap((h) => h.subtags)
-                      exportTagsSubtagsToExcel(tags, subtags)
+                      void exportRunner.run('Gerando Excel…', () => exportTagsSubtagsToExcel(tags, subtags))
                     },
                   }}
                 >
@@ -1513,6 +1516,7 @@ const TagsSubtagsPage = () => {
       )}
 
       {/* Dialogs */}
+      {exportRunner.overlay}
       <ConfirmComponent />
 
       {/* Toast */}

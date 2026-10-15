@@ -8,6 +8,16 @@ export const EXCEL_FMT_DATETIME = 'dd/mm/yyyy hh:mm:ss'
 export const EXCEL_FMT_MONEY = '#,##0.00_);(#,##0.00)'
 export const EXCEL_FMT_PERCENT = '0.00'
 
+/** Banco guarda 50 (=50%); a célula Excel formatada como % guarda 0,5. */
+export function percentToExcel(value: number): number {
+  return Math.round(value * 1e4) / 1e6
+}
+
+/** Inverso de `percentToExcel`: célula 0,5 (50%) volta a 50. */
+export function percentFromExcel(value: number | null | undefined): number | null {
+  return value == null ? null : Math.round(value * 1e6) / 1e4
+}
+
 export function roundExportMoney(value: number): number {
   return Math.round(value * 100) / 100
 }

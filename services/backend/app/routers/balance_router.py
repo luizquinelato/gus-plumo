@@ -1331,7 +1331,6 @@ async def calculate_balance(
         Cartao.tenant_id == tenant_id,
         Cartao.account_id == account_id,
         Cartao.expense_sharing_id.in_(sharing_ids),
-        Cartao.active == True
     ).all()
     main_card_ids = [c.id for c in main_cards]
 
@@ -1540,7 +1539,6 @@ async def calculate_balance(
         Cartao.tenant_id == tenant_id,
         Cartao.account_id == partner_account_id,
         Cartao.expense_sharing_id.in_(sharing_ids),
-        Cartao.active == True
     ).all()
     shared_card_ids = [c.id for c in shared_cards]
 

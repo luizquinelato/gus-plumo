@@ -2,17 +2,37 @@
 Router para relatórios - análise de gastos ao longo do tempo
 """
 
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Response
+from app.services.excel_export_engine import (
+    XLSX_MEDIA_TYPE,
+    ExcelExportPayload,
+    build_table_xlsx,
+)
+from app.services.pdf_export_engine import (
+    PDF_MEDIA_TYPE,
+    PdfExportPayload,
+    build_table_pdf,
+)
+from app.services.installments_excel_export import (
+    InstallmentsExportPayload,
+    build_installments_xlsx,
+)
 from sqlalchemy.orm import Session, aliased
 from sqlalchemy import func, extract, or_, and_
+from collections import defaultdict
 from datetime import datetime, date, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import List, Literal, Dict, Any
 from pydantic import BaseModel, Field
 
 from app.database import get_db
 from app.models.unified_models import BankStatement, CreditCardInvoice, BenefitCardStatement, Tag, Subtag, Cartao, ExpenseSharingSetting, Account, Bank
 from app.dependencies.auth import get_current_user
+from app.services.installment_service import (
+    get_open_installment_purchases,
+    month_label,
+    projected_months,
+)
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -2127,7 +2147,6 @@ def _get_card_expenses_by_date(
 
     filters = [
         CreditCardInvoice.tenant_id == tenant_id,
-        Cartao.active == True,
         Cartao.type == "credito",
     ]
 
@@ -2913,7 +2932,6 @@ async def get_invoice_report(
         SharedBank, SharedAccount.bank_id == SharedBank.id
     ).filter(
         CreditCardInvoice.tenant_id == tenant_id,
-        Cartao.active == True,
         Cartao.type == "credito",
     )
 
@@ -3019,3 +3037,357 @@ async def get_invoice_report(
 
     return InvoiceReportResponse(items=items)
 
+
+
+# ===== RELATÓRIO DE SALDO PARCELADO =====
+
+class InstallmentReportItem(BaseModel):
+    """Compra parcelada em aberto"""
+    id: int
+    description: str
+    purchase_date: date | None = None
+    card_id: int
+    card_name: str
+    card_number: str
+    issuer: str | None = None
+    subtag_id: int | None = None
+    subtag_name: str | None = None
+    tag_name: str | None = None
+    shared_partner_id: int | None = None
+    shared_partner_name: str | None = None
+    ownership_percentage: Decimal
+    installment_amount: Decimal  # Valor da parcela conforme a visão selecionada
+    full_installment_amount: Decimal  # Valor integral da parcela
+    remaining_total: Decimal  # Saldo restante conforme a visão selecionada
+    full_remaining_total: Decimal  # Saldo restante integral
+    current_installment: int
+    total_installments: int
+    remaining_installments: int
+    last_year_month: str  # Mês da parcela mais recente já registrada
+    first_projected_month: str
+    last_projected_month: str
+
+
+class InstallmentMonthProjection(BaseModel):
+    """Total de parcelas previstas para um mês"""
+    year_month: str
+    month_label: str
+    total: Decimal
+    count: int
+    remaining_after: Decimal  # Saldo parcelado que ainda resta depois desse mês
+    by_card: Dict[str, Decimal] = Field(default_factory=dict)
+
+
+class InstallmentCardSummary(BaseModel):
+    """Saldo parcelado por cartão"""
+    card_id: int
+    card_name: str
+    card_number: str
+    issuer: str | None = None
+    remaining_total: Decimal
+    purchases_count: int
+
+
+class InstallmentsSummary(BaseModel):
+    """Visão geral do saldo parcelado"""
+    future_total: Decimal  # Soma de todas as parcelas futuras
+    next_month_total: Decimal  # Total do primeiro mês projetado
+    next_month: str | None = None
+    next_month_label: str | None = None
+    purchases_count: int  # Compras parceladas em aberto
+    remaining_installments_count: int  # Parcelas futuras
+    last_projected_month: str | None = None
+    last_projected_month_label: str | None = None
+    months_count: int  # Meses com parcelas previstas
+
+
+class InstallmentsReportResponse(BaseModel):
+    """Resposta do relatório de saldo parcelado"""
+    share: str  # 'mine' (minha parte) ou 'total' (valor integral)
+    horizon_months: int  # 0 = sem limite
+    months_truncated: bool
+    summary: InstallmentsSummary
+    months: List[InstallmentMonthProjection]
+    cards: List[InstallmentCardSummary]
+    items: List[InstallmentReportItem]
+
+
+def _money(value: Decimal) -> Decimal:
+    return Decimal(value).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+
+@router.get("/installments", response_model=InstallmentsReportResponse)
+async def get_installments_report(
+    card_ids: str | None = Query(None, description="IDs dos cartões separados por vírgula"),
+    tag_ids: str | None = Query(None, description="IDs das tags separados por vírgula"),
+    subtag_ids: str | None = Query(None, description="IDs das subtags separados por vírgula"),
+    partner_ids: str | None = Query(None, description="IDs dos parceiros separados por vírgula"),
+    include_empty_tag: bool = Query(False, description="Incluir itens sem subtag (subtag_id IS NULL)"),
+    include_empty_sharing: bool = Query(False, description="Incluir itens sem compartilhamento (expense_sharing_id IS NULL)"),
+    issuers: str | None = Query(None, description="Emissores separados por vírgula (btg,mercadopago)"),
+    search: str | None = Query(None, description="Busca por descrição da compra"),
+    horizon_months: int = Query(12, ge=0, le=120, description="Meses projetados (0 = todos)"),
+    share: Literal["mine", "total"] = Query("total", description="mine = minha parte; total = valor integral"),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Relatório de Saldo Parcelado.
+
+    Projeta as parcelas que ainda virão das compras parceladas em aberto,
+    a partir do mês seguinte à parcela mais recente já registrada em fatura.
+    A fatura corrente não entra no saldo: ela é analisada no Relatório de Faturas.
+    """
+    tenant_id = current_user.get("tenant_id", 1)
+    account_id = current_user.get("account_id")
+
+    if not account_id:
+        raise HTTPException(status_code=400, detail="account_id não encontrado no token")
+
+    def _parse_ids(raw: str | None, label: str) -> List[int] | None:
+        if not raw:
+            return None
+        try:
+            return [int(item.strip()) for item in raw.split(',') if item.strip()]
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"IDs de {label} inválidos")
+
+    card_id_list = _parse_ids(card_ids, "cartões")
+    tag_id_list = _parse_ids(tag_ids, "tags")
+    subtag_id_list = _parse_ids(subtag_ids, "subtags")
+    partner_id_list = _parse_ids(partner_ids, "parceiros")
+
+    issuer_list = None
+    if issuers:
+        issuer_list = [item.strip().lower() for item in issuers.split(',') if item.strip()]
+        invalid = [item for item in issuer_list if item not in {'btg', 'mercadopago'}]
+        if invalid:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Emissor inválido: {', '.join(invalid)}. Use: btg, mercadopago",
+            )
+
+    purchases = get_open_installment_purchases(db, tenant_id, account_id)
+
+    if card_id_list:
+        purchases = [p for p in purchases if p.card_id in card_id_list]
+
+    if issuer_list:
+        purchases = [p for p in purchases if (p.issuer or '').lower() in issuer_list]
+
+    if subtag_id_list or tag_id_list or include_empty_tag:
+        allowed_subtags: set[int] = set()
+        if subtag_id_list:
+            allowed_subtags = set(subtag_id_list)
+        elif tag_id_list:
+            allowed_subtags = {
+                row.id for row in db.query(Subtag.id).filter(
+                    Subtag.tenant_id == tenant_id,
+                    Subtag.tag_id.in_(tag_id_list),
+                ).all()
+            }
+        purchases = [
+            p for p in purchases
+            if (p.subtag_id in allowed_subtags) or (include_empty_tag and p.subtag_id is None)
+        ]
+
+    if partner_id_list or include_empty_sharing:
+        purchases = [
+            p for p in purchases
+            if (partner_id_list and p.expense_sharing_id in partner_id_list)
+            or (include_empty_sharing and p.expense_sharing_id is None)
+        ]
+
+    if search:
+        term = search.strip().lower()
+        if term:
+            purchases = [p for p in purchases if term in (p.description or '').lower()]
+
+    use_my_share = share == "mine"
+
+    def _installment_value(purchase) -> Decimal:
+        return _money(purchase.my_installment_amount if use_my_share else purchase.installment_amount)
+
+    if use_my_share:
+        purchases = [p for p in purchases if _installment_value(p) > Decimal(0)]
+
+    # Série mensal completa (o horizonte só limita a exibição, não os totais)
+    month_totals: Dict[str, Decimal] = defaultdict(lambda: Decimal(0))
+    month_counts: Dict[str, int] = defaultdict(int)
+    month_card_totals: Dict[str, Dict[str, Decimal]] = defaultdict(lambda: defaultdict(lambda: Decimal(0)))
+    for purchase in purchases:
+        value = _installment_value(purchase)
+        card_key = str(purchase.card_id)
+        for year_month in projected_months(purchase):
+            month_totals[year_month] += value
+            month_counts[year_month] += 1
+            month_card_totals[year_month][card_key] += value
+
+    sorted_months = sorted(month_totals.keys())
+    future_total = _money(sum(month_totals.values(), Decimal(0)))
+
+    months: List[InstallmentMonthProjection] = []
+    accumulated = Decimal(0)
+    for year_month in sorted_months:
+        accumulated += month_totals[year_month]
+        by_card = {
+            card_key: _money(val)
+            for card_key, val in month_card_totals[year_month].items()
+        }
+        months.append(InstallmentMonthProjection(
+            year_month=year_month,
+            month_label=month_label(year_month),
+            total=_money(month_totals[year_month]),
+            count=month_counts[year_month],
+            remaining_after=_money(future_total - accumulated),
+            by_card=by_card,
+        ))
+
+    months_truncated = bool(horizon_months) and len(months) > horizon_months
+    visible_months = months[:horizon_months] if horizon_months else months
+
+    cards_map: Dict[int, dict] = {}
+    for purchase in purchases:
+        card = cards_map.setdefault(purchase.card_id, {
+            'card_name': purchase.card_name,
+            'card_number': purchase.card_number,
+            'issuer': purchase.issuer,
+            'remaining_total': Decimal(0),
+            'purchases_count': 0,
+        })
+        card['remaining_total'] += _installment_value(purchase) * purchase.remaining_installments
+        card['purchases_count'] += 1
+
+    cards = [
+        InstallmentCardSummary(
+            card_id=card_id,
+            card_name=data['card_name'],
+            card_number=data['card_number'],
+            issuer=data['issuer'],
+            remaining_total=_money(data['remaining_total']),
+            purchases_count=data['purchases_count'],
+        )
+        for card_id, data in sorted(cards_map.items(), key=lambda entry: entry[1]['card_number'] or '')
+        if not use_my_share or data['remaining_total'] > Decimal(0)
+    ]
+
+    items: List[InstallmentReportItem] = []
+    for purchase in purchases:
+        value = _installment_value(purchase)
+        item_months = projected_months(purchase)
+        items.append(InstallmentReportItem(
+            id=purchase.id,
+            description=purchase.description,
+            purchase_date=purchase.purchase_date,
+            card_id=purchase.card_id,
+            card_name=purchase.card_name,
+            card_number=purchase.card_number,
+            issuer=purchase.issuer,
+            subtag_id=purchase.subtag_id,
+            subtag_name=purchase.subtag_name,
+            tag_name=purchase.tag_name,
+            shared_partner_id=purchase.expense_sharing_id,
+            shared_partner_name=purchase.shared_partner_name,
+            ownership_percentage=purchase.ownership_percentage,
+            installment_amount=value,
+            full_installment_amount=_money(purchase.installment_amount),
+            remaining_total=_money(value * purchase.remaining_installments),
+            full_remaining_total=_money(purchase.remaining_total),
+            current_installment=purchase.current_installment,
+            total_installments=purchase.total_installments,
+            remaining_installments=purchase.remaining_installments,
+            last_year_month=purchase.last_year_month,
+            first_projected_month=item_months[0],
+            last_projected_month=item_months[-1],
+        ))
+
+    first_month = months[0] if months else None
+    last_month = months[-1] if months else None
+
+    summary = InstallmentsSummary(
+        future_total=future_total,
+        next_month_total=first_month.total if first_month else Decimal(0),
+        next_month=first_month.year_month if first_month else None,
+        next_month_label=first_month.month_label if first_month else None,
+        purchases_count=len(items),
+        remaining_installments_count=sum(p.remaining_installments for p in purchases),
+        last_projected_month=last_month.year_month if last_month else None,
+        last_projected_month_label=last_month.month_label if last_month else None,
+        months_count=len(months),
+    )
+
+    return InstallmentsReportResponse(
+        share=share,
+        horizon_months=horizon_months,
+        months_truncated=months_truncated,
+        summary=summary,
+        months=visible_months,
+        cards=cards,
+        items=items,
+    )
+
+
+@router.post("/export-excel")
+async def export_table_excel(
+    payload: ExcelExportPayload,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Motor único de export Excel em tabela (extratos, faturas, fechamentos,
+    mapeamentos, cadastros). Apenas formata o payload; não consulta o banco.
+    """
+    if not current_user.get("account_id"):
+        raise HTTPException(status_code=400, detail="account_id não encontrado no token")
+
+    try:
+        content = build_table_xlsx(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=413, detail=str(exc))
+    return Response(
+        content=content,
+        media_type=XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": 'attachment; filename="export.xlsx"'},
+    )
+
+
+@router.post("/export-pdf")
+async def export_table_pdf(
+    payload: PdfExportPayload,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Motor único de export PDF em tabela (extrato e faturas). Apenas formata o
+    payload; não consulta o banco.
+    """
+    if not current_user.get("account_id"):
+        raise HTTPException(status_code=400, detail="account_id não encontrado no token")
+
+    try:
+        content = build_table_pdf(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=413, detail=str(exc))
+    return Response(
+        content=content,
+        media_type=PDF_MEDIA_TYPE,
+        headers={"Content-Disposition": 'attachment; filename="export.pdf"'},
+    )
+
+
+@router.post("/installments/export-excel")
+async def export_installments_excel(
+    payload: InstallmentsExportPayload,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Gera o Excel do Saldo Parcelado (com gráfico nativo) a partir dos dados
+    exibidos na tela. Apenas formata o payload; não consulta o banco.
+    """
+    if not current_user.get("account_id"):
+        raise HTTPException(status_code=400, detail="account_id não encontrado no token")
+
+    content = build_installments_xlsx(payload)
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="saldo_parcelado.xlsx"'},
+    )

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { AlertTriangle, FileText } from 'lucide-react'
 import { useEscapeKey } from '../hooks/useEscapeKey'
+import { useAlert } from '../hooks/useAlert'
 import { ImportConflict, ConflictResolution } from '../types/importConflict'
 import {
   CadastroModalShell,
@@ -96,6 +97,7 @@ function moneyCell(value: number | null | undefined) {
 }
 
 const ConflictReviewModal = ({ isOpen, onClose, conflicts, onResolve }: ConflictReviewModalProps) => {
+  const { showError, AlertComponent } = useAlert()
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set())
   const [selectedMatches, setSelectedMatches] = useState<Record<string, number>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -160,7 +162,7 @@ const ConflictReviewModal = ({ isOpen, onClose, conflicts, onResolve }: Conflict
       return !selectedMatches[key]
     })
     if (missingMatch.length > 0) {
-      alert(`Selecione qual registro atualizar em ${missingMatch.length} linha(s) marcada(s).`)
+      showError('Seleção pendente', `Selecione qual registro atualizar em ${missingMatch.length} linha(s) marcada(s).`)
       return
     }
 
@@ -319,6 +321,7 @@ const ConflictReviewModal = ({ isOpen, onClose, conflicts, onResolve }: Conflict
 
   return (
     <>
+      <AlertComponent />
       <CadastroModalShell maxWidth="max-w-[95vw] xl:max-w-[90rem]" zClass="z-[110]" onBackdropClick={handleCloseRequest}>
         <CadastroModalHeader
           isEdit={false}

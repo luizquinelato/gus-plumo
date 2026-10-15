@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict kMnh9n69egkAa0YirRn3R0lkctp0yK1gXaIDaHCd1FEkPDHhL0c2GPq6vOs5DH0
+\restrict z0sRGetnpaywfKqiimkpOl9JEfIE1n82YyUGuPlpa0hpXt1O4cxa4lsrFXbCx96
 
 -- Dumped from database version 18.4 (Debian 18.4-1.pgdg13+1)
 -- Dumped by pg_dump version 18.4 (Debian 18.4-1.pgdg13+1)
@@ -1470,6 +1470,57 @@ ALTER SEQUENCE public.migration_history_id_seq OWNED BY public.migration_history
 
 
 --
+-- Name: monthly_projections; Type: TABLE; Schema: public; Owner: plumo
+--
+
+CREATE TABLE public.monthly_projections (
+    id integer NOT NULL,
+    year_month character varying(7) NOT NULL,
+    expected_date date NOT NULL,
+    description character varying(255) NOT NULL,
+    amount numeric(15,2) DEFAULT 0 NOT NULL,
+    my_amount numeric(15,2) DEFAULT 0 NOT NULL,
+    kind character varying(10) DEFAULT 'fixed'::character varying NOT NULL,
+    source character varying(20) DEFAULT 'manual'::character varying NOT NULL,
+    credit_card_id integer,
+    invoice_group_id integer,
+    breakdown jsonb,
+    account_id integer NOT NULL,
+    tenant_id integer NOT NULL,
+    created_by integer NOT NULL,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    last_updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    active boolean DEFAULT true NOT NULL,
+    CONSTRAINT chk_monthly_projections_kind CHECK (((kind)::text = ANY ((ARRAY['fixed'::character varying, 'variable'::character varying, 'income'::character varying])::text[]))),
+    CONSTRAINT chk_monthly_projections_source CHECK (((source)::text = ANY ((ARRAY['manual'::character varying, 'clone'::character varying, 'card_invoice'::character varying, 'card_item'::character varying, 'payroll'::character varying])::text[])))
+);
+
+
+ALTER TABLE public.monthly_projections OWNER TO plumo;
+
+--
+-- Name: monthly_projections_id_seq; Type: SEQUENCE; Schema: public; Owner: plumo
+--
+
+CREATE SEQUENCE public.monthly_projections_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.monthly_projections_id_seq OWNER TO plumo;
+
+--
+-- Name: monthly_projections_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: plumo
+--
+
+ALTER SEQUENCE public.monthly_projections_id_seq OWNED BY public.monthly_projections.id;
+
+
+--
 -- Name: notifications; Type: TABLE; Schema: public; Owner: plumo
 --
 
@@ -2343,6 +2394,13 @@ ALTER TABLE ONLY public.migration_history ALTER COLUMN id SET DEFAULT nextval('p
 
 
 --
+-- Name: monthly_projections id; Type: DEFAULT; Schema: public; Owner: plumo
+--
+
+ALTER TABLE ONLY public.monthly_projections ALTER COLUMN id SET DEFAULT nextval('public.monthly_projections_id_seq'::regclass);
+
+
+--
 -- Name: notifications id; Type: DEFAULT; Schema: public; Owner: plumo
 --
 
@@ -2567,6 +2625,7 @@ COPY public.balance_closure_payments (id, balance_closure_id, amount, payment_da
 --
 
 COPY public.balance_closures (id, expense_sharing_id, account_id, shared_account_id, period_start_date, closing_date, year, month, total_to_receive, total_to_pay, net_balance, notes, is_settled, settled_at, settled_by, settlement_notes, closure_data, tenant_id, created_by, created_at, last_updated_at) FROM stdin;
+37	2	1	4	2026-09-20 00:00:00	2026-10-15 17:06:34	2026	10	2340.53	0.00	2340.53	\N	f	\N	\N	\N	{"year": 2026, "period": {"year": 2026, "month": 10, "end_date": "2026-10-15T23:59:59", "start_date": "2026-09-20T00:00:00"}, "end_date": "2026-10-15T23:59:59", "start_date": "2026-09-20T00:00:00", "calculation_date": "2026-10-15T17:06:34.517690", "main_account_card": {"agency": "20", "status": "to_receive", "bank_name": "BTG Pactual", "account_id": 1, "net_amount": 2340.53, "loan_to_pay": 0, "account_name": "Gustavo", "total_to_pay": 0, "expense_items": [], "revenue_items": [], "account_number": 3046547, "loan_to_receive": 0, "total_to_receive": 2340.53, "net_amount_before_loans": 2340.53, "credit_card_expense_items": [{"id": 18907, "date": "2026-08-18T00:00:00", "amount": "-170.80", "card_id": 1, "tag_name": null, "card_name": "Acalento", "card_type": "credito", "year_month": "2026-10", "card_active": true, "card_number": "0323", "description": "Janaina Silva Co", "subtag_name": null, "card_due_day": 14, "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 6, "current_installment": 2, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 18906, "date": "2026-07-22T00:00:00", "amount": "-29.90", "card_id": 1, "tag_name": null, "card_name": "Acalento", "card_type": "credito", "year_month": "2026-10", "card_active": true, "card_number": "0323", "description": "Globo Premiere", "subtag_name": null, "card_due_day": 14, "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 12, "current_installment": 3, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 18904, "date": "2026-07-16T00:00:00", "amount": "-511.26", "card_id": 1, "tag_name": "Acalento", "card_name": "Acalento", "card_type": "credito", "year_month": "2026-10", "card_active": true, "card_number": "0323", "description": "Fios Da Terra Cosmetic", "subtag_name": "Produto", "card_due_day": 14, "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 3, "current_installment": 3, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 18905, "date": "2026-07-16T00:00:00", "amount": "-308.69", "card_id": 1, "tag_name": "Acalento", "card_name": "Acalento", "card_type": "credito", "year_month": "2026-10", "card_active": true, "card_number": "0323", "description": "Asa Chlorophylla Indus", "subtag_name": "Produto", "card_due_day": 14, "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 5, "current_installment": 3, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 18903, "date": "2026-06-10T00:00:00", "amount": "-169.26", "card_id": 1, "tag_name": "Acalento", "card_name": "Acalento", "card_type": "credito", "year_month": "2026-10", "card_active": true, "card_number": "0323", "description": "Alva Personal Care", "subtag_name": "Produto", "card_due_day": 14, "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 6, "current_installment": 5, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 18902, "date": "2026-05-29T00:00:00", "amount": "-188.31", "card_id": 1, "tag_name": "Acalento", "card_name": "Acalento", "card_type": "credito", "year_month": "2026-10", "card_active": true, "card_number": "0323", "description": "Produtos Alva", "subtag_name": "Produto", "card_due_day": 14, "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 6, "current_installment": 5, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 18901, "date": "2026-05-22T00:00:00", "amount": "-162.31", "card_id": 1, "tag_name": "Acalento", "card_name": "Acalento", "card_type": "credito", "year_month": "2026-10", "card_active": true, "card_number": "0323", "description": "Asa Chlorophylla Indus", "subtag_name": "Produto", "card_due_day": 14, "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 5, "current_installment": 5, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}, {"id": 18917, "date": "2026-08-19T00:00:00", "amount": "-800.00", "card_id": 3, "tag_name": null, "card_name": "Gustavo", "card_type": "credito", "year_month": "2026-10", "card_active": true, "card_number": "3529", "description": "16 953 190 Danieli Cri", "subtag_name": null, "card_due_day": 14, "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 10, "current_installment": 2, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}], "credit_card_revenue_items": [], "benefit_card_expense_items": [], "benefit_card_revenue_items": []}, "partner_account_card": {"agency": "1", "status": "to_pay", "bank_name": "Banco Fictício", "account_id": 4, "net_amount": -2340.53, "loan_to_pay": 0, "account_name": "Acalento", "total_to_pay": -2340.53, "expense_items": [], "revenue_items": [], "account_number": 222222, "loan_to_receive": 0, "total_to_receive": 0, "net_amount_before_loans": -2340.53, "credit_card_expense_items": [], "credit_card_revenue_items": [], "benefit_card_expense_items": [], "benefit_card_revenue_items": []}}	1	1	2026-10-15 17:06:57.302136	2026-10-15 17:06:57.302143
 3	4	1	5	2026-05-18 00:00:00	2026-06-17 23:59:59	2026	6	663.60	0.00	663.60	\N	t	2026-06-19 23:59:00	1	\N	{"year": 2026, "period": {"year": 2026, "month": 6, "end_date": "2026-06-17T23:59:59", "start_date": "2026-05-18T00:00:00"}, "end_date": "2026-06-17T23:59:59", "start_date": "2026-05-18T00:00:00", "calculation_date": "2026-10-09T10:00:47.425406", "main_account_card": {"agency": "20", "status": "to_receive", "bank_name": "BTG Pactual", "account_id": 1, "net_amount": 663.6, "loan_to_pay": 0, "account_name": "Gustavo", "total_to_pay": 0, "expense_items": [], "revenue_items": [], "account_number": 3046547, "loan_to_receive": 0, "total_to_receive": 663.6, "net_amount_before_loans": 663.6, "credit_card_expense_items": [{"id": 18133, "date": "2026-03-19T00:00:00", "amount": "-663.60", "card_id": 13, "tag_name": "Lazer", "card_name": "Virtual", "card_type": "credito", "year_month": "2026-06", "card_active": true, "card_number": "6916", "description": "Eventim", "subtag_name": "Festa & Entretenimento", "card_due_day": 14, "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 3, "current_installment": 3, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}], "credit_card_revenue_items": [], "benefit_card_expense_items": [], "benefit_card_revenue_items": []}, "partner_account_card": {"agency": "123456", "status": "to_pay", "bank_name": "Banco Fictício", "account_id": 5, "net_amount": -663.6, "loan_to_pay": 0, "account_name": "André", "total_to_pay": -663.6, "expense_items": [], "revenue_items": [], "account_number": 69, "loan_to_receive": 0, "total_to_receive": 0, "net_amount_before_loans": -663.6, "credit_card_expense_items": [], "credit_card_revenue_items": [], "benefit_card_expense_items": [], "benefit_card_revenue_items": []}}	1	1	2026-10-09 10:00:56.906829	2026-10-09 10:17:55.23696
 2	4	1	5	2026-04-18 00:00:00	2026-05-17 23:59:59	2026	5	663.60	0.00	663.60	\N	t	2026-05-19 23:59:00	1	\N	{"year": 2026, "period": {"year": 2026, "month": 5, "end_date": "2026-05-17T23:59:59", "start_date": "2026-04-18T00:00:00"}, "end_date": "2026-05-17T23:59:59", "start_date": "2026-04-18T00:00:00", "calculation_date": "2026-10-09T10:00:33.185214", "main_account_card": {"agency": "20", "status": "to_receive", "bank_name": "BTG Pactual", "account_id": 1, "net_amount": 663.6, "loan_to_pay": 0, "account_name": "Gustavo", "total_to_pay": 0, "expense_items": [], "revenue_items": [], "account_number": 3046547, "loan_to_receive": 0, "total_to_receive": 663.6, "net_amount_before_loans": 663.6, "credit_card_expense_items": [{"id": 18283, "date": "2026-03-19T00:00:00", "amount": "-663.60", "card_id": 13, "tag_name": "Lazer", "card_name": "Virtual", "card_type": "credito", "year_month": "2026-05", "card_active": true, "card_number": "6916", "description": "Eventim", "subtag_name": "Festa & Entretenimento", "card_due_day": 14, "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 3, "current_installment": 2, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}], "credit_card_revenue_items": [], "benefit_card_expense_items": [], "benefit_card_revenue_items": []}, "partner_account_card": {"agency": "123456", "status": "to_pay", "bank_name": "Banco Fictício", "account_id": 5, "net_amount": -663.6, "loan_to_pay": 0, "account_name": "André", "total_to_pay": -663.6, "expense_items": [], "revenue_items": [], "account_number": 69, "loan_to_receive": 0, "total_to_receive": 0, "net_amount_before_loans": -663.6, "credit_card_expense_items": [], "credit_card_revenue_items": [], "benefit_card_expense_items": [], "benefit_card_revenue_items": []}}	1	1	2026-10-09 10:00:37.737745	2026-10-09 10:17:55.675391
 1	4	1	5	1970-01-01 00:00:00	2026-04-17 23:59:59	2026	4	663.60	0.00	663.60	\N	t	2026-04-19 23:59:00	1	\N	{"year": 2026, "period": {"year": 2026, "month": 4, "end_date": "2026-04-17T23:59:59", "start_date": "1970-01-01T00:00:00"}, "end_date": "2026-04-17T23:59:59", "start_date": "1970-01-01T00:00:00", "calculation_date": "2026-10-09T10:00:04.342255", "main_account_card": {"agency": "20", "status": "to_receive", "bank_name": "BTG Pactual", "account_id": 1, "net_amount": 663.6, "loan_to_pay": 0, "account_name": "Gustavo", "total_to_pay": 0, "expense_items": [], "revenue_items": [], "account_number": 3046547, "loan_to_receive": 0, "total_to_receive": 663.6, "net_amount_before_loans": 663.6, "credit_card_expense_items": [{"id": 17324, "date": "2026-03-19T00:00:00", "amount": "-663.60", "card_id": 13, "tag_name": "Lazer", "card_name": "Virtual", "card_type": "credito", "year_month": "2026-04", "card_active": true, "card_number": "6916", "description": "Eventim", "subtag_name": "Festa & Entretenimento", "card_due_day": 14, "source_table": "credit_card_invoices", "card_closing_day": 14, "total_installments": 3, "current_installment": 1, "my_contribution_percentage": "0.00", "partner_contribution_percentage": "100.00"}], "credit_card_revenue_items": [], "benefit_card_expense_items": [], "benefit_card_revenue_items": []}, "partner_account_card": {"agency": "123456", "status": "to_pay", "bank_name": "Banco Fictício", "account_id": 5, "net_amount": -663.6, "loan_to_pay": 0, "account_name": "André", "total_to_pay": -663.6, "expense_items": [], "revenue_items": [], "account_number": 69, "loan_to_receive": 0, "total_to_receive": 0, "net_amount_before_loans": -663.6, "credit_card_expense_items": [], "credit_card_revenue_items": [], "benefit_card_expense_items": [], "benefit_card_revenue_items": []}}	1	1	2026-10-09 10:00:15.317202	2026-10-09 10:17:56.123987
@@ -2712,9 +2771,20 @@ COPY public.bank_statements (id, category, transaction, description, date, amoun
 3222	Contas	Pagamento de boleto	Itaucard	2021-11-08 07:30:00	-446.12	40	100.00	\N	\N	1	1	1	2026-10-08 17:55:55.45461	2026-10-08 17:55:55.454615	\N	\N
 3231	Contas	Pagamento de boleto	Condominio Residencial Mona Lisa	2021-11-08 16:11:00	-440.94	101	100.00	\N	\N	1	1	1	2026-10-08 17:55:55.4563	2026-10-08 19:01:01.326497	\N	\N
 3227	Contas	Pagamento de fatura do cartão	Fatura do cartão BTG Pactual	2021-11-08 16:02:00	-14960.42	40	100.00	\N	\N	1	1	1	2026-10-08 17:55:55.454635	2026-10-08 17:55:55.454637	\N	\N
+6258	Supermercado	Pix enviado por Natália Cristina Polezel Quinelato	Casa Vida	2026-10-14 17:49:00	-583.61	\N	100.00	\N	\N	1	1	1	2026-10-15 17:01:04.576278	2026-10-15 17:01:04.576283	\N	\N
+6259	Educação	Pagamento de boleto	Koelle Educacao E Cultura	2026-10-15 06:02:00	-306.00	83	100.00	\N	\N	1	1	1	2026-10-15 17:01:04.577631	2026-10-15 17:01:04.577635	\N	\N
+6260	Educação	Pagamento de boleto	Koelle Educacao E Cultura	2026-10-15 06:02:00	-13.78	83	100.00	\N	\N	1	1	1	2026-10-15 17:01:04.577636	2026-10-15 17:01:04.577638	\N	\N
+6261	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Adilson Antonio Pereira	2026-10-15 14:54:00	-500.00	\N	100.00	\N	\N	1	1	1	2026-10-15 17:01:04.578944	2026-10-15 17:01:04.578947	\N	\N
+6262	Transferência	Pix enviado por Natália Cristina Polezel Quinelato	Amanda Sandoval Marques	2026-10-15 15:00:00	-109.90	\N	100.00	\N	\N	1	1	1	2026-10-15 17:01:04.578948	2026-10-15 17:01:04.578949	\N	\N
+6263	Compras	Pix enviado por Natália Cristina Polezel Quinelato	Fatima Aparecida Galo Milani Agropecuaria	2026-10-15 15:36:00	-141.90	\N	100.00	\N	\N	1	1	1	2026-10-15 17:01:04.578951	2026-10-15 17:01:04.578952	\N	\N
+6264	Transferência	Pix recebido	Luiz Gustavo Giacomelo Quinelato	2026-10-15 16:56:00	8018.40	97	100.00	\N	\N	1	1	1	2026-10-15 17:01:04.579971	2026-10-15 17:01:04.579974	\N	\N
 3244	Transferência	Pix enviado	Carla Weygand Sabino	2021-11-13 12:57:00	-150.00	133	100.00	\N	\N	1	1	1	2026-10-08 17:55:55.463338	2026-10-08 17:55:55.463342	\N	\N
+6265	Investimentos	Transferência recebida	Luiz Gustavo Giacomelo Quinelato	2026-10-15 16:58:00	1450.47	97	100.00	\N	\N	1	1	1	2026-10-15 17:01:04.579975	2026-10-15 17:01:04.579976	\N	\N
 3250	Transferência	Pix enviado	Carla Weygand Sabino	2021-11-23 20:08:00	-150.00	133	100.00	\N	\N	1	1	1	2026-10-08 17:55:55.466241	2026-10-08 17:55:55.466244	\N	\N
 3270	Contas	Pagamento de fatura do cartão	Fatura do cartão BTG Pactual	2021-12-08 08:10:00	-18319.32	40	100.00	\N	\N	1	1	1	2026-10-08 17:55:55.469591	2026-10-08 17:55:55.469593	\N	\N
+6266	\N	\N	DAAE	2026-10-01 00:00:00	-185.76	291	50.00	1	\N	2	1	1	2026-10-15 17:05:24.027884	2026-10-15 17:05:24.02789	\N	\N
+6267	\N	\N	Elektro (Energia)	2026-10-01 00:00:00	-610.61	291	50.00	1	\N	2	1	1	2026-10-15 17:05:24.030765	2026-10-15 17:05:24.030769	\N	\N
+6268	\N	\N	Claro	2026-10-01 00:00:00	-293.99	301	50.00	1	\N	2	1	1	2026-10-15 17:05:24.03192	2026-10-15 17:05:24.031924	\N	\N
 3291	Transferência	Pix enviado	Carla Weygand Sabino	2021-12-21 14:18:00	-210.50	133	100.00	\N	\N	1	1	1	2026-10-08 17:55:55.479604	2026-10-08 17:55:55.479605	\N	\N
 3316	Contas	Pagamento de fatura do cartão	Fatura do cartão BTG Pactual	2022-01-07 12:47:00	-16401.57	40	100.00	\N	\N	1	1	1	2026-10-08 17:55:55.491392	2026-10-08 17:55:55.491394	\N	\N
 3365	Outra Categoria	Pagamento de boleto	Asaas Gestao Financeira S A	2022-02-08 10:19:00	-79.90	101	100.00	\N	\N	1	1	1	2026-10-08 17:55:55.511376	2026-10-08 19:01:01.326504	\N	\N
@@ -6770,21 +6840,85 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 10371	9	2022-01	2021-12-14 00:00:00	Farmacia Do Povo	-31.92	\N	\N	146	100.00	\N	\N	1	btg	3316	1	1	2026-10-08 18:49:51.651608	2026-10-09 15:51:29.621607
 10372	9	2022-01	2021-12-14 00:00:00	Frios De Gea	-43.06	\N	\N	18	100.00	\N	\N	1	btg	3316	1	1	2026-10-08 18:49:51.651611	2026-10-09 15:51:29.621607
 10373	9	2022-01	2021-12-18 00:00:00	Festa E Cia	-10.80	\N	\N	116	100.00	\N	\N	1	btg	3316	1	1	2026-10-08 18:49:51.651614	2026-10-09 15:51:29.621607
+18901	1	2026-10	2026-05-22 00:00:00	Asa Chlorophylla Indus	-162.31	5	5	4	0.00	2	\N	1	btg	\N	1	1	2026-10-15 17:00:08.629533	2026-10-15 17:00:08.629539
+18902	1	2026-10	2026-05-29 00:00:00	Produtos Alva	-188.31	5	6	4	0.00	2	\N	1	btg	\N	1	1	2026-10-15 17:00:08.629541	2026-10-15 17:00:08.629542
+18903	1	2026-10	2026-06-10 00:00:00	Alva Personal Care	-169.26	5	6	4	0.00	2	\N	1	btg	\N	1	1	2026-10-15 17:00:08.629543	2026-10-15 17:00:08.629544
+18904	1	2026-10	2026-07-16 00:00:00	Fios Da Terra Cosmetic	-511.26	3	3	4	0.00	2	\N	1	btg	\N	1	1	2026-10-15 17:00:08.629545	2026-10-15 17:00:08.629546
+18905	1	2026-10	2026-07-16 00:00:00	Asa Chlorophylla Indus	-308.69	3	5	4	0.00	2	\N	1	btg	\N	1	1	2026-10-15 17:00:08.629548	2026-10-15 17:00:08.629549
 10404	4	2022-02	2022-01-04 00:00:00	Amazon Prime	-19.85	\N	\N	19	100.00	\N	\N	1	btg	3360	1	1	2026-10-08 18:49:52.048652	2026-10-09 15:51:29.302378
 10405	4	2022-02	2022-01-04 00:00:00	Amazon Prime	-26.91	\N	\N	19	100.00	\N	\N	1	btg	3360	1	1	2026-10-08 18:49:52.048657	2026-10-09 15:51:29.302378
+18906	1	2026-10	2026-07-22 00:00:00	Globo Premiere	-29.90	3	12	\N	0.00	2	\N	1	btg	\N	1	1	2026-10-15 17:00:08.63149	2026-10-15 17:00:08.631494
+18907	1	2026-10	2026-08-18 00:00:00	Janaina Silva Co	-170.80	2	6	\N	0.00	2	\N	1	btg	\N	1	1	2026-10-15 17:00:08.631495	2026-10-15 17:00:08.631496
+18908	3	2026-10	2025-12-19 00:00:00	Kll Editora Ecommerce	-360.87	10	10	83	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.632611	2026-10-15 17:00:08.632614
+18909	3	2026-10	2026-06-03 00:00:00	Buffet Animali	-527.43	5	10	116	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.632616	2026-10-15 17:00:08.632617
+18911	3	2026-10	2026-07-14 00:00:00	Asa Ivian Expedicoes	-187.00	3	3	\N	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.633727	2026-10-15 17:00:08.633729
 10406	4	2022-02	2022-01-04 00:00:00	Amazon Prime	-35.62	\N	\N	19	100.00	\N	\N	1	btg	3360	1	1	2026-10-08 18:49:52.048662	2026-10-09 15:51:29.302378
+18912	3	2026-10	2026-07-15 00:00:00	Comercio De Confeccoes	-218.20	3	3	\N	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.633731	2026-10-15 17:00:08.633732
 10407	4	2022-02	2022-01-04 00:00:00	Amazon Prime	-18.37	\N	\N	19	100.00	\N	\N	1	btg	3360	1	1	2026-10-08 18:49:52.048667	2026-10-09 15:51:29.302378
+18913	3	2026-10	2026-07-25 00:00:00	Milon Rio Claro	-203.50	3	5	167	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.634799	2026-10-15 17:00:08.634802
 10408	4	2022-02	2022-01-06 00:00:00	Amazon	-184.99	1	10	61	100.00	\N	\N	1	btg	3360	1	1	2026-10-08 18:49:52.050253	2026-10-09 15:51:29.302378
+18914	3	2026-10	2026-07-25 00:00:00	Lynx Espaco De Beleza	-350.00	3	3	145	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.634804	2026-10-15 17:00:08.634805
+18915	3	2026-10	2026-07-29 00:00:00	Netshoes	-145.16	3	3	166	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.634806	2026-10-15 17:00:08.634807
+18916	3	2026-10	2026-08-05 00:00:00	Encanto	-250.60	3	3	166	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.634808	2026-10-15 17:00:08.634809
+18918	3	2026-10	2026-09-03 00:00:00	Milon Rio Claro	-179.90	2	2	167	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.636556	2026-10-15 17:00:08.636559
+18919	3	2026-10	2026-09-10 00:00:00	Boneca De Pano	-144.40	2	2	166	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.63656	2026-10-15 17:00:08.636561
+18917	3	2026-10	2026-08-19 00:00:00	16 953 190 Danieli Cri	-800.00	2	10	\N	0.00	2	\N	1	btg	\N	1	1	2026-10-15 17:00:08.635834	2026-10-15 17:02:59.236812
 10409	4	2022-02	2022-01-07 00:00:00	Burger King	-37.80	\N	\N	16	100.00	\N	\N	1	btg	3360	1	1	2026-10-08 18:49:52.051081	2026-10-09 15:51:29.302378
+18920	3	2026-10	2026-09-11 00:00:00	Af Barbosa	-243.06	2	2	\N	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.63743	2026-10-15 17:00:08.637432
+18921	3	2026-10	2026-09-14 00:00:00	Auto Posto Xurunga	-317.65	\N	\N	49	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.638098	2026-10-15 17:00:08.638101
+18922	3	2026-10	2026-09-14 00:00:00	X Café	-16.00	\N	\N	7	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.638102	2026-10-15 17:00:08.638103
+18923	3	2026-10	2026-09-16 00:00:00	Antonello E Sarti	-127.30	\N	\N	116	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.638105	2026-10-15 17:00:08.638106
+18924	3	2026-10	2026-09-16 00:00:00	Refritec	-162.50	1	2	\N	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.63895	2026-10-15 17:00:08.638953
+18925	3	2026-10	2026-09-17 00:00:00	Rose Camargo Modas	-78.00	\N	\N	166	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.639674	2026-10-15 17:00:08.639678
+18926	3	2026-10	2026-09-17 00:00:00	Authentika Bolsas	-120.00	\N	\N	166	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.639681	2026-10-15 17:00:08.639683
+18927	3	2026-10	2026-09-17 00:00:00	Twinstore	-192.50	1	4	166	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.640512	2026-10-15 17:00:08.640515
+18928	3	2026-10	2026-09-17 00:00:00	Droga Raia	-148.40	\N	\N	146	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.641357	2026-10-15 17:00:08.64136
+18929	3	2026-10	2026-09-18 00:00:00	Ifood	-7.95	\N	\N	16	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.641361	2026-10-15 17:00:08.641362
+18930	3	2026-10	2026-09-18 00:00:00	Escriba Papelaria	-43.50	\N	\N	\N	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.64247	2026-10-15 17:00:08.642473
+18931	3	2026-10	2026-09-19 00:00:00	Netflix	-20.90	\N	\N	28	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.643157	2026-10-15 17:00:08.64316
+18932	3	2026-10	2026-09-19 00:00:00	Eduardo G	-20.00	\N	\N	\N	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.643838	2026-10-15 17:00:08.643841
+18933	3	2026-10	2026-09-19 00:00:00	Latte Ricco	-48.00	\N	\N	7	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.644491	2026-10-15 17:00:08.644494
+18934	3	2026-10	2026-09-19 00:00:00	Latte Ricco	-29.00	\N	\N	7	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.644495	2026-10-15 17:00:08.644496
+18935	3	2026-10	2026-09-22 00:00:00	Paper Curumim	-214.70	\N	\N	\N	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.645357	2026-10-15 17:00:08.645361
+18936	3	2026-10	2026-09-22 00:00:00	Spotify	-40.90	\N	\N	34	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.646034	2026-10-15 17:00:08.646038
+18937	3	2026-10	2026-09-22 00:00:00	Rest Frangoassado Cai	-59.80	\N	\N	16	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.64604	2026-10-15 17:00:08.646042
+18938	3	2026-10	2026-09-22 00:00:00	Grupo Madero	-118.80	\N	\N	16	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.646044	2026-10-15 17:00:08.646046
+18939	3	2026-10	2026-09-22 00:00:00	Conectc Luiz Quinel	-150.00	\N	\N	57	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.646048	2026-10-15 17:00:08.64605
+18940	3	2026-10	2026-09-23 00:00:00	Jim.com* Jessica Cris	-110.00	\N	\N	145	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.646053	2026-10-15 17:00:08.646055
+18941	3	2026-10	2026-09-25 00:00:00	Natalia	-115.00	\N	\N	145	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.646057	2026-10-15 17:00:08.646059
+18942	3	2026-10	2026-09-26 00:00:00	Auto Posto Petro Sol	-232.34	\N	\N	49	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.64606	2026-10-15 17:00:08.646061
+18943	3	2026-10	2026-09-26 00:00:00	Rest Frangoassado Caj	-82.60	\N	\N	\N	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.647261	2026-10-15 17:00:08.647264
+18944	3	2026-10	2026-09-26 00:00:00	Estacionamento	-95.00	\N	\N	51	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.647933	2026-10-15 17:00:08.647936
+18945	3	2026-10	2026-09-26 00:00:00	03 Venues	-200.00	\N	\N	\N	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.648564	2026-10-15 17:00:08.648566
+18946	3	2026-10	2026-09-27 00:00:00	Clube Dos 50	-49.90	\N	\N	\N	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.648568	2026-10-15 17:00:08.648569
+18947	3	2026-10	2026-09-27 00:00:00	Clube Dos 50	-182.89	\N	\N	\N	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.64857	2026-10-15 17:00:08.648572
+18948	3	2026-10	2026-09-27 00:00:00	Ppro Microsoft	-52.90	\N	\N	\N	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.648573	2026-10-15 17:00:08.648574
+18949	3	2026-10	2026-09-28 00:00:00	Youtube	-26.90	\N	\N	36	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.649519	2026-10-15 17:00:08.649521
+18950	3	2026-10	2026-09-29 00:00:00	Cursor Ai Powered Ide	-114.28	\N	\N	158	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.649523	2026-10-15 17:00:08.649524
+18951	3	2026-10	2026-09-29 00:00:00	Rest Plata Forma	-80.60	\N	\N	16	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.649526	2026-10-15 17:00:08.649527
+18952	3	2026-10	2026-09-29 00:00:00	Bellafabrica	-45.00	\N	\N	\N	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.651195	2026-10-15 17:00:08.651198
+18953	3	2026-10	2026-09-29 00:00:00	46431616bruna	-119.99	\N	\N	\N	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.651199	2026-10-15 17:00:08.651201
 11138	11	2022-09	2022-09-08 00:00:00	Padaria Alema	-23.21	\N	\N	14	50.00	1	\N	1	btg	3602	1	1	2026-10-08 18:49:55.325662	2026-10-09 15:51:27.004081
 11139	11	2022-09	2022-09-08 00:00:00	Casa De Carnes Kl	-70.00	\N	\N	5	50.00	1	\N	1	btg	3602	1	1	2026-10-08 18:49:55.325667	2026-10-09 15:51:27.004081
+18954	3	2026-10	2026-09-30 00:00:00	Shopee	-96.33	1	2	74	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.651942	2026-10-15 17:00:08.651944
+18955	3	2026-10	2026-10-01 00:00:00	Claudiamelomo	-85.00	\N	\N	\N	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.652636	2026-10-15 17:00:08.652639
+18956	3	2026-10	2026-10-01 00:00:00	46431616bruna	-249.96	\N	\N	\N	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.65264	2026-10-15 17:00:08.652641
 11140	11	2022-09	2022-09-09 00:00:00	Contato Materiais De	-109.85	\N	\N	135	50.00	1	\N	1	btg	3602	1	1	2026-10-08 18:49:55.325669	2026-10-09 15:51:27.004081
+18957	3	2026-10	2026-10-02 00:00:00	Auto Posto Xurunga	-295.17	\N	\N	49	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.653472	2026-10-15 17:00:08.653475
+18958	3	2026-10	2026-10-02 00:00:00	Isaac Tecserv	-533.71	1	5	\N	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.654105	2026-10-15 17:00:08.654108
+18959	3	2026-10	2026-10-02 00:00:00	Isaac Tecserv	-436.62	1	5	\N	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.654109	2026-10-15 17:00:08.65411
+18960	3	2026-10	2026-10-02 00:00:00	Jim Com Restaurante	-65.24	\N	\N	16	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.654892	2026-10-15 17:00:08.654895
+18961	3	2026-10	2026-10-02 00:00:00	Authentika Bolsas	-79.80	\N	\N	166	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.654896	2026-10-15 17:00:08.654898
+18962	3	2026-10	2026-09-20 00:00:00	Melimais	-19.90	\N	\N	25	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.654899	2026-10-15 17:00:08.6549
 11141	11	2022-09	2022-09-10 00:00:00	Padaria Alema	-42.68	\N	\N	14	50.00	1	\N	1	btg	3602	1	1	2026-10-08 18:49:55.325672	2026-10-09 15:51:27.004081
 11142	11	2022-09	2022-09-10 00:00:00	Casa De Carnes Kl	-57.00	\N	\N	5	50.00	1	\N	1	btg	3602	1	1	2026-10-08 18:49:55.325675	2026-10-09 15:51:27.004081
 11143	11	2022-09	2022-09-10 00:00:00	Supermercado Brasil Fr	-280.83	\N	\N	18	50.00	1	\N	1	btg	3602	1	1	2026-10-08 18:49:55.325677	2026-10-09 15:51:27.004081
+18963	3	2026-10	2026-09-20 00:00:00	Conectc Luiz Quinel	-150.00	\N	\N	57	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.654901	2026-10-15 17:00:08.654902
+18964	3	2026-10	2026-09-20 00:00:00	School Picture	-222.00	1	2	83	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.655802	2026-10-15 17:00:08.655804
 10637	3	2022-05	2022-04-03 00:00:00	Auto Posto Xurunga	-350.75	\N	\N	49	100.00	\N	\N	1	btg	3453	1	1	2026-10-08 18:49:53.398568	2026-10-09 15:51:28.315572
 10638	3	2022-05	2022-04-03 00:00:00	Auto Posto Xurunga	-350.75	\N	\N	49	100.00	\N	\N	1	btg	3453	1	1	2026-10-08 18:49:53.398574	2026-10-09 15:51:28.315572
 10640	3	2022-05	2022-04-10 00:00:00	Mercado Qualidade	-235.07	\N	\N	18	100.00	\N	\N	1	btg	3453	1	1	2026-10-08 18:49:53.400399	2026-10-09 15:51:28.315572
+18965	3	2026-10	2026-09-21 00:00:00	Studio Winner	-65.00	\N	\N	141	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.65643	2026-10-15 17:00:08.656432
 10641	3	2022-05	2022-04-10 00:00:00	Drogasil	-103.36	\N	\N	146	100.00	\N	\N	1	btg	3453	1	1	2026-10-08 18:49:53.400403	2026-10-09 15:51:28.315572
 10642	3	2022-05	2022-04-12 00:00:00	Amazon.com.br	-243.49	\N	\N	61	100.00	\N	\N	1	btg	3453	1	1	2026-10-08 18:49:53.400406	2026-10-09 15:51:28.315572
 10644	3	2022-05	2022-04-14 00:00:00	Dm *crunchyroll	-32.00	\N	\N	22	100.00	\N	\N	1	btg	3453	1	1	2026-10-08 18:49:53.402279	2026-10-09 15:51:28.315572
@@ -6792,6 +6926,45 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 10647	3	2022-05	2022-04-22 00:00:00	Conectcar   *conectcar	-150.00	\N	\N	57	100.00	\N	\N	1	btg	3453	1	1	2026-10-08 18:49:53.403832	2026-10-09 15:51:28.315572
 10649	3	2022-05	2022-04-23 00:00:00	Bem Te Faz Farmacias L	-81.13	\N	\N	146	100.00	\N	\N	1	btg	3453	1	1	2026-10-08 18:49:53.405457	2026-10-09 15:51:28.315572
 10469	9	2022-02	2022-02-03 00:00:00	Casa De Bolo	-58.00	\N	\N	7	100.00	\N	\N	1	btg	3360	1	1	2026-10-08 18:49:52.074007	2026-10-09 15:51:29.302378
+18966	3	2026-10	2026-09-21 00:00:00	Milon Rio Claro	-265.00	\N	\N	167	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.656433	2026-10-15 17:00:08.656435
+18967	3	2026-10	2026-09-21 00:00:00	Crazy Shake	-54.50	\N	\N	7	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.656436	2026-10-15 17:00:08.656437
+18968	3	2026-10	2026-09-22 00:00:00	Auto Posto Xurunga	-189.59	\N	\N	49	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.656439	2026-10-15 17:00:08.65644
+18969	3	2026-10	2026-09-22 00:00:00	Jdm Comercio De Alim	-98.89	\N	\N	\N	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.657407	2026-10-15 17:00:08.657409
+18970	3	2026-10	2026-09-22 00:00:00	Dengo	-189.60	\N	\N	\N	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.657411	2026-10-15 17:00:08.657412
+18971	3	2026-10	2026-09-22 00:00:00	Inditex Brasil	-243.46	1	4	\N	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.658392	2026-10-15 17:00:08.658395
+18972	3	2026-10	2026-10-05 00:00:00	Yelum Seg Parc7	-216.15	\N	\N	58	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.659148	2026-10-15 17:00:08.659152
+18973	3	2026-10	2026-10-05 00:00:00	Brbikecomerciodeb	-358.37	1	12	\N	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.659901	2026-10-15 17:00:08.659904
+18974	3	2026-10	2026-10-05 00:00:00	Sapataria Lago Azul	-189.90	1	2	166	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.66064	2026-10-15 17:00:08.660643
+18975	3	2026-10	2026-10-09 00:00:00	Cursor Usage Mid Sep	-110.34	\N	\N	\N	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.661321	2026-10-15 17:00:08.661323
+18976	3	2026-10	2026-10-09 00:00:00	Conectc Luiz Quinel	-150.00	\N	\N	57	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.661986	2026-10-15 17:00:08.661988
+18977	3	2026-10	2026-10-09 00:00:00	Rest Prosa Mineira	-132.45	\N	\N	16	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.66199	2026-10-15 17:00:08.661991
+18978	3	2026-10	2026-10-10 00:00:00	Escriba Papelaria	-182.30	\N	\N	\N	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.662789	2026-10-15 17:00:08.662791
+18979	3	2026-10	2026-10-10 00:00:00	Antonello E Sarti	-136.90	\N	\N	116	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.663435	2026-10-15 17:00:08.663438
+18980	3	2026-10	2026-10-10 00:00:00	Porto Consorcio	-1603.62	\N	\N	50	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.66344	2026-10-15 17:00:08.663441
+18981	6	2026-10	2026-06-18 00:00:00	Segsun Materiais Eletr	-100.00	4	10	\N	0.00	3	\N	1	btg	\N	1	1	2026-10-15 17:00:08.664237	2026-10-15 17:00:08.664239
+18982	6	2026-10	2026-07-01 00:00:00	Ppa Limeira	-90.00	4	10	\N	0.00	3	\N	1	btg	\N	1	1	2026-10-15 17:00:08.664241	2026-10-15 17:00:08.664242
+18983	6	2026-10	2026-08-28 00:00:00	Claudiamelo	-122.40	2	2	166	0.00	3	\N	1	btg	\N	1	1	2026-10-15 17:00:08.665015	2026-10-15 17:00:08.665018
+18984	6	2026-10	2026-09-17 00:00:00	Óticas Carol	-290.90	1	10	\N	0.00	3	\N	1	btg	\N	1	1	2026-10-15 17:00:08.665737	2026-10-15 17:00:08.66574
+18985	6	2026-10	2026-09-19 00:00:00	Supermercado Savegnago	-248.01	\N	\N	18	0.00	3	\N	1	btg	\N	1	1	2026-10-15 17:00:08.666462	2026-10-15 17:00:08.666465
+18986	6	2026-10	2026-09-20 00:00:00	Droga Raia	-198.75	\N	\N	146	0.00	3	\N	1	btg	\N	1	1	2026-10-15 17:00:08.666467	2026-10-15 17:00:08.666468
+18987	6	2026-10	2026-09-21 00:00:00	Claudia Melo Moda Femi	-258.00	\N	\N	166	0.00	3	\N	1	btg	\N	1	1	2026-10-15 17:00:08.666469	2026-10-15 17:00:08.66647
+18988	6	2026-10	2026-09-24 00:00:00	Peixariabrasi	-193.58	\N	\N	\N	0.00	3	\N	1	btg	\N	1	1	2026-10-15 17:00:08.667382	2026-10-15 17:00:08.667385
+18989	6	2026-10	2026-09-24 00:00:00	Supermercado Savegnago	-203.11	\N	\N	18	0.00	3	\N	1	btg	\N	1	1	2026-10-15 17:00:08.668044	2026-10-15 17:00:08.668047
+18990	6	2026-10	2026-09-29 00:00:00	Droga Raia	-145.35	\N	\N	146	0.00	3	\N	1	btg	\N	1	1	2026-10-15 17:00:08.668049	2026-10-15 17:00:08.66805
+18991	6	2026-10	2026-10-01 00:00:00	Mercado Qualidade	-105.96	\N	\N	18	0.00	3	\N	1	btg	\N	1	1	2026-10-15 17:00:08.668051	2026-10-15 17:00:08.668053
+18992	6	2026-10	2026-10-01 00:00:00	Supermercado Savegnago	-81.73	\N	\N	18	0.00	3	\N	1	btg	\N	1	1	2026-10-15 17:00:08.668054	2026-10-15 17:00:08.668055
+18993	6	2026-10	2026-10-03 00:00:00	Supermercado Savegnago	-185.84	\N	\N	18	0.00	3	\N	1	btg	\N	1	1	2026-10-15 17:00:08.668056	2026-10-15 17:00:08.668058
+18994	6	2026-10	2026-10-03 00:00:00	Claudiamelomo	-124.80	\N	\N	\N	0.00	3	\N	1	btg	\N	1	1	2026-10-15 17:00:08.669194	2026-10-15 17:00:08.669198
+18995	6	2026-10	2026-10-03 00:00:00	Malitcia	-130.00	\N	\N	166	0.00	3	\N	1	btg	\N	1	1	2026-10-15 17:00:08.669907	2026-10-15 17:00:08.669911
+18996	6	2026-10	2026-10-05 00:00:00	Cnd 27 Rio Claro 0001	-125.34	\N	\N	\N	0.00	3	\N	1	btg	\N	1	1	2026-10-15 17:00:08.670676	2026-10-15 17:00:08.67068
+18997	6	2026-10	2026-10-08 00:00:00	Posto Mackey	-150.00	\N	\N	49	0.00	3	\N	1	btg	\N	1	1	2026-10-15 17:00:08.671378	2026-10-15 17:00:08.671381
+18998	6	2026-10	2026-10-08 00:00:00	Mini Modinha E Cia	-184.97	1	2	167	0.00	3	\N	1	btg	\N	1	1	2026-10-15 17:00:08.67208	2026-10-15 17:00:08.672082
+18999	6	2026-10	2026-10-08 00:00:00	Textil Abril Filial 18	-89.97	\N	\N	166	0.00	3	\N	1	btg	\N	1	1	2026-10-15 17:00:08.67271	2026-10-15 17:00:08.672713
+19000	6	2026-10	2026-10-08 00:00:00	Terezinha Borrag	-119.98	\N	\N	\N	0.00	3	\N	1	btg	\N	1	1	2026-10-15 17:00:08.673514	2026-10-15 17:00:08.673517
+19001	6	2026-10	2026-10-08 00:00:00	Castello Pereira Vestu	-249.80	\N	\N	\N	0.00	3	\N	1	btg	\N	1	1	2026-10-15 17:00:08.673519	2026-10-15 17:00:08.67352
+19002	6	2026-10	2026-10-10 00:00:00	Drogal	-87.11	\N	\N	146	0.00	3	\N	1	btg	\N	1	1	2026-10-15 17:00:08.674428	2026-10-15 17:00:08.674431
+19003	6	2026-10	2026-10-10 00:00:00	Savegnago	-157.63	\N	\N	18	0.00	3	\N	1	btg	\N	1	1	2026-10-15 17:00:08.674432	2026-10-15 17:00:08.674434
+19004	6	2026-10	2026-10-10 00:00:00	Casa De Carnes Kl	-165.30	\N	\N	5	0.00	3	\N	1	btg	\N	1	1	2026-10-15 17:00:08.674435	2026-10-15 17:00:08.674437
 10722	3	2022-06	2022-05-07 00:00:00	Fabricas De Bolo Vo Al	-83.00	\N	\N	14	100.00	\N	\N	1	btg	3504	1	1	2026-10-08 18:49:53.86502	2026-10-09 15:51:28.001671
 10723	3	2022-06	2022-05-07 00:00:00	Casa De Carnes Kl	-142.90	\N	\N	5	100.00	\N	\N	1	btg	3504	1	1	2026-10-08 18:49:53.865027	2026-10-09 15:51:28.001671
 10724	3	2022-06	2022-05-07 00:00:00	Padaria Alema	-51.51	\N	\N	14	100.00	\N	\N	1	btg	3504	1	1	2026-10-08 18:49:53.865031	2026-10-09 15:51:28.001671
@@ -6814,9 +6987,52 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 10537	9	2022-03	2022-03-02 00:00:00	Fabricas De Bolo Vo Al	-48.00	\N	\N	14	100.00	\N	\N	1	btg	3386	1	1	2026-10-08 18:49:52.506828	2026-10-09 15:51:28.974924
 10533	9	2022-03	2022-02-28 00:00:00	Francisco Nelson Rome	-108.00	\N	\N	101	100.00	\N	\N	1	btg	3386	1	1	2026-10-08 18:49:52.504903	2026-10-09 15:51:28.974924
 10535	9	2022-03	2022-02-17 00:00:00	1a99	-39.97	\N	\N	101	100.00	\N	\N	1	btg	3386	1	1	2026-10-08 18:49:52.5062	2026-10-09 15:51:28.974924
+19005	6	2026-10	2026-10-10 00:00:00	Authentika Bolsas	-49.90	\N	\N	166	0.00	3	\N	1	btg	\N	1	1	2026-10-15 17:00:08.674438	2026-10-15 17:00:08.674439
+19006	6	2026-10	2026-10-13 00:00:00	Sapataria Lago Azul	-196.54	1	3	166	0.00	3	\N	1	btg	\N	1	1	2026-10-15 17:00:08.675576	2026-10-15 17:00:08.675579
+19007	6	2026-10	2026-10-14 00:00:00	Claudiamelo	-148.18	1	3	166	0.00	3	\N	1	btg	\N	1	1	2026-10-15 17:00:08.67558	2026-10-15 17:00:08.675582
+19008	10	2026-10	2026-09-12 00:00:00	Contato Materiais De	-93.10	2	2	135	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.675583	2026-10-15 17:00:08.675584
+19009	10	2026-10	2026-09-14 00:00:00	Supermercado Brasil Fr	-108.43	\N	\N	18	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.676717	2026-10-15 17:00:08.67672
+19010	10	2026-10	2026-09-15 00:00:00	Pastelaria Roberto Jap	-106.00	\N	\N	16	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.676722	2026-10-15 17:00:08.676723
+19011	10	2026-10	2026-09-16 00:00:00	Casa De Carnes Kl	-582.85	\N	\N	5	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.676724	2026-10-15 17:00:08.676725
+19012	10	2026-10	2026-09-16 00:00:00	Savegnago	-261.47	\N	\N	18	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.676727	2026-10-15 17:00:08.676728
+19013	10	2026-10	2026-09-18 00:00:00	Supermercado Savegnago	-678.40	\N	\N	18	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.676729	2026-10-15 17:00:08.67673
+19014	10	2026-10	2026-09-18 00:00:00	Delicias Pan	-15.00	\N	\N	12	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.676731	2026-10-15 17:00:08.676733
+19015	10	2026-10	2026-09-19 00:00:00	Taiko Restaurante	-726.00	\N	\N	16	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.676734	2026-10-15 17:00:08.676735
+19016	10	2026-10	2026-09-19 00:00:00	Subway	-101.00	\N	\N	16	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.676736	2026-10-15 17:00:08.676737
+19017	10	2026-10	2026-09-30 00:00:00	Agropecuaria Brasil	-17.00	\N	\N	\N	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.678193	2026-10-15 17:00:08.678196
+19018	10	2026-10	2026-09-30 00:00:00	Mesa Farta Hortifruti	-23.33	\N	\N	9	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.678995	2026-10-15 17:00:08.678998
+19019	10	2026-10	2026-09-30 00:00:00	Burger King	-137.69	\N	\N	16	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.679	2026-10-15 17:00:08.679001
+19020	10	2026-10	2026-09-30 00:00:00	Burger King	-22.90	\N	\N	16	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.679002	2026-10-15 17:00:08.679003
+19021	10	2026-10	2026-10-01 00:00:00	Casa De Carnes Kl	-507.30	\N	\N	5	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.679005	2026-10-15 17:00:08.679006
+19022	10	2026-10	2026-10-01 00:00:00	Padaria Central	-67.61	\N	\N	14	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.679007	2026-10-15 17:00:08.679008
+19023	10	2026-10	2026-10-02 00:00:00	Supermercado Brasil Fr	-208.10	\N	\N	18	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.67901	2026-10-15 17:00:08.679011
+19024	10	2026-10	2026-10-02 00:00:00	Empório Lila	-48.67	\N	\N	11	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.679012	2026-10-15 17:00:08.679013
+19025	10	2026-10	2026-10-02 00:00:00	Brunasso Gourmet	-25.00	\N	\N	7	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.679015	2026-10-15 17:00:08.679016
+19026	10	2026-10	2026-09-20 00:00:00	Padaria Alema	-25.25	\N	\N	14	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.679017	2026-10-15 17:00:08.679018
+19027	10	2026-10	2026-09-21 00:00:00	Agropecuaria Brasil	-26.50	\N	\N	\N	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.680548	2026-10-15 17:00:08.680551
+19028	10	2026-10	2026-09-21 00:00:00	Supermercado Brasil Fr	-114.84	\N	\N	18	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.681372	2026-10-15 17:00:08.681375
+19029	10	2026-10	2026-09-22 00:00:00	Mercado Qualidade	-295.96	\N	\N	18	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.681377	2026-10-15 17:00:08.681378
+19030	10	2026-10	2026-09-22 00:00:00	Roseli Franco	-35.00	\N	\N	\N	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.682241	2026-10-15 17:00:08.682244
+19031	10	2026-10	2026-09-22 00:00:00	Empório Lila	-50.72	\N	\N	11	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.683066	2026-10-15 17:00:08.683068
+19032	10	2026-10	2026-09-24 00:00:00	Gas Ecia	-125.00	\N	\N	124	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.68307	2026-10-15 17:00:08.683071
+19033	10	2026-10	2026-09-26 00:00:00	Roberto De Moraes E	-68.00	\N	\N	16	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.683073	2026-10-15 17:00:08.683074
+19034	10	2026-10	2026-09-27 00:00:00	Wrc Comercio De Alimen	-343.00	\N	\N	\N	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.683967	2026-10-15 17:00:08.68397
+19035	10	2026-10	2026-09-28 00:00:00	Mercado Qualidade	-311.75	\N	\N	18	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.684649	2026-10-15 17:00:08.684652
+19036	10	2026-10	2026-09-28 00:00:00	Marco Antonio Contato	-27.00	\N	\N	135	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.684654	2026-10-15 17:00:08.684655
+19037	10	2026-10	2026-09-28 00:00:00	Padaria Alema	-99.24	\N	\N	14	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.684656	2026-10-15 17:00:08.684657
+19038	10	2026-10	2026-09-29 00:00:00	Roseli Franco	-40.00	\N	\N	\N	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.685592	2026-10-15 17:00:08.685595
 11259	11	2022-10	2022-10-07 00:00:00	Nancy S Burger	-181.99	\N	\N	16	50.00	1	\N	1	btg	3632	1	1	2026-10-08 18:49:55.783567	2026-10-09 15:51:26.669449
 11260	11	2022-10	2022-09-23 00:00:00	Gas E Cia	-115.00	\N	\N	124	50.00	1	\N	1	btg	3632	1	1	2026-10-08 18:49:55.78357	2026-10-09 15:51:26.669449
+19039	10	2026-10	2026-09-29 00:00:00	Empório Lila	-21.00	\N	\N	11	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.686563	2026-10-15 17:00:08.686566
 11261	11	2022-10	2022-09-24 00:00:00	Padaria Alema	-12.13	\N	\N	14	50.00	1	\N	1	btg	3632	1	1	2026-10-08 18:49:55.783572	2026-10-09 15:51:26.669449
+19040	10	2026-10	2026-09-29 00:00:00	Brunasso Gourmet	-14.00	\N	\N	7	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.686568	2026-10-15 17:00:08.686569
+19041	10	2026-10	2026-09-29 00:00:00	Delicias Pan	-15.00	\N	\N	12	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.686571	2026-10-15 17:00:08.686572
+19042	10	2026-10	2026-10-03 00:00:00	Examine	-397.42	\N	\N	18	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.686573	2026-10-15 17:00:08.686574
+19043	10	2026-10	2026-10-03 00:00:00	Savegnago	-138.01	\N	\N	18	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.686576	2026-10-15 17:00:08.686577
+19044	10	2026-10	2026-10-03 00:00:00	Examine	-165.90	\N	\N	18	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.686578	2026-10-15 17:00:08.686579
+19045	10	2026-10	2026-10-06 00:00:00	Baby Pastelaria	-112.40	\N	\N	16	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.686581	2026-10-15 17:00:08.686582
+19046	10	2026-10	2026-10-07 00:00:00	Nova Fazenda	-70.10	\N	\N	14	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.686583	2026-10-15 17:00:08.686584
+19047	10	2026-10	2026-10-08 00:00:00	Mesa Farta Hortifruti	-15.13	\N	\N	9	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.686585	2026-10-15 17:00:08.686587
 11262	11	2022-10	2022-09-24 00:00:00	Casa De Carnes Kl	-82.50	\N	\N	5	50.00	1	\N	1	btg	3632	1	1	2026-10-08 18:49:55.783574	2026-10-09 15:51:26.669449
 11264	11	2022-10	2022-10-08 00:00:00	Supermercado Brasil Fr	-266.34	\N	\N	18	50.00	1	\N	1	btg	3632	1	1	2026-10-08 18:49:55.786731	2026-10-09 15:51:26.669449
 11265	11	2022-10	2022-10-09 00:00:00	Padaria Alema	-10.72	\N	\N	14	50.00	1	\N	1	btg	3632	1	1	2026-10-08 18:49:55.786735	2026-10-09 15:51:26.669449
@@ -6830,6 +7046,17 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 10568	4	2022-04	2022-03-04 00:00:00	Amazon Digital Br	-27.99	\N	\N	61	100.00	\N	\N	1	btg	3418	1	1	2026-10-08 18:49:52.956352	2026-10-09 15:51:28.642842
 10569	4	2022-04	2022-03-04 00:00:00	Amazon Digital Br	-26.91	\N	\N	61	100.00	\N	\N	1	btg	3418	1	1	2026-10-08 18:49:52.956356	2026-10-09 15:51:28.642842
 10571	4	2022-04	2022-03-05 00:00:00	Starbucks	-35.00	\N	\N	7	100.00	\N	\N	1	btg	3418	1	1	2026-10-08 18:49:52.95941	2026-10-09 15:51:28.642842
+19048	10	2026-10	2026-10-08 00:00:00	Marco Antonio Contato	-100.00	\N	\N	135	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.686588	2026-10-15 17:00:08.686589
+19049	10	2026-10	2026-10-09 00:00:00	Delicias Pan	-30.00	\N	\N	12	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.68659	2026-10-15 17:00:08.686591
+19050	10	2026-10	2026-10-09 00:00:00	Delicias Pan	-25.00	\N	\N	12	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.686593	2026-10-15 17:00:08.686594
+19051	10	2026-10	2026-10-10 00:00:00	Savegnago	-471.07	\N	\N	18	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.686595	2026-10-15 17:00:08.686596
+19052	10	2026-10	2026-10-11 00:00:00	Casa De Carnes Kl	-801.65	\N	\N	5	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.686598	2026-10-15 17:00:08.686599
+19053	10	2026-10	2026-10-11 00:00:00	Supermercado Brasil Fr	-62.78	\N	\N	18	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.6866	2026-10-15 17:00:08.686601
+19054	10	2026-10	2026-10-11 00:00:00	Mesa Farta Hortifruti	-42.26	\N	\N	9	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.686602	2026-10-15 17:00:08.686604
+19055	10	2026-10	2026-10-13 00:00:00	Mercado Qualidade	-263.81	\N	\N	18	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.686605	2026-10-15 17:00:08.686606
+19056	10	2026-10	2026-10-13 00:00:00	Roseli Franco	-35.00	\N	\N	\N	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.688745	2026-10-15 17:00:08.688749
+19057	10	2026-10	2026-10-13 00:00:00	Brunasso Gourmet	-74.00	\N	\N	7	50.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.689533	2026-10-15 17:00:08.689536
+19058	8	2026-10	2026-04-20 00:00:00	Milon Rio Claro	-288.91	6	6	167	100.00	\N	\N	1	btg	\N	1	1	2026-10-15 17:00:08.690212	2026-10-15 17:00:08.690214
 11388	11	2022-11	2022-11-01 00:00:00	Casa De Carnes Kl	-77.00	\N	\N	5	50.00	1	\N	1	btg	3666	1	1	2026-10-08 18:49:56.282364	2026-10-09 15:51:26.323989
 11389	11	2022-11	2022-11-03 00:00:00	Supermercado Savegnago	-891.10	\N	\N	18	50.00	1	\N	1	btg	3666	1	1	2026-10-08 18:49:56.282366	2026-10-09 15:51:26.323989
 11390	11	2022-11	2022-11-04 00:00:00	Casa De Carnes Kl	-80.00	\N	\N	5	50.00	1	\N	1	btg	3666	1	1	2026-10-08 18:49:56.282369	2026-10-09 15:51:26.323989
@@ -6861,6 +7088,7 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 10622	9	2022-04	2022-03-20 00:00:00	Pag*tycket	-140.00	\N	\N	101	100.00	\N	\N	1	btg	3418	1	1	2026-10-08 18:49:52.980901	2026-10-09 15:51:28.642842
 10624	9	2022-04	2022-03-22 00:00:00	Cll Servicos De Medici	-50.00	\N	\N	101	100.00	\N	\N	1	btg	3418	1	1	2026-10-08 18:49:52.982496	2026-10-09 15:51:28.642842
 10629	9	2022-04	2022-03-24 00:00:00	Grano Ricco	-63.00	\N	\N	101	100.00	\N	\N	1	btg	3418	1	1	2026-10-08 18:49:52.984508	2026-10-09 15:51:28.642842
+18910	3	2026-10	2026-06-27 00:00:00	Aqui Tem	-459.98	4	5	\N	0.00	1	\N	1	btg	\N	1	1	2026-10-15 17:00:08.633719	2026-10-15 17:02:41.849891
 11538	11	2022-12	2022-11-29 00:00:00	Kombidafruta	-492.00	\N	\N	9	50.00	1	\N	1	btg	3697	1	1	2026-10-08 18:49:56.768961	2026-10-09 15:51:26.004599
 10887	3	2022-08	2022-07-03 00:00:00	Padaria Alema	-52.34	\N	\N	14	100.00	\N	\N	1	btg	3562	1	1	2026-10-08 18:49:54.828002	2026-10-09 15:51:27.340448
 10888	3	2022-08	2022-07-03 00:00:00	Padaria Alema	-12.00	\N	\N	14	100.00	\N	\N	1	btg	3562	1	1	2026-10-08 18:49:54.828009	2026-10-09 15:51:27.340448
@@ -15317,11 +15545,11 @@ COPY public.expense_sharing_settings (id, shared_account_id, my_contribution_per
 COPY public.expense_template_items (id, expense_template_id, description, amount, day_of_month, subtag_id, ownership_percentage, expense_sharing_id, display_order, account_id, tenant_id, created_by, created_at, last_updated_at) FROM stdin;
 1	1	Outras Despesas Compartilhadas	\N	1	101	50.00	1	1	1	1	1	2026-10-08 17:50:03.336036	2026-10-08 17:50:03.336041
 2	1	Reembolso Integral	\N	1	101	0.00	1	2	1	1	1	2026-10-08 17:50:03.336043	2026-10-08 17:50:03.336044
-3	2	DAAE	\N	1	291	50.00	1	1	2	1	1	2026-10-09 15:03:26.224701	2026-10-09 15:03:26.224717
-4	2	Elektro (Energia)	\N	1	291	50.00	1	2	2	1	1	2026-10-09 15:03:26.224719	2026-10-09 15:03:26.22472
-5	2	Claro	\N	1	301	50.00	1	3	2	1	1	2026-10-09 15:03:26.224722	2026-10-09 15:03:26.224723
-6	2	Outras Despesas Compartilhadas	\N	1	268	50.00	1	4	2	1	1	2026-10-09 15:03:26.224724	2026-10-09 15:03:26.224725
-7	2	Reembolso Integral	\N	1	268	0.00	1	5	2	1	1	2026-10-09 15:03:26.224727	2026-10-09 15:03:26.224728
+3	2	DAAE	\N	1	291	50.00	1	0	2	1	1	2026-10-09 15:03:26.224701	2026-10-15 17:05:23.579712
+6	2	Outras Despesas Compartilhadas	\N	1	268	50.00	1	3	2	1	1	2026-10-09 15:03:26.224724	2026-10-15 17:05:23.618626
+4	2	Elektro (Energia)	\N	1	291	50.00	1	1	2	1	1	2026-10-09 15:03:26.224719	2026-10-15 17:05:23.644131
+5	2	Claro	\N	1	301	50.00	1	2	2	1	1	2026-10-09 15:03:26.224722	2026-10-15 17:05:23.674639
+7	2	Reembolso Integral	\N	1	268	0.00	1	4	2	1	1	2026-10-09 15:03:26.224727	2026-10-15 17:05:23.708363
 \.
 
 
@@ -15559,6 +15787,7 @@ COPY public.migration_history (id, version, name, status, applied_at, rollback_a
 353	0021	invoice_group_due_day	applied	2026-10-08 17:48:44.926641-03	\N
 354	0022	card_closing_and_payment_day	applied	2026-10-08 17:48:44.936614-03	\N
 355	0023	drop_card_payment_day	applied	2026-10-08 17:48:44.941935-03	\N
+701	0024	add_expected_expenses	applied	2026-10-15 16:54:47.683368-03	\N
 1	0001	Schema Inicial Multi-Tenant	applied	2026-10-08 17:48:43.560037-03	\N
 2	0002	Seed Data Inicial	applied	2026-10-08 17:48:44.73233-03	\N
 3	0003	Rename Datetime To Date	applied	2026-10-08 17:48:44.768624-03	\N
@@ -15578,6 +15807,19 @@ COPY public.migration_history (id, version, name, status, applied_at, rollback_a
 17	0017	sharing_revenue_expense_percentages	applied	2026-10-08 17:48:44.900863-03	\N
 222	0018	add_account_import_file_password	applied	2026-10-08 17:48:44.904633-03	\N
 313	0019	drop_is_account_card	applied	2026-10-08 17:48:44.911562-03	\N
+\.
+
+
+--
+-- Data for Name: monthly_projections; Type: TABLE DATA; Schema: public; Owner: plumo
+--
+
+COPY public.monthly_projections (id, year_month, expected_date, description, amount, my_amount, kind, source, credit_card_id, invoice_group_id, breakdown, account_id, tenant_id, created_by, created_at, last_updated_at, active) FROM stdin;
+1	2026-10	2026-10-15	Adiantamento salarial (estimativa)	8018.40	8018.40	income	payroll	\N	\N	\N	1	1	1	2026-10-15 17:22:17.642736	2026-10-15 17:22:17.642743	t
+2	2026-10	2026-10-29	Salário (fim do mês) (estimativa)	6858.57	6858.57	income	payroll	\N	\N	\N	1	1	1	2026-10-15 17:22:17.642746	2026-10-15 17:22:17.642748	t
+3	2026-10	2026-10-10	Rodobens	4446.59	4446.59	fixed	manual	\N	\N	\N	1	1	1	2026-10-15 17:35:29.192209	2026-10-15 17:35:40.232449	t
+4	2026-10	2026-10-16	Fatura MercadoPago •8483	174.60	174.60	variable	card_invoice	7	\N	\N	1	1	1	2026-10-15 17:36:56.686961	2026-10-15 17:36:56.686968	t
+5	2026-10	2026-10-14	Fatura BTG Família	26191.91	14433.53	variable	card_invoice	\N	1	[{"amount": "4214.02", "card_id": 1, "card_name": "Acalento", "my_amount": "51.60", "card_number": "0323"}, {"amount": "7202.12", "card_id": 3, "card_name": "Gustavo", "my_amount": "6792.27", "card_number": "3529"}, {"amount": "3773.69", "card_id": 6, "card_name": "Lurdes", "my_amount": "0.00", "card_number": "3501"}, {"amount": "3532.75", "card_id": 8, "card_name": "Natália", "my_amount": "3362.31", "card_number": "7970"}, {"amount": "5989.81", "card_id": 10, "card_name": "Polezel", "my_amount": "3079.61", "card_number": "9833"}, {"amount": "1479.54", "card_id": 13, "card_name": "Virtual", "my_amount": "1147.74", "card_number": "6916"}]	1	1	1	2026-10-15 17:36:56.688831	2026-10-15 17:36:56.688835	t
 \.
 
 
@@ -17473,7 +17715,7 @@ COPY public.transaction_mappings (id, mapping_type, original_description, patter
 --
 
 COPY public.users (id, email, first_name, last_name, role, is_admin, auth_provider, password_hash, theme_mode, high_contrast_mode, reduce_motion, colorblind_safe_palette, accessibility_level, profile_image_filename, last_login_at, tenant_id, created_at, last_updated_at, active, sidebar_collapsed, hide_balance_values) FROM stdin;
-1	gustavoquinelato@gmail.com	Gustavo	Quinelato	admin	t	local	4f1c21e3d4b262d25cd6bd2c2e478d66b9621cace99cf6c57d8359e949307e00	light	f	f	f	regular	\N	2026-10-14 11:51:52.2504	1	2026-10-08 17:48:44.672272	2026-10-08 17:48:44.672272	t	f	f
+1	gustavoquinelato@gmail.com	Gustavo	Quinelato	admin	t	local	4f1c21e3d4b262d25cd6bd2c2e478d66b9621cace99cf6c57d8359e949307e00	light	f	f	f	regular	\N	2026-10-15 19:59:30.847453	1	2026-10-08 17:48:44.672272	2026-10-15 17:28:58.108647	t	f	f
 \.
 
 
@@ -17543,6 +17785,10 @@ COPY public.users_sessions (id, token_hash, expires_at, ip_address, user_agent, 
 11	822ca68cd40cd3fac35391e4af3d8a36deb60c5ea9fa1f1f803cab3fc3670bdd	2026-10-13 20:12:46.752956	\N	\N	1	1	\N	2026-10-12 20:12:46.731952	2026-10-12 20:12:46.731952	t
 12	702efb82b805fd2801a1ad72cf694810663f2ccbec2c383d0f7f8a10de579506	2026-10-15 08:51:52.286753	\N	\N	1	1	\N	2026-10-14 08:51:52.287324	2026-10-14 08:51:52.287324	t
 13	f75d933087dbb3104a044a1557e289ba2cff1f6a91381d613c41a25386393b6e	2026-10-15 08:51:54.677011	\N	\N	1	1	\N	2026-10-14 08:51:54.659746	2026-10-14 08:51:54.659746	t
+14	4ab1cfd4d24fc87c427c4bfc278eea0d07954b16b9e9e83a34bcf1baec87ace2	2026-10-16 16:59:30.883978	\N	\N	1	1	\N	2026-10-15 16:59:30.884767	2026-10-15 16:59:30.884767	t
+15	2896911491e076bb6b3b5788411c5569926451c320707098b9f5c7cd0e181278	2026-10-16 16:59:33.343071	\N	\N	1	1	\N	2026-10-15 16:59:33.328157	2026-10-15 16:59:33.328157	t
+16	435234273ecec038c3a06eca1d9df568d3523db8a1f392471056042637d13c45	2026-10-16 17:03:39.432385	\N	\N	1	1	\N	2026-10-15 17:03:39.420521	2026-10-15 17:03:39.420521	t
+17	6611f9074c70a216c5f23c8f741e231582fc5bc027c5b4461924d86aa5ec4256	2026-10-16 17:05:41.215348	\N	\N	1	1	\N	2026-10-15 17:05:41.201979	2026-10-15 17:05:41.201979	t
 \.
 
 
@@ -17571,14 +17817,14 @@ SELECT pg_catalog.setval('public.balance_closure_payments_id_seq', 35, true);
 -- Name: balance_closures_id_seq; Type: SEQUENCE SET; Schema: public; Owner: plumo
 --
 
-SELECT pg_catalog.setval('public.balance_closures_id_seq', 36, true);
+SELECT pg_catalog.setval('public.balance_closures_id_seq', 37, true);
 
 
 --
 -- Name: bank_statements_id_seq; Type: SEQUENCE SET; Schema: public; Owner: plumo
 --
 
-SELECT pg_catalog.setval('public.bank_statements_id_seq', 6249, true);
+SELECT pg_catalog.setval('public.bank_statements_id_seq', 6268, true);
 
 
 --
@@ -17606,7 +17852,7 @@ SELECT pg_catalog.setval('public.credit_card_invoice_groups_id_seq', 1, true);
 -- Name: credit_card_invoices_id_seq; Type: SEQUENCE SET; Schema: public; Owner: plumo
 --
 
-SELECT pg_catalog.setval('public.credit_card_invoices_id_seq', 18742, true);
+SELECT pg_catalog.setval('public.credit_card_invoices_id_seq', 19058, true);
 
 
 --
@@ -17683,7 +17929,14 @@ SELECT pg_catalog.setval('public.loans_id_seq', 3, true);
 -- Name: migration_history_id_seq; Type: SEQUENCE SET; Schema: public; Owner: plumo
 --
 
-SELECT pg_catalog.setval('public.migration_history_id_seq', 700, true);
+SELECT pg_catalog.setval('public.migration_history_id_seq', 701, true);
+
+
+--
+-- Name: monthly_projections_id_seq; Type: SEQUENCE SET; Schema: public; Owner: plumo
+--
+
+SELECT pg_catalog.setval('public.monthly_projections_id_seq', 5, true);
 
 
 --
@@ -17774,7 +18027,7 @@ SELECT pg_catalog.setval('public.users_permissions_id_seq', 40, true);
 -- Name: users_sessions_id_seq; Type: SEQUENCE SET; Schema: public; Owner: plumo
 --
 
-SELECT pg_catalog.setval('public.users_sessions_id_seq', 13, true);
+SELECT pg_catalog.setval('public.users_sessions_id_seq', 17, true);
 
 
 --
@@ -17959,6 +18212,14 @@ ALTER TABLE ONLY public.migration_history
 
 ALTER TABLE ONLY public.migration_history
     ADD CONSTRAINT migration_history_version_key UNIQUE (version);
+
+
+--
+-- Name: monthly_projections monthly_projections_pkey; Type: CONSTRAINT; Schema: public; Owner: plumo
+--
+
+ALTER TABLE ONLY public.monthly_projections
+    ADD CONSTRAINT monthly_projections_pkey PRIMARY KEY (id);
 
 
 --
@@ -18793,6 +19054,13 @@ CREATE INDEX idx_mappings_tenant ON public.transaction_mappings USING btree (ten
 --
 
 CREATE INDEX idx_mappings_type ON public.transaction_mappings USING btree (mapping_type);
+
+
+--
+-- Name: idx_monthly_projections_period; Type: INDEX; Schema: public; Owner: plumo
+--
+
+CREATE INDEX idx_monthly_projections_period ON public.monthly_projections USING btree (tenant_id, account_id, year_month);
 
 
 --
@@ -19774,6 +20042,46 @@ ALTER TABLE ONLY public.loans
 
 
 --
+-- Name: monthly_projections monthly_projections_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: plumo
+--
+
+ALTER TABLE ONLY public.monthly_projections
+    ADD CONSTRAINT monthly_projections_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: monthly_projections monthly_projections_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: plumo
+--
+
+ALTER TABLE ONLY public.monthly_projections
+    ADD CONSTRAINT monthly_projections_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id);
+
+
+--
+-- Name: monthly_projections monthly_projections_credit_card_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: plumo
+--
+
+ALTER TABLE ONLY public.monthly_projections
+    ADD CONSTRAINT monthly_projections_credit_card_id_fkey FOREIGN KEY (credit_card_id) REFERENCES public.credit_cards(id) ON DELETE SET NULL;
+
+
+--
+-- Name: monthly_projections monthly_projections_invoice_group_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: plumo
+--
+
+ALTER TABLE ONLY public.monthly_projections
+    ADD CONSTRAINT monthly_projections_invoice_group_id_fkey FOREIGN KEY (invoice_group_id) REFERENCES public.credit_card_invoice_groups(id) ON DELETE SET NULL;
+
+
+--
+-- Name: monthly_projections monthly_projections_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: plumo
+--
+
+ALTER TABLE ONLY public.monthly_projections
+    ADD CONSTRAINT monthly_projections_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
 -- Name: notifications notifications_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: plumo
 --
 
@@ -20081,5 +20389,5 @@ GRANT ALL ON SCHEMA public TO PUBLIC;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict kMnh9n69egkAa0YirRn3R0lkctp0yK1gXaIDaHCd1FEkPDHhL0c2GPq6vOs5DH0
+\unrestrict z0sRGetnpaywfKqiimkpOl9JEfIE1n82YyUGuPlpa0hpXt1O4cxa4lsrFXbCx96
 

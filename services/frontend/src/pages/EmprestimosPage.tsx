@@ -591,7 +591,7 @@ export default function EmprestimosPage() {
     setFormLoanType(loan.loan_type)
     const absAmount = Math.abs(loan.principal_amount)
     setFormAmountCents(String(Math.round(absAmount * 100)))
-    setFormAmount(absAmount.toFixed(2))
+    setFormAmount(`${loan.loan_type === 'borrowed' ? '-' : ''}${absAmount.toFixed(2)}`)
     setFormDescription(loan.description)
     setFormLoanDate(loan.loan_date.split('T')[0])
     setFormDueDate(loan.due_date ? loan.due_date.split('T')[0] : '')
@@ -1392,71 +1392,51 @@ export default function EmprestimosPage() {
                 )}
                 <CadastroFormSection title="Identificação" icon={<Wallet size={14} />}>
                   <CadastroModalFieldsGrid>
-                    <CadastroModalFieldsRow>
-                      <div className={`min-w-0 ${editingSettled ? 'pointer-events-none opacity-50' : ''}`}>
-                        <CadastroFieldLabel required>Tipo de Empréstimo</CadastroFieldLabel>
-                        <div className="mt-1.5 flex flex-wrap items-center gap-6">
-                          <label className={cadastroOptionLabelCls}>
-                            <input
-                              type="radio"
-                              name="form-loan-type"
-                              value="lent"
-                              checked={formLoanType === 'lent'}
-                              onChange={() => setFormLoanType('lent')}
-                              disabled={editingSettled}
-                              className={cadastroAccentControlCls}
-                            />
-                            A receber
-                          </label>
-                          <label className={cadastroOptionLabelCls}>
-                            <input
-                              type="radio"
-                              name="form-loan-type"
-                              value="borrowed"
-                              checked={formLoanType === 'borrowed'}
-                              onChange={() => setFormLoanType('borrowed')}
-                              disabled={editingSettled}
-                              className={cadastroAccentControlCls}
-                            />
-                            A pagar
-                          </label>
-                        </div>
-                      </div>
-                    </CadastroModalFieldsRow>
                     <CadastroModalFieldsRow cols={2}>
                       <label className={`block min-w-0 ${editingSettled ? 'pointer-events-none opacity-50' : ''}`}>
-                        <CadastroFieldLabel required>Valor</CadastroFieldLabel>
+                        <CadastroFieldLabel required>
+                          Valor {formAmountCents && formAmountCents !== '0' ? (
+                            <span className={`font-semibold ${formLoanType === 'lent' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                              ({formLoanType === 'lent' ? 'A receber' : 'A pagar'})
+                            </span>
+                          ) : null}
+                        </CadastroFieldLabel>
                         <div className="relative mt-0.5">
-                          <span
-                            className={`absolute left-3 top-1/2 -translate-y-1/2 font-semibold ${
-                              formLoanType === 'lent'
-                                ? 'text-green-600 dark:text-green-400'
-                                : 'text-red-600 dark:text-red-400'
-                            }`}
-                          >
+                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm font-semibold text-gray-500 dark:text-gray-400">
                             R$
                           </span>
                           <input
                             type="text"
-                            inputMode="numeric"
-                            value={formatAmountMask(formAmountCents)}
+                            inputMode="decimal"
+                            value={formAmount}
                             onChange={(e) => {
-                              const cents = e.target.value.replace(/\D/g, '')
-                              const absValue = parseInt(cents || '0', 10) / 100
-                              if (absValue > 99999999.99) return
-                              setFormAmountCents(cents)
-                              setFormAmount(absValue === 0 ? '' : absValue.toFixed(2))
+                              const value = e.target.value
+                              if (value !== '' && !/^-?\d*\.?\d*$/.test(value)) return
+                              const n = parseFloat(value)
+                              if (!isNaN(n) && Math.abs(n) > 99999999.99) return
+                              setFormAmount(value)
+                              setFormAmountCents(isNaN(n) ? '' : String(Math.round(Math.abs(n) * 100)))
+                              if (!isNaN(n) && n !== 0) setFormLoanType(n > 0 ? 'lent' : 'borrowed')
+                            }}
+                            onBlur={() => {
+                              const n = parseFloat(formAmount)
+                              if (!isNaN(n)) setFormAmount(n.toFixed(2))
                             }}
                             placeholder="0.00"
                             required
                             disabled={editingSettled}
-                            className={`${cadastroFieldCls} pl-12 font-semibold ${
-                              formLoanType === 'lent'
+                            className={`${cadastroFieldCls} pl-10 font-semibold ${
+                              !formAmountCents || formAmountCents === '0'
+                                ? 'text-gray-600 dark:text-gray-400'
+                                : formLoanType === 'lent'
                                 ? 'text-green-600 dark:text-green-400'
                                 : 'text-red-600 dark:text-red-400'
                             } ${editingSettled ? 'cursor-not-allowed' : ''}`}
                           />
                         </div>
+                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          Use valores positivos para a receber e negativos para a pagar
+                        </p>
                       </label>
                       <label className={`block min-w-0 ${editingSettled ? 'pointer-events-none opacity-50' : ''}`}>
                         <CadastroFieldLabel required>Data</CadastroFieldLabel>

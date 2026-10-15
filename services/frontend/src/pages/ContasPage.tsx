@@ -46,6 +46,7 @@ import Toast from '../components/Toast'
 import { ArrowUp, Edit2, Trash2, Building2, Landmark, X, FileLock2, Eye, EyeOff } from 'lucide-react'
 import axios from 'axios'
 import { useConfirm } from '../hooks/useConfirm'
+import { useExportRunner } from '../hooks/useExportRunner'
 import { CadastroListHeaderActions } from '../components/CadastroExcelMenu'
 import { exportContasToExcel } from '../utils/exportCadastroExcel'
 
@@ -126,6 +127,8 @@ const ContasPage = () => {
   const showToast = (message: string, type: 'success' | 'error' | 'warning') => {
     setToast({ show: true, message, type })
   }
+
+  const exportRunner = useExportRunner((message) => showToast(message, 'error'))
 
   useEffect(() => {
     carregarContas()
@@ -480,7 +483,9 @@ const ContasPage = () => {
                 <CadastroListHeaderActions
                   menu={{
                     exportDisabled: contasFiltradas.length === 0,
-                    onExportExcel: () => exportContasToExcel(contasFiltradas),
+                    onExportExcel: () => {
+                      void exportRunner.run('Gerando Excel…', () => exportContasToExcel(contasFiltradas))
+                    },
                   }}
                 >
                   <CadastroListCreateButton label="Nova Conta" onClick={abrirModalNovo} />
@@ -861,6 +866,7 @@ const ContasPage = () => {
       )}
 
       {/* Dialog de confirmação */}
+      {exportRunner.overlay}
       <ConfirmComponent />
     </div>
   )

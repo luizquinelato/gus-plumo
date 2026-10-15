@@ -12,6 +12,8 @@ alembic==1.14.0
 python-dotenv==1.0.1
 pandas
 openpyxl
+xlsxwriter==3.2.9
+reportlab==5.0.1
 pyexcel
 pyexcel-xls
 PyPDF2

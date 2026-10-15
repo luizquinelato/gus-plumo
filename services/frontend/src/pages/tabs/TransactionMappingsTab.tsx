@@ -5,6 +5,7 @@ import MappingsReportMenu from '../../components/MappingsReportMenu'
 import { CadastroListHeaderActions } from '../../components/CadastroExcelMenu'
 import { exportTransactionMappingsToExcel } from '../../utils/exportToExcel'
 import { useConfirm } from '../../hooks/useConfirm'
+import { useExportRunner } from '../../hooks/useExportRunner'
 import { useEscapeKey } from '../../hooks/useEscapeKey'
 import Toast from '../../components/Toast'
 import FloatingFooterBar from '../../components/FloatingFooterBar'
@@ -389,6 +390,8 @@ const TransactionMappingsTab = () => {
   const showToast = (message: string, type: 'success' | 'error' | 'warning') => {
     setToast({ show: true, message, type })
   }
+
+  const exportRunner = useExportRunner((message) => showToast(message, 'error'))
 
   // Form state
   const [formData, setFormData] = useState({
@@ -1534,16 +1537,16 @@ const TransactionMappingsTab = () => {
       showToast('Nenhum mapeamento para exportar.', 'warning')
       return
     }
-    try {
-      exportTransactionMappingsToExcel(sortedFilteredMappings, {
-        filterSummary: mappingExportFilterSummary,
-        searchTerm: searchTerm.trim() || undefined,
+    void exportRunner
+      .run('Gerando Excel…', () =>
+        exportTransactionMappingsToExcel(sortedFilteredMappings, {
+          filterSummary: mappingExportFilterSummary,
+          searchTerm: searchTerm.trim() || undefined,
+        }),
+      )
+      .then((ok) => {
+        if (ok) showToast('Excel exportado com sucesso.', 'success')
       })
-      showToast('Excel exportado com sucesso.', 'success')
-    } catch (error) {
-      console.error('Erro ao exportar Excel de mapeamentos:', error)
-      showToast('Não foi possível exportar o Excel.', 'error')
-    }
   }
 
   // Estado do checkbox "selecionar todos": 'none' | 'partial' | 'all'
@@ -3325,6 +3328,7 @@ const TransactionMappingsTab = () => {
         importStats={closureSummary?.importStats}
         onClose={() => setClosureSummary(null)}
       />
+      {exportRunner.overlay}
       <ConfirmComponent />
 
       {/* Toast */}

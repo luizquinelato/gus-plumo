@@ -18,6 +18,8 @@ import MappingsPage from './pages/MappingsPage'
 import ExtratoPage from './pages/ExtratoPage'
 import BalancoPage from './pages/BalancoPage'
 import FaturasPage from './pages/FaturasPage'
+import SaldoParceladoPage from './pages/SaldoParceladoPage'
+import ProjecaoMensalPage from './pages/ProjecaoMensalPage'
 import CuradoriaPage from './pages/CuradoriaPage'
 import ReconciliacaoPage from './pages/ReconciliacaoPage'
 import TagsSubtagsPage from './pages/TagsSubtagsPage'
@@ -29,6 +31,7 @@ import PayrollPage from './pages/PayrollPage'
 import AccountClosuresPage from './pages/AccountClosuresPage'
 import HealthCheckPage from './pages/HealthCheckPage'
 import { useColorApplication } from './hooks/useColorApplication'
+import { useAlert } from './hooks/useAlert'
 
 // Component that applies colors to DOM
 function ColorApplicationWrapper({ children }: { children: React.ReactNode }) {
@@ -46,6 +49,20 @@ function DevTitleEffect() {
   return null
 }
 
+// Exibe, no diálogo padrão (useAlert), erros disparados por código fora de componentes React
+function GlobalErrorAlert() {
+  const { showError, AlertComponent } = useAlert()
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const { title, message } = (event as CustomEvent<{ title: string; message: string }>).detail
+      showError(title, message)
+    }
+    window.addEventListener('app:error-alert', handler)
+    return () => window.removeEventListener('app:error-alert', handler)
+  })
+  return <AlertComponent />
+}
+
 function App() {
   return (
     <ThemeProvider>
@@ -54,6 +71,7 @@ function App() {
         <BalanceVisibilityProvider>
         <ColorApplicationWrapper>
           <DevTitleEffect />
+          <GlobalErrorAlert />
           <Router
           future={{
             v7_startTransition: true,
@@ -195,6 +213,22 @@ function App() {
                 }
               />
               <Route
+                path="/relatorios/saldo-parcelado"
+                element={
+                  <ProtectedRoute>
+                    <SaldoParceladoPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/relatorios/projecao-mensal"
+                element={
+                  <ProtectedRoute>
+                    <ProjecaoMensalPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/relatorios/grupo"
                 element={
                   <ProtectedRoute>
@@ -212,6 +246,14 @@ function App() {
               />
               <Route path="/relatorios/holerites" element={<Navigate to="/informes" replace />} />
               <Route
+                path="/relatorios/saude"
+                element={
+                  <ProtectedRoute>
+                    <HealthCheckPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/fechamentos/saude"
                 element={
                   <ProtectedRoute>
@@ -219,7 +261,7 @@ function App() {
                   </ProtectedRoute>
                 }
               />
-              <Route path="/saude-financeira" element={<Navigate to="/fechamentos/saude" replace />} />
+              <Route path="/saude-financeira" element={<Navigate to="/relatorios/saude" replace />} />
               <Route
                 path="/fechamentos/faturas"
                 element={

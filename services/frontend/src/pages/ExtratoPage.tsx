@@ -8,7 +8,6 @@ import {
   CadastroListPageShell,
   CadastroListPageTabs,
   CadastroListPrimaryButton,
-  CadastroListSecondaryButton,
   listPageTableRowHoverCls,
   listPageTableStickyActionsCellCls,
   listPageTableStickyActionsHeaderCls,
@@ -33,7 +32,7 @@ import type { ExpenseEditSuccessPayload } from '../utils/closureEditImpact'
 import SharedAccountDisplay from '../components/SharedAccountDisplay'
 import { MultiSelectDropdown, SourceMultiSelectDropdown } from '../components/MultiSelectDropdown'
 import { DateField } from '../components/date'
-import { FileText, Edit2, Trash2, Split, ArrowDownCircle, ArrowUpCircle, Search, X, Filter, Calendar, Landmark, Gift, ArrowUpDown, ArrowUp, ArrowDown, CheckSquare, Square, MinusSquare, Database, Tag, Tags, Users, TrendingUp, BarChart3, Download, Wallet, PlusCircle, ArrowLeftRight, AlertTriangle, ArrowRight, Link2 } from 'lucide-react'
+import { FileText, Edit2, Trash2, Split, ArrowDownCircle, ArrowUpCircle, Search, X, Filter, Calendar, Landmark, Gift, ArrowUpDown, ArrowUp, CheckSquare, Square, MinusSquare, Database, Tag, Tags, Users, TrendingUp, BarChart3, Wallet, PlusCircle, ArrowLeftRight, AlertTriangle, ArrowRight, Link2 } from 'lucide-react'
 import LinkedInvoiceItemsModal, { type LinkedInvoiceSummary } from '../components/LinkedInvoiceItemsModal'
 import { useConfirm } from '../hooks/useConfirm'
 import { dateToLocalString, parseLocalDate } from '../utils/dateUtils'
@@ -41,7 +40,6 @@ import { descriptionMatchesSearch, resolveDescriptionSearchState } from '../util
 import ExportModal from '../components/ExportModal'
 import ExtratoReportMenu from '../components/ExtratoReportMenu'
 import { CadastroListHeaderActions } from '../components/CadastroExcelMenu'
-import { exportExtratoReportToPdf } from '../utils/exportExtratoReportPdf'
 import type { ImportIssueRow } from '../components/ClosureEditImpactSummaryModal'
 import SendToLoanModal from '../components/SendToLoanModal'
 import ManualTransactionModal from '../components/ManualTransactionModal'
@@ -271,7 +269,7 @@ const ExtratoPage = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [expenseToEdit, setExpenseToEdit] = useState<any>(null)
   const [isBatchEditModalOpen, setIsBatchEditModalOpen] = useState(false)
-  const [isExportModalOpen, setIsExportModalOpen] = useState(false)
+  const [exportModalFormat, setExportModalFormat] = useState<'excel' | 'pdf' | null>(null)
   const [isLoanModalOpen, setIsLoanModalOpen] = useState(false)
   const [expenseToLoan, setExpenseToLoan] = useState<any>(null)
   const [isManualTransactionModalOpen, setIsManualTransactionModalOpen] = useState(false)
@@ -671,6 +669,7 @@ const ExtratoPage = () => {
     setShowToast(true)
   }
 
+
   const handleDelete = async (expense: ExpenseDetail) => {
     showConfirm(
       'Deletar Despesa',
@@ -818,6 +817,26 @@ const ExtratoPage = () => {
     () => searchedExpenses.filter((row) => !isExtratoDailyBalanceRow(row)),
     [searchedExpenses],
   )
+
+  // Linhas de saldo diário para a exportação (independe do filtro aplicado; o modal decide se entram).
+  const exportDailyBalanceRows = useMemo(() => {
+    const openingBefore =
+      detailedReport?.opening_balance_before_period != null
+        ? Number(detailedReport.opening_balance_before_period)
+        : 0
+    const serverDailyRows =
+      detailedReport?.daily_balance_rows?.map((row) => ({
+        ...row,
+        source: row.source || EXTRATO_DAILY_BALANCE_SOURCE,
+      })) ?? null
+    return mergeExpensesWithDailyBalance(
+      exportExpenses,
+      true,
+      openingBefore,
+      appliedPeriodStartKey,
+      serverDailyRows as ExpenseDetail[] | null,
+    ).filter((row) => isExtratoDailyBalanceRow(row))
+  }, [exportExpenses, detailedReport?.opening_balance_before_period, detailedReport?.daily_balance_rows, appliedPeriodStartKey])
 
   // Reseta para página 1 quando os filtros de busca mudam
   // (evita mostrar página vazia ou valores negativos)
@@ -1071,28 +1090,6 @@ const ExtratoPage = () => {
       }))
     : [] // Não mostra subtags se nenhuma tag está selecionada
 
-  // Componente helper para cabeçalhos ordenáveis
-  const SortableHeader = ({ field, label, className = "", style, align = "left" }: { field: string, label: string, className?: string, style?: React.CSSProperties, align?: "left" | "right" | "center" }) => (
-    <th
-      className={`px-4 py-3 text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors ${className}`}
-      style={style}
-      onClick={() => handleSort(field)}
-    >
-      <div className={`flex items-center gap-1 ${align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : ''}`}>
-        <span>{label}</span>
-        {sortField === field ? (
-          sortDirection === 'asc' ? (
-            <ArrowUp size={14} className="text-color-primary" />
-          ) : (
-            <ArrowDown size={14} className="text-color-primary" />
-          )
-        ) : (
-          <ArrowUpDown size={14} className="text-gray-400 opacity-50" />
-        )}
-      </div>
-    </th>
-  )
-
   // Mostra loading inicial enquanto os filtros estão carregando
   if (filtersLoading) {
     return (
@@ -1131,15 +1128,14 @@ const ExtratoPage = () => {
                         handleShowToast('Nenhum dado para exportar', 'error')
                         return
                       }
-                      setIsExportModalOpen(true)
+                      setExportModalFormat('excel')
                     }}
                     onExportPdf={() => {
                       if (!exportExpenses || exportExpenses.length === 0) {
                         handleShowToast('Nenhum dado para exportar', 'error')
                         return
                       }
-                      exportExtratoReportToPdf(exportExpenses, 'Extrato de transações (filtrado)')
-                      handleShowToast(`PDF exportado (${exportExpenses.length} lançamentos)`, 'success')
+                      setExportModalFormat('pdf')
                     }}
                   />
                 </CadastroListHeaderActions>
@@ -1699,12 +1695,13 @@ const ExtratoPage = () => {
                                   )}
                                   {/* Mostra ícone de inversão para itens migrados */}
                                   {expense.migrated_from_account_id && (
-                                    <ArrowLeftRight
-                                      size={16}
-                                      className="text-cyan-600 dark:text-cyan-400"
-                                      aria-label="Item Invertido/Migrado"
-                                      title="Item invertido de outra conta"
-                                    />
+                                    <span title="Item invertido de outra conta" className="inline-flex">
+                                      <ArrowLeftRight
+                                        size={16}
+                                        className="text-cyan-600 dark:text-cyan-400"
+                                        aria-label="Item Invertido/Migrado"
+                                      />
+                                    </span>
                                   )}
                                   {/* Mostra "M" apenas para bank_statements manuais (sem category e não migrado) */}
                                   {expense.source === 'bank' && expense.category === null && !expense.migrated_from_account_id && (
@@ -2221,9 +2218,12 @@ const ExtratoPage = () => {
 
       {/* Modal de Exportação */}
       <ExportModal
-        isOpen={isExportModalOpen}
-        onClose={() => setIsExportModalOpen(false)}
+        isOpen={exportModalFormat !== null}
+        format={exportModalFormat ?? 'excel'}
+        onClose={() => setExportModalFormat(null)}
         expenses={exportExpenses}
+        dailyBalanceRows={exportDailyBalanceRows}
+        defaultIncludeDailyBalance={appliedIncludeDailyBalance}
         onSuccess={(message) => handleShowToast(message, 'success')}
         onError={(message) => handleShowToast(message, 'error')}
       />

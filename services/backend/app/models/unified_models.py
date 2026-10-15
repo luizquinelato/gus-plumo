@@ -766,3 +766,30 @@ class AccountPeriodClosure(Base, AccountBaseEntity):
 
 # Alias para compatibilidade com código existente
 ExpenseMapping = TransactionMapping
+
+
+
+class MonthlyProjection(Base, AccountBaseEntity):
+    """Item da projeção mensal (receita ou despesa fixa/variável) de um mês, por conta."""
+
+    __tablename__ = 'monthly_projections'
+    __table_args__ = (
+        CheckConstraint("kind IN ('fixed', 'variable', 'income')", name='chk_monthly_projections_kind'),
+        CheckConstraint(
+            "source IN ('manual', 'clone', 'card_invoice', 'card_item', 'payroll')",
+            name='chk_monthly_projections_source',
+        ),
+        {'quote': False},
+    )
+
+    year_month = Column(String(7), nullable=False, name="year_month")
+    expected_date = Column(Date, nullable=False, name="expected_date")
+    description = Column(String(255), nullable=False, name="description")
+    amount = Column(Numeric(15, 2), nullable=False, default=Decimal("0"), name="amount")
+    my_amount = Column(Numeric(15, 2), nullable=False, default=Decimal("0"), name="my_amount")
+    kind = Column(String(10), nullable=False, default='fixed', name="kind")
+    source = Column(String(20), nullable=False, default='manual', name="source")
+    credit_card_id = Column(Integer, ForeignKey('credit_cards.id', ondelete='SET NULL'), nullable=True, name="credit_card_id")
+    invoice_group_id = Column(Integer, ForeignKey('credit_card_invoice_groups.id', ondelete='SET NULL'), nullable=True, name="invoice_group_id")
+    breakdown = Column(JSONB, nullable=True, name="breakdown")
+    active = Column(Boolean, nullable=False, default=True, name="active")

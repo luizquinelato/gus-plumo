@@ -48,6 +48,7 @@ import { maskPercentInput, finalizePercentInput } from '../utils/percentInput'
 import { ArrowUp, Edit2, Trash2, Users, Lock, X } from 'lucide-react'
 import axios from 'axios'
 import { useConfirm } from '../hooks/useConfirm'
+import { useExportRunner } from '../hooks/useExportRunner'
 import { CadastroListHeaderActions } from '../components/CadastroExcelMenu'
 import { exportCompartilhamentosToExcel } from '../utils/exportCadastroExcel'
 import { formatAccountDisplay } from '../utils/accountFormatter'
@@ -126,6 +127,8 @@ const CompartilhamentosPage = () => {
   const showToast = (message: string, type: 'success' | 'error' | 'warning') => {
     setToast({ show: true, message, type })
   }
+
+  const exportRunner = useExportRunner((message) => showToast(message, 'error'))
 
   // Formata agência com máscara xxxxx-x (5 dígitos + 1 verificador)
   const formatAgency = (agency?: string | number) => {
@@ -495,7 +498,11 @@ const CompartilhamentosPage = () => {
                 <CadastroListHeaderActions
                   menu={{
                     exportDisabled: compartilhamentosFiltrados.length === 0,
-                    onExportExcel: () => exportCompartilhamentosToExcel(compartilhamentosFiltrados),
+                    onExportExcel: () => {
+                      void exportRunner.run('Gerando Excel…', () =>
+                        exportCompartilhamentosToExcel(compartilhamentosFiltrados),
+                      )
+                    },
                   }}
                 >
                   <CadastroListCreateButton label="Novo Compartilhamento" onClick={abrirModalNovo} />
@@ -954,6 +961,7 @@ const CompartilhamentosPage = () => {
       )}
 
       {/* Confirm Dialog */}
+      {exportRunner.overlay}
       <ConfirmComponent />
     </div>
   )

@@ -303,7 +303,6 @@ class _BenefitCards:
                 Cartao.tenant_id == tenant_id,
                 Cartao.account_id == account_id,
                 Cartao.type == "beneficios",
-                Cartao.active == True,
             )
             .order_by(Cartao.id.asc())
             .all()

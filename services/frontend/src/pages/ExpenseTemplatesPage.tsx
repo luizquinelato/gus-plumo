@@ -41,6 +41,7 @@ import {
 } from 'lucide-react'
 import { getIconComponent } from '../utils/iconMapper'
 import { useConfirm } from '../hooks/useConfirm'
+import { useExportRunner } from '../hooks/useExportRunner'
 import { useAlert } from '../hooks/useAlert'
 import type { ExpenseTemplate } from '../types/expenseTemplate'
 import * as templatesApi from '../services/expenseTemplatesApi'
@@ -84,6 +85,8 @@ const ExpenseTemplatesPage = () => {
   const showToast = (message: string, type: 'success' | 'error' | 'warning') => {
     setToast({ show: true, message, type })
   }
+
+  const exportRunner = useExportRunner((message) => showToast(message, 'error'))
 
   useEffect(() => {
     loadTemplates()
@@ -423,7 +426,9 @@ const ExpenseTemplatesPage = () => {
                 <CadastroListHeaderActions
                   menu={{
                     exportDisabled: filteredTemplates.length === 0,
-                    onExportExcel: () => exportTemplatesToExcel(filteredTemplates),
+                    onExportExcel: () => {
+                      void exportRunner.run('Gerando Excel…', () => exportTemplatesToExcel(filteredTemplates))
+                    },
                   }}
                 >
                   <CadastroListCreateButton label="Novo Template" onClick={handleCreate} />
@@ -804,6 +809,7 @@ const ExpenseTemplatesPage = () => {
         template={applyingTemplate}
       />
 
+      {exportRunner.overlay}
       <ConfirmComponent />
       <AlertComponent />
     </div>

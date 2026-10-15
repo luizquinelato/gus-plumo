@@ -64,6 +64,7 @@ import {
   signedLoanFieldValue,
 } from '../utils/closureCreditUtils'
 import { useConfirm } from '../hooks/useConfirm'
+import { useExportRunner } from '../hooks/useExportRunner'
 import { Scale, Calendar, Building2, TrendingUp, TrendingDown, Minus, Receipt, Archive, Eye, Lock, Unlock, ChevronDown, ChevronUp, Landmark, Gift, FileJson, Braces, Copy, Check, CheckCircle, Clock, Trash2, ChevronRight, AlertTriangle, X, Download, Filter, Search, Banknote, HelpCircle, ArrowUpCircle, ArrowDownCircle, ArrowUp, ArrowDown, ArrowLeftRight, UnfoldVertical, FoldVertical, CheckSquare, Square, MinusSquare, Plus, MessageSquare, Pencil, RefreshCw } from 'lucide-react'
 import { exportBalanceClosureToPDF } from '../utils/pdfExport'
 import { exportBalanceClosureToExcel } from '../utils/exportToExcel'
@@ -663,6 +664,7 @@ const SharedBalanceListPage = () => {
   const [loading, setLoading] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
   const [toast, setToast] = useState<ToastState>({ show: false, message: '', type: 'success' })
+  const exportRunner = useExportRunner((message) => setToast({ show: true, message, type: 'error' }))
 
   // Estados para fechamentos
   const [closures, setClosures] = useState<BalanceClosure[]>([])
@@ -3586,14 +3588,16 @@ const SharedBalanceListPage = () => {
             const mainCard = closureData?.main_account_card
             const closureMainAccountId = Number(mainCard?.account_id || exportTargetClosure.account_id)
             const isCounterpart = Number(loggedAccountId) !== closureMainAccountId
-            if (format === 'pdf') {
-              exportBalanceClosureToPDF(exportTargetClosure as any, isCounterpart, absoluteValues)
-            } else {
-              exportBalanceClosureToExcel(exportTargetClosure as any, absoluteValues, isCounterpart)
-            }
+            const closure = exportTargetClosure as any
+            void exportRunner.run(format === 'pdf' ? 'Gerando PDF…' : 'Gerando Excel…', () =>
+              format === 'pdf'
+                ? exportBalanceClosureToPDF(closure, isCounterpart, absoluteValues)
+                : exportBalanceClosureToExcel(closure, absoluteValues, isCounterpart),
+            )
           }}
         />
 
+        {exportRunner.overlay}
         <ConfirmComponent />
     </div>
   )

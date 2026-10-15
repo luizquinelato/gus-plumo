@@ -532,7 +532,6 @@ class FaturaService:
         # Cache de cartões: {number: id}
         cartoes_query = db.query(Cartao.id, Cartao.number).filter(
             Cartao.tenant_id == tenant_id,
-            Cartao.active == True
         ).all()
         cartao_cache: dict[str, int] = {}
         for c in cartoes_query:
@@ -879,14 +878,23 @@ class FaturaService:
                     # Determina compartilhamento final:
                     # PRIORIDADE 1: Mapeamento (se tiver expense_sharing_id definido)
                     # PRIORIDADE 2: Cartão (configuração padrão)
+                    # O % do mapeamento só vale quando o mapeamento é compartilhado;
+                    # mapeamento "próprio" não traz % e cai no padrão do cartão.
                     final_expense_sharing_id = adjustment_config['expense_sharing_id']
-                    if mapping_data and mapping_data.get('expense_sharing_id') is not None:
+                    mapping_is_shared = bool(
+                        mapping_data and mapping_data.get('expense_sharing_id') is not None
+                    )
+                    use_card_defaults = True
+                    if mapping_is_shared:
                         final_expense_sharing_id = mapping_data['expense_sharing_id']
+                        use_card_defaults = (
+                            final_expense_sharing_id == adjustment_config['expense_sharing_id']
+                        )
                     final_ownership_percentage = resolve_ownership_percentage(
                         amount=valor_invertido,
-                        sharing=adjustment_config.get('sharing'),
-                        card=adjustment_config.get('card'),
-                        mapping=mapping_data,
+                        sharing=adjustment_config.get('sharing') if use_card_defaults else None,
+                        card=adjustment_config.get('card') if use_card_defaults else None,
+                        mapping=mapping_data if mapping_is_shared else None,
                     )
 
                     # Novo registro - adiciona para insert

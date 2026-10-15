@@ -1,36 +1,26 @@
-import * as XLSX from 'xlsx'
 import { formatAccountNumberForExcel, formatAgencyForExcel } from './cadastroExcelBankFields'
+import {
+  downloadExcelSafe,
+  excelDateStamp,
+  type ExcelColumnKind,
+  type ExcelRow,
+} from './excelExportClient'
 
-function jsonToSheetTextColumns(rows: Record<string, unknown>[], textKeys: string[]) {
-  const ws = XLSX.utils.json_to_sheet(rows)
-  if (!rows.length || !textKeys.length || !ws['!ref']) return ws
-  const headers = Object.keys(rows[0])
-  const range = XLSX.utils.decode_range(ws['!ref'])
-  for (const key of textKeys) {
-    const col = headers.indexOf(key)
-    if (col < 0) continue
-    for (let r = 1; r <= range.e.r; r++) {
-      const raw = rows[r - 1][key]
-      if (raw === '' || raw == null) continue
-      const addr = XLSX.utils.encode_cell({ r, c: col })
-      ws[addr] = { t: 's', v: String(raw) }
-    }
-  }
-  return ws
-}
+const textKinds = (keys: string[]): Record<string, ExcelColumnKind> =>
+  Object.fromEntries(keys.map((k) => [k, 'text' as const]))
 
 function bookWithMeta(
   sheetName: string,
-  rows: Record<string, unknown>[],
+  rows: ExcelRow[],
   meta: Record<string, string>,
   filename: string,
   textColumnKeys: string[] = [],
 ) {
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, jsonToSheetTextColumns(rows, textColumnKeys), sheetName)
   const metaRows = Object.entries(meta).map(([Campo, Valor]) => ({ Campo, Valor }))
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(metaRows), 'Info')
-  XLSX.writeFile(wb, filename)
+  return downloadExcelSafe(filename, [
+    { name: sheetName, rows, kinds: textKinds(textColumnKeys) },
+    { name: 'Info', rows: metaRows, kinds: { Valor: 'text' } },
+  ])
 }
 
 const simNao = (v: boolean) => (v ? 'Sim' : 'Não')
@@ -53,7 +43,6 @@ export interface SubtagExportRow {
 }
 
 export function exportTagsSubtagsToExcel(tags: TagExportRow[], subtags: SubtagExportRow[]) {
-  const now = new Date()
   const tagRows = tags.map((t) => ({
     ID: t.id,
     Nome: t.name,
@@ -69,11 +58,10 @@ export function exportTagsSubtagsToExcel(tags: TagExportRow[], subtags: SubtagEx
     Tipo: s.type === 'receita' ? 'Receita' : 'Despesa',
     Ícone: s.icon ?? '',
   }))
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tagRows), 'Tags')
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(subRows), 'Subtags')
-  const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
-  XLSX.writeFile(wb, `tags_subtags_${dateStr}.xlsx`)
+  return downloadExcelSafe(`tags_subtags_${excelDateStamp()}.xlsx`, [
+    { name: 'Tags', rows: tagRows, kinds: { ID: 'int' } },
+    { name: 'Subtags', rows: subRows, kinds: { ID: 'int', 'ID Tag': 'int' } },
+  ])
 }
 
 export function exportContasToExcel(
@@ -99,11 +87,11 @@ export function exportContasToExcel(
     Conta: formatAccountNumberForExcel(c.account_number),
     Ativo: simNao(c.active),
   }))
-  bookWithMeta(
+  return bookWithMeta(
     'Contas',
     rows,
     { Gerado: now.toLocaleString('pt-BR'), Total: String(rows.length) },
-    `contas_${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}.xlsx`,
+    `contas_${excelDateStamp(now)}.xlsx`,
     ['Agência', 'Conta'],
   )
 }
@@ -140,11 +128,11 @@ export function exportCompartilhamentosToExcel(
     Descrição: c.description ?? '',
     Ativo: simNao(c.active),
   }))
-  bookWithMeta(
+  return bookWithMeta(
     'Compartilhamentos',
     rows,
     { Gerado: now.getFullYear().toString(), Total: String(rows.length) },
-    `compartilhamentos_${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}.xlsx`,
+    `compartilhamentos_${excelDateStamp(now)}.xlsx`,
     ['Agência', 'Conta'],
   )
 }
@@ -187,7 +175,7 @@ export function exportCartoesToExcel(
     'ID Compartilhamento': c.expense_sharing_id ?? c.expense_sharing?.id ?? '',
     'Conta parceira':
       c.expense_sharing?.shared_account?.name ??
-      c.expense_sharing?.shared_account?.description ??
+      (c.expense_sharing?.shared_account as { description?: string } | undefined)?.description ??
       '',
     'Parte despesa (%)': c.expense_ownership_percentage ?? '',
     'Parte receita (%)': c.revenue_ownership_percentage ?? '',
@@ -206,11 +194,10 @@ export function exportCartoesToExcel(
       Ativo: simNao(g.active),
     }
   })
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(groupRows), 'Grupos')
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cardRows), 'Cartões')
-  const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
-  XLSX.writeFile(wb, `cartoes_${dateStr}.xlsx`)
+  return downloadExcelSafe(`cartoes_${excelDateStamp(now)}.xlsx`, [
+    { name: 'Grupos', rows: groupRows },
+    { name: 'Cartões', rows: cardRows },
+  ])
 }
 
 export function exportTemplatesToExcel(
@@ -256,16 +243,15 @@ export function exportTemplatesToExcel(
         Tipo: it.subtag?.type === 'receita' ? 'Receita' : it.subtag?.type === 'despesa' ? 'Despesa' : '',
         'Conta parceira':
           it.expense_sharing?.shared_account?.name ??
-          it.expense_sharing?.shared_account?.description ??
+          (it.expense_sharing?.shared_account as { description?: string } | undefined)?.description ??
           '',
         'Parte (%)': it.ownership_percentage,
         Ordem: it.display_order,
       })
     }
   }
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tplRows), 'Templates')
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(itemRows), 'Itens')
-  const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
-  XLSX.writeFile(wb, `templates_${dateStr}.xlsx`)
+  return downloadExcelSafe(`templates_${excelDateStamp(now)}.xlsx`, [
+    { name: 'Templates', rows: tplRows },
+    { name: 'Itens', rows: itemRows as ExcelRow[], kinds: { Valor: 'money' } },
+  ])
 }

@@ -46,6 +46,7 @@ import SharedAccountDisplay from '../components/SharedAccountDisplay'
 import Toast from '../components/Toast'
 import FloatingFooterBar from '../components/FloatingFooterBar'
 import { useConfirm } from '../hooks/useConfirm'
+import { useExportRunner } from '../hooks/useExportRunner'
 import { useEscapeKey } from '../hooks/useEscapeKey'
 import { formatCurrency } from '../utils/currency'
 import { formatDateBR, formatDateTimeBR, parseLocalDateTime } from '../utils/dateUtils'
@@ -96,7 +97,16 @@ import {
   TrendingUp,
   TrendingDown,
   History,
+  Download,
 } from 'lucide-react'
+import { ExportClosureModal } from '../components/ExportClosureModal'
+import {
+  exportAccountClosureDetailToExcel,
+  exportAccountClosureDetailToPdf,
+  type AccountClosureDetail,
+  type AccountClosureExportRow,
+  type ClosureDetailItem,
+} from '../utils/exportAccountClosures'
 
 type ClosureTab = 'open' | 'closed'
 
@@ -1647,6 +1657,7 @@ const AccountClosuresPage = () => {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [toast, setToast] = useState<ToastState>({ show: false, message: '', type: 'success' })
+  const exportRunner = useExportRunner((message) => setToast({ show: true, message, type: 'error' }))
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set())
   const [showBackToTop, setShowBackToTop] = useState(false)
   const [modalMonths, setModalMonths] = useState<AccountPeriodMonth[] | null>(null)
@@ -1797,6 +1808,86 @@ const AccountClosuresPage = () => {
   const handleTabChange = (tab: ClosureTab) => {
     setSelectedKeys(new Set())
     navigate(tab === 'closed' ? '/fechamentos/conta/fechados' : '/fechamentos/conta')
+  }
+
+  const [exportTarget, setExportTarget] = useState<AccountPeriodMonth | null>(null)
+
+  const handleExportClosure = async (format: 'excel' | 'pdf', absoluteValues: boolean) => {
+    if (!exportTarget) return
+    // Mesmo conteúdo do modal "Visualizar": busca o preview completo do período.
+    let preview: AccountPeriodMonth
+    try {
+      preview = await previewAccountPeriod(exportTarget.year, exportTarget.month)
+    } catch (err) {
+      setToast({
+        show: true,
+        message: apiErrorMessage(err, 'Não foi possível carregar os lançamentos para exportar.'),
+        type: 'error',
+      })
+      return
+    }
+    const buildRow = (item: AccountPeriodMonth): AccountClosureExportRow => {
+      const split = splitOf(item)
+      return {
+        year: item.year,
+        month: item.month,
+        monthLabel: MONTH_LABELS[item.month - 1],
+        statusLabel: statusLabel[item.status],
+        itemCount: item.item_count ?? 0,
+        openingBalance: hasOfficialOpening(item) ? item.opening_balance : 0,
+        entries: item.entries,
+        entriesAccount: split.account.entries,
+        entriesShared: split.shared.entries,
+        exits: item.exits,
+        exitsAccount: split.account.exits,
+        exitsShared: split.shared.exits,
+        closingBalance: item.closing_balance,
+        adjustment: item.adjustment_amount || null,
+        closedAt: item.closed_at ?? null,
+      }
+    }
+    const source: AccountPeriodMonth = {
+      ...preview,
+      status: exportTarget.status,
+      closed_at: preview.closed_at ?? exportTarget.closed_at,
+      adjustment_amount: preview.adjustment_amount ?? exportTarget.adjustment_amount,
+      item_count: preview.item_count ?? exportTarget.item_count,
+    }
+    const allItems = [
+      ...(preview.items ?? []),
+      ...(preview.card_items ?? []),
+      ...(preview.benefit_items ?? []),
+      ...(preview.shared_settlements ?? []),
+    ].sort(comparePeriodItems)
+    const toDetailItem = (row: AccountPeriodItem): ClosureDetailItem => {
+      const cols = itemColumnAmounts(row)
+      return {
+        date: row.date,
+        description: row.description,
+        sourceLabel: SOURCE_META[itemSourceKey(row)].label,
+        amount: cols.valor,
+        amountAccount: cols.account,
+        amountShared: cols.shared,
+      }
+    }
+    const detail: AccountClosureDetail = {
+      summary: buildRow(source),
+      partners: mergeSharedByAccount([preview]).map((p) => ({
+        name: p.shared_partner_name,
+        entries: Number(p.entries),
+        exits: Number(p.exits),
+      })),
+      groups: groupPeriodItems(allItems, preview.shared_by_account ?? []).map((group) => {
+        const flows = splitItemsByFlow(group.items)
+        return {
+          label: groupAccountLabel(group),
+          receitas: flows.receitas.map(toDetailItem),
+          despesas: flows.despesas.map(toDetailItem),
+        }
+      }),
+    }
+    if (format === 'excel') await exportAccountClosureDetailToExcel(detail, absoluteValues)
+    else await exportAccountClosureDetailToPdf(detail, absoluteValues)
   }
 
   const hasActiveFilters = draftYears.length > 0
@@ -2388,6 +2479,14 @@ const AccountClosuresPage = () => {
                               >
                                 <Eye size={16} />
                               </button>
+                              <button
+                                type="button"
+                                className={cadastroRowIconBtnCls}
+                                title={`Exportar ${monthTitle(item)}`}
+                                onClick={() => setExportTarget(item)}
+                              >
+                                <Download size={16} />
+                              </button>
                               {activeTab === 'open' && (
                                 <>
                                   {index === 0 && item.can_close ? (
@@ -2447,6 +2546,15 @@ const AccountClosuresPage = () => {
             </div>
           )}
         </CadastroListPageBody>
+        <ExportClosureModal
+          isOpen={exportTarget !== null}
+          onClose={() => setExportTarget(null)}
+          onExport={(format, absoluteValues) =>
+          void exportRunner.run(format === 'pdf' ? 'Gerando PDF…' : 'Gerando Excel…', () =>
+            handleExportClosure(format, absoluteValues),
+          )
+        }
+        />
       </CadastroListPageShell>
 
       {activeTab === 'open' && selectedKeys.size > 0 && (
@@ -3062,6 +3170,7 @@ const AccountClosuresPage = () => {
           onClose={() => setToast((prev) => ({ ...prev, show: false }))}
         />
       )}
+      {exportRunner.overlay}
       <ConfirmComponent />
     </div>
   )

@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx'
 import { parseLocaleAmount } from './currency'
-import { excelSerialToBrString } from './excelCellFormat'
+import { excelSerialToBrString, percentFromExcel } from './excelCellFormat'
 
 const BANK_SHEET_NAMES = ['Extratos Bancários', 'Extratos Bancarios', 'Extratos']
 const BENEFIT_SHEET_NAMES = ['Benefícios', 'Beneficios']
@@ -66,7 +66,7 @@ function parseBankSheet(sheet: XLSX.WorkSheet): ParsedImportRow[] {
     const date = cellDateTime(row, 'Data e hora')
     if (!description || amount == null || !date) return
     const partner = cellStr(row, 'Conta Parceira')
-    const ownership = cellNum(row, 'Parte na sua conta (%)')
+    const ownership = percentFromExcel(cellNum(row, 'Parte na sua conta (%)'))
     out.push({
       row_index: idx + 2,
       date,
@@ -92,7 +92,7 @@ function parseBenefitSheet(sheet: XLSX.WorkSheet): ParsedImportRow[] {
     const date = cellDateTime(row, 'Data')
     if (!description || amount == null || !date) return
     const partner = cellStr(row, 'Conta Parceira')
-    const ownership = cellNum(row, 'Parte na sua conta (%)')
+    const ownership = percentFromExcel(cellNum(row, 'Parte na sua conta (%)'))
     out.push({
       row_index: idx + 2,
       date,

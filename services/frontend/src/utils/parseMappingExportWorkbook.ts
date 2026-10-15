@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx'
+import { percentFromExcel } from './excelCellFormat'
 
 const SHEET_NAMES = ['Mapeamentos']
 
@@ -82,7 +83,7 @@ export async function parseMappingExportWorkbook(file: File): Promise<ParsedMapp
       tag_name: cellStr(row, 'Tag'),
       subtag_name: subtag,
       partner_name: cellStr(row, 'Conta parceira'),
-      contribution_pct: cellNum(row, 'Contribuição (%)'),
+      contribution_pct: percentFromExcel(cellNum(row, 'Contribuição (%)')),
       is_sensitive: cellStr(row, 'Sensível'),
     })
   })

@@ -4,6 +4,7 @@ import { CreditCard, Clock, Calendar, Loader2, Gift, Download } from 'lucide-rea
 import { formatCurrency } from '../utils/currency'
 import { formatDateBR } from '../utils/dateUtils'
 import { exportHomeInvoiceDetailsToPDF } from '../utils/pdfExport'
+import { useExportRunner } from '../hooks/useExportRunner'
 import {
   CadastroModalBody,
   CadastroModalFooter,
@@ -471,6 +472,7 @@ const HomeInvoiceDetailsModal = ({ isOpen, onClose, params }: HomeInvoiceDetails
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [activeSectionKey, setActiveSectionKey] = useState<string>('')
+  const exportRunner = useExportRunner(setError)
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -533,24 +535,14 @@ const HomeInvoiceDetailsModal = ({ isOpen, onClose, params }: HomeInvoiceDetails
 
   const handleExportPdf = (mode: 'all' | 'card') => {
     if (!data) return
-    if (mode === 'all' || params?.view === 'card') {
-      exportHomeInvoiceDetailsToPDF(data)
-      return
+    let exportData: InvoiceDetailsData = data
+    if (mode !== 'all' && params?.view !== 'card') {
+      const activeSection = data.sections.find(s => s.key === activeSectionKey)
+      if (activeSection) {
+        exportData = { ...data, title: activeSection.title, sections: [activeSection] }
+      }
     }
-
-    const activeSection = data.sections.find(s => s.key === activeSectionKey)
-    if (!activeSection) {
-      exportHomeInvoiceDetailsToPDF(data)
-      return
-    }
-
-    const exportData = {
-      ...data,
-      title: activeSection.title,
-      sections: [activeSection],
-    }
-
-    exportHomeInvoiceDetailsToPDF(exportData as any)
+    void exportRunner.run('Gerando PDF…', () => exportHomeInvoiceDetailsToPDF(exportData as any))
   }
 
   if (!isOpen) return null
@@ -770,6 +762,7 @@ const HomeInvoiceDetailsModal = ({ isOpen, onClose, params }: HomeInvoiceDetails
           </div>
         }
       />
+      {exportRunner.overlay}
     </CadastroModalShell>
   )
 }

@@ -60,6 +60,7 @@ import OwnershipPercentField from '../components/OwnershipPercentField'
 import { finalizePercentInput, maskPercentInput, samePercent } from '../utils/percentInput'
 import axios from 'axios'
 import { useConfirm } from '../hooks/useConfirm'
+import { useExportRunner } from '../hooks/useExportRunner'
 import { CadastroListHeaderActions } from '../components/CadastroExcelMenu'
 import { exportCartoesToExcel } from '../utils/exportCadastroExcel'
 import { useEscapeKey } from '../hooks/useEscapeKey'
@@ -254,6 +255,8 @@ const CartoesPage = () => {
   const showToast = (message: string, type: 'success' | 'error' | 'warning') => {
     setToast({ show: true, message, type })
   }
+
+  const exportRunner = useExportRunner((message) => showToast(message, 'error'))
 
   useEffect(() => {
     carregarCompartilhamentos()
@@ -872,10 +875,10 @@ const CartoesPage = () => {
           •••• {cartao.number}
         </td>
         <td className="whitespace-nowrap px-2 py-2 text-center text-sm tabular-nums text-gray-600 dark:text-gray-300">
-          {isBenefit ? '—' : cartao.closing_day || 14}
+          {cartao.closing_day || 14}
         </td>
         <td className="whitespace-nowrap px-2 py-2 text-center text-sm tabular-nums text-gray-600 dark:text-gray-300">
-          {isBenefit ? '—' : cartao.due_day || 14}
+          {cartao.due_day || 14}
         </td>
         <td className="max-w-0 px-3 py-2">{renderSharingCell(cartao)}</td>
         <td className="whitespace-nowrap px-2 py-2 text-center text-sm tabular-nums text-gray-600 dark:text-gray-300">
@@ -934,7 +937,11 @@ const CartoesPage = () => {
                 <CadastroListHeaderActions
                   menu={{
                     exportDisabled: cartoesFiltrados.length === 0 && invoiceGroups.length === 0,
-                    onExportExcel: () => exportCartoesToExcel(cartoesFiltrados, invoiceGroups, cartoes),
+                    onExportExcel: () => {
+                      void exportRunner.run('Gerando Excel…', () =>
+                        exportCartoesToExcel(cartoesFiltrados, invoiceGroups, cartoes),
+                      )
+                    },
                   }}
                 >
                   <CadastroListSecondaryButton
@@ -1734,6 +1741,7 @@ const CartoesPage = () => {
       )}
 
       {/* Dialog de confirmação */}
+      {exportRunner.overlay}
       <ConfirmComponent />
     </div>
   )

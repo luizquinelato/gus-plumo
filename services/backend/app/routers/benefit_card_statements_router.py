@@ -338,7 +338,6 @@ def _load_benefit_card(db: Session, tenant_id: int, credit_card_id: int, account
     ).filter(
         Cartao.id == credit_card_id,
         Cartao.tenant_id == tenant_id,
-        Cartao.active == True
     )
     if account_id is not None:
         query = query.filter(Cartao.account_id == account_id)

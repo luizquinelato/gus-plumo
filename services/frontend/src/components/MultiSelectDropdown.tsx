@@ -5,6 +5,7 @@ interface Option<T = number> {
   id: T
   name: string
   count?: number
+  badge?: string // Selo exibido ao lado do nome (ex: "Inativo")
   icon?: React.ReactNode
   color?: string
   groupKey?: string // Chave para agrupamento (ex: tag_name)
@@ -183,6 +184,11 @@ export const MultiSelectDropdown: React.FC<MultiSelectDropdownProps<number>> = (
                           )}
                           <span className="flex-1 text-sm text-gray-900 dark:text-white whitespace-nowrap">
                             {option.name}
+                            {option.badge && (
+                              <span className="ml-2 rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-semibold text-gray-600 dark:bg-gray-600 dark:text-gray-200">
+                                {option.badge}
+                              </span>
+                            )}
                           </span>
                           {option.count !== undefined && (
                             <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
@@ -240,6 +246,11 @@ export const MultiSelectDropdown: React.FC<MultiSelectDropdownProps<number>> = (
                     )}
                     <span className="flex-1 text-sm text-gray-900 dark:text-white whitespace-nowrap">
                       {option.name}
+                      {option.badge && (
+                        <span className="ml-2 rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-semibold text-gray-600 dark:bg-gray-600 dark:text-gray-200">
+                          {option.badge}
+                        </span>
+                      )}
                     </span>
                     {option.count !== undefined && (
                       <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">

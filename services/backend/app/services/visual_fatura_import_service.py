@@ -104,7 +104,6 @@ def _credit_cards(db: Session, tenant_id: int, account_id: int) -> list[Cartao]:
             Cartao.tenant_id == tenant_id,
             Cartao.account_id == account_id,
             Cartao.type == "credito",
-            Cartao.active == True,
         )
         .all()
     )

@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx'
 import { parseLocaleAmount } from './currency'
-import { excelSerialToBrString } from './excelCellFormat'
+import { excelSerialToBrString, percentFromExcel } from './excelCellFormat'
 
 export const FATURA_SHEET_NAMES = ['Faturas de Cartão', 'Faturas de Cartao', 'Faturas']
 
@@ -114,14 +114,14 @@ export async function parseFaturaExportWorkbook(file: File): Promise<ParsedFatur
     const date = cellDate(row)
     if (!description || amount == null || !date) return
     const partner = cellStr(row, 'Conta Parceira')
-    const ownership = cellNum(row, 'Parte na sua conta (%)')
+    const ownership = percentFromExcel(cellNum(row, 'Parte na sua conta (%)'))
     const card = cellStr(row, 'Cartão')
     out.push({
       row_index: index + 2,
       year_month: yearMonth(row, date),
       date,
       description,
-      amount: -amount,
+      amount,
       card_last4: last4(card) || undefined,
       card_name: cellStr(row, 'Titular') || undefined,
       tag: cellStr(row, 'Tag') || undefined,

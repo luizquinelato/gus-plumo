@@ -103,7 +103,6 @@ def _pdf_user_message(exc: Exception) -> str:
 def _registered_credit_card_numbers(db: Session, tenant_id: int) -> set:
     query = db.query(Cartao.number).filter(
         Cartao.tenant_id == tenant_id,
-        Cartao.active == True,
         Cartao.type == "credito",
     )
     return {

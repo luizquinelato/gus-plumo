@@ -13,6 +13,7 @@
 import React, { useState, useEffect } from 'react'
 import { AlertCircle, CheckCircle, Save, Sun, Moon, Lock, Palette } from 'lucide-react'
 import { useColorData } from '../hooks/useColorData'
+import { useAlert } from '../hooks/useAlert'
 import { colorNames, colorDescriptions, defaultColors } from '../config/defaultColors'
 import { isValidHex, normalizeHex } from '../utils/colorUtils'
 import { calculateVariantsForAllLevels } from '../utils/colorCalculations'
@@ -117,6 +118,7 @@ const ColorInput: React.FC<ColorInputProps> = ({ label, description, value, onCh
 
 const ColorCustomizerUnified: React.FC = () => {
   const { isLoading, updateColors } = useColorData()
+  const { showError, AlertComponent } = useAlert()
   const [isSaving, setIsSaving] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
   const [isCustomMode, setIsCustomMode] = useState(false)
@@ -380,7 +382,7 @@ const ColorCustomizerUnified: React.FC = () => {
       window.dispatchEvent(new CustomEvent('colorDataLoaded'))
     } catch (error) {
       console.error('Error saving:', error)
-      alert('Erro ao salvar. Tente novamente.')
+      showError('Erro ao salvar', 'Erro ao salvar. Tente novamente.')
     } finally {
       setIsSaving(false)
     }
@@ -397,6 +399,7 @@ const ColorCustomizerUnified: React.FC = () => {
 
   return (
     <div className="space-y-4 sm:space-y-6 lg:space-y-8">
+      <AlertComponent />
       {/* Header with Mode Selection */}
       <div className="space-y-3 sm:space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0">

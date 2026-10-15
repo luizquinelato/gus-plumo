@@ -174,6 +174,47 @@ def _account_id_for_card_invoice(db: Session, invoice: CreditCardInvoice) -> int
     return None
 
 
+def invoice_bank_periods(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    invoice: CreditCardInvoice,
+) -> set[tuple[int, int]]:
+    """Mês do item de fatura: o `year_month` da própria fatura, não a data do item."""
+    raw = str(invoice.year_month or "")
+    if len(raw) != 7 or raw[4] != "-" or not (raw[:4] + raw[5:]).isdigit():
+        return set()
+    return {(int(raw[:4]), int(raw[5:7]))}
+
+
+def _invoice_affected_closed_periods(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    invoice: CreditCardInvoice,
+) -> tuple[list[tuple[int, int]], set[tuple[int, int]]]:
+    closed = closed_periods(db, tenant_id, account_id)
+    seed = {p for p in invoice_bank_periods(db, tenant_id, account_id, invoice) if p in closed}
+    return _downstream_closed_periods(closed, seed), seed
+
+
+def _card_ids_bank_periods(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    card_ids: list[int],
+) -> set[tuple[int, int]]:
+    out: set[tuple[int, int]] = set()
+    if not card_ids:
+        return out
+    for invoice in db.query(CreditCardInvoice).filter(
+        CreditCardInvoice.id.in_(card_ids),
+        CreditCardInvoice.tenant_id == tenant_id,
+    ).all():
+        out |= invoice_bank_periods(db, tenant_id, account_id, invoice)
+    return out
+
+
 def _account_id_for_benefit(db: Session, row: BenefitCardStatement) -> int | None:
     if row.account_id:
         return int(row.account_id)
@@ -493,7 +534,7 @@ def ensure_credit_card_update_allowed(
         return kind
     if kind == "noop":
         return kind
-    periods = affected_closed_periods_for_dates(db, tenant_id, account_id, invoice.date, date)
+    periods, bank_periods = _invoice_affected_closed_periods(db, tenant_id, account_id, invoice)
 
     def temp_apply() -> None:
         db.query(CreditCardInvoice).filter(
@@ -514,7 +555,7 @@ def ensure_credit_card_update_allowed(
         )
         db.refresh(invoice)
 
-    adjustment_periods = _cash_adjustment_periods_from_dates(invoice.date, date)
+    adjustment_periods = bank_periods
     _ensure_mutation_in_closed_periods_confirmed(
         db,
         tenant_id,
@@ -752,16 +793,12 @@ def after_credit_card_updated(
         return closure_impact_none()
     if kind == "noop":
         return closure_impact_none()
-    periods_list = affected_closed_periods_for_dates(db, tenant_id, account_id, old_date, invoice.date)
-    if not periods_list:
-        period = _period_from_date(invoice.date)
-        if period and period in closed_periods(db, tenant_id, account_id):
-            periods_list = [period]
+    periods_list, bank_periods = _invoice_affected_closed_periods(db, tenant_id, account_id, invoice)
     if not periods_list:
         return closure_impact_none()
 
     if kind == "cash":
-        adjustment_periods = _cash_adjustment_periods_from_dates(old_date, invoice.date)
+        adjustment_periods = bank_periods
         return apply_cash_closure_recalc(
             db,
             tenant_id,
@@ -961,14 +998,6 @@ def post_batch_update_closure_sync(
                 BankStatement.tenant_id == tenant_id,
             ).all()
         )
-    if card_ids:
-        dates.extend(
-            row.date
-            for row in db.query(CreditCardInvoice.date).filter(
-                CreditCardInvoice.id.in_(card_ids),
-                CreditCardInvoice.tenant_id == tenant_id,
-            ).all()
-        )
     if benefit_ids:
         dates.extend(
             row.date
@@ -978,7 +1007,9 @@ def post_batch_update_closure_sync(
             ).all()
         )
 
-    periods = _periods_from_item_rows(dates)
+    periods = _periods_from_item_rows(dates) | _card_ids_bank_periods(
+        db, tenant_id, account_id, card_ids,
+    )
     refreshed = refresh_closed_snapshots_for_periods(db, tenant_id, account_id, periods)
     if not refreshed:
         return closure_impact_none()
@@ -1222,14 +1253,6 @@ def ensure_batch_update_closure_allowed(
                 BankStatement.tenant_id == tenant_id,
             ).all()
         )
-    if card_ids:
-        dates.extend(
-            row.date
-            for row in db.query(CreditCardInvoice.date).filter(
-                CreditCardInvoice.id.in_(card_ids),
-                CreditCardInvoice.tenant_id == tenant_id,
-            ).all()
-        )
     if benefit_ids:
         dates.extend(
             row.date
@@ -1238,7 +1261,9 @@ def ensure_batch_update_closure_allowed(
                 BenefitCardStatement.tenant_id == tenant_id,
             ).all()
         )
-    periods_list = _periods_from_item_rows(dates)
+    periods_list = _periods_from_item_rows(dates) | _card_ids_bank_periods(
+        db, tenant_id, account_id, card_ids,
+    )
     closed = closed_periods(db, tenant_id, account_id)
     periods = sorted(p for p in periods_list if p in closed)
     if not periods:

@@ -14,6 +14,7 @@ from collections import defaultdict
 from app.database import get_db
 from app.models.unified_models import BankStatement, CreditCardInvoice, Cartao, BenefitCardStatement
 from app.dependencies.auth import get_current_user
+from app.services.installment_service import get_open_installment_purchases
 from app.utils.card_helper import CardHelper
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
@@ -154,19 +155,6 @@ class CurrentBalanceResponse(BaseModel):
     last_transaction_date: str | None  # Data da última transação
 
 
-def _installment_purchase_key(inv) -> Tuple[int, date | None, int, int]:
-    """
-    Agrupa parcelas da mesma compra.
-
-    Usa data da compra + total de parcelas + valor arredondado da parcela,
-    pois a descrição varia entre faturas (ex.: 'Pg *ton Twinstore' vs 'Ton Twinstore',
-    'Ebn*canva' vs 'Canva').
-    """
-    purchase_date = inv.date.date() if inv.date else None
-    amount_key = int(round(abs(inv.amount)))
-    return (inv.credit_card_id, purchase_date, inv.total_installments, amount_key)
-
-
 def _sort_invoice_items_by_date_desc(items: List[InvoiceDetailItem]) -> List[InvoiceDetailItem]:
     return sorted(items, key=lambda x: (x.date or '', x.description or ''), reverse=True)
 
@@ -183,63 +171,25 @@ def _get_remaining_installment_items(
     card_id: int | None = None,
 ) -> List[InvoiceDetailItem]:
     """Retorna compras parceladas em aberto (registro mais recente de cada compra)."""
-    installments = db.query(
-        CreditCardInvoice.id,
-        CreditCardInvoice.credit_card_id,
-        CreditCardInvoice.description,
-        CreditCardInvoice.total_installments,
-        CreditCardInvoice.current_installment,
-        CreditCardInvoice.amount,
-        CreditCardInvoice.year_month,
-        CreditCardInvoice.date,
-        Cartao.number.label('card_number'),
-        Cartao.name.label('card_name'),
-        Cartao.type.label('card_type'),
-    ).join(
-        Cartao, CreditCardInvoice.credit_card_id == Cartao.id
-    ).filter(
-        CreditCardInvoice.tenant_id == tenant_id,
-        Cartao.account_id == account_id,
-        Cartao.active == True,
-        CreditCardInvoice.current_installment.isnot(None),
-        CreditCardInvoice.total_installments.isnot(None),
-        CreditCardInvoice.total_installments > 1,
-    ).all()
+    purchases = get_open_installment_purchases(db, tenant_id, account_id, card_id=card_id)
 
-    if card_id is not None:
-        installments = [inv for inv in installments if inv.credit_card_id == card_id]
-
-    groups: Dict[Tuple[int, date | None, int, int], list] = defaultdict(list)
-    for inv in installments:
-        groups[_installment_purchase_key(inv)].append(inv)
-
-    result: List[InvoiceDetailItem] = []
-    for items in groups.values():
-        latest = max(items, key=lambda x: (x.current_installment, x.year_month))
-        remaining_count = latest.total_installments - latest.current_installment
-        if remaining_count <= 0:
-            continue
-
-        purchase = min(items, key=lambda x: (x.current_installment, x.year_month))
-        installment_amount = abs(latest.amount)
-        remaining_total = installment_amount * remaining_count
-        result.append(InvoiceDetailItem(
-            id=latest.id,
-            description=purchase.description or latest.description or '',
-            amount=latest.amount,
-            date=purchase.date.strftime("%Y-%m-%d") if purchase.date else '',
-            current_installment=latest.current_installment,
-            total_installments=latest.total_installments,
-            card_id=latest.credit_card_id,
-            card_name=latest.card_name,
-            card_number=latest.card_number,
-            card_type=latest.card_type or 'credito',
-            remaining_installments=remaining_count,
-            remaining_total=remaining_total,
-        ))
-
-    result.sort(key=lambda x: (x.date or '', x.description or ''), reverse=True)
-    return result
+    return [
+        InvoiceDetailItem(
+            id=purchase.id,
+            description=purchase.description,
+            amount=purchase.amount,
+            date=purchase.purchase_date.strftime("%Y-%m-%d") if purchase.purchase_date else '',
+            current_installment=purchase.current_installment,
+            total_installments=purchase.total_installments,
+            card_id=purchase.card_id,
+            card_name=purchase.card_name,
+            card_number=purchase.card_number,
+            card_type=purchase.card_type,
+            remaining_installments=purchase.remaining_installments,
+            remaining_total=purchase.remaining_total,
+        )
+        for purchase in purchases
+    ]
 
 
 def _get_month_invoice_items(
@@ -266,7 +216,6 @@ def _get_month_invoice_items(
     ).filter(
         CreditCardInvoice.tenant_id == tenant_id,
         Cartao.account_id == account_id,
-        Cartao.active == True,
         CreditCardInvoice.year_month == year_month,
     )
 
@@ -414,7 +363,6 @@ async def get_monthly_dashboard(
         CreditCardInvoice.account_id == account_id,  # ✅ FILTRO POR ACCOUNT_ID
         CreditCardInvoice.year_month == year_month_filter,
         Cartao.account_id == account_id,  # ✅ FILTRO POR ACCOUNT_ID (cartão também)
-        Cartao.active == True  # Apenas cartões ativos
     ).group_by(Cartao.id, Cartao.number, Cartao.name, Cartao.description).all()
 
     # Monta lista de cartões
@@ -581,7 +529,6 @@ async def get_home_dashboard(
     ).filter(
         CreditCardInvoice.tenant_id == tenant_id,
         Cartao.account_id == account_id,
-        Cartao.active == True,
         credit_type_filter,
     ).scalar()
 
@@ -598,7 +545,6 @@ async def get_home_dashboard(
             CreditCardInvoice.tenant_id == tenant_id,
             Cartao.account_id == account_id,
             CreditCardInvoice.year_month == last_ym_row,
-            Cartao.active == True,
             credit_type_filter,
         ).first()
         if inv_agg:
@@ -612,7 +558,6 @@ async def get_home_dashboard(
     ).filter(
         CreditCardInvoice.tenant_id == tenant_id,
         Cartao.account_id == account_id,
-        Cartao.active == True,
         credit_type_filter,
     ).group_by(CreditCardInvoice.year_month).all()
 
@@ -787,7 +732,6 @@ async def get_invoice_details(
             Cartao.id == card_id,
             Cartao.tenant_id == tenant_id,
             Cartao.account_id == account_id,
-            Cartao.active == True,
         ).first()
         if not card:
             raise HTTPException(status_code=404, detail="Cartão não encontrado")
