@@ -14,6 +14,7 @@ from app.database import get_db
 from app.dependencies.auth import require_account
 from app.models.unified_models import Cartao, MonthlyProjection
 from app.services import monthly_projection_service as service
+from app.services import whatsapp_service
 
 router = APIRouter(prefix="/api/monthly-projections", tags=["monthly-projections"])
 
@@ -304,6 +305,38 @@ async def get_month(
     tenant_id, account_id, _user_id = _scope(current_user)
     _check_ym(year_month)
     return _month_response(db, tenant_id, account_id, year_month)
+
+
+class SendWhatsappRequest(BaseModel):
+    date: date
+
+
+class SendWhatsappResponse(BaseModel):
+    sent: int
+    total: Decimal
+
+
+def _brl(value: Decimal) -> str:
+    return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+@router.post("/send-whatsapp", response_model=SendWhatsappResponse)
+async def send_whatsapp(
+    body: SendWhatsappRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    tenant_id, account_id, _user_id = _scope(current_user)
+    month = _month_response(db, tenant_id, account_id, body.date.strftime("%Y-%m"))
+    items = [i for i in month.items if i.expected_date == body.date]
+    if not items:
+        raise HTTPException(status_code=404, detail="Nenhuma despesa na projeção para este dia.")
+    total = sum((i.amount for i in items), Decimal(0))
+    lines = [f"Despesas de {body.date.strftime('%d/%m/%Y')}:"]
+    lines += [f"• {i.description}: {_brl(i.amount)}" for i in items]
+    lines.append(f"Total: {_brl(total)}")
+    whatsapp_service.send_text("\n".join(lines))
+    return SendWhatsappResponse(sent=len(items), total=total)
 
 
 @router.post("", response_model=ProjectionOut, status_code=201)

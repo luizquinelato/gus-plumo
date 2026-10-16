@@ -12,7 +12,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { CalendarDays, ChevronLeft, ChevronRight, ChevronsRight, Copy, CreditCard, Eraser, FileSpreadsheet, FileText, Loader2, Maximize2, Pencil, Plus, Trash2, Wallet } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, ChevronsRight, Copy, CreditCard, Eraser, FileSpreadsheet, FileText, Loader2, Maximize2, MessageCircle, Pencil, Plus, Trash2, Wallet } from 'lucide-react'
 import { CadastroListHeaderActions } from '../components/CadastroExcelMenu'
 import { DateField } from '../components/date'
 import Sidebar from '../components/Sidebar'
@@ -49,6 +49,7 @@ import { useExportRunner } from '../hooks/useExportRunner'
 import { downloadExcel, excelDateStamp, type ExcelRow } from '../utils/excelExportClient'
 import { downloadPdf, type PdfBlock } from '../utils/pdfExportClient'
 import LoadingSpinner from '../components/LoadingSpinner'
+import Toast from '../components/Toast'
 import { formatCurrency } from '../utils/currency'
 
 type Kind = 'fixed' | 'variable'
@@ -173,6 +174,11 @@ const MONTH_NAMES = [
 const currentYearMonth = () => {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+const todayLocal = () => {
+  const d = new Date()
+  return `${currentYearMonth()}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 const shiftMonth = (ym: string, delta: number) => {
@@ -702,6 +708,27 @@ export default function ProjecaoMensalPage() {
 
   const [cloneCards, setCloneCards] = useState(true)
 
+  const [whatsappDate, setWhatsappDate] = useState<string | null>(null)
+  const closeWhatsapp = useCallback(() => setWhatsappDate(null), [])
+  useEscapeKey(closeWhatsapp, whatsappDate != null && !busy)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+  const closeToast = useCallback(() => setToast(null), [])
+
+  const sendWhatsapp = async () => {
+    if (!whatsappDate) return
+    setSaving(true)
+    try {
+      const { data: res } = await axios.post('/api/monthly-projections/send-whatsapp', { date: whatsappDate })
+      setWhatsappDate(null)
+      setToast({ message: `Enviado: ${res.sent} despesa(s) de ${whatsappDate.split('-').reverse().join('/')}.`, type: 'success' })
+    } catch (err) {
+      const detail = axios.isAxiosError(err) ? err.response?.data?.detail : null
+      setToast({ message: typeof detail === 'string' ? detail : 'Não foi possível enviar a mensagem.', type: 'error' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const cloneNext = async () => {
     const months = Math.min(24, Math.max(1, Math.floor(Number(cloneMonths) || 1)))
     setSaving(true)
@@ -815,6 +842,15 @@ export default function ProjecaoMensalPage() {
                     ],
                   }}
                 >
+                  <button
+                    type="button"
+                    onClick={() => setWhatsappDate(todayLocal())}
+                    title="Enviar despesas do dia por WhatsApp"
+                    aria-label="Enviar despesas do dia por WhatsApp"
+                    className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white p-2 text-green-600 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-green-400 dark:hover:bg-gray-700"
+                  >
+                    <MessageCircle size={18} />
+                  </button>
                   <CadastroListPrimaryButton
                     label="Lançar"
                     icon={<CalendarDays size={18} />}
@@ -1201,6 +1237,37 @@ export default function ProjecaoMensalPage() {
           />
         </CadastroModalShell>
       )}
+
+      {whatsappDate != null && (
+        <CadastroModalShell maxWidth="max-w-md">
+          <CadastroModalHeader
+            isEdit={false}
+            title="Enviar por WhatsApp"
+            subtitle="Despesas do dia na projeção mensal"
+            onClose={closeWhatsapp}
+            closeDisabled={busy}
+            icon={<MessageCircle size={18} />}
+          />
+          <CadastroModalBody>
+            <div className="space-y-3 p-4 text-sm text-gray-700 dark:text-gray-300">
+              <div>
+                <CadastroFieldLabel>Dia</CadastroFieldLabel>
+                <DateField value={whatsappDate} onChange={setWhatsappDate} className={cadastroFieldCls} />
+              </div>
+            </div>
+          </CadastroModalBody>
+          <CadastroModalFooter
+            onClose={closeWhatsapp}
+            onSave={sendWhatsapp}
+            saving={saving}
+            saveLabel="Enviar"
+            disabled={saving || !whatsappDate}
+            closeDisabled={busy}
+          />
+        </CadastroModalShell>
+      )}
+
+      {toast && <Toast message={toast.message} type={toast.type} onClose={closeToast} />}
 
       {cloneMonths != null && (
         <CadastroModalShell maxWidth="max-w-md">
@@ -1643,7 +1710,7 @@ export default function ProjecaoMensalPage() {
                     <MoneyMaskInput
                       value={item.amount}
                       onChange={(amount) => updateCardItem(i, { amount })}
-                      className={`${cadastroFieldCls} text-right font-semibold ${debitCls}`}
+                      className={`${cadastroFieldCls} text-right font-semibold ${Number(item.amount) > 0 ? creditCls : debitCls}`}
                     />
                     <select
                       value={item.kind}

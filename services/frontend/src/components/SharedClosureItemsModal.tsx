@@ -711,8 +711,16 @@ function groupItemsByCard(items: any[]) {
 
 function cardSummaryTitle(cardName: string, cardNumber: string) {
   const suffix = cardNumber ? ` *** ${cardNumber.slice(-4)}` : ''
-  return `Resumo · ${cardName}${suffix}`
+  return `${cardName}${suffix}`
 }
+
+const CARD_GROUP_COLORS = [
+  'var(--color-1)',
+  'var(--color-2)',
+  'var(--color-3)',
+  'var(--color-4)',
+  'var(--color-5)',
+]
 
 function CardSourceTabContent({
   receitas,
@@ -837,17 +845,31 @@ function CardSourceTabContent({
       {cardGroups.length === 0 ? (
         <p className="py-6 text-center text-sm text-gray-500 dark:text-gray-400">Nenhum lançamento neste período.</p>
       ) : (
-        cardGroups.map(({ cardName, cardNumber, items }) => {
+        <div className="space-y-10">
+        {cardGroups.map(({ cardName, cardNumber, items }, groupIndex) => {
           const cardReceitas = items.filter((item) => parseFloat(String(item.amount)) >= 0)
           const cardDespesas = items.filter((item) => parseFloat(String(item.amount)) < 0)
           const groupKey = `${cardName}|${cardNumber}`
+          const color = CARD_GROUP_COLORS[groupIndex % CARD_GROUP_COLORS.length]
 
           return (
-            <div key={groupKey} className="space-y-4">
+            <div
+              key={groupKey}
+              className="overflow-hidden rounded-xl border-2"
+              style={{ borderColor: color }}
+            >
+              <div
+                className="flex items-center gap-2 px-4 py-3 text-sm font-bold text-white"
+                style={{ background: color }}
+              >
+                <CreditCard size={16} />
+                <span className="truncate">{cardSummaryTitle(cardName, cardNumber)}</span>
+              </div>
+              <div className="space-y-4 p-4">
               <CadastroFormSection
-                title={cardSummaryTitle(cardName, cardNumber)}
+                title="Resumo"
                 hint="Receitas, despesas e resultado, com a divisão entre a sua parte e a da contraparte."
-                icon={<CreditCard size={14} />}
+                icon={<Scale size={14} />}
                 bodyClassName="p-0"
               >
                 <FlowSummaryTable receitas={sumItems(cardReceitas)} despesas={sumItems(cardDespesas)} />
@@ -862,9 +884,11 @@ function CardSourceTabContent({
                   <ItemsTable items={cardDespesas} showCard={false} />
                 </CadastroFormSection>
               )}
+              </div>
             </div>
           )
-        })
+        })}
+        </div>
       )}
     </>
   )
