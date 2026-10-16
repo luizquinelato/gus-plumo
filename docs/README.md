@@ -17,6 +17,7 @@ Sistema de gerenciamento de despesas pessoais com importação automatizada de e
 
 ### Infraestrutura
 - [**ambientes.md**](ambientes.md) - Configuração de ambientes (dev/prod), scripts de database
+- [**whatsapp-evolution.md**](whatsapp-evolution.md) - Envio de WhatsApp via Evolution API (configuração, QR code, troubleshooting)
 - [**powershell-helpers/README.md**](powershell-helpers/README.md) - Comandos do PowerShell (`dkup-dev`, `run-all-tabs-dev`, ...)
 
 ### Outros

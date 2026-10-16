@@ -1522,6 +1522,103 @@ def list_balance_closures(
     return {'closures': enriched, 'total': total}
 
 
+class SendClosuresWhatsappRequest(BaseModel):
+    expense_sharing_id: int
+    year: int | None = None
+
+
+class SendClosuresWhatsappResponse(BaseModel):
+    closures: int
+    recipients: int
+
+
+def _brl(value: Decimal) -> str:
+    sign = '-' if value < 0 else ''
+    text = f"{abs(value):,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+    return f"{sign}R$ {text}"
+
+
+def _card_side(card: dict) -> Decimal:
+    """Saldo (a receber - a pagar, incluindo empréstimos) de um lado do fechamento."""
+    def num(key: str) -> Decimal:
+        return Decimal(str(card.get(key) or 0))
+    to_receive = num('total_to_receive') + num('loan_to_receive')
+    to_pay = abs(num('total_to_pay')) + abs(num('loan_to_pay'))
+    return to_receive - to_pay
+
+
+def build_closures_whatsapp_message(closures: list, viewer_account_id: int, db: Session) -> str:
+    lines: list[str] = []
+    for closure in closures:
+        data = closure.closure_data or {}
+        main = data.get('main_account_card') or {}
+        partner = data.get('partner_account_card') or {}
+        is_counterpart = int(main.get('account_id') or closure.account_id) != viewer_account_id
+        viewer, other = (partner, main) if is_counterpart else (main, partner)
+        viewer_name = viewer.get('account_name') or '-'
+        other_name = other.get('account_name') or '-'
+        net = _card_side(viewer)
+        total_paid, payments = get_closure_payment_totals(closure.id, db)
+        remaining = closure_debt_remaining(net, total_paid)
+
+        lines.append(f"*{other_name}* — {closure.month:02d}/{closure.year}")
+        if net > 0:
+            lines.append(f"A receber (original): {_brl(net)}")
+        elif net < 0:
+            lines.append(f"A pagar (original): {_brl(abs(net))}")
+        else:
+            lines.append("Contas zeradas")
+        if payments:
+            lines.append("Pagamentos:")
+            for p in sorted(payments, key=lambda x: x.payment_date):
+                lines.append(f"• {p.payment_date.strftime('%d/%m/%Y')}: {_brl(p.amount)}")
+        if net > 0:
+            lines.append(f"Saldo: {other_name} deve pagar {_brl(remaining)} para {viewer_name}")
+        elif net < 0:
+            lines.append(f"Saldo: {viewer_name} deve pagar {_brl(remaining)} para {other_name}")
+        lines.append("")
+    return "\n".join(lines).strip()
+
+
+@router.post("/send-whatsapp", response_model=SendClosuresWhatsappResponse)
+def send_closures_whatsapp(
+    request: SendClosuresWhatsappRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Envia por WhatsApp o resumo dos fechamentos em aberto de um compartilhamento."""
+    from app.services import whatsapp_service
+
+    account_id = current_user.get("account_id")
+    if not account_id:
+        raise HTTPException(status_code=400, detail="account_id não encontrado no token")
+
+    listing = list_balance_closures(
+        expense_sharing_id=request.expense_sharing_id,
+        year=request.year,
+        month=None,
+        is_settled=False,
+        skip=0,
+        limit=1000,
+        db=db,
+        current_user=current_user,
+    )
+    closures = (
+        db.query(BalanceClosure)
+        .filter(BalanceClosure.id.in_([c['id'] for c in listing['closures']]))
+        .order_by(BalanceClosure.closing_date)
+        .all()
+    )
+    if not closures:
+        raise HTTPException(status_code=404, detail="Nenhum fechamento em aberto para este compartilhamento.")
+
+    message = build_closures_whatsapp_message(closures, int(account_id), db)
+    recipients = whatsapp_service.shared_balance_recipients()
+    whatsapp_service.send_text(message, recipients)
+    return SendClosuresWhatsappResponse(closures=len(closures), recipients=len(recipients))
+
+
+
 @router.get("/{closure_id}", response_model=BalanceClosureWithItemsResponse)
 def get_balance_closure(
     closure_id: int,

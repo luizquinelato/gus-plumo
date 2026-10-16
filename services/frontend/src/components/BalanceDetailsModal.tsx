@@ -16,8 +16,8 @@ interface BalanceItem {
   date: string
   description: string
   amount: number
-  tag_name?: string
-  subtag_name?: string
+  tag_name?: string | null
+  subtag_name?: string | null
   my_contribution_percentage: number
   partner_contribution_percentage: number
   should_invert?: boolean
@@ -179,12 +179,10 @@ function sortBalanceItems(items: BalanceItem[], sortConfig: SortConfig[]) {
 
 function BalanceDetailsItemsTable({
   items,
-  sortConfig,
   onSort,
   getSortIcon,
 }: {
   items: BalanceItem[]
-  sortConfig: SortConfig[]
   onSort: (field: SortField) => void
   getSortIcon: (field: SortField) => ReactNode
 }) {
@@ -384,8 +382,7 @@ const BalanceDetailsModal = ({
   type,
   accountColor,
   expenseItems,
-  revenueItems,
-  isPartnerAccount = false
+  revenueItems
 }: BalanceDetailsModalProps) => {
   const isCreditCard = type === 'credit_card'
   const isBenefitCard = type === 'benefit_card'
@@ -698,7 +695,6 @@ const BalanceDetailsModal = ({
                       <CadastroFormSection title="Receitas" icon={<ArrowUpCircle size={14} />} bodyClassName="p-0">
                         <BalanceDetailsItemsTable
                           items={cardReceitas}
-                          sortConfig={sortConfig}
                           onSort={handleSort}
                           getSortIcon={getSortIcon}
                         />
@@ -708,7 +704,6 @@ const BalanceDetailsModal = ({
                       <CadastroFormSection title="Despesas" icon={<ArrowDownCircle size={14} />} bodyClassName="p-0">
                         <BalanceDetailsItemsTable
                           items={cardDespesas}
-                          sortConfig={sortConfig}
                           onSort={handleSort}
                           getSortIcon={getSortIcon}
                         />
@@ -735,7 +730,6 @@ const BalanceDetailsModal = ({
                 <CadastroFormSection title="Receitas" icon={<ArrowUpCircle size={14} />} bodyClassName="p-0">
                   <BalanceDetailsItemsTable
                     items={sortedRevenueItems}
-                    sortConfig={sortConfig}
                     onSort={handleSort}
                     getSortIcon={getSortIcon}
                   />
@@ -745,7 +739,6 @@ const BalanceDetailsModal = ({
                 <CadastroFormSection title="Despesas" icon={<ArrowDownCircle size={14} />} bodyClassName="p-0">
                   <BalanceDetailsItemsTable
                     items={sortedExpenseItems}
-                    sortConfig={sortConfig}
                     onSort={handleSort}
                     getSortIcon={getSortIcon}
                   />

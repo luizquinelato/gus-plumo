@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { DateField } from '../components/date'
-import { formatDateBR, parseLocalDate, dateToLocalString, dateToLocalTimestamp, getTodayLocalDate } from '../utils/dateUtils'
+import { dateToLocalString, dateToLocalTimestamp, getTodayLocalDate } from '../utils/dateUtils'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
 import {
@@ -65,7 +65,7 @@ import {
 } from '../utils/closureCreditUtils'
 import { useConfirm } from '../hooks/useConfirm'
 import { useExportRunner } from '../hooks/useExportRunner'
-import { Scale, Calendar, Building2, TrendingUp, TrendingDown, Minus, Receipt, Archive, Eye, Lock, Unlock, ChevronDown, ChevronUp, Landmark, Gift, FileJson, Braces, Copy, Check, CheckCircle, Clock, Trash2, ChevronRight, AlertTriangle, X, Download, Filter, Search, Banknote, HelpCircle, ArrowUpCircle, ArrowDownCircle, ArrowUp, ArrowDown, ArrowLeftRight, UnfoldVertical, FoldVertical, CheckSquare, Square, MinusSquare, Plus, MessageSquare, Pencil, RefreshCw } from 'lucide-react'
+import { Scale, Calendar, Building2, Archive, Eye, Lock, Unlock, ChevronDown, Landmark, FileJson, Braces, Copy, Check, CheckCircle, Trash2, ChevronRight, AlertTriangle, X, Download, Filter, Banknote, ArrowUp, ArrowDown, ArrowLeftRight, UnfoldVertical, FoldVertical, Plus, MessageSquare, MessageCircle, Pencil, RefreshCw } from 'lucide-react'
 import { exportBalanceClosureToPDF } from '../utils/pdfExport'
 import { exportBalanceClosureToExcel } from '../utils/exportToExcel'
 import { ExportClosureModal } from '../components/ExportClosureModal'
@@ -75,45 +75,6 @@ interface ToastState {
   show: boolean
   message: string
   type: 'success' | 'error' | 'warning'
-}
-
-interface AccountInfo {
-  id: number
-  name: string | null
-  description: string | null
-  bank_name: string | null
-}
-
-interface MonthlyAccountBalance {
-  a_receber: number
-  a_pagar: number
-  net_balance: number
-  status: 'receive' | 'pay' | 'even'
-}
-
-interface MonthlyBalanceSummary {
-  month: string
-  main_account_balance: MonthlyAccountBalance
-  partner_account_balance: MonthlyAccountBalance
-  has_closure: boolean
-  is_settled: boolean
-}
-
-interface YearSummary {
-  total_a_receber: number
-  total_a_pagar: number
-  net_balance: number
-  status: 'receive' | 'pay' | 'even'
-}
-
-interface AnnualHistory {
-  year: number
-  main_account: AccountInfo
-  partner_account: AccountInfo
-  my_contribution_percentage: number
-  months: MonthlyBalanceSummary[]
-  main_account_year_summary: YearSummary
-  partner_account_year_summary: YearSummary
 }
 
 interface Account {
@@ -158,38 +119,6 @@ interface TransactionItem {
   total_installments?: number | null
 }
 
-interface AccountBalanceCard {
-  account_id: number
-  account_name: string
-  bank_name: string | null
-  agency: string | null
-  account_number: number | null
-  total_expenses: number
-  total_revenues: number
-  net_amount: number
-  contribution_percentage: number
-  status: 'to_pay' | 'to_receive' | 'even'
-  // Transações de bank_statements
-  expense_items: TransactionItem[]
-  revenue_items: TransactionItem[]
-  // Transações de credit_card_invoices
-  credit_card_expense_items: TransactionItem[]
-  credit_card_revenue_items: TransactionItem[]
-  // Transações de benefit_card_statements
-  benefit_card_expense_items: TransactionItem[]
-  benefit_card_revenue_items: TransactionItem[]
-}
-
-interface BalanceCalculation {
-  main_account_card: AccountBalanceCard
-  partner_account_card: AccountBalanceCard
-  year: number
-  month: number
-  closing_day: number | null
-  start_date: string
-  end_date: string
-  calculation_date: string
-}
 
 interface ClosurePayment {
   id: number
@@ -199,6 +128,7 @@ interface ClosurePayment {
   notes: string | null
   account_id: number
   created_at: string
+  active?: boolean
 }
 
 interface BalanceClosure {
@@ -238,131 +168,6 @@ interface BalanceClosureItem {
   date: string
   item_data: any
   created_at: string
-}
-
-// ==================== EMPRÉSTIMOS ====================
-interface OpenLoanItem {
-  id: number
-  loan_type: 'lent' | 'borrowed'
-  description: string
-  loan_date: string
-  principal_amount: number
-  total_paid: number
-  remaining_balance: number
-  interest_enabled: boolean
-  interest_type: string | null
-  interest_rate: number | null
-  interest_period: string | null
-  counterpart_name: string | null
-  counterpart_account_id: number | null
-}
-
-interface OpenLoansResponse {
-  partner_account_id: number
-  partner_account_name: string | null
-  loans: OpenLoanItem[]
-  total_lent_remaining: number  // Total que tenho a receber (emprestei)
-  total_borrowed_remaining: number  // Total que tenho a pagar (peguei emprestado)
-  net_loan_balance: number  // lent - borrowed
-}
-
-interface LoanPaymentInput {
-  loan_id: number
-  amount: number
-  displayAmount: string  // Valor de texto para exibição no input
-  settleInFull: boolean  // Switch para quitar integral
-}
-
-// Função para calcular juros (igual a EmprestimosPage)
-const calculateInterest = (
-  principal: number,
-  loanDate: string,
-  interestRate: number,
-  interestType: 'simple' | 'compound',
-  interestPeriod: 'daily' | 'monthly' | 'yearly'
-): { correctedAmount: number; interestAmount: number; periods: number; description: string } => {
-  const startDate = new Date(loanDate)
-  const today = new Date()
-
-  // Calcular diferença em dias
-  const diffTime = today.getTime() - startDate.getTime()
-  const diffDays = Math.max(0, Math.floor(diffTime / (1000 * 60 * 60 * 24)))
-
-  // Garantir que principal e rate são números
-  const principalNum = Number(principal)
-  const rate = Number(interestRate) / 100
-
-  let correctedAmount: number
-  let periods: number
-  let description: string
-
-  if (interestPeriod === 'daily') {
-    periods = diffDays
-    if (interestType === 'compound') {
-      correctedAmount = principalNum * Math.pow(1 + rate, periods)
-    } else {
-      correctedAmount = principalNum * (1 + rate * periods)
-    }
-    description = `${periods} dias × ${interestRate}% ao dia`
-  } else if (interestPeriod === 'monthly') {
-    const DAYS_IN_MONTH = 30
-    const fullMonths = Math.floor(diffDays / DAYS_IN_MONTH)
-    const extraDays = diffDays % DAYS_IN_MONTH
-
-    if (diffDays < DAYS_IN_MONTH) {
-      correctedAmount = principalNum
-      periods = 0
-      description = `Carência: ${diffDays} dias (1º mês)`
-    } else {
-      if (interestType === 'compound') {
-        const totalPeriods = fullMonths + (extraDays / DAYS_IN_MONTH)
-        correctedAmount = principalNum * Math.pow(1 + rate, totalPeriods)
-        periods = totalPeriods
-      } else {
-        const totalPeriods = fullMonths + (extraDays / DAYS_IN_MONTH)
-        correctedAmount = principalNum * (1 + rate * totalPeriods)
-        periods = totalPeriods
-      }
-      description = `${fullMonths} mês(es) + ${extraDays} dias pro-rata`
-    }
-  } else {
-    const DAYS_IN_YEAR = 365
-    const DAYS_IN_MONTH = 30
-    const fullYears = Math.floor(diffDays / DAYS_IN_YEAR)
-    const remainingDays = diffDays % DAYS_IN_YEAR
-    const fullMonthsInRemainder = Math.floor(remainingDays / DAYS_IN_MONTH)
-    const extraDays = remainingDays % DAYS_IN_MONTH
-
-    if (diffDays < DAYS_IN_YEAR) {
-      correctedAmount = principalNum
-      periods = 0
-      const monthsElapsed = Math.floor(diffDays / DAYS_IN_MONTH)
-      const daysElapsed = diffDays % DAYS_IN_MONTH
-      description = `Carência: ${monthsElapsed}m ${daysElapsed}d (1º ano)`
-    } else {
-      if (interestType === 'compound') {
-        const monthlyRate = Math.pow(1 + rate, 1 / 12) - 1
-        const fullMonthsTotal = fullYears * 12 + fullMonthsInRemainder
-        const totalPeriods = fullMonthsTotal + (extraDays / DAYS_IN_MONTH)
-        correctedAmount = principalNum * Math.pow(1 + monthlyRate, totalPeriods)
-        periods = fullYears + (remainingDays / DAYS_IN_YEAR)
-      } else {
-        const totalPeriods = fullYears + (remainingDays / DAYS_IN_YEAR)
-        correctedAmount = principalNum * (1 + rate * totalPeriods)
-        periods = totalPeriods
-      }
-      description = `${fullYears} ano(s) + ${fullMonthsInRemainder}m ${extraDays}d pro-rata`
-    }
-  }
-
-  const interestAmount = correctedAmount - principalNum
-
-  return {
-    correctedAmount: Math.round(correctedAmount * 100) / 100,
-    interestAmount: Math.round(interestAmount * 100) / 100,
-    periods: Math.round(periods * 100) / 100,
-    description
-  }
 }
 
 // Componente para visualizar JSON com collapse/expand
@@ -615,53 +420,11 @@ const SharedBalanceListPage = () => {
   const [filtersApplied, setFiltersApplied] = useState(false)
   const [loggedAccountId, setLoggedAccountId] = useState<number | null>(null)
 
-  // Helper: Converter Date para YYYY-MM-DD HH:MM:SS (timestamp completo)
-  const dateToTimestampString = (date: Date | string) => {
-    // Se já é uma string no formato correto, retorna direto
-    if (typeof date === 'string') {
-      // Se já está no formato "YYYY-MM-DD HH:MM:SS", retorna direto
-      if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(date)) {
-        return date
-      }
-      // Se está no formato ISO (YYYY-MM-DDTHH:MM:SS), converte para "YYYY-MM-DD HH:MM:SS"
-      if (date.includes('T')) {
-        return date.replace('T', ' ').substring(0, 19)
-      }
-    }
-
-    // Caso contrário, converte de Date para string
-    const d = typeof date === 'string' ? new Date(date) : date
-    const year = d.getFullYear()
-    const month = String(d.getMonth() + 1).padStart(2, '0')
-    const day = String(d.getDate()).padStart(2, '0')
-    const hours = String(d.getHours()).padStart(2, '0')
-    const minutes = String(d.getMinutes()).padStart(2, '0')
-    const seconds = String(d.getSeconds()).padStart(2, '0')
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
-  }
-
-  const closureReferenceFromPeriodEnd = (periodEnd: string) => {
-    const raw = String(periodEnd)
-    const iso = raw.includes('T') ? raw : `${raw.slice(0, 10)}T12:00:00`
-    const d = new Date(iso)
-    const year = d.getFullYear()
-    const month = d.getMonth() + 1
-    const monthName = d.toLocaleDateString('pt-BR', { month: 'long' })
-    const label = `${monthName.charAt(0).toUpperCase()}${monthName.slice(1)}/${year}`
-    return { year, month, label }
-  }
-
-  // Estados para datas customizadas
-  const [startDate, setStartDate] = useState<string>('')
-  const [endDate, setEndDate] = useState<string>(getTodayLocalDate()) // ✅ Preenchido com hoje (data local, não UTC)
-  const [minStartDate, setMinStartDate] = useState<string | null>(null) // Data mínima permitida (dia após último fechamento)
-  const [lastClosureTimestamp, setLastClosureTimestamp] = useState<string | null>(null) // Timestamp completo do último fechamento
-  const [calculationTimestamp, setCalculationTimestamp] = useState<string | null>(null) // ✅ Timestamp exato do clique em "Aplicar" (usado como data/hora de fechamento)
+  const [, setStartDate] = useState<string>('')
+  const [, setMinStartDate] = useState<string | null>(null)
+  const [, setLastClosureTimestamp] = useState<string | null>(null)
 
   const [partners, setPartners] = useState<ExpenseSharing[]>([])
-  const [balanceData, setBalanceData] = useState<BalanceCalculation | null>(null)
-  const [annualHistoryData, setAnnualHistoryData] = useState<AnnualHistory | null>(null)
-  const [loading, setLoading] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
   const [toast, setToast] = useState<ToastState>({ show: false, message: '', type: 'success' })
   const exportRunner = useExportRunner((message) => setToast({ show: true, message, type: 'error' }))
@@ -672,10 +435,8 @@ const SharedBalanceListPage = () => {
   const [closureItems, setClosureItems] = useState<BalanceClosureItem[]>([])
   const [closureLoanPayments, setClosureLoanPayments] = useState<any[]>([])  // Pagamentos de empréstimos do fechamento
   const [isClosurePartnerView, setIsClosurePartnerView] = useState(false)  // Se estamos vendo da perspectiva da conta parceira
-  const [showClosureModal, setShowClosureModal] = useState(false)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [isSettlingClosure, setIsSettlingClosure] = useState(false)
-  const [closureNotes, setClosureNotes] = useState('')
   const [settlementNotes, setSettlementNotes] = useState('')
   const [settlementDate, setSettlementDate] = useState('')
   const [closuresLoading, setClosuresLoading] = useState(false)
@@ -687,14 +448,6 @@ const SharedBalanceListPage = () => {
   const [exportTargetClosure, setExportTargetClosure] = useState<BalanceClosure | null>(null)  // Fechamento a exportar
   const [recalcClosure, setRecalcClosure] = useState<BalanceClosure | null>(null)
 
-  // Estados para modal de sugestão de datas
-  const [showDateSuggestionModal, setShowDateSuggestionModal] = useState(false)
-  const [dateSuggestion, setDateSuggestion] = useState<{
-    conflictType: 'start_date' | 'end_date' | 'both'
-    message: string
-    suggestedStartDate?: string
-    suggestedEndDate?: string
-  } | null>(null)
   const [showJsonModal, setShowJsonModal] = useState(false)
   const [jsonClosureData, setJsonClosureData] = useState<any>(null)
   const [jsonCopied, setJsonCopied] = useState(false)
@@ -767,23 +520,6 @@ const SharedBalanceListPage = () => {
     revenueItems: [],
     isPartnerAccount: false
   })
-
-  // Estados para modal de detalhes mensais do histórico
-  const [monthlyDetailsModal, setMonthlyDetailsModal] = useState<{
-    isOpen: boolean
-    data: any | null
-    loading: boolean
-  }>({
-    isOpen: false,
-    data: null,
-    loading: false
-  })
-
-  // Estados para empréstimos
-  const [openLoans, setOpenLoans] = useState<OpenLoansResponse | null>(null)
-  const [loansLoading, setLoansLoading] = useState(false)
-  const [loansExpanded, setLoansExpanded] = useState(false)
-  const [loanPayments, setLoanPayments] = useState<LoanPaymentInput[]>([])
 
   // Função para buscar o último fechamento e configurar datas
   const loadLastClosureAndSetDates = async (sharingId: number) => {
@@ -899,6 +635,24 @@ const SharedBalanceListPage = () => {
       setClosures([])
     } finally {
       setClosuresLoading(false)
+    }
+  }
+
+  const [sendingWhatsapp, setSendingWhatsapp] = useState(false)
+
+  const sendClosuresWhatsapp = async () => {
+    const sharing = partners.find((p) => p.shared_account_id === appliedPartnerAccountId)
+    if (!sharing) return
+    setSendingWhatsapp(true)
+    try {
+      const body: { expense_sharing_id: number; year?: number } = { expense_sharing_id: sharing.id }
+      if (appliedYear !== null && appliedYear !== 'all') body.year = appliedYear
+      const { data } = await axios.post('/api/balance/closures/send-whatsapp', body)
+      setToast({ show: true, message: `Resumo de ${data.closures} fechamento(s) enviado por WhatsApp.`, type: 'success' })
+    } catch (error: any) {
+      setToast({ show: true, message: error?.response?.data?.detail || 'Erro ao enviar por WhatsApp', type: 'error' })
+    } finally {
+      setSendingWhatsapp(false)
     }
   }
 
@@ -1843,54 +1597,7 @@ const SharedBalanceListPage = () => {
     }
   }, [showDetailsModal, showJsonModal, showPaymentModal])
 
-  const formatMonth = (monthStr: string) => {
-    const [year, month] = monthStr.split('-')
-    const date = new Date(parseInt(year), parseInt(month) - 1)
-    // Retorna apenas o nome do mês com primeira letra maiúscula
-    const monthName = date.toLocaleDateString('pt-BR', { month: 'long' })
-    return monthName.charAt(0).toUpperCase() + monthName.slice(1)
-  }
-
-  const openDetailsModal = (
-    type: 'transactions' | 'credit_card' | 'benefit_card',
-    accountColor: 'primary' | 'secondary',
-    accountName: string,
-    expenseItems: TransactionItem[],
-    revenueItems: TransactionItem[],
-    isPartnerAccount: boolean = false
-  ) => {
-    const titles = {
-      transactions: 'Transações',
-      credit_card: 'Fatura de Cartão',
-      benefit_card: 'Cartão de Benefícios'
-    }
-
-    setDetailsModal({
-      isOpen: true,
-      type,
-      accountColor,
-      title: `${titles[type]} - ${accountName}`,
-      expenseItems,
-      revenueItems,
-      isPartnerAccount
-    })
-  }
-
   const years = Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i)
-  const months = [
-    { value: 1, label: 'Janeiro' },
-    { value: 2, label: 'Fevereiro' },
-    { value: 3, label: 'Março' },
-    { value: 4, label: 'Abril' },
-    { value: 5, label: 'Maio' },
-    { value: 6, label: 'Junho' },
-    { value: 7, label: 'Julho' },
-    { value: 8, label: 'Agosto' },
-    { value: 9, label: 'Setembro' },
-    { value: 10, label: 'Outubro' },
-    { value: 11, label: 'Novembro' },
-    { value: 12, label: 'Dezembro' }
-  ]
 
   // Loading inicial - mostra enquanto carrega dados iniciais
   if (initialLoading) {
@@ -2003,13 +1710,23 @@ const SharedBalanceListPage = () => {
                         >
                           <Scale size={18} />
                         </div>
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <h2 className="text-lg font-bold text-gray-900 dark:text-white">Balanço aberto</h2>
                           <p className="text-sm text-gray-500 dark:text-gray-400">
                             {closuresScorecards.pendingCount}{' '}
                             {closuresScorecards.pendingCount === 1 ? 'fechamento pendente' : 'fechamentos pendentes'}
                           </p>
                         </div>
+                        <button
+                          type="button"
+                          onClick={sendClosuresWhatsapp}
+                          disabled={!appliedPartnerAccountId || closuresScorecards.pendingCount === 0 || sendingWhatsapp}
+                          title={appliedPartnerAccountId ? 'Enviar resumo dos fechamentos abertos por WhatsApp' : 'Escolha uma conta compartilhada nos filtros para habilitar o envio'}
+                          aria-label="Enviar resumo dos fechamentos abertos por WhatsApp"
+                          className="inline-flex shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white p-2 text-green-600 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-600 dark:bg-gray-800 dark:text-green-400 dark:hover:bg-gray-700"
+                        >
+                          <MessageCircle size={18} />
+                        </button>
                       </div>
                       <div className="grid grid-cols-1 divide-y divide-gray-200 dark:divide-gray-600 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
                         <div className="flex min-h-[6.5rem] flex-col justify-center bg-white px-5 py-4 dark:bg-gray-800">
@@ -2117,14 +1834,6 @@ const SharedBalanceListPage = () => {
                           // Saldo = A Receber - A Pagar
                           const displayNetBalance = displayToReceive - displayToPay
 
-                          // Verificar se possui liquidações de empréstimos (de qualquer card)
-                          const mainLoanToReceive = parseFloat(mainCard.loan_to_receive ?? 0)
-                          const mainLoanToPay = parseFloat(mainCard.loan_to_pay ?? 0)
-                          const rootLoanPayments = closure.closure_data?.loan_payments || []
-                          const hasLoanPayments = (mainLoanToReceive !== 0 || mainLoanToPay !== 0 ||
-                                                   (mainCard.loan_payments && mainCard.loan_payments.length > 0) ||
-                                                   (partnerCard.loan_payments && partnerCard.loan_payments.length > 0) ||
-                                                   rootLoanPayments.length > 0)
                           const closureLoanLiquidations = filterRegularLoanPayments(
                             getClosureLoanPaymentsList(closure),
                           )
