@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict z0sRGetnpaywfKqiimkpOl9JEfIE1n82YyUGuPlpa0hpXt1O4cxa4lsrFXbCx96
+\restrict 3Zi7acLdYVyNYzfhxFIJjux9nff1CD8NW64U51QT1i7bftO2bcr7S4yWtVMEpdt
 
 -- Dumped from database version 18.4 (Debian 18.4-1.pgdg13+1)
 -- Dumped by pg_dump version 18.4 (Debian 18.4-1.pgdg13+1)
@@ -1491,7 +1491,9 @@ CREATE TABLE public.monthly_projections (
     created_at timestamp without time zone DEFAULT now() NOT NULL,
     last_updated_at timestamp without time zone DEFAULT now() NOT NULL,
     active boolean DEFAULT true NOT NULL,
+    sharing character varying(10),
     CONSTRAINT chk_monthly_projections_kind CHECK (((kind)::text = ANY ((ARRAY['fixed'::character varying, 'variable'::character varying, 'income'::character varying])::text[]))),
+    CONSTRAINT chk_monthly_projections_sharing CHECK (((sharing IS NULL) OR ((sharing)::text = ANY ((ARRAY['own'::character varying, 'mine'::character varying, 'all'::character varying])::text[])))),
     CONSTRAINT chk_monthly_projections_source CHECK (((source)::text = ANY ((ARRAY['manual'::character varying, 'clone'::character varying, 'card_invoice'::character varying, 'card_item'::character varying, 'payroll'::character varying])::text[])))
 );
 
@@ -2795,6 +2797,13 @@ COPY public.bank_statements (id, category, transaction, description, date, amoun
 3377	Transferência	Pix enviado	Carla Weygand Sabino	2022-02-15 12:36:00	-808.00	133	100.00	\N	\N	1	1	1	2026-10-08 17:55:55.517147	2026-10-08 17:55:55.517151	\N	\N
 3386	Contas	Pagamento de fatura do cartão	Fatura do cartão BTG Pactual	2022-03-08 19:18:00	-7500.16	40	100.00	\N	\N	1	1	1	2026-10-08 17:55:55.520644	2026-10-08 17:55:55.520647	\N	\N
 4700	Pets	Pix enviado	Zapizi	2024-10-02 20:34:00	-10.00	101	100.00	\N	\N	1	1	1	2026-10-08 17:55:56.010527	2026-10-08 19:00:40.173255	\N	\N
+6276	Saúde	Pix enviado por Natália Cristina Polezel Quinelato	Nadia Lunardi Odontologia	2026-10-15 18:12:00	-200.00	144	100.00	\N	\N	1	1	1	2026-10-16 16:29:34.442748	2026-10-16 16:29:34.442754	\N	\N
+6277	Alimentação	Pix enviado por Natália Cristina Polezel Quinelato	Narizinho Cantinas	2026-10-16 08:10:00	-50.00	16	100.00	\N	\N	1	1	1	2026-10-16 16:29:34.442756	2026-10-16 16:29:34.442757	\N	\N
+6278	Investimentos	Transferência recebida	Luiz Gustavo Giacomelo Quinelato	2026-10-16 08:47:00	2813.87	97	100.00	\N	\N	1	1	1	2026-10-16 16:29:34.442759	2026-10-16 16:29:34.44276	\N	\N
+6279	Investimentos	Transferência recebida	Luiz Gustavo Giacomelo Quinelato	2026-10-16 09:24:00	4484.53	97	100.00	\N	\N	1	1	1	2026-10-16 16:29:34.442761	2026-10-16 16:29:34.442762	\N	\N
+6280	Alimentação	Pix enviado por Natália Cristina Polezel Quinelato	Restaurante E Pizzaria Mgm Rio Claro Ltda	2026-10-16 12:06:00	-78.99	16	100.00	\N	\N	1	1	1	2026-10-16 16:29:34.442764	2026-10-16 16:29:34.442765	\N	\N
+6281	Tarifas	Pagamento de conta	Gps Codigo De Barras	2026-10-16 16:09:00	-178.89	88	0.00	1	\N	1	1	1	2026-10-16 16:29:34.445388	2026-10-16 16:29:34.445393	\N	\N
+6282	Alimentação	Pix enviado	Serv Agua	2026-10-16 16:10:00	-153.00	124	50.00	1	\N	1	1	1	2026-10-16 16:29:34.445394	2026-10-16 16:29:34.445395	\N	\N
 3401	Transferência	Pix enviado	Carla Weygand Sabino	2022-03-21 09:28:00	-607.62	133	100.00	\N	\N	1	1	1	2026-10-08 17:55:55.526908	2026-10-08 17:55:55.526911	\N	\N
 3412	Saque	Saque Banco24Horas	Posto Select Xurunga	2022-03-30 11:45:00	-1000.00	49	100.00	\N	\N	1	1	1	2026-10-08 17:55:55.530107	2026-10-08 17:55:55.530109	\N	\N
 3413	Saque	Saque Banco24Horas	Posto Select Xurunga	2022-03-30 11:46:00	-800.00	49	100.00	\N	\N	1	1	1	2026-10-08 17:55:55.53011	2026-10-08 17:55:55.530111	\N	\N
@@ -5913,6 +5922,14 @@ COPY public.benefit_card_statements (id, credit_card_id, date, description, amou
 18	2	2026-02-26 00:27:00	Depósito transferido	155.25	Flash	156	100.00	\N	\N	1	1	1	2026-10-08 18:18:28.637037	2026-10-09 15:16:48.424569
 6	2	2026-03-30 01:00:00	Depósito transferido	1187.28	Flash	156	100.00	\N	\N	1	1	1	2026-10-08 18:18:28.626281	2026-10-09 15:16:48.424569
 17	2	2026-03-30 00:41:00	Depósito transferido	155.25	Flash	156	100.00	\N	\N	1	1	1	2026-10-08 18:18:28.636146	2026-10-09 15:16:48.424569
+1550	2	2026-10-16 06:16:00	PADARIA ALEMA RIO CLARO BRA	-21.94	Cartão	14	100.00	1	\N	1	1	1	2026-10-16 16:38:58.377891	2026-10-16 16:38:58.377897
+1551	2	2026-10-13 19:17:00	BABY PASTELARIA RIO CLARO BRA	-128.00	Cartão	16	100.00	1	\N	1	1	1	2026-10-16 16:38:58.377898	2026-10-16 16:38:58.3779
+1552	2	2026-10-13 06:11:00	PADARIA ALEMA RIO CLARO BRA	-34.49	Cartão	14	100.00	1	\N	1	1	1	2026-10-16 16:38:58.377901	2026-10-16 16:38:58.377902
+1553	2	2026-10-12 20:27:00	VIEIRA FERNANDES LTDA RIO CLARO BRA	-163.00	Cartão	\N	50.00	1	\N	1	1	1	2026-10-16 16:38:58.38126	2026-10-16 16:38:58.381266
+1554	2	2026-10-10 19:23:00	SUBWAY Rio Claro BRA	-9.00	Cartão	16	100.00	1	\N	1	1	1	2026-10-16 16:38:58.382532	2026-10-16 16:38:58.382538
+1555	2	2026-10-10 19:23:00	SUBWAY Rio Claro BRA	-174.00	Cartão	16	100.00	1	\N	1	1	1	2026-10-16 16:38:58.38254	2026-10-16 16:38:58.382542
+1556	2	2026-10-10 10:22:00	CND 27 RIO CLARO 0001 P 076 BRA	-121.41	Cartão	\N	50.00	1	\N	1	1	1	2026-10-16 16:38:58.383802	2026-10-16 16:38:58.383807
+1557	2	2026-10-08 18:36:00	IFD*BR OSASCO BRA	-201.58	Cartão	16	100.00	1	\N	1	1	1	2026-10-16 16:38:58.384725	2026-10-16 16:38:58.38473
 74	2	2026-05-31 12:16:00	PADARIA ALEMA RIO CLARO BRA	-32.99	Flash	14	50.00	1	\N	1	1	1	2026-10-08 18:18:28.691104	2026-10-09 15:17:40.011855
 85	2	2025-12-13 19:37:00	CrisLanches RIO CLARO BRA	-54.00	Flash	101	50.00	1	\N	1	1	1	2026-10-08 18:18:28.700673	2026-10-09 15:17:40.011855
 88	2	2026-09-05 19:30:00	VanessaMijolaroDo RIO CLARO BRA	-87.00	Flash	101	50.00	1	\N	1	1	1	2026-10-08 18:18:28.704444	2026-10-09 15:17:40.011855
@@ -6100,10 +6117,10 @@ COPY public.benefit_card_statements (id, credit_card_id, date, description, amou
 1494	2	2025-10-30 00:24:00	Depósito transferido	155.25	Depósito	156	100.00	\N	\N	1	1	1	2026-10-08 18:44:04.448649	2026-10-09 15:16:48.424569
 1509	2	2025-10-06 06:41:00	Depósito transferido	1327.50	Depósito	156	100.00	\N	\N	1	1	1	2026-10-08 18:44:04.454259	2026-10-09 15:16:48.424569
 1423	2	2025-04-15 19:01:00	IFD*iFood OSASCO BR	0.00	Cartão	100	100.00	\N	\N	1	1	1	2026-10-08 18:44:02.100596	2026-10-09 15:16:48.424569
-1526	2	2026-09-29 04:11:00	Depósito transferido	155.25	Depósito	156	100.00	\N	\N	1	1	1	2026-10-08 18:44:08.931597	2026-10-09 15:16:48.424569
-1527	2	2026-09-29 04:11:00	Depósito transferido	120.00	Depósito	156	100.00	\N	\N	1	1	1	2026-10-08 18:44:08.931604	2026-10-09 15:16:48.424569
-1528	2	2026-09-29 04:08:00	Depósito transferido	1187.28	Depósito	156	100.00	\N	\N	1	1	1	2026-10-08 18:44:08.931606	2026-10-09 15:16:48.424569
 1532	2	2024-12-31 23:59:00	Ajuste 2024	148.07	Manual	156	100.00	\N	\N	1	1	1	2026-10-09 08:38:37.147029	2026-10-09 15:16:48.424569
+1526	2	2026-09-29 04:11:00	Depósito transferido	155.25	Depósito	156	100.00	1	\N	1	1	1	2026-10-08 18:44:08.931597	2026-10-16 16:38:58.385851
+1527	2	2026-09-29 04:11:00	Depósito transferido	120.00	Depósito	156	100.00	1	\N	1	1	1	2026-10-08 18:44:08.931604	2026-10-16 16:38:58.385852
+1528	2	2026-09-29 04:08:00	Depósito transferido	1187.28	Depósito	156	100.00	1	\N	1	1	1	2026-10-08 18:44:08.931606	2026-10-16 16:38:58.385854
 1137	2	2023-07-01 15:00:00	iFood Card R$ 20	-20.00	Voucher	16	50.00	1	\N	1	1	1	2026-10-08 18:43:53.988431	2026-10-09 15:17:40.011855
 1490	2	2025-09-06 12:29:00	SUPERMERCADO BRASIL FR RIO CLARO BRA	-51.61	Cartão	18	50.00	1	\N	1	1	1	2026-10-08 18:44:04.043708	2026-10-09 15:17:40.011855
 1492	2	2025-09-04 07:57:00	MERCADO QUALIDADE RIO CLARO BRA	-160.88	Cartão	18	50.00	1	\N	1	1	1	2026-10-08 18:44:04.043716	2026-10-09 15:17:40.011855
@@ -6495,11 +6512,11 @@ COPY public.benefit_card_statements (id, credit_card_id, date, description, amou
 1485	2	2025-08-02 19:58:00	DAKA GASTRONOMIA RIO CLARO BRA	-141.50	Cartão	101	50.00	1	\N	1	1	1	2026-10-08 18:44:03.639134	2026-10-09 15:17:40.011855
 1531	2	2023-12-30 23:59:00	Ajuste 2023	-464.72	Manual	12	50.00	1	\N	1	1	1	2026-10-09 08:36:40.769942	2026-10-09 15:17:40.011855
 1533	2	2025-12-31 23:59:00	Ajuste 2025	-690.23	Manual	12	50.00	1	\N	1	1	1	2026-10-09 08:40:13.270921	2026-10-09 15:17:40.011855
-1538	2	2026-10-08 08:20:00	EXAMINE RIO CLARO BRA	-297.49	Cartão	18	50.00	1	\N	1	1	1	2026-10-09 08:42:52.971737	2026-10-09 15:17:40.011855
-1539	2	2026-10-05 06:15:00	PADARIA ALEMA RIO CLARO BRA	-23.48	Cartão	14	50.00	1	\N	1	1	1	2026-10-09 08:42:52.971745	2026-10-09 15:17:40.011855
-1540	2	2026-10-04 11:41:00	SAVEGNAGO LJ 300 RIO CLARO BRA	-78.87	Cartão	18	50.00	1	\N	1	1	1	2026-10-09 08:42:52.971748	2026-10-09 15:17:40.011855
-1541	2	2026-10-03 19:23:00	IFD*BR OSASCO BRA	-179.66	Cartão	16	50.00	1	\N	1	1	1	2026-10-09 08:42:52.971751	2026-10-09 15:17:40.011855
-1529	2	2026-09-26 06:20:00	PADARIA ALEMA RIO CLARO BRA	-19.59	Cartão	14	50.00	1	\N	1	1	1	2026-10-08 18:44:08.931609	2026-10-09 15:17:40.011855
+1538	2	2026-10-08 08:20:00	EXAMINE RIO CLARO BRA	-297.49	Cartão	18	100.00	1	\N	1	1	1	2026-10-09 08:42:52.971737	2026-10-16 16:38:58.385839
+1539	2	2026-10-05 06:15:00	PADARIA ALEMA RIO CLARO BRA	-23.48	Cartão	14	100.00	1	\N	1	1	1	2026-10-09 08:42:52.971745	2026-10-16 16:38:58.385847
+1540	2	2026-10-04 11:41:00	SAVEGNAGO LJ 300 RIO CLARO BRA	-78.87	Cartão	18	100.00	1	\N	1	1	1	2026-10-09 08:42:52.971748	2026-10-16 16:38:58.385848
+1541	2	2026-10-03 19:23:00	IFD*BR OSASCO BRA	-179.66	Cartão	16	100.00	1	\N	1	1	1	2026-10-09 08:42:52.971751	2026-10-16 16:38:58.38585
+1529	2	2026-09-26 06:20:00	PADARIA ALEMA RIO CLARO BRA	-19.59	Cartão	14	100.00	1	\N	1	1	1	2026-10-08 18:44:08.931609	2026-10-16 16:38:58.385855
 \.
 
 
@@ -6508,7 +6525,7 @@ COPY public.benefit_card_statements (id, credit_card_id, date, description, amou
 --
 
 COPY public.credit_card_invoice_groups (id, name, account_id, tenant_id, created_by, created_at, last_updated_at, active, closing_day, due_day) FROM stdin;
-1	BTG Família	1	1	1	2026-10-08 17:50:00.976536	2026-10-08 17:50:00.976542	t	14	14
+1	BTG Família	1	1	1	2026-10-08 17:50:00.976536	2026-10-15 17:47:28.49226	t	14	19
 \.
 
 
@@ -15510,19 +15527,19 @@ COPY public.credit_card_invoices (id, credit_card_id, year_month, date, descript
 --
 
 COPY public.credit_cards (id, name, description, number, type, closing_day, due_day, expense_sharing_id, expense_ownership_percentage, revenue_ownership_percentage, account_id, invoice_group_id, tenant_id, created_by, created_at, last_updated_at, active) FROM stdin;
-1	Acalento	\N	0323	credito	14	14	2	0.00	0.00	1	1	1	1	2026-10-08 17:50:00.98866	2026-10-08 17:50:00.988666	t
 2	Flash	\N	0366	beneficios	14	14	1	50.00	100.00	1	\N	1	1	2026-10-08 17:50:00.988667	2026-10-08 17:50:00.988669	t
-3	Gustavo	\N	3529	credito	14	14	\N	\N	\N	1	1	1	1	2026-10-08 17:50:00.98867	2026-10-08 17:50:00.988671	t
-4	Gustavo Antigo 1	\N	1090	credito	14	14	\N	100.00	100.00	1	1	1	1	2026-10-08 17:50:00.988673	2026-10-08 17:50:00.988674	t
-5	Gustavo Antigo 2	\N	9348	credito	14	14	\N	100.00	100.00	1	1	1	1	2026-10-08 17:50:00.988675	2026-10-08 17:50:00.988676	t
-6	Lurdes	\N	3501	credito	14	14	3	\N	\N	1	1	1	1	2026-10-08 17:50:00.988678	2026-10-08 17:50:00.988679	t
-7	MercadoPago	\N	8483	credito	16	16	\N	100.00	100.00	1	\N	1	1	2026-10-08 17:50:00.988681	2026-10-08 17:50:00.988682	t
-8	Natália	\N	7970	credito	14	14	\N	\N	\N	1	1	1	1	2026-10-08 17:50:00.988683	2026-10-08 17:50:00.988685	t
-9	Natália Antigo	\N	1129	credito	14	14	\N	\N	\N	1	1	1	1	2026-10-08 17:50:00.988686	2026-10-08 17:50:00.988687	t
-10	Polezel	\N	9833	credito	14	14	1	\N	\N	1	1	1	1	2026-10-08 17:50:00.988689	2026-10-08 17:50:00.98869	t
-11	Polezel Antigo 1	\N	2989	credito	14	14	1	50.00	50.00	1	1	1	1	2026-10-08 17:50:00.988691	2026-10-08 17:50:00.988693	t
-12	Polezel Antigo 2	\N	9105	credito	14	14	1	50.00	50.00	1	1	1	1	2026-10-08 17:50:00.988694	2026-10-08 17:50:00.988695	t
-13	Virtual	\N	6916	credito	14	14	\N	\N	\N	1	1	1	1	2026-10-08 17:50:00.988697	2026-10-08 17:50:00.988698	t
+3	Gustavo	\N	3529	credito	14	19	\N	\N	\N	1	1	1	1	2026-10-08 17:50:00.98867	2026-10-15 17:47:28.493856	t
+6	Lurdes	\N	3501	credito	14	19	3	\N	\N	1	1	1	1	2026-10-08 17:50:00.988678	2026-10-15 17:47:28.49386	t
+10	Polezel	\N	9833	credito	14	19	1	\N	\N	1	1	1	1	2026-10-08 17:50:00.988689	2026-10-15 17:47:28.493863	t
+1	Acalento	\N	0323	credito	14	19	2	0.00	0.00	1	1	1	1	2026-10-08 17:50:00.98866	2026-10-15 17:47:54.49039	f
+4	Gustavo Antigo 1	\N	1090	credito	14	19	\N	100.00	100.00	1	1	1	1	2026-10-08 17:50:00.988673	2026-10-15 17:48:00.131326	f
+5	Gustavo Antigo 2	\N	9348	credito	14	19	\N	100.00	100.00	1	1	1	1	2026-10-08 17:50:00.988675	2026-10-15 17:48:02.529956	f
+8	Natália	\N	7970	credito	14	19	\N	\N	\N	1	1	1	1	2026-10-08 17:50:00.988683	2026-10-15 17:48:06.27787	f
+9	Natália Antigo	\N	1129	credito	14	19	\N	\N	\N	1	1	1	1	2026-10-08 17:50:00.988686	2026-10-15 17:48:09.735418	f
+11	Polezel Antigo 1	\N	2989	credito	14	19	1	50.00	50.00	1	1	1	1	2026-10-08 17:50:00.988691	2026-10-15 17:48:14.2104	f
+12	Polezel Antigo 2	\N	9105	credito	14	19	1	50.00	50.00	1	1	1	1	2026-10-08 17:50:00.988694	2026-10-15 17:48:16.779104	f
+13	Virtual	\N	6916	credito	14	19	\N	\N	\N	1	1	1	1	2026-10-08 17:50:00.988697	2026-10-15 17:48:18.989593	f
+7	MercadoPago	\N	8483	credito	16	20	\N	100.00	100.00	1	\N	1	1	2026-10-08 17:50:00.988681	2026-10-15 17:54:57.94695	t
 \.
 
 
@@ -15788,6 +15805,7 @@ COPY public.migration_history (id, version, name, status, applied_at, rollback_a
 354	0022	card_closing_and_payment_day	applied	2026-10-08 17:48:44.936614-03	\N
 355	0023	drop_card_payment_day	applied	2026-10-08 17:48:44.941935-03	\N
 701	0024	add_expected_expenses	applied	2026-10-15 16:54:47.683368-03	\N
+702	0025	monthly_projection_sharing	applied	2026-10-16 15:01:17.603611-03	\N
 1	0001	Schema Inicial Multi-Tenant	applied	2026-10-08 17:48:43.560037-03	\N
 2	0002	Seed Data Inicial	applied	2026-10-08 17:48:44.73233-03	\N
 3	0003	Rename Datetime To Date	applied	2026-10-08 17:48:44.768624-03	\N
@@ -15814,12 +15832,39 @@ COPY public.migration_history (id, version, name, status, applied_at, rollback_a
 -- Data for Name: monthly_projections; Type: TABLE DATA; Schema: public; Owner: plumo
 --
 
-COPY public.monthly_projections (id, year_month, expected_date, description, amount, my_amount, kind, source, credit_card_id, invoice_group_id, breakdown, account_id, tenant_id, created_by, created_at, last_updated_at, active) FROM stdin;
-1	2026-10	2026-10-15	Adiantamento salarial (estimativa)	8018.40	8018.40	income	payroll	\N	\N	\N	1	1	1	2026-10-15 17:22:17.642736	2026-10-15 17:22:17.642743	t
-2	2026-10	2026-10-29	Salário (fim do mês) (estimativa)	6858.57	6858.57	income	payroll	\N	\N	\N	1	1	1	2026-10-15 17:22:17.642746	2026-10-15 17:22:17.642748	t
-3	2026-10	2026-10-10	Rodobens	4446.59	4446.59	fixed	manual	\N	\N	\N	1	1	1	2026-10-15 17:35:29.192209	2026-10-15 17:35:40.232449	t
-4	2026-10	2026-10-16	Fatura MercadoPago •8483	174.60	174.60	variable	card_invoice	7	\N	\N	1	1	1	2026-10-15 17:36:56.686961	2026-10-15 17:36:56.686968	t
-5	2026-10	2026-10-14	Fatura BTG Família	26191.91	14433.53	variable	card_invoice	\N	1	[{"amount": "4214.02", "card_id": 1, "card_name": "Acalento", "my_amount": "51.60", "card_number": "0323"}, {"amount": "7202.12", "card_id": 3, "card_name": "Gustavo", "my_amount": "6792.27", "card_number": "3529"}, {"amount": "3773.69", "card_id": 6, "card_name": "Lurdes", "my_amount": "0.00", "card_number": "3501"}, {"amount": "3532.75", "card_id": 8, "card_name": "Natália", "my_amount": "3362.31", "card_number": "7970"}, {"amount": "5989.81", "card_id": 10, "card_name": "Polezel", "my_amount": "3079.61", "card_number": "9833"}, {"amount": "1479.54", "card_id": 13, "card_name": "Virtual", "my_amount": "1147.74", "card_number": "6916"}]	1	1	1	2026-10-15 17:36:56.688831	2026-10-15 17:36:56.688835	t
+COPY public.monthly_projections (id, year_month, expected_date, description, amount, my_amount, kind, source, credit_card_id, invoice_group_id, breakdown, account_id, tenant_id, created_by, created_at, last_updated_at, active, sharing) FROM stdin;
+6	2026-10	2026-10-15	Adiantamento salarial (estimativa)	8018.40	8018.40	income	payroll	\N	\N	\N	1	1	1	2026-10-16 15:02:11.216644	2026-10-16 15:02:11.21665	t	\N
+7	2026-10	2026-10-01	Salário (fim do mês)	6523.95	6523.95	income	payroll	\N	\N	\N	1	1	1	2026-10-16 15:02:11.216652	2026-10-16 15:02:11.216654	t	\N
+8	2026-10	2026-10-19	Fatura BTG Família	17015.45	17015.45	variable	card_invoice	\N	1	[{"amount": "12653.22", "card_id": 3, "card_name": "Gustavo", "my_amount": "12653.22", "card_number": "3529"}, {"amount": "8146.64", "card_id": 10, "card_name": "Polezel", "my_amount": "4073.32", "card_number": "9833"}, {"amount": "288.91", "card_id": 8, "card_name": "Natália", "my_amount": "288.91", "card_number": "7970"}]	1	1	1	2026-10-16 15:02:22.557415	2026-10-16 15:02:22.557422	t	mine
+9	2026-10	2026-10-10	Rodobens	4446.59	4446.59	fixed	manual	\N	\N	\N	1	1	1	2026-10-16 15:18:01.276747	2026-10-16 15:18:01.276756	t	\N
+10	2026-10	2026-10-10	Balé Ivy	231.00	231.00	fixed	manual	\N	\N	\N	1	1	1	2026-10-16 15:18:32.218397	2026-10-16 15:18:32.218403	t	\N
+11	2026-10	2026-10-10	Natação (Luigi & Ivy)	440.00	440.00	fixed	manual	\N	\N	\N	1	1	1	2026-10-16 15:18:48.549074	2026-10-16 15:18:48.549082	t	\N
+12	2026-10	2026-10-16	Carla	550.00	550.00	fixed	manual	\N	\N	\N	1	1	1	2026-10-16 15:19:14.84339	2026-10-16 15:19:14.843396	t	\N
+14	2026-10	2026-10-17	Cabelo (Luigi & Gu)	110.00	110.00	fixed	manual	\N	\N	\N	1	1	1	2026-10-16 15:19:47.705586	2026-10-16 15:19:47.705594	t	\N
+15	2026-10	2026-10-23	Marta (Fono)	400.00	400.00	fixed	manual	\N	\N	\N	1	1	1	2026-10-16 15:20:02.161106	2026-10-16 15:20:02.161112	t	\N
+16	2026-10	2026-10-29	Estacionamento Ná	170.00	170.00	fixed	manual	\N	\N	\N	1	1	1	2026-10-16 15:20:20.841482	2026-10-16 15:20:20.841488	t	\N
+13	2026-10	2026-10-17	Combustível	350.00	350.00	variable	manual	\N	\N	\N	1	1	1	2026-10-16 15:19:27.087374	2026-10-16 15:20:26.871548	t	\N
+17	2027-04	2027-04-30	"Furo" Rodobéns	81608.23	81608.23	fixed	manual	\N	\N	\N	1	1	1	2026-10-16 15:27:58.733563	2026-10-16 15:27:58.733571	t	\N
+18	2026-11	2026-11-15	Adiantamento salarial (estimativa)	8018.40	8018.40	income	payroll	\N	\N	null	1	1	1	2026-10-16 15:50:19.284836	2026-10-16 15:50:19.28485	t	\N
+19	2026-11	2026-11-01	Salário (fim do mês)	6523.95	6523.95	income	payroll	\N	\N	null	1	1	1	2026-10-16 15:50:19.284854	2026-10-16 15:50:19.284855	t	\N
+20	2026-11	2026-11-10	Rodobens	4446.59	4446.59	fixed	manual	\N	\N	null	1	1	1	2026-10-16 15:50:19.284857	2026-10-16 15:50:19.284859	t	\N
+21	2026-11	2026-11-10	Balé Ivy	231.00	231.00	fixed	manual	\N	\N	null	1	1	1	2026-10-16 15:50:19.28486	2026-10-16 15:50:19.284862	t	\N
+22	2026-11	2026-11-10	Natação (Luigi & Ivy)	440.00	440.00	fixed	manual	\N	\N	null	1	1	1	2026-10-16 15:50:19.284864	2026-10-16 15:50:19.284865	t	\N
+23	2026-11	2026-11-16	Carla	550.00	550.00	fixed	manual	\N	\N	null	1	1	1	2026-10-16 15:50:19.284867	2026-10-16 15:50:19.284868	t	\N
+24	2026-11	2026-11-17	Combustível	350.00	350.00	variable	manual	\N	\N	null	1	1	1	2026-10-16 15:50:19.28487	2026-10-16 15:50:19.284871	t	\N
+25	2026-11	2026-11-17	Cabelo (Luigi & Gu)	110.00	110.00	fixed	manual	\N	\N	null	1	1	1	2026-10-16 15:50:19.284873	2026-10-16 15:50:19.284874	t	\N
+26	2026-11	2026-11-23	Marta (Fono)	400.00	400.00	fixed	manual	\N	\N	null	1	1	1	2026-10-16 15:50:19.284875	2026-10-16 15:50:19.284877	t	\N
+27	2026-11	2026-11-29	Estacionamento Ná	170.00	170.00	fixed	manual	\N	\N	null	1	1	1	2026-10-16 15:50:19.284878	2026-10-16 15:50:19.284879	t	\N
+28	2026-12	2026-12-15	Adiantamento salarial (estimativa)	8018.40	8018.40	income	payroll	\N	\N	null	1	1	1	2026-10-16 15:50:19.284881	2026-10-16 15:50:19.284882	t	\N
+29	2026-12	2026-12-01	Salário (fim do mês)	6523.95	6523.95	income	payroll	\N	\N	null	1	1	1	2026-10-16 15:50:19.284884	2026-10-16 15:50:19.284885	t	\N
+30	2026-12	2026-12-10	Rodobens	4446.59	4446.59	fixed	manual	\N	\N	null	1	1	1	2026-10-16 15:50:19.284886	2026-10-16 15:50:19.284888	t	\N
+31	2026-12	2026-12-10	Balé Ivy	231.00	231.00	fixed	manual	\N	\N	null	1	1	1	2026-10-16 15:50:19.28489	2026-10-16 15:50:19.284891	t	\N
+32	2026-12	2026-12-10	Natação (Luigi & Ivy)	440.00	440.00	fixed	manual	\N	\N	null	1	1	1	2026-10-16 15:50:19.284892	2026-10-16 15:50:19.284894	t	\N
+33	2026-12	2026-12-16	Carla	550.00	550.00	fixed	manual	\N	\N	null	1	1	1	2026-10-16 15:50:19.284895	2026-10-16 15:50:19.284896	t	\N
+34	2026-12	2026-12-17	Combustível	350.00	350.00	variable	manual	\N	\N	null	1	1	1	2026-10-16 15:50:19.284898	2026-10-16 15:50:19.284899	t	\N
+35	2026-12	2026-12-17	Cabelo (Luigi & Gu)	110.00	110.00	fixed	manual	\N	\N	null	1	1	1	2026-10-16 15:50:19.2849	2026-10-16 15:50:19.284902	t	\N
+36	2026-12	2026-12-23	Marta (Fono)	400.00	400.00	fixed	manual	\N	\N	null	1	1	1	2026-10-16 15:50:19.284903	2026-10-16 15:50:19.284904	t	\N
+37	2026-12	2026-12-29	Estacionamento Ná	170.00	170.00	fixed	manual	\N	\N	null	1	1	1	2026-10-16 15:50:19.284906	2026-10-16 15:50:19.284907	t	\N
 \.
 
 
@@ -17715,7 +17760,7 @@ COPY public.transaction_mappings (id, mapping_type, original_description, patter
 --
 
 COPY public.users (id, email, first_name, last_name, role, is_admin, auth_provider, password_hash, theme_mode, high_contrast_mode, reduce_motion, colorblind_safe_palette, accessibility_level, profile_image_filename, last_login_at, tenant_id, created_at, last_updated_at, active, sidebar_collapsed, hide_balance_values) FROM stdin;
-1	gustavoquinelato@gmail.com	Gustavo	Quinelato	admin	t	local	4f1c21e3d4b262d25cd6bd2c2e478d66b9621cace99cf6c57d8359e949307e00	light	f	f	f	regular	\N	2026-10-15 19:59:30.847453	1	2026-10-08 17:48:44.672272	2026-10-15 17:28:58.108647	t	f	f
+1	gustavoquinelato@gmail.com	Gustavo	Quinelato	admin	t	local	4f1c21e3d4b262d25cd6bd2c2e478d66b9621cace99cf6c57d8359e949307e00	light	f	f	f	regular	\N	2026-10-16 20:46:35.135251	1	2026-10-08 17:48:44.672272	2026-10-15 17:28:58.108647	t	f	f
 \.
 
 
@@ -17789,6 +17834,8 @@ COPY public.users_sessions (id, token_hash, expires_at, ip_address, user_agent, 
 15	2896911491e076bb6b3b5788411c5569926451c320707098b9f5c7cd0e181278	2026-10-16 16:59:33.343071	\N	\N	1	1	\N	2026-10-15 16:59:33.328157	2026-10-15 16:59:33.328157	t
 16	435234273ecec038c3a06eca1d9df568d3523db8a1f392471056042637d13c45	2026-10-16 17:03:39.432385	\N	\N	1	1	\N	2026-10-15 17:03:39.420521	2026-10-15 17:03:39.420521	t
 17	6611f9074c70a216c5f23c8f741e231582fc5bc027c5b4461924d86aa5ec4256	2026-10-16 17:05:41.215348	\N	\N	1	1	\N	2026-10-15 17:05:41.201979	2026-10-15 17:05:41.201979	t
+18	027a5a8dd3b7a19e5f5775c71d6062b04d59bb050d8697c46a7c378dd9821b0b	2026-10-17 17:46:35.217449	\N	\N	1	1	\N	2026-10-16 17:46:35.218416	2026-10-16 17:46:35.218416	t
+19	18cef5b2ddeaaf5f5026c5f2ea6faf59f938bc7fabcce4b1006356f6be2a58af	2026-10-17 17:46:37.675701	\N	\N	1	1	\N	2026-10-16 17:46:37.662515	2026-10-16 17:46:37.662515	t
 \.
 
 
@@ -17824,7 +17871,7 @@ SELECT pg_catalog.setval('public.balance_closures_id_seq', 37, true);
 -- Name: bank_statements_id_seq; Type: SEQUENCE SET; Schema: public; Owner: plumo
 --
 
-SELECT pg_catalog.setval('public.bank_statements_id_seq', 6268, true);
+SELECT pg_catalog.setval('public.bank_statements_id_seq', 6282, true);
 
 
 --
@@ -17838,7 +17885,7 @@ SELECT pg_catalog.setval('public.banks_id_seq', 41, true);
 -- Name: benefit_card_statements_id_seq; Type: SEQUENCE SET; Schema: public; Owner: plumo
 --
 
-SELECT pg_catalog.setval('public.benefit_card_statements_id_seq', 1541, true);
+SELECT pg_catalog.setval('public.benefit_card_statements_id_seq', 1557, true);
 
 
 --
@@ -17929,14 +17976,14 @@ SELECT pg_catalog.setval('public.loans_id_seq', 3, true);
 -- Name: migration_history_id_seq; Type: SEQUENCE SET; Schema: public; Owner: plumo
 --
 
-SELECT pg_catalog.setval('public.migration_history_id_seq', 701, true);
+SELECT pg_catalog.setval('public.migration_history_id_seq', 702, true);
 
 
 --
 -- Name: monthly_projections_id_seq; Type: SEQUENCE SET; Schema: public; Owner: plumo
 --
 
-SELECT pg_catalog.setval('public.monthly_projections_id_seq', 5, true);
+SELECT pg_catalog.setval('public.monthly_projections_id_seq', 37, true);
 
 
 --
@@ -18027,7 +18074,7 @@ SELECT pg_catalog.setval('public.users_permissions_id_seq', 40, true);
 -- Name: users_sessions_id_seq; Type: SEQUENCE SET; Schema: public; Owner: plumo
 --
 
-SELECT pg_catalog.setval('public.users_sessions_id_seq', 17, true);
+SELECT pg_catalog.setval('public.users_sessions_id_seq', 19, true);
 
 
 --
@@ -20389,5 +20436,5 @@ GRANT ALL ON SCHEMA public TO PUBLIC;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict z0sRGetnpaywfKqiimkpOl9JEfIE1n82YyUGuPlpa0hpXt1O4cxa4lsrFXbCx96
+\unrestrict 3Zi7acLdYVyNYzfhxFIJjux9nff1CD8NW64U51QT1i7bftO2bcr7S4yWtVMEpdt
 
