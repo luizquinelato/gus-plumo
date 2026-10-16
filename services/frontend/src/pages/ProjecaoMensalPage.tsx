@@ -1401,7 +1401,7 @@ export default function ProjecaoMensalPage() {
                         inputMode="decimal"
                         placeholder="0.00"
                         value={row.amount}
-                        onChange={(e) => /^\d*\.?\d*$/.test(e.target.value) && updateExpenseRow(i, { amount: e.target.value })}
+                        onChange={(e) => /^-?\d*\.?\d*$/.test(e.target.value) && updateExpenseRow(i, { amount: e.target.value })}
                         className={`${cadastroFieldCls} text-right font-semibold ${debitCls}`}
                       />
                       <select
@@ -1664,7 +1664,7 @@ export default function ProjecaoMensalPage() {
               saving ||
               (cardForm.target === 'expense' &&
                 (cardForm.expenseRows.length === 0 ||
-                  cardForm.expenseRows.some((r) => !r.expected_date || !r.description.trim() || !(Number(r.amount) > 0)))) ||
+                  cardForm.expenseRows.some((r) => !r.expected_date || !r.description.trim() || !(Math.abs(Number(r.amount)) > 0)))) ||
               (cardForm.target === 'card' && cardForm.mode === 'auto' && cardForm.cardIds.length === 0) ||
               (cardForm.target === 'card' && cardForm.mode === 'manual' &&
                 (cardForm.items.length === 0 ||
