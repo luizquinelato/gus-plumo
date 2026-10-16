@@ -69,7 +69,9 @@ def files_since_date(root: Path, since: datetime) -> list[str]:
 
 
 def modified_files(root: Path) -> list[str]:
-    """Caminhos (relativos à raiz, com /) de `git status --short`, sem deletados."""
+    """Caminhos (relativos à raiz, com /) de `git status --short`, sem deletados.
+    Complementa com todos os .env* existentes (normalmente no .gitignore).
+    """
     try:
         raw = subprocess.run(
             ["git", "status", "--short", "--untracked-files=all", "-z"],
@@ -92,6 +94,14 @@ def modified_files(root: Path) -> list[str]:
             continue
         if (root / path).is_file():
             files.append(path)
+
+    # Inclui .env* explicitamente — costumam estar no .gitignore
+    for env_file in root.rglob(".env*"):
+        if env_file.is_file():
+            rel = env_file.relative_to(root)
+            if not any(part in _SKIP_DIRS for part in rel.parts):
+                files.append(rel.as_posix())
+
     return sorted(set(files))
 
 
