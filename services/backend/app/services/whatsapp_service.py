@@ -6,13 +6,10 @@ import httpx
 from fastapi import HTTPException
 
 
-SHARED_BALANCE_EXTRA_TO_DEFAULT = "5519999203010"
-
-
 def shared_balance_recipients() -> list[str]:
     """Destino padrão + segundo destino do resumo do balanço compartilhado."""
     default_to = os.environ.get("WHATSAPP_DEFAULT_TO", "")
-    extra_to = os.environ.get("WHATSAPP_SHARED_BALANCE_EXTRA_TO", SHARED_BALANCE_EXTRA_TO_DEFAULT)
+    extra_to = os.environ.get("WHATSAPP_SHARED_BALANCE_EXTRA_TO", "")
     return list(dict.fromkeys(n for n in (default_to, extra_to) if n))
 
 
