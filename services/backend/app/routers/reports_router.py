@@ -350,6 +350,28 @@ async def get_time_series(
     )
 
 
+SHARING_MINE_ID = -2  # "Minha Parte": sem compartilhamento ou com participação > 0%
+
+
+def _sharing_filter_conditions(model, partner_ids, include_empty_sharing):
+    """Condições do filtro de compartilhamento.
+
+    - ids > 0: compartilhamentos específicos
+    - SHARING_MINE_ID (-2): Minha Parte (sem compartilhamento ou participação > 0%)
+    - include_empty_sharing (Próprio): sem compartilhamento ou participação = 100%
+    """
+    ids = [i for i in (partner_ids or []) if i > 0]
+    conditions = []
+    if ids:
+        conditions.append(model.expense_sharing_id.in_(ids))
+    if SHARING_MINE_ID in (partner_ids or []):
+        conditions.append(or_(model.expense_sharing_id.is_(None), model.ownership_percentage > 0))
+    if include_empty_sharing:
+        conditions.append(or_(model.expense_sharing_id.is_(None), model.ownership_percentage == 100))
+    return conditions
+
+
+
 def _get_bank_time_series(
     db: Session,
     tenant_id: int,
@@ -418,11 +440,7 @@ def _get_bank_time_series(
 
     # Aplica filtros de compartilhamento (com suporte a "Vazio")
     if partner_ids or include_empty_sharing:
-        sharing_conditions = []
-        if partner_ids:
-            sharing_conditions.append(BankStatement.expense_sharing_id.in_(partner_ids))
-        if include_empty_sharing:
-            sharing_conditions.append(BankStatement.expense_sharing_id.is_(None))
+        sharing_conditions = _sharing_filter_conditions(BankStatement, partner_ids, include_empty_sharing)
         if sharing_conditions:
             query = query.filter(or_(*sharing_conditions))
 
@@ -515,11 +533,7 @@ def _get_cards_time_series(
 
     # Aplica filtros de compartilhamento (com suporte a "Vazio")
     if partner_ids or include_empty_sharing:
-        sharing_conditions = []
-        if partner_ids:
-            sharing_conditions.append(CreditCardInvoice.expense_sharing_id.in_(partner_ids))
-        if include_empty_sharing:
-            sharing_conditions.append(CreditCardInvoice.expense_sharing_id.is_(None))
+        sharing_conditions = _sharing_filter_conditions(CreditCardInvoice, partner_ids, include_empty_sharing)
         if sharing_conditions:
             query = query.filter(or_(*sharing_conditions))
 
@@ -616,11 +630,7 @@ def _get_combined_time_series(
 
     # Aplica filtros de compartilhamento para extratos (com suporte a "Vazio")
     if partner_ids or include_empty_sharing:
-        sharing_conditions = []
-        if partner_ids:
-            sharing_conditions.append(BankStatement.expense_sharing_id.in_(partner_ids))
-        if include_empty_sharing:
-            sharing_conditions.append(BankStatement.expense_sharing_id.is_(None))
+        sharing_conditions = _sharing_filter_conditions(BankStatement, partner_ids, include_empty_sharing)
         if sharing_conditions:
             bank_query = bank_query.filter(or_(*sharing_conditions))
 
@@ -681,11 +691,7 @@ def _get_combined_time_series(
 
     # Aplica filtros de compartilhamento para cartões (com suporte a "Vazio")
     if partner_ids or include_empty_sharing:
-        sharing_conditions = []
-        if partner_ids:
-            sharing_conditions.append(CreditCardInvoice.expense_sharing_id.in_(partner_ids))
-        if include_empty_sharing:
-            sharing_conditions.append(CreditCardInvoice.expense_sharing_id.is_(None))
+        sharing_conditions = _sharing_filter_conditions(CreditCardInvoice, partner_ids, include_empty_sharing)
         if sharing_conditions:
             card_query = card_query.filter(or_(*sharing_conditions))
 
@@ -746,11 +752,7 @@ def _get_combined_time_series(
 
     # Aplica filtros de compartilhamento para benefícios (com suporte a "Vazio")
     if partner_ids or include_empty_sharing:
-        sharing_conditions = []
-        if partner_ids:
-            sharing_conditions.append(BenefitCardStatement.expense_sharing_id.in_(partner_ids))
-        if include_empty_sharing:
-            sharing_conditions.append(BenefitCardStatement.expense_sharing_id.is_(None))
+        sharing_conditions = _sharing_filter_conditions(BenefitCardStatement, partner_ids, include_empty_sharing)
         if sharing_conditions:
             benefit_query = benefit_query.filter(or_(*sharing_conditions))
 
@@ -878,11 +880,7 @@ def _get_bank_daily_time_series(
 
     # Aplica filtros de compartilhamento (com suporte a "Vazio")
     if partner_ids or include_empty_sharing:
-        sharing_conditions = []
-        if partner_ids:
-            sharing_conditions.append(BankStatement.expense_sharing_id.in_(partner_ids))
-        if include_empty_sharing:
-            sharing_conditions.append(BankStatement.expense_sharing_id.is_(None))
+        sharing_conditions = _sharing_filter_conditions(BankStatement, partner_ids, include_empty_sharing)
         if sharing_conditions:
             query = query.filter(or_(*sharing_conditions))
 
@@ -951,11 +949,7 @@ def _get_cards_daily_time_series(
 
     # Aplica filtros de compartilhamento (com suporte a "Vazio")
     if partner_ids or include_empty_sharing:
-        sharing_conditions = []
-        if partner_ids:
-            sharing_conditions.append(CreditCardInvoice.expense_sharing_id.in_(partner_ids))
-        if include_empty_sharing:
-            sharing_conditions.append(CreditCardInvoice.expense_sharing_id.is_(None))
+        sharing_conditions = _sharing_filter_conditions(CreditCardInvoice, partner_ids, include_empty_sharing)
         if sharing_conditions:
             query = query.filter(or_(*sharing_conditions))
 
@@ -1036,11 +1030,7 @@ def _get_combined_daily_time_series(
 
     # Aplica filtros de compartilhamento para extratos (com suporte a "Vazio")
     if partner_ids or include_empty_sharing:
-        sharing_conditions = []
-        if partner_ids:
-            sharing_conditions.append(BankStatement.expense_sharing_id.in_(partner_ids))
-        if include_empty_sharing:
-            sharing_conditions.append(BankStatement.expense_sharing_id.is_(None))
+        sharing_conditions = _sharing_filter_conditions(BankStatement, partner_ids, include_empty_sharing)
         if sharing_conditions:
             bank_query = bank_query.filter(or_(*sharing_conditions))
 
@@ -1087,11 +1077,7 @@ def _get_combined_daily_time_series(
 
     # Aplica filtros de compartilhamento para cartões (com suporte a "Vazio")
     if partner_ids or include_empty_sharing:
-        sharing_conditions = []
-        if partner_ids:
-            sharing_conditions.append(CreditCardInvoice.expense_sharing_id.in_(partner_ids))
-        if include_empty_sharing:
-            sharing_conditions.append(CreditCardInvoice.expense_sharing_id.is_(None))
+        sharing_conditions = _sharing_filter_conditions(CreditCardInvoice, partner_ids, include_empty_sharing)
         if sharing_conditions:
             card_query = card_query.filter(or_(*sharing_conditions))
 
@@ -1138,11 +1124,7 @@ def _get_combined_daily_time_series(
 
     # Aplica filtros de compartilhamento para benefícios (com suporte a "Vazio")
     if partner_ids or include_empty_sharing:
-        sharing_conditions = []
-        if partner_ids:
-            sharing_conditions.append(BenefitCardStatement.expense_sharing_id.in_(partner_ids))
-        if include_empty_sharing:
-            sharing_conditions.append(BenefitCardStatement.expense_sharing_id.is_(None))
+        sharing_conditions = _sharing_filter_conditions(BenefitCardStatement, partner_ids, include_empty_sharing)
         if sharing_conditions:
             benefit_query = benefit_query.filter(or_(*sharing_conditions))
 
@@ -1927,11 +1909,7 @@ def _get_bank_expenses_by_date(
 
     # Aplica filtros de compartilhamento (com suporte a "Vazio")
     if partner_id_list or include_empty_sharing:
-        sharing_conditions = []
-        if partner_id_list:
-            sharing_conditions.append(BankStatement.expense_sharing_id.in_(partner_id_list))
-        if include_empty_sharing:
-            sharing_conditions.append(BankStatement.expense_sharing_id.is_(None))
+        sharing_conditions = _sharing_filter_conditions(BankStatement, partner_id_list, include_empty_sharing)
         if sharing_conditions:
             query = query.filter(or_(*sharing_conditions))
 
@@ -2188,11 +2166,7 @@ def _get_card_expenses_by_date(
 
     # Aplica filtros de compartilhamento (com suporte a "Vazio")
     if partner_id_list or include_empty_sharing:
-        sharing_conditions = []
-        if partner_id_list:
-            sharing_conditions.append(CreditCardInvoice.expense_sharing_id.in_(partner_id_list))
-        if include_empty_sharing:
-            sharing_conditions.append(CreditCardInvoice.expense_sharing_id.is_(None))
+        sharing_conditions = _sharing_filter_conditions(CreditCardInvoice, partner_id_list, include_empty_sharing)
         if sharing_conditions:
             query = query.filter(or_(*sharing_conditions))
 
@@ -2413,11 +2387,7 @@ def _get_benefit_expenses_by_date(
 
     # Aplica filtros de compartilhamento (com suporte a "Vazio")
     if partner_id_list or include_empty_sharing:
-        sharing_conditions = []
-        if partner_id_list:
-            sharing_conditions.append(BenefitCardStatement.expense_sharing_id.in_(partner_id_list))
-        if include_empty_sharing:
-            sharing_conditions.append(BenefitCardStatement.expense_sharing_id.is_(None))
+        sharing_conditions = _sharing_filter_conditions(BenefitCardStatement, partner_id_list, include_empty_sharing)
         if sharing_conditions:
             query = query.filter(or_(*sharing_conditions))
 
@@ -2984,11 +2954,7 @@ async def get_invoice_report(
 
     # Filtro por parceiros (expense_sharing_id) com suporte a "Vazio"
     if partner_id_list or include_empty_sharing:
-        sharing_conditions = []
-        if partner_id_list:
-            sharing_conditions.append(CreditCardInvoice.expense_sharing_id.in_(partner_id_list))
-        if include_empty_sharing:
-            sharing_conditions.append(CreditCardInvoice.expense_sharing_id.is_(None))
+        sharing_conditions = _sharing_filter_conditions(CreditCardInvoice, partner_id_list, include_empty_sharing)
         if sharing_conditions:
             query = query.filter(or_(*sharing_conditions))
 
@@ -3195,7 +3161,8 @@ async def get_installments_report(
         purchases = [
             p for p in purchases
             if (partner_id_list and p.expense_sharing_id in partner_id_list)
-            or (include_empty_sharing and p.expense_sharing_id is None)
+            or (SHARING_MINE_ID in (partner_id_list or []) and (p.expense_sharing_id is None or (p.ownership_percentage or 0) > 0))
+            or (include_empty_sharing and (p.expense_sharing_id is None or p.ownership_percentage == 100))
         ]
 
     if search:

@@ -10,7 +10,7 @@ type: "always_apply"
 
 **SEMPRE** que precisar fazer alterações em tabelas existentes:
 
-1. **Modifique o Migration 0001** (`services/backend/scripts/migrations/0001_schema_inicial_multitenant.py`)
+1. **Modifique o Migration 0001** (`services/backend/scripts/migrations/0001_schema_inicial_multi-tenant.py`)
    - Corrija diretamente o `CREATE TABLE` com a estrutura desejada
    - **NÃO** crie migrations com `ALTER TABLE` para mudanças de schema
    - Exemplo: Se precisa mudar tipo de coluna ou reordenar colunas, edite o CREATE TABLE original

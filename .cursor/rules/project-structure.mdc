@@ -16,11 +16,9 @@ Use este mapa para localizar código existente antes de criar arquivos novos. Pr
 ```
 gus-plumo/
 ├── .cursor/rules/          # Cursor rules (agente) — ver cursor-rules.mdc
-├── .augment/rules/         # Regras legadas Augment (espelho parcial)
 ├── backups/                # Backups SQL do banco (versionados no repositório)
 ├── docs/                   # Documentação funcional e de arquitetura
 ├── requirements/           # Dependências Python compartilhadas (install.txt)
-├── rules/                  # Regras de engenharia (security, frontend, backend)
 ├── scripts/                # Scripts utilitários do monorepo
 ├── services/
 │   ├── auth/               # Microserviço de autenticação (FastAPI)
@@ -29,11 +27,10 @@ gus-plumo/
 ├── docker-compose.db.yml   # PostgreSQL (prod-like)
 ├── docker-compose.db.dev.yml
 ├── .env.dev / .env.prod    # Variáveis de ambiente (não commitar segredos)
-├── README.md               # Quick start e arquitetura resumida
-└── cartoes.html            # Artefato HTML avulso (legado/experimento)
+└── README.md               # Quick start e arquitetura resumida
 ```
 
-**Pastas ignoradas / geradas (não documentar como código-fonte):** `node_modules/`, `.venv/`, `__pycache__/`, `dist/`, `build/`, logs em `services/*/logs/`.
+**Pastas ignoradas / geradas (não documentar como código-fonte):** `node_modules/`, `.venv/`, `__pycache__/`, `dist/`, `build/`, logs em `services/*/logs/`, `modified_*.zip` (gerado por `scripts/zip_modified.py`).
 
 ---
 
@@ -48,6 +45,7 @@ gus-plumo/
 | `starting_point.mdc` | Migrations, modais, componentes reutilizáveis (always apply) |
 | `tech-stack.mdc` | Versões de bibliotecas e boas práticas |
 | `balanco-ui.mdc` | Padrões visuais da página Balanço |
+| `badge-surfaces.mdc` | Superfícies/paletas de badges (`badgeSurfaces.ts`, `badgePalettes.ts`, `badgeTones.ts`) |
 | `self-improvement.mdc` | Meta-regras de melhoria contínua |
 | `project-structure.mdc` | Mapa de diretórios e arquivos importantes |
 
@@ -75,17 +73,15 @@ gus-plumo/
 scripts/
 ├── setup_envs.py              # Setup de ambientes Python
 ├── sync_cadastro_prod_dev.py  # cadastros PROD ↔ DEV (upsert; -db prod|dev)
+├── csv_folder_to_xlsx.py      # Converte pasta de CSVs em XLSX
+├── zip_modified.py            # Gera modified_*.zip com arquivos alterados
 └── database/
     ├── backup-database.bat
     ├── restore-database.bat
     └── list-backups.bat
 ```
 
----
-
-## `rules/` — guidelines legadas (não Cursor)
-
-Espelho histórico em Markdown (PT/EN). **Canônico para o agente:** `.cursor/rules/`. Ver `rules/README.md`.
+> Não existem mais as pastas `rules/` e `.augment/rules/` na raiz. Fonte canônica das regras do agente: `.cursor/rules/`.
 
 ---
 
@@ -126,13 +122,18 @@ Um arquivo por domínio. Principais:
 |--------|---------|
 | `auth_router.py` | Autenticação (proxy/local) |
 | `accounts_router.py` | Contas bancárias |
+| `account_period_closure_router.py` | Fechamento de período da conta |
 | `cartoes_router.py` | Cartões de crédito |
 | `expenses_router.py` | Despesas / transações |
 | `balance_router.py` | Cálculo de balanço |
-| `balance_closure_router.py` | Fechamentos de balanço |
+| `balance_closure_router.py` | Fechamentos de balanço compartilhado |
 | `loans_router.py` | Empréstimos |
-| `reports_router.py` | Relatórios (extrato, grupo) |
-| `import_router.py` / `excel_import_router.py` | Importação |
+| `reports_router.py` | Relatórios (extrato, grupo, faturas, saldo parcelado) |
+| `monthly_projections_router.py` | Projeção mensal (calendário, clone, projeções automáticas) |
+| `financial_health_router.py` | Saúde financeira |
+| `payroll_router.py` | Holerites / informes |
+| `invoice_payment_matches_router.py` | Conciliação fatura ↔ pagamento |
+| `import_router.py` / `excel_import_router.py` / `cadastro_import_router.py` | Importação (arquivos, Excel, cadastros) |
 | `expense_sharing_router.py` | Compartilhamentos |
 | `expense_templates_router.py` | Templates de despesa |
 | `tenant_colors_router.py` | Cores por tenant |
@@ -142,25 +143,27 @@ Um arquivo por domínio. Principais:
 | `dashboard_router.py` | Dashboard/home |
 | `benefit_card_statements_router.py` | Extratos de benefício |
 
+Todos são registrados em `app/main.py` via `app.include_router(...)`.
+
 ### Outras pastas backend
 
 ```
 app/
-├── models/           # SQLAlchemy — unified_models.py é o principal
-├── services/         # Lógica de negócio (fatura_service, color_calculation_service)
+├── models/           # SQLAlchemy — unified_models.py (principal), payroll_models.py, auth_models.py, import_conflict.py
+├── schemas/          # Schemas Pydantic compartilhados (bulk_ops.py)
+├── services/         # Lógica de negócio (fatura, installment, monthly_projection,
+│                     #   closures, financial_health, import visuais, exports PDF/Excel, payroll)
 ├── etl/              # Pipeline extrato (extractor, transformer, etl)
-├── converters/       # Conversores (ex.: cartao_converter)
+├── converters/       # Conversores (cartao_converter, fatura_pdf)
 ├── dependencies/     # FastAPI deps (auth.py)
-├── utils/            # Helpers (card, crypto, datetime, mapping)
+├── utils/            # Helpers (card, crypto, datetime, mapping, import_*, sharing_percentage, …)
 └── core/             # Logging
 
 scripts/
 ├── migration_runner.py
-├── migrations/       # 0001 schema, 0002+ seeds/ajustes — ver starting_point.mdc
-│   ├── 0001_schema_inicial_multi-tenant.py
-│   ├── 0002_seed_data_inicial.py
-│   └── 0003 … 0017 (evoluções incrementais)
-└── setup_venv.py
+├── migrations/       # 0001 schema, 0002 seed, 0003 … 0025 (evoluções incrementais)
+├── setup_venv.py
+└── test_old_invoices.py
 
 uploads/avatars/      # Avatares enviados (runtime)
 requirements/install.txt
@@ -190,7 +193,12 @@ requirements/install.txt
 | `LoginPage.tsx` | `/login` |
 | `SelectAccountPage.tsx` | `/select-account` |
 | `HomePage.tsx` | `/` |
-| `BalancoPage.tsx` | `/balanco` |
+| `ImportWizardPage.tsx` | `/importar` |
+| `AccountClosuresPage.tsx` | `/fechamentos/conta`, `/fechamentos/conta/fechados` |
+| `BalancoPage.tsx` | `/fechamentos/compartilhado/*` (`/balanco` redireciona) |
+| `SharedBalanceListPage.tsx` / `SharedBalanceClosureWizardPage.tsx` | Lista e wizard de fechamento compartilhado (dentro de `/fechamentos/compartilhado`) |
+| `ReconciliacaoPage.tsx` | `/fechamentos/faturas` |
+| `HealthCheckPage.tsx` | `/relatorios/saude`, `/fechamentos/saude` |
 | `CartoesPage.tsx` | `/configuracoes/cartoes` |
 | `ContasPage.tsx` | `/configuracoes/contas` |
 | `CompartilhamentosPage.tsx` | `/configuracoes/compartilhamentos` |
@@ -203,9 +211,14 @@ requirements/install.txt
 | `ExpenseTemplatesPage.tsx` | `/templates` |
 | `ExtratoPage.tsx` | `/relatorios/extrato` |
 | `FaturasPage.tsx` | `/relatorios/faturas` |
+| `SaldoParceladoPage.tsx` | `/relatorios/saldo-parcelado` |
+| `ProjecaoMensalPage.tsx` | `/relatorios/projecao-mensal` |
 | `GrupoPage.tsx` | `/relatorios/grupo` |
+| `PayrollPage.tsx` | `/informes` (`/relatorios/holerites` redireciona) |
 | `ProfilePage.tsx` | `/profile` |
 | `pages/tabs/TransactionMappingsTab.tsx` | Aba dentro de Mappings |
+
+Rotas antigas (`/cartoes`, `/contas`, `/settings`, `/reconciliacao`, `/saude-financeira`, …) apenas redirecionam em `App.tsx`. Confira sempre `App.tsx` para a lista atual.
 
 ### `src/components/` — UI reutilizável
 
@@ -218,20 +231,25 @@ Componentes compartilhados entre páginas. Destaques:
 | `date/` (`DateField`, `DateCalendar`) | **Único** componente de data do app. `DateField`: campo dd/mm/aaaa (valor `YYYY-MM-DD`; com `withTime`, `YYYY-MM-DD HH:mm`). `DateCalendar`: calendário avulso (`mode="range"` para períodos). Não usar `<input type="date">` nem libs de datepicker |
 | `ReportFilters.tsx` | Filtros de relatório |
 | `RawImportPreview.tsx` / `ImportFileKindBadge.tsx` | Preview dos arquivos brutos (extrato, fatura PDF, benefício CSV, holerite/informe) e badge/ícone por tipo no wizard `/importar` (`pages/ImportWizardPage.tsx`). A Home redireciona para o wizard |
-| `*Modal.tsx` | Modais de edição, export, conflitos, etc. |
+| `CadastroFormLayout.tsx` | Shell de modais de cadastro (`CadastroModalShell`/`Header`/`Footer`; `closeDisabled` bloqueia fechar durante ação) |
+| `CadastroListPageLayout.tsx` / `ListPageTable.tsx` / `ListTableSelectColumns.tsx` | Layout e tabela das listas de cadastro |
+| `Cadastro*Import*`, `*ImportPreview.tsx`, `*VisualImportModal.tsx` | Importação visual/Excel de cadastros, extrato e mapeamentos |
+| `Badge.tsx`, `StatusSwitch.tsx`, `LoanDirectionBadge.tsx` | Badges e switches (ver `badge-surfaces.mdc`) |
+| `curadoria/` | Subcomponentes da página de Curadoria |
+| `*Modal.tsx` | Modais de edição, export, conflitos, fechamento, etc. |
 | `Toast.tsx` / `AlertDialog.tsx` / `ConfirmDialog.tsx` | Feedback e confirmação |
 
 ### Outras pastas frontend
 
 ```
 src/
-├── contexts/       # AuthContext, ThemeContext
-├── hooks/          # useConfirm, useColorApplication, useEscapeKey, …
-├── services/       # Chamadas API (colorApplicationService, expenseTemplatesApi)
-├── utils/          # dateUtils, exportToExcel, colorCalculations, pdfExport, …
-├── config/         # defaultColors.ts
-├── types/          # Tipos TS (expenseTemplate, importConflict)
-├── styles/         # CSS global complementar (modals)
+├── contexts/       # AuthContext, ThemeContext, SidebarContext, BalanceVisibilityContext
+├── hooks/          # useConfirm, useAlert, useColorApplication, useColorData, useEscapeKey, useExportRunner
+├── services/       # Chamadas API (colorApplicationService, colorDataService, expenseTemplatesApi, accountPeriodClosuresApi)
+├── utils/          # dateUtils, currency, exportToExcel/PDF, parse*Workbook, closure*, badge*, colorCalculations, …
+├── config/         # defaultColors.ts, cadastroImportConfigs.ts
+├── types/          # Tipos TS (expenseTemplate, importConflict, accountPeriodClosure, closureEditImpact, invoiceReconcile)
+├── colors.css      # Variáveis de cor complementares
 └── index.css       # Tailwind directives + CSS variables (--color-*)
 ```
 
@@ -270,55 +288,6 @@ src/
 
 ---
 
-## Inventário completo de arquivos-fonte (excl. cache/build)
+## Inventário de arquivos
 
-### Raiz
-`.gitignore`, `README.md`, `cartoes.html`, `docker-compose.db.yml`, `docker-compose.db.dev.yml`, `.env.dev`, `.env.prod`
-
-### `.cursor/rules/`
-`balanco-ui.mdc`, `backend-database.mdc`, `cursor-rules.mdc`, `design-frontend.mdc`, `project-structure.mdc`, `security-auth.mdc`, `self-improvement.mdc`, `starting_point.mdc`, `tech-stack.mdc`
-
-### `.augment/rules/`
-`balanco-ui.md`, `starting_point.md`
-
-### `backups/`
-Arquivos `.backup`, `.sql`, `.dump` do banco
-
-### `docs/`
-`README.md`, `ambientes.md`, `arquitetura.md`, `banco-de-dados.md`, `categorizacao.md`, `cores.md`, `cores-universais.md`, `importacao.md`, `regex-examples.md`, `powershell-helpers/README.md`, `powershell-helpers/powershell-profile.txt`
-
-### `requirements/`
-`install.txt`
-
-### `rules/`
-`README.md`, `01-security-auth.md`, `01-security-auth-en.md`, `02-design-frontend.md`, `02-design-frontend-en.md`, `03-backend-database.md`, `03-backend-database-en.md`
-
-### `scripts/`
-`setup_envs.py`, `database/backup-database.bat`, `database/list-backups.bat`, `database/restore-database.bat`
-
-### `services/auth/app/`
-`__init__.py`, `main.py`, `core/__init__.py`, `core/config.py`, `core/logging_config.py`, `core/rbac.py`, `providers/__init__.py`, `providers/local_provider.py`
-
-### `services/auth/`
-`dev_server.py`, `requirements/install.txt`, `scripts/setup_venv.py`
-
-### `services/backend/app/`
-`__init__.py`, `main.py`, `database.py`, `converters/__init__.py`, `converters/cartao_converter.py`, `core/__init__.py`, `core/logging_config.py`, `core/LOGGING_EXAMPLES.md`, `dependencies/__init__.py`, `dependencies/auth.py`, `etl/__init__.py`, `etl/extrato_etl.py`, `etl/extrato_extractor.py`, `etl/extrato_transformer.py`, `etl/README.md`, `models/__init__.py`, `models/auth_models.py`, `models/base.py`, `models/base_entity.py`, `models/import_conflict.py`, `models/unified_models.py`, `routers/*.py` (18 routers), `services/__init__.py`, `services/color_calculation_service.py`, `services/fatura_service.py`, `utils/__init__.py`, `utils/card_helper.py`, `utils/crypto_helper.py`, `utils/datetime_helper.py`, `utils/mapping_helper.py`
-
-### `services/backend/scripts/`
-`__init__.py`, `migration_runner.py`, `setup_venv.py`, `migrations/0001`–`0017`, `migrations/README.md`
-
-### `services/backend/`
-`.gitignore`, `dev_server.py`, `requirements/install.txt`
-
-### `services/frontend/src/components/` (29 arquivos)
-`AlertDialog.tsx`, `ApplyTemplateModal.tsx`, `BalanceDetailsModal.tsx`, `BatchEditExpenseModal.tsx`, `ColorCustomizerUnified.tsx`, `ColorVariantsPreview.tsx`, `ConfirmDialog.tsx`, `ConflictReviewModal.tsx`, `CustomDateFilterModal.tsx`, `EditExpenseModal.tsx`, `ExportClosureModal.tsx`, `ExportModal.tsx`, `GroupDetailsModal.tsx`, `IconPicker.tsx`, `JsonTreeViewer.tsx`, `LoadingSpinner.tsx`, `ManualTransactionModal.tsx`, `MonthlyHistoryDetailsModal.tsx`, `MultiSelectDropdown.tsx`, `ProtectedRoute.tsx`, `QuickCreateTagSubtag.tsx`, `ReportFilters.tsx`, `SendToLoanModal.tsx`, `SharedAccountDisplay.tsx`, `Sidebar.tsx`, `SplitExpenseModal.tsx`, `TemplateFormModal.tsx`, `Toast.tsx`, `RawImportPreview.tsx`, `ImportFileKindBadge.tsx`, `UnmappedRecordsModal.tsx`, `date/DateField.tsx`, `date/DateCalendar.tsx`, `date/index.ts`
-
-### `services/frontend/src/pages/` (18 + 1 tab)
-`BalancoPage.tsx`, `CartoesPage.tsx`, `ColorSettingsPage.tsx`, `CompartilhamentosPage.tsx`, `ContasPage.tsx`, `CuradoriaPage.tsx`, `EmprestimosPage.tsx`, `ExpenseTemplatesPage.tsx`, `ExtratoPage.tsx`, `FaturasPage.tsx`, `GrupoPage.tsx`, `HomePage.tsx`, `LoginPage.tsx`, `MappingsPage.tsx`, `ProfilePage.tsx`, `SelectAccountPage.tsx`, `SettingsPage.tsx`, `TagsSubtagsPage.tsx`, `tabs/TransactionMappingsTab.tsx`
-
-### `services/frontend/src/` (demais)
-`App.tsx`, `main.tsx`, `index.css`, `vite-env.d.ts`, `config/defaultColors.ts`, `contexts/AuthContext.tsx`, `contexts/ThemeContext.tsx`, `hooks/useAlert.tsx`, `hooks/useColorApplication.ts`, `hooks/useColorData.ts`, `hooks/useConfirm.tsx`, `hooks/useEscapeKey.ts`, `services/colorApplicationService.ts`, `services/colorDataService.ts`, `services/expenseTemplatesApi.ts`, `types/expenseTemplate.ts`, `types/importConflict.ts`, `utils/accountFormatter.ts`, `utils/colorApplication.ts`, `utils/colorCalculations.ts`, `utils/colorUtils.ts`, `utils/currency.tsx`, `utils/dateUtils.ts`, `utils/exportToExcel.ts`, `utils/fileTypeDetector.ts`, `utils/iconMapper.tsx`, `utils/pdfExport.ts`
-
-### `services/frontend/` (config)
-`.gitignore`, `index.html`, `package.json`, `package-lock.json`, `postcss.config.js`, `tailwind.config.js`, `tsconfig.json`, `tsconfig.node.json`, `vite.config.ts`, `public/favicon.svg`, `public/manifest.json`
+Não há mais lista exaustiva de arquivos aqui (ficava desatualizada a cada mudança). Para listar o estado real, use `Get-ChildItem`/`git ls-files` nas pastas acima.

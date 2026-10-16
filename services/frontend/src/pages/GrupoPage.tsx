@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
 import {
@@ -20,7 +20,11 @@ import {
 import FloatingFooterBar from '../components/FloatingFooterBar'
 import SharedAccountDisplay from '../components/SharedAccountDisplay'
 import LoadingSpinner from '../components/LoadingSpinner'
-import { Layers, Search, X, ChevronDown, ChevronRight, Landmark, CreditCard, Gift, Filter, Calendar, Info, TrendingUp, TrendingDown, Minus, BarChart3, ArrowUp } from 'lucide-react'
+import { Layers, Search, X, ChevronDown, ChevronRight, Landmark, CreditCard, Gift, Filter, Calendar, Info, TrendingUp, TrendingDown, Minus, BarChart3, ArrowUp, Users, FileText, Tag, Tags } from 'lucide-react'
+import { CadastroListHeaderActions } from '../components/CadastroExcelMenu'
+import { useExportRunner } from '../hooks/useExportRunner'
+import { downloadExcel, excelDateStamp } from '../utils/excelExportClient'
+import { downloadPdf } from '../utils/pdfExportClient'
 import { DateField } from '../components/date'
 import { dateToLocalString, parseLocalDate } from '../utils/dateUtils'
 import { formatCurrency } from '../utils/currency'
@@ -62,6 +66,25 @@ interface GroupedExpenses {
   count: number
 }
 
+interface SubtagGroup {
+  name: string
+  items: ExpenseDetail[]
+  totalAmount: number
+  count: number
+}
+
+interface TagGroup {
+  name: string
+  subtags: SubtagGroup[]
+  totalAmount: number
+  count: number
+}
+
+type GroupMode = 'item' | 'tag'
+
+const NO_TAG = '(Sem tag)'
+const NO_SUBTAG = '(Sem subtag)'
+
 interface GroupStats {
   description: string
   periodStart: Date
@@ -92,6 +115,63 @@ const GrupoPage = () => {
   const [startDate, setStartDate] = useState<Date | null>(null)
   const [endDate, setEndDate] = useState<Date | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
+  const [selectedPartnerIds, setSelectedPartnerIds] = useState<number[]>([])
+  const [partners, setPartners] = useState<Array<{
+    id: number
+    shared_account_id: number
+    shared_account?: { name?: string; description?: string }
+  }>>([])
+  const exportRunner = useExportRunner((message) => setError(message))
+  const [groupMode, setGroupMode] = useState<GroupMode>('item')
+  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([])
+  const [selectedSubtagIds, setSelectedSubtagIds] = useState<number[]>([])
+  const [tags, setTags] = useState<Array<{ id: number; name: string }>>([])
+  const [subtags, setSubtags] = useState<Array<{ id: number; name: string; tag_id: number; tag_name: string }>>([])
+
+  useEffect(() => {
+    axios
+      .get('/api/reports/tags')
+      .then((response) => setTags(response.data))
+      .catch((err) => console.error('Erro ao carregar tags:', err))
+    axios
+      .get('/api/reports/subtags')
+      .then((response) => setSubtags(response.data))
+      .catch((err) => console.error('Erro ao carregar subtags:', err))
+  }, [])
+
+  const tagOptions = useMemo(
+    () => [{ id: -1, name: '(Vazio)' }, ...tags.map((t) => ({ id: t.id, name: t.name }))],
+    [tags],
+  )
+
+  const subtagOptions = useMemo(() => {
+    const realTagIds = selectedTagIds.filter((id) => id !== -1)
+    if (realTagIds.length === 0) return []
+    return subtags
+      .filter((st) => realTagIds.includes(st.tag_id))
+      .map((st) => ({ id: st.id, name: st.name, groupKey: st.tag_name, groupName: st.tag_name }))
+  }, [subtags, selectedTagIds])
+
+  useEffect(() => {
+    axios
+      .get('/api/expense-sharing/')
+      .then((response) => setPartners(response.data))
+      .catch((err) => console.error('Erro ao carregar parceiros:', err))
+  }, [])
+
+  const partnerOptions = useMemo(() => {
+    const options = partners
+      .map((p) => ({
+        id: p.id,
+        name: p.shared_account?.name || p.shared_account?.description || `Conta #${p.shared_account_id}`,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
+    return [
+      { id: -2, name: 'Minha Parte (próprio + compartilhado)' },
+      { id: -1, name: 'Próprio (100% meu)' },
+      ...options,
+    ]
+  }, [partners])
 
   // Estados de dados
   const [expenses, setExpenses] = useState<ExpenseDetail[]>([])
@@ -266,6 +346,15 @@ const GrupoPage = () => {
       if (startDate) params.append('start_date', dateToLocalString(startDate))
       if (endDate) params.append('end_date', dateToLocalString(endDate))
 
+      const realPartnerIds = selectedPartnerIds.filter((id) => id !== -1)
+      if (selectedPartnerIds.includes(-1)) params.append('include_empty_sharing', 'true')
+      if (realPartnerIds.length > 0) params.append('partner_ids', realPartnerIds.join(','))
+
+      if (selectedTagIds.includes(-1)) params.append('include_empty_tag', 'true')
+      const realTagIds = selectedTagIds.filter((id) => id !== -1)
+      if (realTagIds.length > 0) params.append('tag_ids', realTagIds.join(','))
+      if (selectedSubtagIds.length > 0) params.append('subtag_ids', selectedSubtagIds.join(','))
+
       params.append('limit', '10000')
 
       const response = await axios.get(`/api/reports/detailed?${params}`)
@@ -303,6 +392,44 @@ const GrupoPage = () => {
       .sort((a, b) => b.count - a.count)
   })()
 
+  // Agrupa por tag e, dentro dela, por subtag (com totais em cada nível)
+  const tagGroups: TagGroup[] = useMemo(() => {
+    const term = searchTerm.toLowerCase()
+    const byTag = new Map<string, TagGroup>()
+    expenses
+      .filter((exp) => !term || exp.description.toLowerCase().includes(term))
+      .forEach((exp) => {
+        const tagName = exp.tag_name || NO_TAG
+        const subName = exp.subtag_name || NO_SUBTAG
+        const amount = Number(exp.amount) || 0
+        let tag = byTag.get(tagName)
+        if (!tag) {
+          tag = { name: tagName, subtags: [], totalAmount: 0, count: 0 }
+          byTag.set(tagName, tag)
+        }
+        let sub = tag.subtags.find((s) => s.name === subName)
+        if (!sub) {
+          sub = { name: subName, items: [], totalAmount: 0, count: 0 }
+          tag.subtags.push(sub)
+        }
+        sub.items.push(exp)
+        sub.totalAmount += amount
+        sub.count++
+        tag.totalAmount += amount
+        tag.count++
+      })
+    const byAbs = (a: { totalAmount: number }, b: { totalAmount: number }) =>
+      Math.abs(b.totalAmount) - Math.abs(a.totalAmount)
+    const result = Array.from(byTag.values()).sort(byAbs)
+    result.forEach((t) => t.subtags.sort(byAbs))
+    return result
+  }, [expenses, searchTerm])
+
+  const tagKey = (tag: TagGroup) => `tag:${tag.name}`
+  const subtagKey = (tag: TagGroup, sub: SubtagGroup) => `sub:${tag.name}|${sub.name}`
+
+  const hasResults = groupMode === 'tag' ? tagGroups.length > 0 : groupedExpenses.length > 0
+
   // Toggle expansão
   const toggleGroup = (description: string) => {
     const newExpanded = new Set(expandedGroups)
@@ -314,7 +441,14 @@ const GrupoPage = () => {
     setExpandedGroups(newExpanded)
   }
 
-  const expandAll = () => setExpandedGroups(new Set(groupedExpenses.map(g => g.description)))
+  const expandAll = () =>
+    setExpandedGroups(
+      new Set(
+        groupMode === 'tag'
+          ? tagGroups.flatMap((t) => [tagKey(t), ...t.subtags.map((s) => subtagKey(t, s))])
+          : groupedExpenses.map((g) => g.description),
+      ),
+    )
   const collapseAll = () => setExpandedGroups(new Set())
 
   const clearFilters = () => {
@@ -322,10 +456,150 @@ const GrupoPage = () => {
     setStartDate(null)
     setEndDate(null)
     setSearchTerm('')
+    setSelectedPartnerIds([])
+    setSelectedTagIds([])
+    setSelectedSubtagIds([])
+  }
+
+  const SOURCE_LABELS: Record<string, string> = { bank: 'Extrato', card: 'Fatura', benefit: 'Benefício' }
+
+  const exportDate = (value: string) => {
+    const d = new Date(value)
+    return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString('pt-BR')
+  }
+
+  const exportInstallment = (item: ExpenseDetail) =>
+    item.current_installment && item.total_installments
+      ? `${item.current_installment}/${item.total_installments}`
+      : ''
+
+  const handleExportExcel = () => {
+    if (!hasResults) return
+    if (groupMode === 'tag') {
+      void exportRunner.run('Gerando Excel…', () => {
+        const rows: Array<Record<string, string | number>> = []
+        tagGroups.forEach((tag) => {
+          tag.subtags.forEach((sub) => {
+            sub.items.forEach((item) => {
+              rows.push({
+                Tag: tag.name,
+                Subtag: sub.name,
+                Data: exportDate(item.date),
+                Fonte: SOURCE_LABELS[item.source] ?? item.source,
+                Descrição: item.description,
+                Compartilhamento: item.shared_partner_name ?? '',
+                Valor: Number(item.amount) || 0,
+              })
+            })
+            rows.push({ Tag: tag.name, Subtag: `Total ${sub.name}`, Valor: sub.totalAmount })
+          })
+          rows.push({ Tag: `Total ${tag.name}`, Valor: tag.totalAmount })
+        })
+        return downloadExcel(`relatorio_grupos_tag_${excelDateStamp()}.xlsx`, [
+          {
+            name: 'Tags',
+            rows,
+            columns: ['Tag', 'Subtag', 'Data', 'Fonte', 'Descrição', 'Compartilhamento', 'Valor'],
+            kinds: { Valor: 'money' },
+          },
+        ])
+      })
+      return
+    }
+    void exportRunner.run('Gerando Excel…', () => {
+      const rows = groupedExpenses.flatMap((group) =>
+        group.items.map((item) => ({
+          Grupo: group.description,
+          Data: exportDate(item.date),
+          Fonte: SOURCE_LABELS[item.source] ?? item.source,
+          Cartão: item.card_name ?? '',
+          Parcela: exportInstallment(item),
+          Compartilhamento: item.shared_partner_name ?? '',
+          'Minha parte (%)': item.ownership_percentage ?? '',
+          Valor: Number(item.amount) || 0,
+        })),
+      )
+      return downloadExcel(`relatorio_grupos_${excelDateStamp()}.xlsx`, [
+        {
+          name: 'Grupos',
+          rows,
+          columns: ['Grupo', 'Data', 'Fonte', 'Cartão', 'Parcela', 'Compartilhamento', 'Minha parte (%)', 'Valor'],
+          kinds: { Parcela: 'text', 'Minha parte (%)': 'decimal', Valor: 'money' },
+        },
+      ])
+    })
+  }
+
+  const handleExportPdf = () => {
+    if (!hasResults) return
+    if (groupMode === 'tag') {
+      void exportRunner.run('Gerando PDF…', () => {
+        const rows: string[][] = []
+        tagGroups.forEach((tag) => {
+          rows.push([tag.name, '', '', '', formatCurrency(tag.totalAmount)])
+          tag.subtags.forEach((sub) => {
+            rows.push([`    ${sub.name}`, '', '', '', formatCurrency(sub.totalAmount)])
+            sub.items.forEach((item) => {
+              rows.push([
+                `        ${item.description}`,
+                exportDate(item.date),
+                SOURCE_LABELS[item.source] ?? item.source,
+                item.shared_partner_name ?? '',
+                formatCurrency(Number(item.amount) || 0),
+              ])
+            })
+          })
+        })
+        const total = tagGroups.reduce((sum, t) => sum + t.totalAmount, 0)
+        return downloadPdf(`relatorio_grupos_tag_${excelDateStamp()}.pdf`, {
+          title: 'Relatório por Tag/Subtag',
+          subtitle: `${tagGroups.length} tags`,
+          columns: [
+            { header: 'Tag / Subtag / Descrição' },
+            { header: 'Data', width_mm: 24 },
+            { header: 'Fonte', width_mm: 24 },
+            { header: 'Compartilhamento', width_mm: 36 },
+            { header: 'Valor', width_mm: 28, align: 'right' },
+          ],
+          rows,
+          footer: ['Total', '', '', '', formatCurrency(total)],
+        })
+      })
+      return
+    }
+    if (groupedExpenses.length === 0) return
+    void exportRunner.run('Gerando PDF…', () => {
+      const rows = groupedExpenses.flatMap((group) =>
+        group.items.map((item) => [
+          group.description,
+          exportDate(item.date),
+          SOURCE_LABELS[item.source] ?? item.source,
+          item.shared_partner_name ?? '',
+          formatCurrency(Number(item.amount) || 0),
+        ]),
+      )
+      const total = groupedExpenses.reduce((sum, g) => sum + g.totalAmount, 0)
+      return downloadPdf(`relatorio_grupos_${excelDateStamp()}.pdf`, {
+        title: 'Relatório por Grupo',
+        subtitle: `${groupedExpenses.length} grupos`,
+        columns: [
+          { header: 'Grupo' },
+          { header: 'Data', width_mm: 24 },
+          { header: 'Fonte', width_mm: 24 },
+          { header: 'Compartilhamento', width_mm: 36 },
+          { header: 'Valor', width_mm: 28, align: 'right' },
+        ],
+        rows,
+        footer: ['Total', '', '', '', formatCurrency(total)],
+      })
+    })
   }
 
   // Verifica se há filtros ativos
   const hasActiveFilters =
+    selectedPartnerIds.length > 0 ||
+    selectedTagIds.length > 0 ||
+    selectedSubtagIds.length > 0 ||
     selectedSources.length > 0 || // alguma fonte específica selecionada
     startDate !== null ||
     endDate !== null ||
@@ -343,6 +617,25 @@ const GrupoPage = () => {
               icon={<Layers className="w-8 h-8" />}
               title="Relatório por Grupo"
               subtitle="Transações agrupadas por descrição (apenas grupos com 2+ itens)"
+              actions={
+                <CadastroListHeaderActions
+                  menu={{
+                    menuTitle: 'Exportar',
+                    exportDisabled: !hasResults,
+                    onExportExcel: handleExportExcel,
+                    extraItems: [
+                      {
+                        id: 'pdf',
+                        label: 'Exportar PDF',
+                        icon: <FileText size={16} />,
+                        onClick: handleExportPdf,
+                      },
+                    ],
+                  }}
+                >
+                  {null}
+                </CadastroListHeaderActions>
+              }
             />
           }
           tabs={
@@ -367,9 +660,9 @@ const GrupoPage = () => {
               </button>
             </div>
 
-            {/* Linha 1: Filtros principais + Botão Aplicar */}
+            {/* Linha 1: Filtros principais */}
             <div className="flex items-end gap-3">
-              <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="flex-1 grid grid-cols-1 md:grid-cols-4 gap-3">
                 {/* Fonte */}
                 <div>
                   <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
@@ -377,6 +670,7 @@ const GrupoPage = () => {
                     Fonte
                   </label>
                   <SourceMultiSelectDropdown
+                    label="Fonte"
                     options={SOURCE_OPTIONS}
                     selectedIds={selectedSources}
                     onChange={setSelectedSources}
@@ -384,36 +678,114 @@ const GrupoPage = () => {
                   />
                 </div>
 
-                {/* Data Início */}
+                {/* Compartilhamento */}
                 <div>
                   <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                    <Calendar size={12} className="inline mr-1 text-color-primary" />
-                    Data Início
+                    <Users size={12} className="inline mr-1 text-color-primary" />
+                    Compartilhamento
                   </label>
-                  <DateField
-                    value={startDate ? dateToLocalString(startDate) : ''}
-                    onChange={(value) => setStartDate(value ? parseLocalDate(value) : null)}
-                    maxDate={endDate ?? undefined}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-color-primary focus:border-color-primary transition-all"
+                  <MultiSelectDropdown
+                    label="Compartilhamento"
+                    options={partnerOptions}
+                    selectedIds={selectedPartnerIds}
+                    onChange={setSelectedPartnerIds}
+                    placeholder="Selecione..."
+                    icon={<Users size={14} className="text-gray-500" />}
                   />
                 </div>
 
-                {/* Data Fim */}
+                {/* Tag */}
                 <div>
                   <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                    <Calendar size={12} className="inline mr-1 text-color-primary" />
-                    Data Fim
+                    <Tag size={12} className="inline mr-1 text-color-primary" />
+                    Tag
                   </label>
-                  <DateField
-                    value={endDate ? dateToLocalString(endDate) : ''}
-                    onChange={(value) => setEndDate(value ? parseLocalDate(value) : null)}
-                    minDate={startDate ?? undefined}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-color-primary focus:border-color-primary transition-all"
+                  <MultiSelectDropdown
+                    label="Tag"
+                    options={tagOptions}
+                    selectedIds={selectedTagIds}
+                    onChange={(newTagIds) => {
+                      setSelectedTagIds(newTagIds)
+                      const realTagIds = newTagIds.filter((id) => id !== -1)
+                      if (realTagIds.length === 0) {
+                        setSelectedSubtagIds([])
+                      } else {
+                        const valid = subtags.filter((st) => realTagIds.includes(st.tag_id)).map((st) => st.id)
+                        setSelectedSubtagIds((prev) => prev.filter((id) => valid.includes(id)))
+                      }
+                    }}
+                    placeholder="Selecione..."
+                    icon={<Tag size={14} className="text-gray-500" />}
+                  />
+                </div>
+
+                {/* Subtag */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                    <Tags size={12} className="inline mr-1 text-color-primary" />
+                    Subtag
+                  </label>
+                  <MultiSelectDropdown
+                    label="Subtag"
+                    options={subtagOptions}
+                    selectedIds={selectedSubtagIds}
+                    onChange={setSelectedSubtagIds}
+                    placeholder={selectedTagIds.filter((id) => id !== -1).length === 0 ? 'Selecione uma tag primeiro' : 'Selecione...'}
+                    groupByKey={selectedTagIds.filter((id) => id !== -1).length > 1}
+                    disabled={selectedTagIds.filter((id) => id !== -1).length === 0}
+                    icon={<Tags size={14} className="text-gray-500" />}
                   />
                 </div>
               </div>
+            </div>
 
-              {/* Botão Aplicar - fixo no canto direito */}
+            {/* Linha 2: Datas + Agrupar por + Botão Aplicar */}
+            <div className="mt-3 flex items-end gap-3">
+              <div className="w-40">
+                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                  <Calendar size={12} className="inline mr-1 text-color-primary" />
+                  Data Início
+                </label>
+                <DateField
+                  value={startDate ? dateToLocalString(startDate) : ''}
+                  onChange={(value) => setStartDate(value ? parseLocalDate(value) : null)}
+                  maxDate={endDate ?? undefined}
+                  className="w-full px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-color-primary focus:border-color-primary transition-all"
+                />
+              </div>
+              <div className="w-40">
+                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                  <Calendar size={12} className="inline mr-1 text-color-primary" />
+                  Data Fim
+                </label>
+                <DateField
+                  value={endDate ? dateToLocalString(endDate) : ''}
+                  onChange={(value) => setEndDate(value ? parseLocalDate(value) : null)}
+                  minDate={startDate ?? undefined}
+                  className="w-full px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-color-primary focus:border-color-primary transition-all"
+                />
+              </div>
+              <div className="flex-1 flex flex-wrap items-center gap-4 pb-1.5 pl-4">
+              <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Agrupar por:</span>
+              {([
+                { id: 'item', label: 'Item (descrição)' },
+                { id: 'tag', label: 'Tag / Subtag' },
+              ] as const).map((opt) => (
+                <label key={opt.id} className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="groupMode"
+                    value={opt.id}
+                    checked={groupMode === opt.id}
+                    onChange={() => {
+                      setGroupMode(opt.id)
+                      setExpandedGroups(new Set())
+                    }}
+                  />
+                  {opt.label}
+                </label>
+              ))}
+              </div>
               <div className="flex items-end flex-shrink-0">
                 <button
                   onClick={loadData}
@@ -450,7 +822,7 @@ const GrupoPage = () => {
           </div>
 
           {/* Controles de Expansão */}
-          <div className="flex items-center gap-3 mt-4">
+          <div className="flex items-center justify-end gap-3 mt-4">
             <button
               onClick={expandAll}
               className="px-3 py-2 text-xs font-medium border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
@@ -498,8 +870,101 @@ const GrupoPage = () => {
             </div>
           )}
 
+          {/* Grupos por Tag / Subtag */}
+          {!loading && !error && expenses.length > 0 && groupMode === 'tag' && (
+            <div className={`space-y-2 ${showBackToTop ? 'pb-20' : ''}`}>
+              {tagGroups.length === 0 ? (
+                <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                  Nenhum item encontrado
+                </div>
+              ) : (
+                tagGroups.map((tag) => {
+                  const tagOpen = expandedGroups.has(tagKey(tag))
+                  return (
+                    <div
+                      key={tagKey(tag)}
+                      className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden"
+                    >
+                      <div
+                        className="flex items-center p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer"
+                        onClick={() => toggleGroup(tagKey(tag))}
+                      >
+                        <span className="mr-3 text-gray-500 dark:text-gray-400">
+                          {tagOpen ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+                        </span>
+                        <div className="p-2 rounded-lg mr-3 bg-color-primary-light">
+                          <Tag size={20} className="text-color-primary" />
+                        </div>
+                        <div className="flex-1 font-semibold text-gray-900 dark:text-white">{tag.name}</div>
+                        <div className="text-sm text-gray-500 dark:text-gray-400 mr-4">
+                          <span className="font-medium">{tag.count}</span> {tag.count === 1 ? 'item' : 'itens'}
+                        </div>
+                        <div className={`text-lg font-bold ${tag.totalAmount < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                          {formatCurrency(tag.totalAmount)}
+                        </div>
+                      </div>
+
+                      {tagOpen && (
+                        <div className="bg-gray-50 dark:bg-gray-900/50 border-t border-gray-200 dark:border-gray-700">
+                          {tag.subtags.map((sub) => {
+                            const subOpen = expandedGroups.has(subtagKey(tag, sub))
+                            return (
+                              <div key={subtagKey(tag, sub)} className="border-b last:border-b-0 border-gray-200 dark:border-gray-700">
+                                <div
+                                  className="flex items-center py-3 pl-10 pr-4 hover:bg-gray-100 dark:hover:bg-gray-700/50 cursor-pointer"
+                                  onClick={() => toggleGroup(subtagKey(tag, sub))}
+                                >
+                                  <span className="mr-2 text-gray-500 dark:text-gray-400">
+                                    {subOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                                  </span>
+                                  <Tags size={16} className="mr-2 text-color-primary" />
+                                  <div className="flex-1 text-sm font-medium text-gray-800 dark:text-gray-200">{sub.name}</div>
+                                  <div className="text-xs text-gray-500 dark:text-gray-400 mr-4">
+                                    {sub.count} {sub.count === 1 ? 'item' : 'itens'}
+                                  </div>
+                                  <div className={`text-sm font-bold ${sub.totalAmount < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                                    {formatCurrency(sub.totalAmount)}
+                                  </div>
+                                </div>
+
+                                {subOpen && (
+                                  <div>
+                                    {[...sub.items]
+                                      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                                      .map((item) => (
+                                        <div
+                                          key={`${item.source}-${item.id}`}
+                                          className="grid grid-cols-[50px_1fr_2fr_1fr_100px] gap-2 py-2 pl-16 pr-4 border-t border-gray-200 dark:border-gray-700 text-sm items-center"
+                                        >
+                                          <div className="flex items-center">
+                                            {item.source === 'bank' && <Landmark size={16} style={{ color: 'var(--color-1)' }} />}
+                                            {item.source === 'card' && <CreditCard size={16} style={{ color: 'var(--color-2)' }} />}
+                                            {item.source === 'benefit' && <Gift size={16} style={{ color: 'var(--color-3)' }} />}
+                                          </div>
+                                          <span className="text-xs text-gray-700 dark:text-gray-300">{formatDateTime(item.date)}</span>
+                                          <span className="text-gray-800 dark:text-gray-200 truncate" title={item.description}>{item.description}</span>
+                                          <span className="text-xs text-gray-500 dark:text-gray-400 truncate">{item.shared_partner_name || ''}</span>
+                                          <span className={`text-right font-semibold ${item.amount < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                                            {formatCurrency(item.amount)}
+                                          </span>
+                                        </div>
+                                      ))}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          )}
+
           {/* Grupos */}
-          {!loading && !error && expenses.length > 0 && (
+          {!loading && !error && expenses.length > 0 && groupMode === 'item' && (
             <div className={`space-y-2 ${showBackToTop ? 'pb-20' : ''}`}>
               {groupedExpenses.length === 0 ? (
                 <div className="text-center py-12 text-gray-500 dark:text-gray-400">
@@ -666,6 +1131,7 @@ const GrupoPage = () => {
             </div>
           )}
         </CadastroListPageBody>
+        {exportRunner.overlay}
       </CadastroListPageShell>
 
       {groupStatsModal.isOpen && groupStatsModal.stats && (

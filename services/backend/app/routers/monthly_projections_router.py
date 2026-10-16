@@ -7,11 +7,12 @@ from typing import Any, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies.auth import require_account
-from app.models.unified_models import MonthlyProjection
+from app.models.unified_models import Cartao, MonthlyProjection
 from app.services import monthly_projection_service as service
 
 router = APIRouter(prefix="/api/monthly-projections", tags=["monthly-projections"])
@@ -107,6 +108,7 @@ class MonthResponse(BaseModel):
 
 class CloneRequest(BaseModel):
     source_year_month: str
+    months: int = Field(1, ge=1, le=24)
 
 
 class CloneResponse(BaseModel):
@@ -138,6 +140,8 @@ class LaunchCardsRequest(BaseModel):
     history_months: int = Field(service.DEFAULT_HISTORY_MONTHS, ge=1, le=24)
     include_average: bool = True
     include_installments: bool = False
+    sharing: Literal["own", "mine", "all"] = "all"
+    basis: Literal["current", "average"] = "average"
     items: List[CardItemIn] = []
 
 
@@ -187,16 +191,22 @@ def _month_response(db: Session, tenant_id: int, account_id: int, year_month: st
     zero = Decimal(0)
     income_rows = [r for r in rows if r.kind == "income"]
     rows = [r for r in rows if r.kind != "income"]
-    actuals = service.actual_invoice_values(db, tenant_id, rows, year_month)
+    card_ids = {
+        b["card_id"] for r in rows for b in (r.breakdown or []) if b.get("card_id")
+    }
+    inactive_ids = set()
+    if card_ids:
+        inactive_ids = {
+            cid for (cid,) in db.query(Cartao.id).filter(
+                Cartao.tenant_id == tenant_id, Cartao.id.in_(card_ids), Cartao.active.is_(False)
+            )
+        }
     items = []
     for r in rows:
         out = ProjectionOut.model_validate(r)
         out.editable = _is_editable(r.source)
-        if r.id in actuals:
-            out.amount = actuals[r.id]["amount"]
-            out.my_amount = actuals[r.id]["my_amount"]
-            out.breakdown = actuals[r.id]["breakdown"]
-            out.is_actual = True
+        if out.breakdown:
+            out.breakdown = [{**b, "inactive": b.get("card_id") in inactive_ids} for b in out.breakdown]
         items.append(out)
 
     def _sum(kind: str, attr: str) -> Decimal:
@@ -231,6 +241,57 @@ def _get_item(db: Session, tenant_id: int, account_id: int, item_id: int) -> Mon
     if not item:
         raise HTTPException(status_code=404, detail="Item de projeção não encontrado")
     return item
+
+
+class OverviewMonth(BaseModel):
+    year_month: str
+    income: Decimal
+    expenses: Decimal
+    result: Decimal
+    # 1ª quinzena = dias 1–14, 2ª quinzena = dia 15 em diante
+    income_h1: Decimal
+    income_h2: Decimal
+    expenses_h1: Decimal
+    expenses_h2: Decimal
+
+
+MAX_OVERVIEW_MONTHS = 24
+
+
+@router.get("/overview", response_model=List[OverviewMonth])
+async def get_overview(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    """Entradas, gastos e resultado do mês atual até o último mês com projeção lançada."""
+    tenant_id, account_id, _user_id = _scope(current_user)
+    today = date.today()
+    current = f"{today.year}-{today.month:02d}"
+    last = (
+        db.query(func.max(MonthlyProjection.year_month))
+        .filter(
+            MonthlyProjection.tenant_id == tenant_id,
+            MonthlyProjection.account_id == account_id,
+            MonthlyProjection.active.is_(True),
+        )
+        .scalar()
+    )
+    months = [current]
+    while last and months[-1] < last and len(months) < MAX_OVERVIEW_MONTHS:
+        months.append(service.next_year_month(months[-1]))
+    out = []
+    for ym in months:
+        month = _month_response(db, tenant_id, account_id, ym)
+        zero = Decimal(0)
+        out.append(OverviewMonth(
+            year_month=ym, income=month.income_total, expenses=month.totals.total,
+            result=month.income_total - month.totals.total,
+            income_h1=sum((i.amount for i in month.income if i.expected_date.day < 15), zero),
+            income_h2=sum((i.amount for i in month.income if i.expected_date.day >= 15), zero),
+            expenses_h1=sum((i.amount for i in month.items if i.expected_date.day < 15), zero),
+            expenses_h2=sum((i.amount for i in month.items if i.expected_date.day >= 15), zero),
+        ))
+    return out
 
 
 @router.get("", response_model=MonthResponse)
@@ -287,6 +348,18 @@ async def delete_item(
     db.commit()
 
 
+@router.delete("", status_code=204)
+async def clear_month(
+    year_month: str = Query(..., description="YYYY-MM"),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    """Limpar mês: exclui definitivamente todos os itens do mês."""
+    tenant_id, account_id, _user_id = _scope(current_user)
+    _check_ym(year_month)
+    service.clear_month(db, tenant_id, account_id, year_month)
+
+
 @router.post("/clone", response_model=CloneResponse)
 async def clone_month(
     body: CloneRequest,
@@ -296,7 +369,7 @@ async def clone_month(
     tenant_id, account_id, user_id = _scope(current_user)
     _check_ym(body.source_year_month)
     try:
-        target, copied = service.clone_to_next_month(db, tenant_id, account_id, user_id, body.source_year_month)
+        target, copied = service.clone_to_next_month(db, tenant_id, account_id, user_id, body.source_year_month, body.months)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return CloneResponse(target_year_month=target, copied=copied)
@@ -330,6 +403,8 @@ async def launch_cards(
             body.card_ids, body.history_months, body.include_average,
             [i.model_dump() for i in body.items],
             include_installments=body.include_installments,
+            sharing=body.sharing,
+            basis=body.basis,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

@@ -458,10 +458,13 @@ export function CadastroModalHeader({
   onClose,
   breadcrumb,
   hideClose = false,
+  closeDisabled = false,
   icon,
   iconStyle,
 }: {
   isEdit: boolean
+  /** Desabilita o X enquanto uma ação está em andamento. */
+  closeDisabled?: boolean
   title?: string
   /** Conteúdo ao lado do título (ex.: badge de status). */
   titleAddon?: ReactNode
@@ -504,7 +507,8 @@ export function CadastroModalHeader({
           <button
             type="button"
             onClick={onClose}
-            className="shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+            disabled={closeDisabled}
+            className="shrink-0 text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:text-gray-200"
           >
             <X size={20} />
           </button>
@@ -561,6 +565,7 @@ export function CadastroModalFooter({
   onSave,
   saving = false,
   disabled = false,
+  closeDisabled = false,
   saveLabel = 'Salvar',
   closeLabel = 'Cancelar',
   hideSave = false,
@@ -573,6 +578,8 @@ export function CadastroModalFooter({
   onSave?: () => void
   saving?: boolean
   disabled?: boolean
+  /** Desabilita Cancelar/Fechar enquanto uma ação está em andamento. */
+  closeDisabled?: boolean
   saveLabel?: string
   closeLabel?: string
   hideSave?: boolean
@@ -602,7 +609,8 @@ export function CadastroModalFooter({
         <button
           type="button"
           onClick={onClose}
-          className="rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+          disabled={closeDisabled}
+          className="rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
           style={{ backgroundColor: 'var(--color-cancel)' }}
         >
           {closeLabel}

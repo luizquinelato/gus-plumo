@@ -6,157 +6,127 @@ O projeto suporta dois ambientes: **desenvolvimento (dev)** e **produção (prod
 
 | Arquivo | Descrição |
 |---------|-----------|
-| `.env` | Arquivo ativo (usado pelo Docker e aplicação) |
-| `.env.dev` | Template para desenvolvimento |
-| `.env.prod` | Template para produção |
+| `.env.dev` | Configuração de desenvolvimento |
+| `.env.prod` | Configuração de produção |
+
+Os serviços (backend, auth, frontend) leem o arquivo do ambiente em uso; as portas e a `DATABASE_URL` vêm dele.
 
 ## Diferenças entre Ambientes
 
 | Aspecto | Dev | Prod |
 |---------|-----|------|
-| Database | `expenses_db_dev` | `expenses_db` |
-| Porta | `5433` | `5432` |
-| Container | `expenses-postgres-dev` | `expenses-postgres` |
-| Volume | `expenses_postgres_data_dev` | `expenses_postgres_data` |
-| Network | `expenses-network-dev` | `expenses-network` |
+| Database | `plumo_dev` | `plumo` |
+| Usuário do banco | `plumo` | `plumo` |
+| Porta do banco | `5433` | `5432` |
+| Container | `plumo-postgres-dev` | `plumo-postgres` |
+| Volume | `plumo_postgres_data_dev` | `plumo_postgres_data` |
+| Network | `plumo-network-dev` | `plumo-network` |
+| Backend / Auth / Frontend | `8010` / `8011` / `5174` | `8000` / `8001` / `5173` |
 | Log Level | DEBUG | INFO |
-| SQL Echo | true | false |
+| Timezone | `America/Sao_Paulo` | `America/Sao_Paulo` |
 
 ## Docker Compose
 
-O projeto possui dois arquivos docker-compose separados para permitir rodar ambos os ambientes simultaneamente:
+Dois arquivos separados permitem rodar os dois ambientes ao mesmo tempo (imagem `postgres:18`, sem réplica):
 
-| Arquivo | Ambiente | Porta | Container |
-|---------|----------|-------|-----------|
-| `docker-compose.db.dev.yml` | DEV | 5433 | expenses-postgres-dev |
-| `docker-compose.db.yml` | PROD | 5432 | expenses-postgres |
+| Arquivo | Ambiente | Porta | Serviço | Container |
+|---------|----------|-------|---------|-----------|
+| `docker-compose.db.dev.yml` | DEV | 5433 | `postgres-dev` | `plumo-postgres-dev` |
+| `docker-compose.db.yml` | PROD | 5432 | `postgres-prod` | `plumo-postgres` |
 
-### Iniciar ambos os ambientes
+### Iniciar e parar
 
 ```powershell
-# Iniciar DEV
-.\scripts\database\start-database.bat --dev
-
-# Iniciar PROD
-.\scripts\database\start-database.bat --prod
+# Helpers do PowerShell
+dkup-dev ; dkup ; dkup-all
+dkdown-dev ; dkdown ; dkdown-all
 
 # Ou diretamente com docker-compose
 docker-compose -f docker-compose.db.dev.yml up -d
 docker-compose -f docker-compose.db.yml up -d
-```
-
-### Parar ambientes
-
-```powershell
-# Parar DEV
-.\scripts\database\stop-database.bat --dev
-
-# Parar PROD
-.\scripts\database\stop-database.bat --prod
-
-# Parar TODOS
-.\scripts\database\stop-database.bat --all
-```
-
-## Trocar Ambiente Ativo (.env)
-
-O arquivo `.env` define qual ambiente é usado por padrão pelos scripts e pela aplicação:
-
-```powershell
-# Ver ambiente atual
-.\scripts\database\switch-env.bat
-
-# Trocar para desenvolvimento
-.\scripts\database\switch-env.bat dev
-
-# Trocar para produção
-.\scripts\database\switch-env.bat prod
+docker-compose -f docker-compose.db.dev.yml down
 ```
 
 ## Scripts de Database
 
-Todos os scripts de banco de dados estão em `scripts/database/` e suportam `--dev` e `--prod`:
+Em `scripts/database/`:
 
 | Script | Descrição | Parâmetros |
 |--------|-----------|------------|
-| `start-database.bat` | Inicia o container PostgreSQL | `--dev`, `--prod` |
-| `stop-database.bat` | Para o container PostgreSQL | `--dev`, `--prod`, `--all` |
 | `backup-database.bat` | Cria backup do banco | `--dev`, `--prod` |
 | `restore-database.bat` | Restaura um backup | `--dev`, `--prod` |
 | `list-backups.bat` | Lista backups disponíveis | - |
-| `switch-env.bat` | Troca o .env ativo | `dev`, `prod` |
+
+Para aplicar migrations use `db-migrate-dev` / `db-migrate` (helpers do PowerShell).
 
 ## Backups
 
-Os backups são salvos em `backups/` com o nome do ambiente:
+Os backups são salvos em `backups/` com o nome do ambiente. Exemplo de formato:
 
 ```
 backups/
-├── expenses_db_prod_2026-02-09_10-30-00.backup
-├── expenses_db_prod_2026-02-09_10-30-00.sql
-├── expenses_db_dev_dev_2026-02-08_15-00-00.backup
-└── expenses_db_dev_dev_2026-02-08_15-00-00.sql
+├── plumo_prod_<data>_<hora>.backup
+└── plumo_dev_<data>_<hora>.backup
 ```
+
+Confira os nomes reais com `list-backups.bat`.
 
 ### Restaurar Backup em Ambiente Diferente
 
-O script `restore-database.bat` suporta parâmetros `--dev` e `--prod` para restaurar em um ambiente específico, independente do ambiente atual:
+O script `restore-database.bat` aceita `--dev` e `--prod` para escolher o ambiente de destino:
 
 ```powershell
-# Restaurar backup de PROD em DEV (para testar com dados reais)
+# Restaurar em DEV (para testar com dados reais)
 .\scripts\database\restore-database.bat --dev
-
-# Restaurar backup específico em DEV
-.\scripts\database\restore-database.bat --dev backups\expenses_db_prod_2026-02-09_10-30-00.backup
 
 # Restaurar em PROD (cuidado!)
 .\scripts\database\restore-database.bat --prod
-
-# Restaurar no ambiente atual (comportamento padrão)
-.\scripts\database\restore-database.bat
 ```
 
-**Caso de uso comum**: Copiar dados de produção para desenvolvimento:
+**Caso de uso comum**: copiar dados de produção para desenvolvimento:
 
 ```powershell
-# 1. Fazer backup de prod
-.\scripts\database\switch-env.bat prod
-.\scripts\database\backup-database.bat
-
-# 2. Restaurar em dev (sem trocar de ambiente!)
-.\scripts\database\switch-env.bat dev
-.\scripts\database\start-database.bat
-.\scripts\database\restore-database.bat --dev backups\expenses_db_prod_2026-02-09_10-30-00.backup
+.\scripts\database\backup-database.bat --prod
+dkup-dev
+.\scripts\database\restore-database.bat --dev
 ```
+
+Para copiar só cadastros de prod para dev, veja também `scripts/sync_cadastro_prod_dev.py`.
 
 ## Variáveis de Ambiente
 
-O arquivo `.env` contém:
+`.env.dev` / `.env.prod` contêm (valores de dev | prod; segredos omitidos):
 
 ```env
-# Ambiente
 ENVIRONMENT=dev|prod
 
 # Database
 DB_HOST=localhost
-DB_PORT=5432|5433
-DB_NAME=expenses_db|expenses_db_dev
-DB_USER=postgres
-DB_PASSWORD=expenses
+DB_PORT=5433|5432
+DB_NAME=plumo_dev|plumo
+DB_USER=plumo
 DATABASE_URL=postgresql://...
 
 # Docker
-CONTAINER_NAME=expenses-postgres|expenses-postgres-dev
-VOLUME_NAME=expenses_postgres_data|expenses_postgres_data_dev
-NETWORK_NAME=expenses-network|expenses-network-dev
+CONTAINER_NAME=plumo-postgres-dev|plumo-postgres
+VOLUME_NAME=plumo_postgres_data_dev|plumo_postgres_data
+NETWORK_NAME=plumo-network-dev|plumo-network
 
 # Logging
-LOG_LEVEL=INFO|DEBUG
-SQL_ECHO=false|true
+LOG_LEVEL=DEBUG|INFO
+SQL_ECHO=false
 
 # Timezone
-TZ=America/New_York
-PGTZ=America/New_York
+TZ=America/Sao_Paulo
+PGTZ=America/Sao_Paulo
+
+# Portas e URLs
+PORT=8010|8000
+AUTH_SERVICE_URL=http://localhost:8011|http://localhost:8001
+VITE_API_URL=http://localhost:8010|http://localhost:8000
+VITE_PORT=5174|5173
+
+# Segurança: JWT_ALGORITHM, chave de criptografia (AES-256), CORS_ORIGINS
 ```
 
 ## Fluxo de Trabalho Recomendado
@@ -164,29 +134,17 @@ PGTZ=America/New_York
 ### Rodar ambos os ambientes simultaneamente
 
 ```powershell
-# Iniciar ambos
-.\scripts\database\start-database.bat --dev
-.\scripts\database\start-database.bat --prod
-
-# Verificar containers rodando
-docker ps
-
-# Parar ambos
-.\scripts\database\stop-database.bat --all
+dkup-all        # sobe prod e dev
+docker ps       # confere os containers
+dkdown-all      # derruba ambos
 ```
 
 ### Desenvolvimento com dados de produção
 
 ```powershell
-# 1. Fazer backup de prod
 .\scripts\database\backup-database.bat --prod
-
-# 2. Restaurar em dev
-.\scripts\database\restore-database.bat --dev backups\expenses_db_prod_2026-02-09_10-30-00.backup
-
-# 3. Desenvolver usando DEV
-.\scripts\database\switch-env.bat dev
-# A aplicação agora usa expenses_db_dev na porta 5433
+.\scripts\database\restore-database.bat --dev
+run-all-tabs-dev    # app usa plumo_dev na porta 5433
 ```
 
 ### Backup de ambos os ambientes

@@ -17,40 +17,37 @@ Sistema de gerenciamento de despesas pessoais com importação automatizada de e
 
 ### Infraestrutura
 - [**ambientes.md**](ambientes.md) - Configuração de ambientes (dev/prod), scripts de database
+- [**powershell-helpers/README.md**](powershell-helpers/README.md) - Comandos do PowerShell (`dkup-dev`, `run-all-tabs-dev`, ...)
+
+### Outros
+- [**cores-universais.md**](cores-universais.md) - Cores universais
+- [**regex-examples.md**](regex-examples.md) - Exemplos de regex para parsers
 
 ## 🚀 Quick Start
 
-### 1. Rodar Migrations
+Ambiente de dev (portas: banco 5433, backend 8010, auth 8011, frontend 5174). Para prod, veja [ambientes.md](ambientes.md).
 
-```bash
-# Migration 0001: Schema inicial
-python -m services.backend.scripts.migrations.0001_schema_inicial_multitenant
+### 1. Subir o banco e rodar migrations
 
-# Migration 0002: Dados iniciais
-python -m services.backend.scripts.migrations.0002_dados_iniciais
-
-# Migration 0003: Níveis de acessibilidade
-python -m services.backend.scripts.migrations.0003_add_accessibility_levels
+```powershell
+dkup-dev
+db-migrate-dev     # aplica 0001…0025 em services/backend/scripts/migrations/
 ```
 
-### 2. Iniciar Backend
+Detalhes e regras em `services/backend/scripts/migrations/README.md` e `.cursor/rules/starting_point.mdc`.
 
-```bash
-cd services/backend
-uvicorn app.main:app --reload --port 8000
+### 2. Iniciar os serviços
+
+```powershell
+run-all-tabs-dev   # auth + backend + frontend
 ```
 
-### 3. Iniciar Frontend
+Ou manualmente: `cd services/backend && python dev_server.py` e `cd services/frontend && npm run dev`.
 
-```bash
-cd services/frontend
-npm run dev
-```
-
-### 4. Acessar Aplicação
+### 3. Acessar Aplicação
 
 ```
-http://localhost:5173
+http://localhost:5174
 ```
 
 ## 🏗️ Arquitetura
@@ -70,12 +67,14 @@ http://localhost:5173
 └──────────────────────┬──────────────────────────────────────┘
                        │ SQLAlchemy
 ┌──────────────────────▼──────────────────────────────────────┐
-│                   PostgreSQL 17                              │
+│                   PostgreSQL 18                              │
 │              (Docker com volumes persistentes)               │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## � Funcionalidades Principais
+## 🧩 Funcionalidades Principais
+
+> Além das abaixo, o app tem fechamentos (conta, compartilhado, faturas), saldo parcelado, projeção mensal, empréstimos, holerites/informes e saúde financeira. Rotas em `services/frontend/src/App.tsx`.
 
 ### 1. Importação de Extratos Bancários
 - Upload de arquivo Excel (.xlsx)
@@ -139,6 +138,8 @@ Todas as tabelas herdam de `BaseEntity`:
 
 ## 🔑 Endpoints Principais
 
+A lista abaixo é um recorte; a referência completa está em `/docs` (Swagger) e em `services/backend/app/routers/`.
+
 ### Importação
 - `POST /api/import/extrato` - Importa extrato bancário
 - `POST /api/import/fatura` - Importa fatura de cartão
@@ -184,17 +185,9 @@ Todas as tabelas herdam de `BaseEntity`:
 Comandos úteis para desenvolvimento:
 
 ```powershell
-# Rodar backend
-backend
-
-# Rodar frontend
-frontend
-
-# Rodar migrations
-migrate
-
-# Acessar banco de dados
-db
+dkup-dev            # banco de dev
+db-migrate-dev      # migrations
+run-all-tabs-dev    # auth + backend + frontend
 ```
 
 **Documentação**: [powershell-helpers/README.md](powershell-helpers/README.md)

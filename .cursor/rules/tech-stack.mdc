@@ -20,7 +20,7 @@ Versões de referência: `services/frontend/package.json` e `services/backend/re
 | Ícones | `lucide-react` | **0.344.x** | Biblioteca exclusiva de ícones |
 | Datas | — (componente próprio) | — | `src/components/date` (`DateField`, `DateCalendar`); sem lib de datepicker |
 | Gráficos | `recharts` | **3.x** | Dashboard / relatórios |
-| Export | `jspdf`, `xlsx` | — | PDF e Excel |
+| Export | `xlsx` (+ export PDF/Excel no backend: `pdf_export_engine.py`, `excel_export_engine.py`) | — | Client em `utils/*export*`; ver `pdfExportClient.ts` / `excelExportClient.ts` |
 | UI utils | `clsx`, `tailwind-merge`, `class-variance-authority` | — | Composição de classes |
 | Radix | `@radix-ui/react-slot` | **1.1.x** | Slot primitivo apenas |
 

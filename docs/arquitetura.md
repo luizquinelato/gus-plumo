@@ -7,7 +7,7 @@ Sistema de gerenciamento de despesas pessoais com importação automatizada de e
 ```
 Frontend: React + TypeScript + Vite + TailwindCSS
 Backend:  FastAPI + Python 3.11
-Database: PostgreSQL 17 (Primary + Replica)
+Database: PostgreSQL 18 (um container por ambiente)
 ```
 
 ## Estrutura de Diretórios
@@ -95,8 +95,8 @@ gus-expenses-platform/
 └──────────────────────┬──────────────────────────────────────┘
                        │ SQLAlchemy
 ┌──────────────────────▼──────────────────────────────────────┐
-│                   PostgreSQL 17                              │
-│              Primary + Replica (Streaming)                   │
+│                   PostgreSQL 18                              │
+│              (um container por ambiente)                     │
 └─────────────────────────────────────────────────────────────┘
 ```
 

@@ -1,6 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
-import { CalendarDays, ChevronLeft, ChevronRight, ChevronsRight, Copy, CreditCard, Pencil, Plus, Trash2, Wallet } from 'lucide-react'
+import {
+  Bar,
+  CartesianGrid,
+  ComposedChart,
+  Legend,
+  Line,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
+import { CalendarDays, ChevronLeft, ChevronRight, ChevronsRight, Copy, CreditCard, Eraser, Loader2, Maximize2, Pencil, Plus, Trash2, Wallet } from 'lucide-react'
 import { CadastroListHeaderActions } from '../components/CadastroExcelMenu'
 import { DateField } from '../components/date'
 import Sidebar from '../components/Sidebar'
@@ -31,12 +43,12 @@ import {
   CadastroModalHeader,
   CadastroModalShell,
 } from '../components/CadastroFormLayout'
+import { useConfirm } from '../hooks/useConfirm'
 import { useEscapeKey } from '../hooks/useEscapeKey'
 import LoadingSpinner from '../components/LoadingSpinner'
 import { formatCurrency } from '../utils/currency'
 
 type Kind = 'fixed' | 'variable'
-type View = 'total' | 'mine'
 
 interface BreakdownItem {
   card_id: number
@@ -44,6 +56,7 @@ interface BreakdownItem {
   card_number: string
   amount: string
   my_amount: string
+  inactive?: boolean
 }
 
 interface Expense {
@@ -83,8 +96,6 @@ interface CardOption {
   number: string
   type: string
   active?: boolean
-  invoice_group_id?: number | null
-  invoice_group_name?: string | null
 }
 
 interface CardItemForm {
@@ -96,9 +107,11 @@ interface CardItemForm {
 
 interface CardFormState {
   cardIds: number[]
+  target: 'expense' | 'income'
   historyMonths: number
   mode: 'auto' | 'manual'
-  method: 'average' | 'installments'
+  method: 'current' | 'average' | 'installments'
+  sharing: 'own' | 'mine' | 'all'
   items: CardItemForm[]
 }
 
@@ -119,6 +132,17 @@ interface MonthData {
   totals: Totals
   income?: Income[]
   income_total?: string
+}
+
+interface OverviewMonth {
+  year_month: string
+  income: string
+  expenses: string
+  result: string
+  income_h1: string
+  income_h2: string
+  expenses_h1: string
+  expenses_h2: string
 }
 
 interface FormState {
@@ -151,30 +175,25 @@ const debitCls = 'text-red-600 dark:text-red-400'
 const creditCls = 'text-green-600 dark:text-green-400'
 
 export default function ProjecaoMensalPage() {
+  const { showConfirm, ConfirmComponent } = useConfirm()
   const [yearMonth, setYearMonth] = useState(currentYearMonth())
-  const [view, setView] = useState<View>('total')
   const [data, setData] = useState<MonthData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState<FormState | null>(null)
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const busy = saving || deleting
   const [detail, setDetail] = useState<Expense | null>(null)
   const closeDetail = useCallback(() => setDetail(null), [])
-  useEscapeKey(closeDetail, detail != null)
+  useEscapeKey(closeDetail, detail != null && !busy)
   const closeForm = useCallback(() => setForm(null), [])
-  useEscapeKey(closeForm, form != null && detail == null)
+  useEscapeKey(closeForm, form != null && detail == null && !busy)
+  const [autoIncome, setAutoIncome] = useState<Income | null>(null)
+  const closeAutoIncome = useCallback(() => setAutoIncome(null), [])
+  useEscapeKey(closeAutoIncome, autoIncome != null && !busy)
   const [cardForm, setCardForm] = useState<CardFormState | null>(null)
   const [cardOptions, setCardOptions] = useState<CardOption[]>([])
-  const cardGroups = useMemo(() => {
-    const map = new Map<string, { key: string; name: string; cards: CardOption[] }>()
-    for (const c of cardOptions) {
-      const key = c.invoice_group_id ? `g${c.invoice_group_id}` : 'none'
-      const name = c.invoice_group_id ? c.invoice_group_name || 'Grupo' : 'Sem grupo'
-      if (!map.has(key)) map.set(key, { key, name, cards: [] })
-      map.get(key)!.cards.push(c)
-    }
-    return [...map.values()].sort((a, b) => (a.key === 'none' ? 1 : b.key === 'none' ? -1 : a.name.localeCompare(b.name)))
-  }, [cardOptions])
   const [installmentPreview, setInstallmentPreview] = useState<InstallmentPreview[]>([])
   const [previewLoading, setPreviewLoading] = useState(false)
   const previewActive = cardForm?.mode === 'auto' && cardForm.method === 'installments'
@@ -201,11 +220,57 @@ export default function ProjecaoMensalPage() {
     }
   }, [previewActive, previewCardKey, yearMonth])
   const closeCardForm = useCallback(() => setCardForm(null), [])
-  useEscapeKey(closeCardForm, cardForm != null)
+  useEscapeKey(closeCardForm, cardForm != null && !busy)
 
+  const [overview, setOverview] = useState<OverviewMonth[]>([])
+  const [chartView, setChartView] = useState<'month' | 'half'>('month')
+  const [chartMax, setChartMax] = useState(false)
+  const closeChartMax = useCallback(() => setChartMax(false), [])
+  useEscapeKey(closeChartMax, chartMax)
+  const loadOverview = useCallback(async () => {
+    try {
+      const res = await axios.get<OverviewMonth[]>('/api/monthly-projections/overview')
+      setOverview(res.data)
+    } catch (err) {
+      console.error('Erro ao carregar visão dos próximos meses:', err)
+    }
+  }, [])
+
+  const overviewChart = useMemo(
+    () => {
+      // Regressão linear (mínimos quadrados) sobre o resultado mensal.
+      const n = overview.length
+      const ys = overview.map((m) => Number(m.result))
+      const meanX = (n - 1) / 2
+      const meanY = n ? ys.reduce((a, b) => a + b, 0) / n : 0
+      let num = 0
+      let den = 0
+      ys.forEach((y, i) => {
+        num += (i - meanX) * (y - meanY)
+        den += (i - meanX) ** 2
+      })
+      const slope = den ? num / den : 0
+      return overview.map((m, i) => {
+        const [y, mo] = m.year_month.split('-').map(Number)
+        return {
+          label: `${MONTH_NAMES[mo - 1].slice(0, 3)}/${String(y).slice(2)}`,
+          Entradas: Number(m.income),
+          Gastos: Number(m.expenses),
+          'Tendência do resultado': Math.round((meanY + slope * (i - meanX)) * 100) / 100,
+          'Entradas 1ª quinz.': Number(m.income_h1),
+          'Entradas 2ª quinz.': Number(m.income_h2),
+          'Gastos 1ª quinz.': Number(m.expenses_h1),
+          'Gastos 2ª quinz.': Number(m.expenses_h2),
+        }
+      })
+    },
+    [overview],
+  )
+
+  // Recarrega sem spinner: o calendário continua visível (usado após excluir, mover, editar etc.)
   const load = useCallback(async () => {
-    setLoading(true)
     setError(null)
+    void loadOverview()
     try {
       const res = await axios.get<MonthData>('/api/monthly-projections', { params: { year_month: yearMonth } })
       setData(res.data)
@@ -215,16 +280,14 @@ export default function ProjecaoMensalPage() {
     } finally {
       setLoading(false)
     }
-  }, [yearMonth])
+  }, [yearMonth, loadOverview])
 
   useEffect(() => {
+    setLoading(true)
     void load()
   }, [load])
 
-  const valueOf = useCallback(
-    (e: Expense) => Number(view === 'mine' ? e.my_amount : e.amount),
-    [view],
-  )
+  const valueOf = useCallback((e: Expense) => Number(e.amount), [])
 
   const byDay = useMemo(() => {
     const map = new Map<number, Expense[]>()
@@ -263,6 +326,31 @@ export default function ProjecaoMensalPage() {
       : e.editable !== false &&
         setForm({ id: e.id, expected_date: e.expected_date, description: e.description, amount: `-${e.amount}`, kind: e.kind })
 
+  const [dragOverDay, setDragOverDay] = useState<number | null>(null)
+
+  const canDragExpense = (e: Expense) => e.editable !== false && e.source !== 'card_invoice'
+
+  const moveToDay = async (drag: { id: number; income: boolean }, day: number) => {
+    const found: Expense | Income | undefined = drag.income
+      ? data?.income?.find((x) => x.id === drag.id)
+      : data?.items.find((x) => x.id === drag.id)
+    if (!found) return
+    const date = `${yearMonth}-${String(day).padStart(2, '0')}`
+    if (found.expected_date === date) return
+    try {
+      await axios.put(`/api/monthly-projections/${drag.id}`, {
+        expected_date: date,
+        description: found.description,
+        amount: drag.income ? Number(found.amount) : -Number(found.amount),
+        kind: drag.income ? 'fixed' : (found as Expense).kind,
+      })
+      await load()
+    } catch (err) {
+      console.error('Erro ao mover lançamento:', err)
+      setError('Não foi possível mover o lançamento.')
+    }
+  }
+
   const openEditIncome = (inc: Income) =>
     inc.editable &&
     setForm({ id: inc.id, expected_date: inc.expected_date, description: inc.description, amount: inc.amount, kind: 'fixed' })
@@ -271,6 +359,7 @@ export default function ProjecaoMensalPage() {
     try {
       await axios.post('/api/monthly-projections/launch-income', { year_month: yearMonth })
       await load()
+      setCardForm(null)
     } catch (err) {
       console.error('Erro ao lançar projeção de receitas:', err)
       setError('Não foi possível lançar a projeção de receitas.')
@@ -279,10 +368,11 @@ export default function ProjecaoMensalPage() {
 
   const openCardForm = async () => {
     try {
-      const res = await axios.get<CardOption[]>('/api/cartoes/')
-      const credit = res.data.filter((c) => c.type === 'credito' && c.active !== false)
+      const res = await axios.get<CardOption[]>('/api/cartoes/', { params: { incluir_inativos: true } })
+      const allCredit = res.data.filter((c) => c.type === 'credito')
+      const credit = allCredit.filter((c) => c.active !== false)
       setCardOptions(credit)
-      setCardForm({ cardIds: credit.map((c) => c.id), historyMonths: 6, mode: 'auto', method: 'average', items: [] })
+      setCardForm({ cardIds: allCredit.map((c) => c.id), historyMonths: 6, target: 'expense', mode: 'auto', method: 'current', sharing: 'mine', items: [] })
     } catch (err) {
       console.error('Erro ao carregar cartões:', err)
       setError('Não foi possível carregar os cartões.')
@@ -301,12 +391,14 @@ export default function ProjecaoMensalPage() {
         year_month: yearMonth,
         card_ids: auto ? cardForm.cardIds : cardOptions.map((c) => c.id),
         history_months: cardForm.historyMonths,
-        include_average: auto && cardForm.method === 'average',
+        include_average: auto && cardForm.method !== 'installments',
+        basis: cardForm.method === 'current' ? 'current' : 'average',
         include_installments: auto && cardForm.method === 'installments',
+        sharing: cardForm.sharing,
         items: auto ? [] : cardForm.items.map((it) => ({ ...it, amount: Number(it.amount) })),
       })
-      setCardForm(null)
       await load()
+      setCardForm(null)
     } catch (err) {
       const msg = axios.isAxiosError(err) ? err.response?.data?.detail : null
       setError(typeof msg === 'string' ? msg : 'Não foi possível lançar a projeção de cartões.')
@@ -327,8 +419,8 @@ export default function ProjecaoMensalPage() {
       }
       if (form.id) await axios.put(`/api/monthly-projections/${form.id}`, body)
       else await axios.post('/api/monthly-projections', body)
-      setForm(null)
       await load()
+      setForm(null)
     } catch (err) {
       console.error('Erro ao salvar gasto esperado:', err)
       setError('Não foi possível salvar o gasto.')
@@ -339,30 +431,123 @@ export default function ProjecaoMensalPage() {
 
   const remove = async () => {
     if (!form?.id) return
+    setDeleting(true)
     try {
       await axios.delete(`/api/monthly-projections/${form.id}`)
-      setForm(null)
       await load()
+      setForm(null)
     } catch (err) {
       console.error('Erro ao excluir gasto esperado:', err)
       setError('Não foi possível excluir o gasto.')
+    } finally {
+      setDeleting(false)
     }
   }
 
-  const cloneNext = async () => {
+  const removeAutomatic = async (id: number) => {
+    setDeleting(true)
     try {
-      await axios.post('/api/monthly-projections/clone', { source_year_month: yearMonth })
+      await axios.delete(`/api/monthly-projections/${id}`)
+      await load()
+      setDetail(null)
+      setAutoIncome(null)
+    } catch (err) {
+      console.error('Erro ao excluir projeção automática:', err)
+      setError('Não foi possível excluir a projeção.')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const [cloneMonths, setCloneMonths] = useState<string | null>(null)
+  const closeClone = useCallback(() => setCloneMonths(null), [])
+  useEscapeKey(closeClone, cloneMonths != null && !busy)
+
+  const cloneNext = async () => {
+    const months = Math.min(24, Math.max(1, Math.floor(Number(cloneMonths) || 1)))
+    setSaving(true)
+    try {
+      await axios.post('/api/monthly-projections/clone', { source_year_month: yearMonth, months })
+      setCloneMonths(null)
       setYearMonth(shiftMonth(yearMonth, 1))
     } catch (err) {
+      setCloneMonths(null)
       const detail = axios.isAxiosError(err) ? err.response?.data?.detail : null
       setError(typeof detail === 'string' ? detail : 'Não foi possível clonar o mês.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const clearMonth = async () => {
+    const label = `${MONTH_NAMES[Number(yearMonth.slice(5, 7)) - 1]} ${yearMonth.slice(0, 4)}`
+    const confirmed = await showConfirm({
+      title: 'Limpar mês',
+      message: `Excluir definitivamente todos os itens de ${label}? Esta ação não pode ser desfeita.`,
+      confirmText: 'Excluir',
+      cancelText: 'Cancelar',
+      type: 'danger',
+    })
+    if (!confirmed) return
+    try {
+      await axios.delete('/api/monthly-projections', { params: { year_month: yearMonth } })
+      await load()
+    } catch (err) {
+      console.error('Erro ao limpar mês:', err)
+      setError('Não foi possível limpar o mês.')
     }
   }
 
   const [year, month] = yearMonth.split('-').map(Number)
   const totals = data?.totals
-  const t = (total: string | undefined, mine: string | undefined) => Number((view === 'mine' ? mine : total) ?? 0)
-  const result = Number(data?.income_total ?? 0) - t(totals?.total, totals?.my_total)
+  const result = Number(data?.income_total ?? 0) - Number(totals?.total ?? 0)
+
+  const chartViewToggle = (
+    <div className="inline-flex rounded-lg border border-gray-200 bg-gray-100 p-0.5 dark:border-gray-700 dark:bg-gray-800">
+      {([['month', 'Mensal'], ['half', 'Quinzenal']] as const).map(([value, label]) => (
+        <button
+          key={value}
+          type="button"
+          onClick={() => setChartView(value)}
+          className={`rounded-md px-3 py-1 text-xs font-semibold transition-all ${
+            chartView === value
+              ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white'
+              : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+
+  const chartElement = (
+    <ResponsiveContainer width="100%" height="100%">
+      <ComposedChart data={overviewChart} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#9ca3af55" />
+        <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+        <YAxis tick={{ fontSize: 12 }} width={70} tickFormatter={(v: number) => formatCurrency(v)} />
+        <Tooltip formatter={(v) => formatCurrency(Number(v))} />
+        <Legend />
+        <ReferenceLine y={0} stroke="#6b7280" />
+        {chartView === 'month' ? (
+          [
+            <Bar key="e" dataKey="Entradas" fill="#16a34a" />,
+            <Bar key="g" dataKey="Gastos" fill="#dc2626" />,
+          ]
+        ) : (
+          [
+            <Bar key="e1" dataKey="Entradas 1ª quinz." fill="#4ade80" />,
+            <Bar key="e2" dataKey="Entradas 2ª quinz." fill="#15803d" />,
+            <Bar key="g1" dataKey="Gastos 1ª quinz." fill="#f87171" />,
+            <Bar key="g2" dataKey="Gastos 2ª quinz." fill="#b91c1c" />,
+          ]
+        )}
+        <Line type="linear" dataKey="Tendência do resultado" stroke="#2563eb" strokeWidth={2} strokeDasharray="6 4" dot={false} />
+      </ComposedChart>
+    </ResponsiveContainer>
+  )
+
 
   return (
     <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900">
@@ -378,17 +563,17 @@ export default function ProjecaoMensalPage() {
               actions={
                 <CadastroListHeaderActions
                   menu={{
-                    menuTitle: 'Lançar projeções',
+                    menuTitle: 'Mais ações',
                     extraItems: [
-                      { id: 'income', label: 'Lançar projeção de receitas', icon: <Wallet size={16} />, onClick: launchIncome },
-                      { id: 'cards', label: 'Lançar projeção de cartões', icon: <CreditCard size={16} />, onClick: openCardForm },
+                      { id: 'clone', label: 'Clonar', icon: <Copy size={16} />, onClick: () => setCloneMonths('1') },
+                      { id: 'clear', label: 'Limpar mês', icon: <Eraser size={16} />, onClick: clearMonth },
                     ],
                   }}
                 >
                   <CadastroListPrimaryButton
-                    label="Clonar para o Próximo Mês"
-                    icon={<Copy size={18} />}
-                    onClick={cloneNext}
+                    label="Lançar projeção"
+                    icon={<CalendarDays size={18} />}
+                    onClick={openCardForm}
                   />
                 </CadastroListHeaderActions>
               }
@@ -396,6 +581,29 @@ export default function ProjecaoMensalPage() {
           }
         >
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto scroll-slim">
+            {overviewChart.length > 0 && (
+              <div className="shrink-0 rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+                    Próximos meses (mês atual em diante)
+                  </p>
+                  <div className="flex items-center gap-2">
+                    {chartViewToggle}
+                    <button
+                      type="button"
+                      onClick={() => setChartMax(true)}
+                      title="Maximizar gráfico"
+                      aria-label="Maximizar gráfico"
+                      className="rounded-lg border border-gray-200 p-1.5 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700"
+                    >
+                      <Maximize2 size={14} />
+                    </button>
+                  </div>
+                </div>
+                <div className="h-56">{chartElement}</div>
+              </div>
+            )}
+
             <div className="flex flex-wrap items-center gap-3">
               <button type="button" onClick={() => setYearMonth(shiftMonth(yearMonth, -1))} className="rounded-lg border border-gray-300 p-2 dark:border-gray-600" aria-label="Mês anterior">
                 <ChevronLeft className="h-4 w-4" />
@@ -406,10 +614,6 @@ export default function ProjecaoMensalPage() {
               <button type="button" onClick={() => setYearMonth(shiftMonth(yearMonth, 1))} className="rounded-lg border border-gray-300 p-2 dark:border-gray-600" aria-label="Próximo mês">
                 <ChevronRight className="h-4 w-4" />
               </button>
-              <select value={view} onChange={(e) => setView(e.target.value as View)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white">
-                <option value="total">Visão total</option>
-                <option value="mine">Minha parte</option>
-              </select>
               <div className="ml-auto inline-flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
                 <span className="h-[3px] w-5 rounded-full bg-[var(--color-1)]" />
                 Divisor entre os dias 14 e 15
@@ -422,8 +626,8 @@ export default function ProjecaoMensalPage() {
                 <p className={`text-lg font-semibold ${creditCls}`}>{formatCurrency(Number(data?.income_total ?? 0))}</p>
               </div>
               {[
-                ['Gastos Fixos', t(totals?.fixed, totals?.my_fixed)],
-                ['Gastos Variáveis', t(totals?.variable, totals?.my_variable)],
+                ['Gastos Fixos', Number(totals?.fixed ?? 0)],
+                ['Gastos Variáveis', Number(totals?.variable ?? 0)],
               ].map(([label, value]) => (
                 <div key={label as string} className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
                   <p className="text-xs text-gray-500">{label}</p>
@@ -441,7 +645,7 @@ export default function ProjecaoMensalPage() {
               <LoadingSpinner />
             ) : (
               <div
-                className="grid min-h-0 flex-1 grid-cols-7 gap-px overflow-hidden rounded-lg border border-gray-200 bg-gray-200 dark:border-gray-700 dark:bg-gray-700"
+                className="grid flex-[1_0_auto] grid-cols-7 gap-px overflow-hidden rounded-lg border border-gray-200 bg-gray-200 dark:border-gray-700 dark:bg-gray-700"
                 style={{ gridTemplateRows: `auto repeat(${Math.ceil(cells.length / 7)}, minmax(96px, 1fr))` }}
               >
                 {WEEKDAYS.map((d) => (
@@ -459,8 +663,28 @@ export default function ProjecaoMensalPage() {
                     <div
                       key={i}
                       style={shadows.length ? { boxShadow: shadows.join(', ') } : undefined}
+                      onDragOver={day ? (ev) => { ev.preventDefault(); setDragOverDay(day) } : undefined}
+                      onDragLeave={day ? () => setDragOverDay((d) => (d === day ? null : d)) : undefined}
+                      onDrop={
+                        day
+                          ? (ev) => {
+                              ev.preventDefault()
+                              setDragOverDay(null)
+                              try {
+                                const drag = JSON.parse(ev.dataTransfer.getData('text/plain'))
+                                if (typeof drag?.id === 'number') void moveToDay(drag, day)
+                              } catch {
+                                /* arraste de outra origem */
+                              }
+                            }
+                          : undefined
+                      }
                       className={`group relative min-h-[96px] p-1.5 ${
-                        day === null ? 'bg-gray-50 dark:bg-gray-950' : 'bg-white dark:bg-gray-900'
+                        day === null
+                          ? 'bg-gray-50 dark:bg-gray-950'
+                          : dragOverDay === day
+                            ? 'bg-blue-50 dark:bg-blue-950'
+                            : 'bg-white dark:bg-gray-900'
                       }`}
                     >
                       {day === 15 && (
@@ -486,17 +710,18 @@ export default function ProjecaoMensalPage() {
                               <button
                                 key={inc.id}
                                 type="button"
-                                disabled={!inc.editable}
-                                onClick={() => openEditIncome(inc)}
-                                title={inc.editable ? 'Receita lançada' : 'Projeção automática: lance novamente para atualizar'}
-                                className="flex w-full items-center justify-between gap-1 rounded bg-green-50 px-1.5 py-1 text-left text-[11px] text-green-900 disabled:cursor-default dark:bg-green-900/30 dark:text-green-100"
+                                draggable={inc.editable}
+                                onDragStart={(ev) => ev.dataTransfer.setData('text/plain', JSON.stringify({ id: inc.id, income: true }))}
+                                onClick={() => (inc.editable ? openEditIncome(inc) : setAutoIncome(inc))}
+                                title={inc.editable ? 'Receita lançada' : 'Projeção automática: clique para excluir ou lance novamente para atualizar'}
+                                className="flex w-full items-center justify-between gap-1 rounded bg-green-50 px-1.5 py-1 text-left text-[11px] text-green-900 dark:bg-green-900/30 dark:text-green-100"
                               >
                                 <span className="truncate">{inc.description}</span>
                                 <span className={`shrink-0 font-semibold ${creditCls}`}>{formatCurrency(Number(inc.amount))}</span>
                               </button>
                             ))}
                             {items.map((e) => (
-                              <button key={e.id} type="button" onClick={() => openEdit(e)} className={`flex w-full items-center justify-between gap-1 rounded px-1.5 py-1 text-left text-[11px] ${e.kind === 'fixed' ? 'bg-red-50 text-red-900 dark:bg-red-900/30 dark:text-red-100' : 'bg-orange-50 text-orange-900 dark:bg-orange-900/30 dark:text-orange-100'}`}>
+                              <button key={e.id} type="button" draggable={canDragExpense(e)} onDragStart={(ev) => ev.dataTransfer.setData('text/plain', JSON.stringify({ id: e.id, income: false }))} onClick={() => openEdit(e)} className={`flex w-full items-center justify-between gap-1 rounded px-1.5 py-1 text-left text-[11px] ${e.kind === 'fixed' ? 'bg-red-50 text-red-900 dark:bg-red-900/30 dark:text-red-100' : 'bg-orange-50 text-orange-900 dark:bg-orange-900/30 dark:text-orange-100'}`}>
                                 <span className="truncate">{e.description}</span>
                                 <span className={`shrink-0 font-semibold ${debitCls}`}>{debit(valueOf(e))}</span>
                               </button>
@@ -515,7 +740,7 @@ export default function ProjecaoMensalPage() {
       </CadastroListPageShell>
 
       {detail && (
-        <CadastroModalShell maxWidth="max-w-2xl" onBackdropClick={() => setDetail(null)}>
+        <CadastroModalShell maxWidth="max-w-2xl">
           <CadastroModalHeader
             isEdit={false}
             title={detail.description}
@@ -530,6 +755,7 @@ export default function ProjecaoMensalPage() {
             }
             subtitle={`${detail.is_actual ? 'Valor da fatura' : 'Média dos últimos 6 meses'} • vencimento ${detail.expected_date.split('-').reverse().join('/')}`}
             onClose={() => setDetail(null)}
+            closeDisabled={busy}
             icon={<CreditCard size={18} />}
           />
           <CadastroModalBody>
@@ -549,7 +775,7 @@ export default function ProjecaoMensalPage() {
                     <ListTableIndexHeader />
                     <ListTableSpacerHeader />
                     <ListTableStaticHeader label="Cartão" className="px-3 py-2" />
-                    <ListTableStaticHeader label={view === 'mine' ? 'Minha parte' : 'Total'} className="px-3 py-2 text-right" />
+                    <ListTableStaticHeader label="Valor" className="px-3 py-2 text-right" />
                   </tr>
                 }
               >
@@ -557,33 +783,116 @@ export default function ProjecaoMensalPage() {
                   <tr key={b.card_id} className={listPageTableRowHoverCls}>
                     <ListTableIndexCell index={i + 1} />
                     <ListTableSpacerCell />
-                    <td className="px-3 py-2">{b.card_name}{b.card_number ? ` •${b.card_number}` : ''}</td>
-                    <td className={`px-3 py-2 text-right ${debitCls}`}>{debit(Number(view === 'mine' ? b.my_amount : b.amount))}</td>
+                    <td className="px-3 py-2">{b.card_name}{b.card_number ? ` •${b.card_number}` : ''}
+                      {b.inactive && (
+                        <span className="ml-2 rounded bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-600 dark:text-gray-100">Inativo</span>
+                      )}
+                    </td>
+                    <td className={`px-3 py-2 text-right ${debitCls}`}>{debit(Number(b.amount))}</td>
                   </tr>
                 ))}
               </ListPageNestedTable>
+              <p className="border-t border-gray-200 px-3 py-2 text-right text-sm font-semibold text-gray-800 dark:border-gray-700 dark:text-gray-100">
+                Total <span className={debitCls}>{debit(valueOf(detail))}</span>
+              </p>
             </CadastroFormSection>
           </CadastroModalBody>
           <CadastroModalFooter
             onClose={() => setDetail(null)}
+            closeDisabled={busy}
             closeLabel="Fechar"
             hideSave
             leading={
-              <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">
-                Total <span className={debitCls}>{debit(valueOf(detail))}</span>
-              </span>
+              <button
+                type="button"
+                onClick={() => void removeAutomatic(detail.id)}
+                disabled={deleting}
+                className="inline-flex items-center gap-1 text-sm font-medium text-red-600 disabled:opacity-60 dark:text-red-400"
+              >
+                {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Excluir
+              </button>
+            }
+          />
+        </CadastroModalShell>
+      )}
+
+      {cloneMonths != null && (
+        <CadastroModalShell maxWidth="max-w-md">
+          <CadastroModalHeader
+            isEdit={false}
+            title="Clonar"
+            subtitle={`${MONTH_NAMES[month - 1]} ${year}`}
+            onClose={closeClone}
+            closeDisabled={busy}
+            icon={<Copy size={18} />}
+          />
+          <CadastroModalBody>
+            <div className="space-y-3 p-4 text-sm text-gray-700 dark:text-gray-300">
+              <div>
+                <CadastroFieldLabel>Quantos meses à frente?</CadastroFieldLabel>
+                <input
+                  type="number"
+                  min={1}
+                  max={24}
+                  value={cloneMonths}
+                  onChange={(e) => setCloneMonths(e.target.value)}
+                  className={cadastroFieldCls}
+                />
+              </div>
+              <p>
+                Copia todas as receitas e despesas de {MONTH_NAMES[month - 1]} {year} para os próximos{' '}
+                {Math.min(24, Math.max(1, Math.floor(Number(cloneMonths) || 1)))} mês(es). Itens iguais (mesma descrição, mesmo dia do mês e mesma direção: receita ou despesa) que já
+                existirem nos meses de destino são atualizados; os novos são adicionados.
+              </p>
+            </div>
+          </CadastroModalBody>
+          <CadastroModalFooter onClose={closeClone} onSave={cloneNext} saving={saving} saveLabel="Clonar" disabled={saving} closeDisabled={busy} />
+        </CadastroModalShell>
+      )}
+
+      {autoIncome && (
+        <CadastroModalShell maxWidth="max-w-md">
+          <CadastroModalHeader
+            isEdit={false}
+            title={autoIncome.description}
+            subtitle={`Projeção automática • ${autoIncome.expected_date.split('-').reverse().join('/')}`}
+            onClose={closeAutoIncome}
+            closeDisabled={busy}
+            icon={<Wallet size={18} />}
+          />
+          <CadastroModalBody>
+            <p className="p-4 text-sm text-gray-700 dark:text-gray-300">
+              Valor <span className={`font-semibold ${creditCls}`}>{formatCurrency(Number(autoIncome.amount))}</span>.
+              Projeções automáticas não são editáveis: exclua ou lance a projeção de receitas novamente.
+            </p>
+          </CadastroModalBody>
+          <CadastroModalFooter
+            onClose={closeAutoIncome}
+            closeDisabled={busy}
+            closeLabel="Fechar"
+            hideSave
+            leading={
+              <button
+                type="button"
+                onClick={() => void removeAutomatic(autoIncome.id)}
+                disabled={deleting}
+                className="inline-flex items-center gap-1 text-sm font-medium text-red-600 disabled:opacity-60 dark:text-red-400"
+              >
+                {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Excluir
+              </button>
             }
           />
         </CadastroModalShell>
       )}
 
       {form && (
-        <CadastroModalShell maxWidth="max-w-2xl" onBackdropClick={closeForm}>
+        <CadastroModalShell maxWidth="max-w-2xl">
           <CadastroModalHeader
             isEdit={Boolean(form.id)}
             title={form.id ? 'Editar lançamento' : 'Novo lançamento'}
             subtitle="Lançamento esperado do mês"
             onClose={closeForm}
+            closeDisabled={busy}
             icon={form.id ? <Pencil size={18} /> : <Plus size={18} />}
           />
           <CadastroModalBody>
@@ -659,6 +968,7 @@ export default function ProjecaoMensalPage() {
           </CadastroModalBody>
           <CadastroModalFooter
             onClose={closeForm}
+            closeDisabled={busy}
             onSave={save}
             saving={saving}
             disabled={saving || !form.description.trim() || !amountNum || isNaN(amountNum)}
@@ -667,9 +977,10 @@ export default function ProjecaoMensalPage() {
                 <button
                   type="button"
                   onClick={remove}
-                  className="inline-flex items-center gap-1 text-sm font-medium text-red-600 dark:text-red-400"
+                  disabled={deleting}
+                  className="inline-flex items-center gap-1 text-sm font-medium text-red-600 disabled:opacity-60 dark:text-red-400"
                 >
-                  <Trash2 className="h-4 w-4" /> Excluir
+                  {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Excluir
                 </button>
               ) : undefined
             }
@@ -677,53 +988,118 @@ export default function ProjecaoMensalPage() {
         </CadastroModalShell>
       )}
 
-      {cardForm && (
-        <CadastroModalShell maxWidth="max-w-2xl" onBackdropClick={closeCardForm}>
+      {chartMax && (
+        <CadastroModalShell maxWidth="max-w-6xl">
           <CadastroModalHeader
             isEdit={false}
-            title="Lançar projeção de cartões"
-            subtitle={`${MONTH_NAMES[month - 1]} ${year} • substitui as projeções de cartão já lançadas no mês`}
+            title="Próximos meses (mês atual em diante)"
+            onClose={closeChartMax}
+            icon={<CalendarDays size={18} />}
+          />
+          <div className="flex items-center justify-end px-6 pt-3">{chartViewToggle}</div>
+          <div className="h-[65vh] min-h-0 px-6 pb-4 pt-2">{chartElement}</div>
+        </CadastroModalShell>
+      )}
+
+
+      {cardForm && (
+        <CadastroModalShell maxWidth="max-w-3xl">
+          <CadastroModalHeader
+            isEdit={false}
+            title="Lançar projeção"
+            subtitle={`${MONTH_NAMES[month - 1]} ${year} • substitui as projeções automáticas já lançadas no mês`}
             onClose={closeCardForm}
-            icon={<CreditCard size={18} />}
+            closeDisabled={busy}
+            icon={cardForm.target === 'income' ? <Wallet size={18} /> : <CreditCard size={18} />}
           />
           <CadastroModalBody>
-            <div className="flex justify-start px-4 pt-4">
-              <div role="radiogroup" className="flex w-56 rounded-lg bg-gray-200 p-0.5 dark:bg-black/40">
-                {(['auto', 'manual'] as const).map((m) => {
-                  const active = cardForm.mode === m
-                  return (
-                    <button
-                      key={m}
-                      type="button"
-                      role="radio"
-                      aria-checked={active}
-                      onClick={() => setCardForm({ ...cardForm, mode: m })}
-                      className={`flex flex-1 items-center justify-center rounded-md py-1.5 text-xs transition-all ${
-                        active
-                          ? 'bg-[var(--color-1)] font-semibold text-white shadow-[0_1px_4px_rgba(0,0,0,.3)]'
-                          : 'font-medium text-gray-600 hover:text-gray-900 dark:text-slate-400 dark:hover:text-slate-200'
-                      }`}
-                    >
-                      {m === 'auto' ? 'Automático' : 'Manual'}
-                    </button>
-                  )
-                })}
+            <CadastroFormSection title="Tipo" icon={<CalendarDays size={14} />}>
+              <div role="radiogroup" className="grid grid-cols-[16rem_auto] items-center gap-x-4 text-sm text-gray-800 dark:text-gray-100">
+                {(['expense', 'income'] as const).map((t) => (
+                  <label key={t} className="inline-flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="launch-target"
+                      checked={cardForm.target === t}
+                      onChange={() => setCardForm({ ...cardForm, target: t })}
+                    />
+                    {t === 'expense' ? 'Despesa' : 'Receita'}
+                  </label>
+                ))}
               </div>
-            </div>
+            </CadastroFormSection>
+            {cardForm.target === 'expense' && (
+              <>
+            <CadastroFormSection title="Modo" icon={<CreditCard size={14} />}>
+              <div role="radiogroup" className="grid grid-cols-[16rem_auto] items-center gap-x-4 text-sm text-gray-800 dark:text-gray-100">
+                {(['auto', 'manual'] as const).map((m) => (
+                  <label key={m} className="inline-flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="launch-mode"
+                      checked={cardForm.mode === m}
+                      onChange={() => setCardForm({ ...cardForm, mode: m })}
+                    />
+                    {m === 'auto' ? 'Automático' : 'Manual'}
+                  </label>
+                ))}
+              </div>
+            </CadastroFormSection>
             {cardForm.mode === 'auto' && (
             <CadastroFormSection title="Cálculo da projeção" icon={<CreditCard size={14} />}>
-              <div className="mb-3 space-y-2">
+              <CadastroModalFieldsGrid className="mb-3">
                 {cardForm.mode === 'auto' && (
                   <>
-                    <div className="flex flex-wrap items-center gap-4 text-sm text-gray-800 dark:text-gray-100">
+                    <CadastroModalFieldsRow>
+                    <div className="grid grid-cols-[16rem_12rem_auto] items-center gap-x-4 text-sm text-gray-800 dark:text-gray-100">
+                      <label className="inline-flex items-center gap-2">
+                        <input
+                          type="radio"
+                          name="card-sharing"
+                          checked={cardForm.sharing === 'mine'}
+                          onChange={() => setCardForm({ ...cardForm, sharing: 'mine' })}
+                        />
+                        <span className="flex flex-col">
+                          <span>Minha Parte</span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">(próprio + compartilhado)</span>
+                        </span>
+                      </label>
+                      <label className="inline-flex items-center gap-2">
+                        <input
+                          type="radio"
+                          name="card-sharing"
+                          checked={cardForm.sharing === 'own'}
+                          onChange={() => setCardForm({ ...cardForm, sharing: 'own' })}
+                        />
+                        <span className="flex flex-col">
+                          <span>Próprio</span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">(100% meu)</span>
+                        </span>
+                      </label>
+                      <label className="inline-flex items-center gap-2">
+                        <input
+                          type="radio"
+                          name="card-sharing"
+                          checked={cardForm.sharing === 'all'}
+                          onChange={() => setCardForm({ ...cardForm, sharing: 'all' })}
+                        />
+                        <span className="flex flex-col">
+                          <span>Todos</span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">(valor total)</span>
+                        </span>
+                      </label>
+                    </div>
+                    </CadastroModalFieldsRow>
+                    <CadastroModalFieldsRow>
+                    <div className="grid grid-cols-[16rem_12rem_auto] items-center gap-x-4 text-sm text-gray-800 dark:text-gray-100">
                       <label className="inline-flex items-center gap-2">
                         <input
                           type="radio"
                           name="card-method"
-                          checked={cardForm.method === 'average'}
-                          onChange={() => setCardForm({ ...cardForm, method: 'average' })}
+                          checked={cardForm.method === 'current'}
+                          onChange={() => setCardForm({ ...cardForm, method: 'current' })}
                         />
-                        Média das faturas
+                        Fatura atual
                       </label>
                       <label className="inline-flex items-center gap-2">
                         <input
@@ -734,85 +1110,35 @@ export default function ProjecaoMensalPage() {
                         />
                         Saldo parcelado
                       </label>
-                    </div>
-                    {cardForm.method === 'average' && (
-                      <label className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-100">
-                        Período
+                      <label className="inline-flex items-center gap-2">
                         <input
-                          type="number"
-                          min={1}
-                          max={24}
-                          value={cardForm.historyMonths}
-                          onChange={(e) => setCardForm({ ...cardForm, historyMonths: Math.min(24, Math.max(1, Number(e.target.value) || 1)) })}
-                          className={`${cadastroFieldCls} w-20`}
+                          type="radio"
+                          name="card-method"
+                          checked={cardForm.method === 'average'}
+                          onChange={() => setCardForm({ ...cardForm, method: 'average' })}
                         />
-                        (meses)
+                        Média das faturas
                       </label>
-                    )}
+                    </div>
+                    </CadastroModalFieldsRow>
+                    <CadastroModalFieldsRow>
+                    <label className="flex w-1/2 items-center gap-2 text-sm text-gray-800 dark:text-gray-100">
+                      Período
+                      <input
+                        type="number"
+                        min={1}
+                        max={24}
+                        value={cardForm.historyMonths}
+                        disabled={cardForm.method !== 'average'}
+                        onChange={(e) => setCardForm({ ...cardForm, historyMonths: Math.min(24, Math.max(1, Number(e.target.value) || 1)) })}
+                        className={`${cadastroFieldCls} w-20 disabled:opacity-50`}
+                      />
+                      (meses)
+                    </label>
+                    </CadastroModalFieldsRow>
                   </>
                 )}
-              </div>
-              {cardForm.mode === 'auto' && (
-              <div className="space-y-3 border-t border-gray-200 pt-3 dark:border-gray-600">
-                <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-100">
-                  <input
-                    type="checkbox"
-                    checked={cardOptions.length > 0 && cardForm.cardIds.length === cardOptions.length}
-                    ref={(el) => {
-                      if (el) el.indeterminate = cardForm.cardIds.length > 0 && cardForm.cardIds.length < cardOptions.length
-                    }}
-                    onChange={(e) => setCardForm({ ...cardForm, cardIds: e.target.checked ? cardOptions.map((c) => c.id) : [] })}
-                  />
-                  Selecionar todos
-                </label>
-                {cardGroups.map((group) => (
-                  <div key={group.key} className="rounded-lg border border-gray-200 p-3 dark:border-gray-600">
-                    <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
-                      <input
-                        type="checkbox"
-                        checked={group.cards.every((c) => cardForm.cardIds.includes(c.id))}
-                        ref={(el) => {
-                          if (!el) return
-                          const n = group.cards.filter((c) => cardForm.cardIds.includes(c.id)).length
-                          el.indeterminate = n > 0 && n < group.cards.length
-                        }}
-                        onChange={(e) => {
-                          const ids = group.cards.map((c) => c.id)
-                          const rest = cardForm.cardIds.filter((id) => !ids.includes(id))
-                          setCardForm({ ...cardForm, cardIds: e.target.checked ? [...rest, ...ids] : rest })
-                        }}
-                      />
-                      {group.name}
-                    </div>
-                    <div className="grid grid-cols-1 gap-2 pl-6 sm:grid-cols-2">
-                      {group.cards.map((c) => (
-                        <label
-                          key={c.id}
-                          className={`flex min-w-0 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm text-gray-800 dark:text-gray-100 ${
-                            cardForm.cardIds.includes(c.id)
-                              ? 'border-[var(--color-1)] bg-gray-50 dark:bg-gray-700/50'
-                              : 'border-gray-200 dark:border-gray-600'
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={cardForm.cardIds.includes(c.id)}
-                            onChange={(e) =>
-                              setCardForm({
-                                ...cardForm,
-                                cardIds: e.target.checked ? [...cardForm.cardIds, c.id] : cardForm.cardIds.filter((id) => id !== c.id),
-                              })
-                            }
-                          />
-                          <span className="truncate">{c.name || 'Sem nome'} •{c.number}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-                {cardOptions.length === 0 && <p className="text-sm text-gray-500">Nenhum cartão de crédito ativo.</p>}
-              </div>
-              )}
+              </CadastroModalFieldsGrid>
             </CadastroFormSection>
             )}
             {previewActive && (
@@ -904,16 +1230,28 @@ export default function ProjecaoMensalPage() {
               </div>
             </CadastroFormSection>
             )}
+              </>
+            )}
+            {cardForm.target === 'income' && (
+              <p className="p-4 text-sm text-gray-700 dark:text-gray-300">
+                Refaz as receitas do mês a partir dos holerites (valor real ou média dos últimos 6 meses). Substitui as receitas automáticas já lançadas.
+                <span className="mt-2 block rounded-lg border border-blue-200 bg-blue-50 p-3 text-blue-900 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-100">
+                  <strong>Nota:</strong> o holerite de final de mês (pago no fim do mês) entra no primeiro dia do mês seguinte,
+                  pois é ele que paga as despesas dos primeiros 15 dias.
+                </span>
+              </p>
+            )}
           </CadastroModalBody>
           <CadastroModalFooter
             onClose={closeCardForm}
-            onSave={launchCards}
+            closeDisabled={busy}
+            onSave={cardForm.target === 'income' ? launchIncome : launchCards}
             saving={saving}
             saveLabel="Lançar"
             disabled={
               saving ||
-              (cardForm.mode === 'auto' && cardForm.cardIds.length === 0) ||
-              (cardForm.mode === 'manual' &&
+              (cardForm.target === 'expense' && cardForm.mode === 'auto' && cardForm.cardIds.length === 0) ||
+              (cardForm.target === 'expense' && cardForm.mode === 'manual' &&
                 (cardForm.items.length === 0 ||
                   cardForm.items.some((it) => !it.description.trim() || !(Number(it.amount) > 0))))
             }
@@ -921,6 +1259,7 @@ export default function ProjecaoMensalPage() {
         </CadastroModalShell>
       )}
 
+      <ConfirmComponent />
     </div>
   )
 }

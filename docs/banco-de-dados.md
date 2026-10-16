@@ -1,27 +1,27 @@
 # Banco de Dados
 
-Estrutura do banco de dados PostgreSQL 17 com suporte multi-tenant.
+Estrutura do banco de dados PostgreSQL 18 com suporte multi-tenant.
 
 ## Configuração
 
-### PostgreSQL 17
-- Instância única com volumes Docker persistentes
+### PostgreSQL 18
+- Um container por ambiente (sem réplica), com volumes Docker persistentes
 - Suporte a múltiplos ambientes (dev/prod) via variáveis de ambiente
 
 ### Conexão (Produção)
 ```
 Host: localhost
 Port: 5432
-Database: expenses_db
-User: postgres
+Database: plumo
+User: plumo
 ```
 
 ### Conexão (Desenvolvimento)
 ```
 Host: localhost
 Port: 5433
-Database: expenses_db_dev
-User: postgres
+Database: plumo_dev
+User: plumo
 ```
 
 > **Veja também**: [ambientes.md](ambientes.md) para detalhes sobre configuração de ambientes e scripts de database.

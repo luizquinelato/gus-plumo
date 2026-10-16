@@ -1305,7 +1305,8 @@ const ExtratoPage = () => {
                 <MultiSelectDropdown
                   label="Compartilhamento"
                   options={[
-                    { id: -1, name: '(Vazio)' },
+                    { id: -2, name: 'Minha Parte (próprio + compartilhado)' },
+                    { id: -1, name: 'Próprio (100% meu)' },
                     ...partners
                       .map(p => ({
                         id: p.id,
@@ -2410,4 +2411,3 @@ const ExtratoPage = () => {
 }
 
 export default ExtratoPage
-

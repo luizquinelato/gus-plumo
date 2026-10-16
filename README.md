@@ -2,312 +2,141 @@
 
 **Assuma a direção. Sinta a leveza.**
 
-Uma plataforma moderna de gerenciamento de despesas pessoais com replicação PostgreSQL, backend Python e frontend React.
+Plataforma de gerenciamento de finanças pessoais e compartilhadas: importa extratos e faturas, categoriza lançamentos, fecha períodos e projeta os próximos meses. Backend Python, frontend React e PostgreSQL.
 
 ## 🏗️ Arquitetura
 
-- **Banco de Dados**: PostgreSQL 17 com replicação automática (Primário + Réplica)
-- **Backend**: Python FastAPI
-- **Frontend**: React + TypeScript + Vite + Tailwind CSS
+- **Banco de Dados**: PostgreSQL 18 em Docker (um container por ambiente: prod e dev)
+- **Backend**: Python FastAPI + SQLAlchemy (`services/backend`)
+- **Auth**: serviço FastAPI separado (`services/auth`)
+- **Frontend**: React + TypeScript + Vite + Tailwind CSS (`services/frontend`)
+
+Detalhes em [docs/arquitetura.md](docs/arquitetura.md).
 
 ## 📁 Estrutura do Projeto
 
 ```
-gus-expenses-platform/
-├── docker/
-│   └── postgres/
-│       ├── init-replication.sh      # Configuração de replicação do BD primário
-│       └── setup-replica.sh         # Configuração do BD réplica
+gus-plumo/
+├── .cursor/rules/            # Regras do projeto (fonte de verdade para agentes)
+├── docs/                     # Documentação técnica
+├── scripts/                  # setup_envs.py, database/ (backup/restore), utilitários
 ├── services/
-│   ├── backend/
-│   │   ├── app/
-│   │   │   ├── __init__.py
-│   │   │   └── main.py             # Aplicação FastAPI
-│   │   ├── requirements.txt
-│   │   ├── dev_server.py
-│   │   └── .env.example
-│   └── frontend/
-│       ├── src/
-│       │   ├── components/
-│       │   │   └── Sidebar.tsx
-│       │   ├── pages/
-│       │   │   └── HomePage.tsx
-│       │   ├── App.tsx
-│       │   ├── main.tsx
-│       │   └── index.css
-│       ├── package.json
-│       ├── vite.config.ts
-│       └── tailwind.config.js
-└── docker-compose.db.yml           # Serviços de banco de dados
+│   ├── auth/                 # Serviço de autenticação
+│   ├── backend/              # API (app/, scripts/migrations/, requirements/)
+│   └── frontend/             # SPA (src/pages, src/components, ...)
+├── docker-compose.db.yml     # PostgreSQL PROD (porta 5432)
+├── docker-compose.db.dev.yml # PostgreSQL DEV (porta 5433)
+├── .env.prod / .env.dev      # Templates de ambiente
 ```
+
+Mapa completo em `.cursor/rules/project-structure.mdc`.
 
 ## 🚀 Começando
 
 ### Pré-requisitos
 
 - Docker e Docker Compose
-- Node.js 18+ (para frontend)
-- Python 3.11+ (para backend)
+- Node.js 18+
+- Python 3.11+
 
-### Início Rápido (Recomendado)
+### Início Rápido (Windows, recomendado)
 
-#### 1. Instalar Helpers do PowerShell (Windows)
+1. Instale os helpers do PowerShell: copie o conteúdo de `docs/powershell-helpers/powershell-profile.txt` para o seu `$PROFILE`, recarregue (`. $PROFILE`) e rode `expenses-health`.
+2. Instale as dependências: `dev-setup` (ou `python scripts/setup_envs.py`).
+3. Suba o banco e os serviços de **dev**:
+
 ```powershell
-# Abra seu perfil do PowerShell
-notepad $PROFILE
-
-# Copie o conteúdo de: docs/powershell-helpers/powershell-profile.ps1
-# Cole no $PROFILE e salve
-
-# Recarregue o perfil
-. $PROFILE
-
-# Verifique a instalação
-expenses-health
+dkup-dev            # PostgreSQL dev (5433)
+db-migrate-dev      # Aplica as migrations
+run-all-tabs-dev    # Auth + backend + frontend em abas
 ```
 
-#### 2. Configurar Ambiente de Desenvolvimento
-```powershell
-# Instalar todas as dependências (Python + Frontend)
-dev-setup
+Para prod: `dkup`, `db-migrate`, `run-all-tabs-prod` (ou `run-all-tabs`). Lista completa em [docs/powershell-helpers/README.md](docs/powershell-helpers/README.md).
 
-# Ou manualmente:
-python scripts/install_requirements.py  # Dependências Python
-cd services/frontend && npm install      # Dependências Frontend
-```
+### Portas por ambiente
 
-#### 3. Iniciar Tudo
-```powershell
-dkup           # Iniciar banco de dados
-run-all-tabs   # Iniciar backend + frontend em abas
-```
+| Serviço | Prod | Dev |
+|---------|------|-----|
+| PostgreSQL | 5432 (`plumo`) | 5433 (`plumo_dev`) |
+| Backend | 8000 | 8010 |
+| Auth | 8001 | 8011 |
+| Frontend | 5173 | 5174 |
+
+Documentação da API (Swagger): `http://localhost:<porta-do-backend>/docs`.
 
 ### Configuração Manual
 
-### 1. Iniciar o Banco de Dados
-
 ```bash
-# Iniciar PostgreSQL
-docker-compose -f docker-compose.db.yml up -d
+# Banco (dev)
+docker-compose -f docker-compose.db.dev.yml up -d
 
-# Verificar saúde do banco de dados
-docker-compose -f docker-compose.db.yml ps
+# Dependências (venvs por serviço + npm install)
+python scripts/setup_envs.py            # --backend, --auth, --frontend, --force
+
+# Backend
+cd services/backend && python dev_server.py
+
+# Frontend
+cd services/frontend && npm run dev
 ```
 
-**Conexão do Banco de Dados:**
-- Host: `localhost:5432`
-- Database: `expenses_db`
-- User: `postgres`
-- Password: `expenses`
+Os serviços leem as variáveis de `.env.dev` / `.env.prod` (porta, `DATABASE_URL`, `AUTH_SERVICE_URL`, `VITE_API_URL`, `VITE_PORT`, CORS). Ver [docs/ambientes.md](docs/ambientes.md).
 
-**Backup e Restore:**
-```bash
-# Criar backup do banco de dados
-backup-database.bat
+### Backup e Restore
 
-# Listar backups disponíveis
-list-backups.bat
-
-# Restaurar backup
-restore-database.bat
+```powershell
+.\scripts\database\backup-database.bat --dev     # ou --prod
+.\scripts\database\list-backups.bat
+.\scripts\database\restore-database.bat --dev
 ```
 
-### 2. Instalar Dependências
+## 🗄️ Banco de Dados
 
-```bash
-# Instalar dependências Python (cria venv na raiz)
-python scripts/install_requirements.py
-
-# Instalar dependências do frontend
-cd services/frontend
-npm install
-```
-
-### 3. Configurar Backend
-
-```bash
-cd services/backend
-
-# Copiar arquivo de ambiente
-cp .env.example .env
-
-# Ativar ambiente virtual (da raiz)
-# No Windows:
-..\..\..\venv\Scripts\activate
-# No Linux/Mac:
-source ../../venv/bin/activate
-
-# Executar servidor de desenvolvimento
-python dev_server.py
-```
-
-Backend estará disponível em: `http://localhost:8000`
-
-Documentação da API: `http://localhost:8000/docs`
-
-### 4. Configurar Frontend
-
-```bash
-cd services/frontend
-
-# Executar servidor de desenvolvimento
-npm run dev
-```
-
-Frontend estará disponível em: `http://localhost:5173`
-
-## 🗄️ Configuração do Banco de Dados
-
-A plataforma usa PostgreSQL com replicação em streaming:
-
-- **Banco de Dados Primário**: Gerencia todas as operações de escrita
-- **Banco de Dados Réplica**: Réplica somente leitura para escalar operações de leitura
-
-### Recursos de Replicação
-
-- Replicação em streaming automática
-- Slot de replicação física (`replica_slot`)
-- Modo hot standby na réplica
-- Arquivamento WAL para recuperação point-in-time
-
-### Testando a Replicação
-
-```bash
-# Conectar ao primário
-docker exec -it expenses-postgres-primary psql -U postgres -d expenses_db
-
-# Verificar status da replicação
-SELECT * FROM pg_stat_replication;
-
-# Conectar à réplica
-docker exec -it expenses-postgres-replica psql -U postgres -d expenses_db
-
-# Verificar se a réplica está em modo de recuperação
-SELECT pg_is_in_recovery();
-```
+- Schema multi-tenant criado pela migration `0001`; dados iniciais na `0002`; alterações seguintes em `0003…0025` (`services/backend/scripts/migrations/`).
+- Regras de migration em `.cursor/rules/starting_point.mdc`.
+- Não há réplica configurada: cada ambiente tem um único container PostgreSQL.
 
 ## 🛠️ Desenvolvimento
 
-### Desenvolvimento Backend
+- Backend: `python dev_server.py` (auto-reload).
+- Frontend: `npm run dev` (HMR do Vite).
+- Verificação de tipos: `npm run type-check` (em `services/frontend`).
 
-```bash
-cd services/backend
-python dev_server.py
-```
-
-O servidor recarregará automaticamente ao alterar o código.
-
-### Desenvolvimento Frontend
-
-```bash
-cd services/frontend
-npm run dev
-```
-
-Vite fornece hot module replacement (HMR) para atualizações instantâneas.
-
-### Verificação de Tipos (Frontend)
-
-```bash
-cd services/frontend
-npm run type-check
-```
-
-## 📦 Scripts Disponíveis
-
-### Helpers do PowerShell (Recomendado para Windows)
-
-Veja [docs/powershell-helpers/README.md](docs/powershell-helpers/README.md) para documentação completa.
-
-**Comandos Rápidos:**
-- `dkup` / `dkdown` - Iniciar/parar banco de dados
-- `run-backend` - Iniciar servidor backend
-- `run-frontend` - Iniciar servidor frontend
-- `run-all-tabs` - Iniciar todos os serviços em abas
-- `kill-all` - Parar todos os serviços
-- `expenses-health` - Verificação de saúde do sistema
-- `dev-setup` - Instalar todas as dependências
-
-### Backend
-- `python dev_server.py` - Iniciar servidor de desenvolvimento com auto-reload
-- `python scripts/install_requirements.py` - Instalar dependências Python
-
-### Frontend
-- `npm run dev` - Iniciar servidor de desenvolvimento
-- `npm run build` - Build para produção
-- `npm run preview` - Visualizar build de produção
-- `npm run type-check` - Executar verificação de tipos TypeScript
-- `npm run lint` - Executar ESLint
-
-## 🔧 Configuração
-
-### Variáveis de Ambiente do Backend
-
-Crie um arquivo `.env` em `services/backend/`:
-
-```env
-DATABASE_URL=postgresql://postgres:expenses@localhost:5432/expenses_db
-DATABASE_REPLICA_URL=postgresql://postgres:expenses@localhost:5433/expenses_db
-APP_NAME=Plumo
-DEBUG=True
-```
+### Scripts do Frontend
+- `npm run dev` - Servidor de desenvolvimento
+- `npm run build` - `tsc -b && vite build`
+- `npm run preview` - Visualizar build
+- `npm run type-check` - `tsc --noEmit`
+- `npm run lint` - ESLint
 
 ## 🎨 Recursos do Frontend
 
-- **UI Moderna**: Construída com Tailwind CSS
-- **Design Responsivo**: Layout amigável para mobile
-- **Tema Escuro**: Sidebar escura profissional
-- **Biblioteca de Ícones**: Ícones Lucide React
-- **Roteamento**: React Router para navegação
+- Tailwind CSS, layout responsivo, tema claro/escuro com cores personalizáveis
+- Ícones Lucide React e gráficos Recharts
+- React Router (rotas em `src/App.tsx`)
 
 ## 📊 Funcionalidades
 
-### Importação de Dados
+- **Importação** (`/importar`): extratos (Excel), faturas de cartão (PDF), benefícios, holerites/informes
+- **Curadoria e mapeamentos**: categorização em lote por tags/subtags, com mapeamento automático
+- **Cadastros**: cartões, contas, compartilhamentos, tags/subtags, cores
+- **Fechamentos**: conta, compartilhado (balanço) e conciliação de faturas
+- **Relatórios**: extrato, faturas, saldo parcelado, projeção mensal, grupo, saúde financeira
+- **Empréstimos** e **templates de despesa**
+- **Multi-tenant** com contas por tenant
 
-- ✅ **Extratos Bancários**: Importação de arquivos Excel (.xlsx) com pipeline ETL
-- ✅ **Faturas de Cartão**: Importação de PDFs com extração automática de dados
-- ✅ **Mapeamento Automático**: Tags e subtags mapeadas automaticamente
-- ✅ **Validação de Dados**: Limpeza e normalização automática
-
-### Gerenciamento
-
-- ✅ **Cartões de Crédito**: CRUD completo de cartões
-- ✅ **Tags e Subtags**: Organização hierárquica de despesas
-- ✅ **Multi-tenant**: Suporte a múltiplos usuários/tenants
-
-Para mais detalhes sobre a implementação, veja a [documentação técnica](docs/README.md).
-
-## 📝 Próximos Passos
-
-1. ✅ Banco de dados com replicação - **CONCLUÍDO**
-2. ✅ Estrutura do backend - **CONCLUÍDO**
-3. ✅ Frontend com sidebar - **CONCLUÍDO**
-4. ✅ Modelos de banco de dados e migrações - **CONCLUÍDO**
-5. ✅ Pipeline ETL para importação de extratos - **CONCLUÍDO**
-6. ✅ Importação de faturas de cartão - **CONCLUÍDO**
-7. 🔲 Adicionar autenticação JWT
-8. 🔲 Dashboard com análises e relatórios
-9. 🔲 Filtros e buscas avançadas
+Detalhes em [docs/README.md](docs/README.md).
 
 ## 🐛 Solução de Problemas
 
-### Problemas de Conexão com o Banco de Dados
-
 ```bash
-# Verificar se os containers estão rodando
-docker-compose -f docker-compose.db.yml ps
-
-# Visualizar logs
-docker-compose -f docker-compose.db.yml logs postgres-primary
-docker-compose -f docker-compose.db.yml logs postgres-replica
+# Containers do banco
+docker-compose -f docker-compose.db.dev.yml ps
+docker-compose -f docker-compose.db.dev.yml logs postgres-dev
+# (prod: docker-compose.db.yml, serviço postgres-prod)
 ```
 
-### Réplica Não Sincronizando
-
-```bash
-# Verificar atraso de replicação
-docker exec -it expenses-postgres-primary psql -U postgres -d expenses_db -c "SELECT * FROM pg_stat_replication;"
-```
+No PowerShell: `check-ports` mostra o que está usando 5173/5174/8000/8010/5432/5433, e `kill-all` encerra os serviços.
 
 ## 📄 Licença
 

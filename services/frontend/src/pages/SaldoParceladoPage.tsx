@@ -37,6 +37,8 @@ import {
   type SaldoExportLegendEntry,
   type SaldoParceladoExportData,
 } from '../utils/saldoParceladoExportShared'
+import { CadastroModalHeader, CadastroModalShell } from '../components/CadastroFormLayout'
+import { useEscapeKey } from '../hooks/useEscapeKey'
 import LoadingSpinner from '../components/LoadingSpinner'
 import { useExportRunner } from '../hooks/useExportRunner'
 import SharedAccountDisplay from '../components/SharedAccountDisplay'
@@ -51,6 +53,7 @@ import {
   Filter,
   Landmark,
   Layers,
+  Maximize2,
   Receipt,
   Tag as TagIcon,
   Tags,
@@ -262,6 +265,9 @@ export default function SaldoParceladoPage() {
   const [horizon, setHorizon] = useState('12')
   const [share, setShare] = useState<'mine' | 'total'>('total')
   const [chartMode, setChartMode] = useState<'consolidated' | 'by_card'>('consolidated')
+  const [chartMax, setChartMax] = useState(false)
+  const closeChartMax = useCallback(() => setChartMax(false), [])
+  useEscapeKey(closeChartMax, chartMax)
   const [itemSortField, setItemSortField] = useState<ItemSortField>('card')
   const [itemSortDirection, setItemSortDirection] = useState<'asc' | 'desc'>('asc')
 
@@ -297,7 +303,11 @@ export default function SaldoParceladoPage() {
         name: p.shared_account?.name || p.shared_account?.description || `Conta #${p.shared_account_id}`,
       }))
       .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
-    return [{ id: -1, name: '(Vazio)' }, ...options]
+    return [
+      { id: -2, name: 'Minha Parte (próprio + compartilhado)' },
+      { id: -1, name: 'Próprio (100% meu)' },
+      ...options,
+    ]
   }, [partners])
 
   const hasActiveFilters =
@@ -505,6 +515,72 @@ export default function SaldoParceladoPage() {
       const data = await buildExportData()
       if (data) await exportSaldoParceladoToExcel(data)
     })
+
+  const chartModeToggle = (
+    <div className="inline-flex rounded-lg border border-gray-200 bg-gray-100 p-0.5 dark:border-gray-700 dark:bg-gray-800">
+      {([['consolidated', 'Consolidado'], ['by_card', 'Por cartão']] as const).map(([value, label]) => (
+        <button
+          key={value}
+          type="button"
+          onClick={() => setChartMode(value)}
+          className={`rounded-md px-3 py-1 text-xs font-semibold transition-all ${
+            chartMode === value
+              ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white'
+              : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+
+  const renderChart = (height: number | `${number}%`) => (
+    <ResponsiveContainer width="100%" height={height}>
+      <ComposedChart data={chartData} margin={{ top: 16, right: 8, left: 0, bottom: 8 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+        <XAxis dataKey="label" stroke="#6b7280" fontSize={12} />
+        <YAxis
+          tickFormatter={(value) => formatCurrency(Number(value))}
+          stroke="#6b7280"
+          fontSize={11}
+          width={88}
+        />
+        <Tooltip
+          formatter={(value: any, name: any) => {
+            const num = Number(value || 0)
+            if (num <= 0) return null
+            return [formatCurrency(num), name]
+          }}
+          contentStyle={chartTooltipStyle}
+        />
+        <Legend />
+        {chartMode === 'consolidated' ? (
+          <Bar dataKey="total" name="Parcelas do mês" fill={colors.primary} radius={[4, 4, 0, 0]} />
+        ) : (
+          (report?.cards ?? [])
+            .filter((card) => share !== 'mine' || Number(card.remaining_total) > 0)
+            .map((card, index) => (
+              <Bar
+                key={card.card_id}
+                dataKey={`card_${card.card_id}`}
+                name={`${card.card_name} • ${card.card_number}`}
+                stackId="cards"
+                fill={cardColorMap.get(card.card_id) ?? CARD_CHART_COLORS[index % CARD_CHART_COLORS.length]}
+              />
+            ))
+        )}
+        <Line
+          type="monotone"
+          dataKey="remaining_after"
+          name="Saldo restante"
+          stroke={colors.secondary}
+          strokeWidth={2}
+          dot={false}
+        />
+      </ComposedChart>
+    </ResponsiveContainer>
+  )
 
   return (
     <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900">
@@ -781,75 +857,20 @@ export default function SaldoParceladoPage() {
                       {report.months_truncated ? ` · exibindo os primeiros ${report.months.length} meses` : ''}
                     </p>
                   </div>
-                  <div className="inline-flex rounded-lg border border-gray-200 bg-gray-100 p-0.5 dark:border-gray-700 dark:bg-gray-800">
+                  <div className="flex items-center gap-2">
+                    {chartModeToggle}
                     <button
                       type="button"
-                      onClick={() => setChartMode('consolidated')}
-                      className={`rounded-md px-3 py-1 text-xs font-semibold transition-all ${
-                        chartMode === 'consolidated'
-                          ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white'
-                          : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'
-                      }`}
+                      onClick={() => setChartMax(true)}
+                      title="Maximizar gráfico"
+                      aria-label="Maximizar gráfico"
+                      className="rounded-lg border border-gray-200 p-1.5 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700"
                     >
-                      Consolidado
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setChartMode('by_card')}
-                      className={`rounded-md px-3 py-1 text-xs font-semibold transition-all ${
-                        chartMode === 'by_card'
-                          ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white'
-                          : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'
-                      }`}
-                    >
-                      Por cartão
+                      <Maximize2 size={14} />
                     </button>
                   </div>
                 </div>
-                <ResponsiveContainer width="100%" height={320}>
-                  <ComposedChart data={chartData} margin={{ top: 16, right: 8, left: 0, bottom: 8 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                    <XAxis dataKey="label" stroke="#6b7280" fontSize={12} />
-                    <YAxis
-                      tickFormatter={(value) => formatCurrency(Number(value))}
-                      stroke="#6b7280"
-                      fontSize={11}
-                      width={88}
-                    />
-                    <Tooltip
-                      formatter={(value: any, name: any) => {
-                        const num = Number(value || 0)
-                        if (num <= 0) return null
-                        return [formatCurrency(num), name]
-                      }}
-                      contentStyle={chartTooltipStyle}
-                    />
-                    <Legend />
-                    {chartMode === 'consolidated' ? (
-                      <Bar dataKey="total" name="Parcelas do mês" fill={colors.primary} radius={[4, 4, 0, 0]} />
-                    ) : (
-                      (report.cards ?? [])
-                        .filter((card) => share !== 'mine' || Number(card.remaining_total) > 0)
-                        .map((card, index) => (
-                          <Bar
-                            key={card.card_id}
-                            dataKey={`card_${card.card_id}`}
-                            name={`${card.card_name} • ${card.card_number}`}
-                            stackId="cards"
-                            fill={cardColorMap.get(card.card_id) ?? CARD_CHART_COLORS[index % CARD_CHART_COLORS.length]}
-                          />
-                        ))
-                    )}
-                    <Line
-                      type="monotone"
-                      dataKey="remaining_after"
-                      name="Saldo restante"
-                      stroke={colors.secondary}
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                  </ComposedChart>
-                </ResponsiveContainer>
+                {renderChart(320)}
               </div>
 
               <div className={listPageTableSectionCls}>
@@ -1086,6 +1107,18 @@ export default function SaldoParceladoPage() {
           )}
         </CadastroListPageBody>
       </CadastroListPageShell>
+      {chartMax && (
+        <CadastroModalShell maxWidth="max-w-6xl">
+          <CadastroModalHeader
+            isEdit={false}
+            title="Projeção mês a mês"
+            onClose={closeChartMax}
+            icon={<Layers size={18} />}
+          />
+          <div className="flex items-center justify-end px-6 pt-3">{chartModeToggle}</div>
+          <div className="h-[65vh] min-h-0 px-6 pb-4 pt-2">{renderChart('100%')}</div>
+        </CadastroModalShell>
+      )}
       {exportRunner.overlay}
     </div>
   )

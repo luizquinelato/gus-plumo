@@ -7,7 +7,6 @@ import logging
 from collections import defaultdict
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Iterable
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
@@ -78,7 +77,9 @@ def actual_invoice_values(db: Session, tenant_id: int, rows: list[MonthlyProject
             continue
         closing, due = _closing_due(cards[0])
         inv_ym = _invoice_ym(calendar_ym, closing, due)
-        sums = (
+        # Linhas antigas não guardam o compartilhamento: amount == my_amount indica "own".
+        sharing = row.sharing or ("own" if row.amount == row.my_amount else "all")
+        sums_query = (
             db.query(
                 CreditCardInvoice.credit_card_id,
                 func.sum(-CreditCardInvoice.amount),
@@ -89,19 +90,21 @@ def actual_invoice_values(db: Session, tenant_id: int, rows: list[MonthlyProject
                 CreditCardInvoice.year_month == inv_ym,
                 CreditCardInvoice.credit_card_id.in_([c.id for c in cards]),
             )
-            .group_by(CreditCardInvoice.credit_card_id)
-            .all()
         )
+        sums_query = _apply_sharing(sums_query, sharing)
+        sums = sums_query.group_by(CreditCardInvoice.credit_card_id).all()
         if not sums:
             continue
         by_card = {c.id: c for c in cards}
+        # "own"/"mine" valem a parte do usuário; só "all" usa o total da fatura.
+        pick = (lambda t, m: t) if sharing == "all" else (lambda t, m: m)
         out[row.id] = {
-            "amount": sum((_money(t) for _, t, _ in sums), Decimal(0)),
+            "amount": sum((_money(pick(t, m)) for _, t, m in sums), Decimal(0)),
             "my_amount": sum((_money(m) for _, _, m in sums), Decimal(0)),
             "breakdown": [
                 {
                     "card_id": cid, "card_name": by_card[cid].name, "card_number": by_card[cid].number,
-                    "amount": str(_money(t)), "my_amount": str(_money(m)),
+                    "amount": str(_money(pick(t, m))), "my_amount": str(_money(m)),
                 }
                 for cid, t, m in sums
             ],
@@ -159,9 +162,89 @@ def _card_averages(
 
 
 
+SHARING_MODES = ("own", "mine", "all")
+
+
+def _apply_sharing(query, sharing: str):
+    """Filtra os itens de fatura: own = participação 100%; mine = participação > 0; all = todos."""
+    if sharing == "own":
+        return query.filter(CreditCardInvoice.ownership_percentage == 100)
+    if sharing == "mine":
+        return query.filter(CreditCardInvoice.ownership_percentage > 0)
+    return query
+
+
+def _card_invoice_totals(
+    db: Session, tenant_id: int, card: Cartao, invoice_ym: str, sharing: str
+) -> tuple[Decimal, Decimal] | None:
+    """(total, minha parte) lançados na fatura `invoice_ym` do cartão; None se não há valor.
+
+    `sharing` filtra os itens considerados (ver `_apply_sharing`).
+    """
+    query = db.query(
+        func.count(CreditCardInvoice.id),
+        func.coalesce(func.sum(-CreditCardInvoice.amount), 0),
+        func.coalesce(func.sum(-CreditCardInvoice.amount * CreditCardInvoice.ownership_percentage / 100), 0),
+    ).filter(
+        CreditCardInvoice.tenant_id == tenant_id,
+        CreditCardInvoice.credit_card_id == card.id,
+        CreditCardInvoice.year_month == invoice_ym,
+    )
+    query = _apply_sharing(query, sharing)
+    count, total, mine = query.one()
+    if not count or (Decimal(total) <= 0 and Decimal(mine) <= 0):
+        return None
+    return max(Decimal(total), Decimal(0)), max(Decimal(mine), Decimal(0))
+
+
+def _projection_source(db: Session, tenant_id: int, cards: list[Cartao], year_month: str, sharing: str) -> str:
+    """Fonte única da "fatura atual" para toda a seleção: 'current', 'previous' ou 'none'.
+
+    Usa a fatura do mês se ao menos um cartão tiver itens nela (os demais ficam sem linha);
+    só se nenhum tiver, olha a fatura do mês anterior; se também não houver, não projeta.
+    """
+    for source, step in (("current", 0), ("previous", 1)):
+        for card in cards:
+            closing, due = _closing_due(card)
+            ym = _invoice_ym(year_month, closing, due)
+            if step:
+                ym = prev_year_month(ym)
+            if _card_invoice_totals(db, tenant_id, card, ym, sharing):
+                return source
+    return "none"
+
+
+def _card_projection_base(
+    db: Session, tenant_id: int, card: Cartao, invoice_ym: str, today: date, history: int,
+    sharing: str, source: str,
+) -> tuple[Decimal, Decimal] | None:
+    """Base da projeção automática do cartão conforme a fonte escolhida para a seleção."""
+    if source == "average":
+        return _card_averages(db, tenant_id, card, invoice_ym, today, history)
+    if source == "none":
+        return None
+    ym = invoice_ym if source == "current" else prev_year_month(invoice_ym)
+    return _card_invoice_totals(db, tenant_id, card, ym, sharing)
+
+
+LATE_FINAL_PAYMENT_DAY = 25
+
+
+def _is_late_final(p: Payslip) -> bool:
+    """Holerite de fim de mês pago no fim do mês: na projeção entra no dia 1 do mês seguinte."""
+    return bool(p.payslip_kind == "final" and p.payment_date and p.payment_date.day >= LATE_FINAL_PAYMENT_DAY)
+
+
+def _payslip_day(p: Payslip) -> int | None:
+    if not p.payment_date:
+        return None
+    return 1 if _is_late_final(p) else p.payment_date.day
+
+
 def _payslip_ym(p: Payslip) -> str | None:
     if p.payment_date:
-        return f"{p.payment_date.year:04d}-{p.payment_date.month:02d}"
+        ym = f"{p.payment_date.year:04d}-{p.payment_date.month:02d}"
+        return next_year_month(ym) if _is_late_final(p) else ym
     if p.year and p.month:
         return f"{p.year:04d}-{p.month:02d}"
     return None
@@ -193,7 +276,7 @@ def income_projections(db: Session, tenant_id: int, account_id: int, year_month:
         current = [p for p, y in of_kind if y == year_month]
         if current:
             amount = sum((_money(p.net_amount) for p in current), Decimal(0))
-            day = max((p.payment_date.day for p in current if p.payment_date), default=None)
+            day = max((_payslip_day(p) for p in current if p.payment_date), default=None)
             actual = True
         else:
             hist = [(p, y) for p, y in of_kind if y in window]
@@ -204,7 +287,7 @@ def income_projections(db: Session, tenant_id: int, account_id: int, year_month:
                 by_month[y] += _money(p.net_amount)
             amount = _money(sum(by_month.values(), Decimal(0)) / len(by_month))
             dated = [p for p, _ in hist if p.payment_date]
-            day = max(dated, key=lambda p: p.payment_date).payment_date.day if dated else None
+            day = _payslip_day(max(dated, key=lambda p: p.payment_date)) if dated else None
             actual = False
         if amount <= 0:
             continue
@@ -217,12 +300,17 @@ def income_projections(db: Session, tenant_id: int, account_id: int, year_month:
     return out
 
 
-def _deactivate(db: Session, tenant_id: int, account_id: int, year_month: str, sources: Iterable[str]) -> None:
+def _deactivate(db: Session, tenant_id: int, account_id: int, year_month: str, income: bool) -> None:
+    """Desativa só as projeções geradas automaticamente do mês: holerite (receitas) ou
+    cartão (despesas). Itens manuais e clonados são preservados."""
+    kind_filter = MonthlyProjection.kind == "income" if income else MonthlyProjection.kind != "income"
+    sources = ("payroll",) if income else ("card_invoice", "card_item")
     db.query(MonthlyProjection).filter(
         MonthlyProjection.tenant_id == tenant_id,
         MonthlyProjection.account_id == account_id,
         MonthlyProjection.year_month == year_month,
-        MonthlyProjection.source.in_(list(sources)),
+        kind_filter,
+        MonthlyProjection.source.in_(sources),
         MonthlyProjection.active.is_(True),
     ).update({"active": False}, synchronize_session=False)
 
@@ -230,8 +318,8 @@ def _deactivate(db: Session, tenant_id: int, account_id: int, year_month: str, s
 def launch_income_projections(
     db: Session, tenant_id: int, account_id: int, user_id: int, year_month: str
 ) -> int:
-    """Apaga as entradas de holerite do mês e as refaz. Retorna a quantidade criada."""
-    _deactivate(db, tenant_id, account_id, year_month, ["payroll"])
+    """Apaga as receitas geradas (holerite) do mês e as refaz. Retorna a quantidade criada."""
+    _deactivate(db, tenant_id, account_id, year_month, income=True)
     projections = income_projections(db, tenant_id, account_id, year_month)
     for proj in projections:
         db.add(MonthlyProjection(
@@ -309,22 +397,33 @@ def installments_for_month(
 def launch_card_projections(
     db: Session, tenant_id: int, account_id: int, user_id: int, year_month: str,
     card_ids: list[int], history_months: int, include_average: bool, items: list[dict],
-    today: date | None = None, include_installments: bool = False,
+    today: date | None = None, include_installments: bool = False, sharing: str = "all",
+    basis: str = "average",
 ) -> int:
-    """Apaga as projeções de cartão do mês e as refaz.
+    """Apaga todas as despesas do mês (qualquer origem, inclusive manuais) e as refaz.
+
+    - basis (com include_average): "current" usa a fatura atual (ou a do mês anterior, para a
+      seleção toda); "average" usa a média dos últimos `history_months` meses.
+
+    - sharing: "own" (itens 100% meus), "mine" (itens com alguma participação minha) ou "all"
+      (todos). Em "own" e "mine", `amount` das linhas automáticas recebe só a minha parte
+      (`my_amount`); em "all", o total. Fica gravado na linha para recalcular o valor real.
 
     - include_average: uma linha por cartão (ou grupo de faturas) com a média dos últimos
       `history_months` meses; não editável.
     - include_installments: uma linha por parcela em aberto que vence no mês; editável.
     - items: itens individuais (card_id, description, amount, kind); editáveis.
     """
+    if sharing not in SHARING_MODES:
+        raise ValueError("Compartilhamento inválido")
+    own_only = sharing != "all"
     today = today or date.today()
     cards = (
         db.query(Cartao)
         .options(joinedload(Cartao.invoice_group))
         .filter(
             Cartao.tenant_id == tenant_id, Cartao.account_id == account_id,
-            Cartao.active.is_(True), Cartao.type == "credito", Cartao.id.in_(card_ids),
+            Cartao.type == "credito", Cartao.id.in_(card_ids),
         )
         .all()
     )
@@ -334,7 +433,7 @@ def launch_card_projections(
     if any(item["card_id"] not in by_id for item in items):
         raise ValueError("Item individual com cartão não selecionado")
 
-    _deactivate(db, tenant_id, account_id, year_month, ["card_invoice", "card_item"])
+    _deactivate(db, tenant_id, account_id, year_month, income=False)
     created = 0
 
     def _add(**kwargs) -> None:
@@ -346,19 +445,24 @@ def launch_card_projections(
         created += 1
 
     if include_average:
+        source = "average" if basis == "average" else _projection_source(db, tenant_id, cards, year_month, sharing)
         grouped: dict[int, list[Cartao]] = defaultdict(list)
         for card in cards:
             if card.invoice_group_id:
                 grouped[card.invoice_group_id].append(card)
                 continue
             closing, due = _closing_due(card)
-            avg = _card_averages(db, tenant_id, card, _invoice_ym(year_month, closing, due), today, history_months)
+            avg = _card_projection_base(
+                db, tenant_id, card, _invoice_ym(year_month, closing, due), today, history_months,
+                sharing, source,
+            )
             if avg:
                 _add(
                     kind="variable", source="card_invoice", credit_card_id=card.id,
                     description=f"Fatura {card.name} •{card.number}",
                     expected_date=_clamped_date(year_month, due),
-                    amount=_money(avg[0]), my_amount=_money(avg[1]),
+                    amount=_money(avg[1] if own_only else avg[0]), my_amount=_money(avg[1]),
+                    sharing=sharing,
                 )
         for group_id, members in grouped.items():
             group = members[0].invoice_group
@@ -366,7 +470,7 @@ def launch_card_projections(
             inv_ym = _invoice_ym(year_month, closing, due)
             breakdown, total, mine = [], Decimal(0), Decimal(0)
             for card in members:
-                avg = _card_averages(db, tenant_id, card, inv_ym, today, history_months)
+                avg = _card_projection_base(db, tenant_id, card, inv_ym, today, history_months, sharing, source)
                 if avg is None:
                     continue
                 breakdown.append({
@@ -379,7 +483,8 @@ def launch_card_projections(
                 _add(
                     kind="variable", source="card_invoice", invoice_group_id=group_id,
                     description=f"Fatura {group.name}", expected_date=_clamped_date(year_month, due),
-                    amount=_money(total), my_amount=_money(mine), breakdown=breakdown,
+                    amount=_money(mine if own_only else total), my_amount=_money(mine), breakdown=breakdown,
+                    sharing=sharing,
                 )
 
     if include_installments:
@@ -388,7 +493,7 @@ def launch_card_projections(
                 kind="fixed", source="card_item", credit_card_id=inst["card_id"],
                 description=f"{inst['description']} ({inst['installment']}/{inst['total_installments']})"[:255],
                 expected_date=inst["expected_date"],
-                amount=inst["amount"], my_amount=inst["my_amount"],
+                amount=inst["my_amount"] if own_only else inst["amount"], my_amount=inst["my_amount"],
             )
 
     for item in items:
@@ -407,26 +512,66 @@ def launch_card_projections(
 
 
 def clone_to_next_month(
-    db: Session, tenant_id: int, account_id: int, user_id: int, source_ym: str
+    db: Session, tenant_id: int, account_id: int, user_id: int, source_ym: str, months: int = 1
 ) -> tuple[str, int]:
-    """Copia itens ativos (exceto automáticos) para o mês seguinte. Dia inexistente -> último dia."""
-    target_ym = next_year_month(source_ym)
+    """Copia todos os itens ativos (receitas e despesas, inclusive os gerados pela projeção, com
+    cartão e detalhamento) para os `months` meses seguintes. Dia inexistente -> último dia.
+
+    Faz upsert nos meses de destino: o item que já existe igual (mesma descrição, mesmo dia do
+    mês e mesma direção: receita ou despesa) é atualizado; o que não existe é criado. Itens só do destino são mantidos.
+
+    Retorna (primeiro mês de destino, total de itens criados ou atualizados).
+    """
     base = db.query(MonthlyProjection).filter(
         MonthlyProjection.tenant_id == tenant_id,
         MonthlyProjection.account_id == account_id,
         MonthlyProjection.active.is_(True),
     )
-    if base.filter(MonthlyProjection.year_month == target_ym, MonthlyProjection.source.notin_(AUTOMATIC_SOURCES)).count():
-        raise ValueError(f"O mês {target_ym} já possui lançamentos")
-    items = base.filter(
-        MonthlyProjection.year_month == source_ym, MonthlyProjection.source.notin_(AUTOMATIC_SOURCES)
-    ).all()
-    for item in items:
-        db.add(MonthlyProjection(
-            tenant_id=tenant_id, account_id=account_id, created_by=user_id,
-            year_month=target_ym, expected_date=_clamped_date(target_ym, item.expected_date.day),
-            description=item.description, amount=item.amount, my_amount=item.my_amount,
-            kind=item.kind, source="clone",
-        ))
+    targets: list[str] = []
+    ym = source_ym
+    for _ in range(max(months, 1)):
+        ym = next_year_month(ym)
+        targets.append(ym)
+    items = base.filter(MonthlyProjection.year_month == source_ym).all()
+
+    def _key(description: str, expected: date, kind: str) -> tuple:
+        # Direção: receita (kind "income") ou despesa (fixed/variable).
+        return (description, expected.day, kind == "income")
+
+    # Copia exatamente os valores gravados na geração, sem recalcular nem consultar faturas.
+    for target_ym in targets:
+        existing: dict[tuple, list[MonthlyProjection]] = defaultdict(list)
+        for row in base.filter(MonthlyProjection.year_month == target_ym).order_by(MonthlyProjection.id):
+            existing[_key(row.description, row.expected_date, row.kind)].append(row)
+        for item in items:
+            target_date = _clamped_date(target_ym, item.expected_date.day)
+            values = dict(
+                expected_date=target_date,
+                amount=item.amount, my_amount=item.my_amount,
+                kind=item.kind, source=item.source, credit_card_id=item.credit_card_id,
+                invoice_group_id=item.invoice_group_id,
+                breakdown=item.breakdown, sharing=item.sharing,
+            )
+            matches = existing.get(_key(item.description, target_date, item.kind))
+            if matches:
+                row = matches.pop(0)
+                for field, value in values.items():
+                    setattr(row, field, value)
+                continue
+            db.add(MonthlyProjection(
+                tenant_id=tenant_id, account_id=account_id, created_by=user_id,
+                year_month=target_ym, description=item.description, **values,
+            ))
     db.commit()
-    return target_ym, len(items)
+    return targets[0], len(items) * len(targets)
+
+
+def clear_month(db: Session, tenant_id: int, account_id: int, year_month: str) -> int:
+    """Exclui definitivamente (hard delete) todos os itens do mês. Retorna a quantidade."""
+    deleted = db.query(MonthlyProjection).filter(
+        MonthlyProjection.tenant_id == tenant_id,
+        MonthlyProjection.account_id == account_id,
+        MonthlyProjection.year_month == year_month,
+    ).delete(synchronize_session=False)
+    db.commit()
+    return deleted

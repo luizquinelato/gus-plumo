@@ -4,7 +4,7 @@ Este diretório contém utilitários PowerShell para otimizar o fluxo de trabalh
 
 ## 📁 Arquivos
 
-- **`powershell-profile.ps1`** - Funções PowerShell completas para copiar no seu `$PROFILE`
+- **`powershell-profile.txt`** - Funções PowerShell completas para copiar no seu `$PROFILE`
 
 ## 🚀 Configuração Rápida
 
@@ -13,7 +13,7 @@ Este diretório contém utilitários PowerShell para otimizar o fluxo de trabalh
 # Abra seu perfil do PowerShell
 notepad $PROFILE
 
-# Copie TODO o conteúdo de: docs/powershell-helpers/powershell-profile.ps1
+# Copie TODO o conteúdo de: docs/powershell-helpers/powershell-profile.txt
 # Cole no seu $PROFILE e salve
 
 # Recarregue seu perfil
@@ -33,13 +33,14 @@ expenses           # Deve navegar para a raiz do projeto
 | Comando | Descrição |
 |---------|-----------|
 | `expenses` | Ir para raiz do projeto |
-| `run-all-tabs` | Iniciar backend + frontend em abas |
+| `run-all-tabs-dev` (`rat-dev`) | Iniciar auth + backend + frontend de dev em abas |
+| `run-all-tabs-prod` (`rat`) | Idem para prod |
 | `kill-all` | Parar todos os serviços |
 | `expenses-health` | Verificação de saúde do sistema |
-| `dkup` | Iniciar serviços de banco de dados |
-| `dkdown` | Parar serviços de banco de dados |
-| `db-migrate` | Aplicar migrations do banco de dados |
-| `db-status` | Verificar status das migrations |
+| `dkup-dev` / `dkup` | Iniciar banco dev / prod |
+| `dkdown-dev` / `dkdown` | Parar banco dev / prod |
+| `db-migrate-dev` / `db-migrate` | Aplicar migrations dev / prod |
+| `db-status-dev` / `db-status` | Status das migrations |
 
 ## 📁 Navegação
 
@@ -48,40 +49,49 @@ expenses           # Deve navegar para a raiz do projeto
 | `expenses` (alias: `e`) | Raiz do projeto |
 | `expenses-backend` (alias: `eb`) | Serviço backend |
 | `expenses-frontend` (alias: `ef`) | Serviço frontend |
+| `expenses-auth` | Serviço de autenticação |
 | `expenses-docs` | Documentação |
 
 ## 🖥️ Serviços
 
-| Comando | Serviço | Porta |
-|---------|---------|-------|
-| `run-backend` | API Backend | 8000 |
-| `run-frontend` | App Frontend | 5173 |
-| `run-all` | Ambos (novas janelas) | - |
-| `run-all-tabs` (alias: `rat`) | Ambos (abas) | - |
+Cada comando tem versão prod (sem sufixo) e dev (`-dev`).
+
+| Prod | Dev | Serviço | Porta prod / dev |
+|------|-----|---------|------------------|
+| `run-backend` | `run-backend-dev` | API Backend | 8000 / 8010 |
+| `run-auth` | `run-auth-dev` | Auth | 8001 / 8011 |
+| `run-frontend` | `run-frontend-dev` | Frontend | 5173 / 5174 |
+| `run-all-tabs-prod` | `run-all-tabs-dev` | Todos (abas) | - |
+
+`run-all-tabs` também está disponível.
 
 ## 🗄️ Banco de Dados
 
 ### Docker
 
-| Comando | Ação |
-|---------|------|
-| `dkup` | Iniciar PostgreSQL (Primário + Réplica) |
-| `dkdown` | Parar serviços PostgreSQL |
-| `dklogs` | Visualizar logs do banco de dados |
-| `dkstatus` | Verificar status do banco de dados |
+Não há réplica: um container PostgreSQL por ambiente.
+
+| Prod | Dev | Todos | Ação |
+|------|-----|-------|------|
+| `dkup` | `dkup-dev` | `dkup-all` | Iniciar PostgreSQL |
+| `dkdown` | `dkdown-dev` | `dkdown-all` | Parar PostgreSQL |
+| `dklogs` | `dklogs-dev` | - | Logs |
+| `dkstatus` | `dkstatus-dev` | `dkstatus-all` | Status |
 
 **Portas do Banco de Dados:**
-- Primário: `localhost:5432`
-- Réplica: `localhost:5433`
+- Prod: `localhost:5432` (`plumo`)
+- Dev: `localhost:5433` (`plumo_dev`)
 
 ### Migrations
 
-| Comando | Alias | Ação |
-|---------|-------|------|
-| `db-migrate` | `dbm` | Aplicar todas as migrations pendentes |
-| `db-rollback` | `dbr` | Reverter todas as migrations |
-| `db-status` | `dbs` | Verificar status das migrations |
-| `db-rollback-to <numero>` | - | Reverter até migration específica |
+| Prod | Dev | Todos | Ação |
+|------|-----|-------|------|
+| `db-migrate` | `db-migrate-dev` | `db-migrate-all` | Aplicar migrations pendentes |
+| `db-status` | `db-status-dev` | `db-status-all` | Status das migrations |
+| `db-rollback` | `db-rollback-dev` | `db-rollback-all` | Reverter todas |
+| `db-rollback-to <numero>` | `db-rollback-to-dev <numero>` | - | Reverter até uma migration |
+
+Aliases: `dbm`/`dbr`/`dbs` (prod), `dbm-dev`/`dbr-dev`/`dbs-dev` (dev), `dbm-all`/`dbr-all`/`dbs-all` (todos).
 
 **Exemplos:**
 ```powershell
@@ -102,7 +112,7 @@ db-rollback-to 0001
 
 | Comando | Propósito |
 |---------|-----------|
-| `check-ports` | Verificar uso de portas (5173, 8000, 5432, 5433) |
+| `check-ports` | Verificar uso de portas (confira a lista no perfil) |
 | `code-expenses` | Abrir no VS Code |
 | `git-status-all` | Status do Git |
 | `dev-setup` | Configurar ambiente (instalar todas as deps) |
@@ -118,7 +128,7 @@ db-rollback-to 0001
 # Se você receber erros de sintaxe ao carregar o perfil:
 # 1. Verifique a codificação do arquivo (deve ser UTF-8)
 # 2. Remova caracteres emoji se causarem problemas
-# 3. Use a versão limpa: powershell-profile.ps1
+# 3. Use a versão limpa: powershell-profile.txt
 
 # Teste a sintaxe do perfil antes de carregar:
 Get-Content $PROFILE | Out-String | Invoke-Expression
@@ -128,15 +138,15 @@ Get-Content $PROFILE | Out-String | Invoke-Expression
 ```powershell
 # Backend não inicia:
 expenses-backend
-.\venv\Scripts\Activate.ps1
+.\.venv\Scripts\Activate.ps1
 python dev_server.py
 
 # Verificar o que está usando as portas:
-check-ports       # Mostra todas as portas do Gus Expenses
+check-ports
 
 # Serviços não iniciam:
-kill-all          # Pare tudo primeiro
-run-all-tabs      # Inicie novamente
+kill-all              # Pare tudo primeiro
+run-all-tabs-dev      # Inicie novamente
 ```
 
 ---
@@ -146,9 +156,9 @@ run-all-tabs      # Inicie novamente
 ### Início da Manhã
 ```powershell
 expenses-health      # Verificar status do sistema
-dkup                 # Iniciar banco de dados
-db-status            # Verificar status das migrations
-run-all-tabs         # Iniciar backend + frontend
+dkup-dev             # Iniciar banco de dev
+db-status-dev        # Verificar status das migrations
+run-all-tabs-dev     # Iniciar auth + backend + frontend
 ```
 
 ### Ciclo de Desenvolvimento
@@ -166,76 +176,34 @@ check-ports      # Verificar serviços em execução
 ### Trabalhando com Migrations
 ```powershell
 # Verificar status das migrations
-db-status
+db-status-dev
 
 # Aplicar novas migrations
-db-migrate
+db-migrate-dev
 
 # Reverter para uma migration específica (desenvolvimento)
-db-rollback-to 0001
+db-rollback-to-dev 0001
 
 # Reset completo do banco (desenvolvimento)
-db-rollback
-db-migrate
+db-rollback-dev
+db-migrate-dev
 ```
 
 ### Fim do Dia
 ```powershell
 kill-all         # Parar todos os serviços de forma limpa
-dkdown           # Parar banco de dados
+dkdown-all       # Parar bancos de dados
 ```
 
 ---
 
 ## 🎯 Aliases Rápidos
 
-- **`e`** = `expenses` (ir para raiz do projeto)
-- **`eb`** = `expenses-backend` (ir para backend)
-- **`ef`** = `expenses-frontend` (ir para frontend)
-- **`rat`** = `run-all-tabs` (iniciar todos os serviços em abas)
-- **`dbm`** = `db-migrate` (aplicar migrations)
-- **`dbr`** = `db-rollback` (reverter migrations)
-- **`dbs`** = `db-status` (status das migrations)
+- `e`, `eb`, `ef`, `ea` = `expenses`, `expenses-backend`, `expenses-frontend`, `expenses-auth`
+- `rat` = `run-all-tabs-prod`, `rat-dev` = `run-all-tabs-dev`, `rat-all` = `run-all-tabs`
+- `dbm` / `dbr` / `dbs` = `db-migrate` / `db-rollback` / `db-status` (sufixos `-dev` e `-all` também existem)
 
 ---
 
-## 📋 Referência Completa de Comandos
-
-### Navegação
-- `expenses` / `e` - Raiz do projeto
-- `expenses-backend` / `eb` - Diretório backend
-- `expenses-frontend` / `ef` - Diretório frontend
-- `expenses-docs` - Diretório de documentação
-
-### Docker/Banco de Dados
-- `dkup` - Iniciar serviços de banco de dados
-- `dkdown` - Parar serviços de banco de dados
-- `dklogs` - Visualizar logs do banco de dados
-- `dkstatus` - Verificar status do banco de dados
-
-### Migrations
-- `db-migrate` / `dbm` - Aplicar todas as migrations pendentes
-- `db-rollback` / `dbr` - Reverter todas as migrations
-- `db-status` / `dbs` - Verificar status das migrations
-- `db-rollback-to <numero>` - Reverter até migration específica
-
-### Serviços
-- `run-backend` - Iniciar backend (porta 8000)
-- `run-frontend` - Iniciar frontend (porta 5173)
-- `run-all` - Iniciar todos (novas janelas)
-- `run-all-tabs` / `rat` - Iniciar todos (abas)
-
-### Desenvolvimento
-- `kill-all` - Parar todos os processos
-- `check-ports` - Verificar uso de portas
-- `dev-setup` - Configuração completa do ambiente
-- `install-deps` - Instalar deps Python
-- `install-frontend-deps` - Instalar deps frontend
-- `expenses-health` - Verificação de saúde do sistema
-- `code-expenses` - Abrir no VS Code
-- `git-status-all` - Status do Git
-
----
-
-*Plumo - Finanças leves, vida plena | 2025*
+*Plumo - Finanças leves, vida plena*
 

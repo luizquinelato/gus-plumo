@@ -84,13 +84,28 @@ type InvoiceDisplaySection =
   | { kind: 'group'; group: InvoiceGroup; cards: InvoiceCardBucket[]; total: number; count: number }
   | { kind: 'card'; card: InvoiceCardBucket }
 
-function computeInvoiceAmountTotals(items: InvoiceItem[]): InvoiceAmountTotals {
+type ShareMode = 'all' | 'mine' | 'own'
+
+/** Divide o valor do item entre "minha parte" e a parte do parceiro. */
+function itemShares(item: InvoiceItem): { mine: number; partner: number } {
+  const amount = Number(item.amount)
+  const pct = item.ownership_percentage == null ? 100 : Number(item.ownership_percentage)
+  const mine = Math.round(amount * pct) / 100
+  return { mine, partner: Math.round((amount - mine) * 100) / 100 }
+}
+
+/** Valor usado nos totais: total do item em "all"; só a minha parte em "mine"/"own". */
+function itemBasisAmount(item: InvoiceItem, mode: ShareMode): number {
+  return mode === 'all' ? Number(item.amount) : itemShares(item).mine
+}
+
+function computeInvoiceAmountTotals(items: InvoiceItem[], mode: ShareMode = 'all'): InvoiceAmountTotals {
   let totalIncome = 0
   let totalIncomeCount = 0
   let totalExpenses = 0
   let totalExpensesCount = 0
   for (const item of items) {
-    const amount = Number(item.amount)
+    const amount = itemBasisAmount(item, mode)
     if (amount > 0) {
       totalIncome += amount
       totalIncomeCount += 1
@@ -271,6 +286,7 @@ const FaturasPage = () => {
   const [selectedIssuerIds, setSelectedIssuerIds] = useState<number[]>([])
   const [selectedTransactionType, setSelectedTransactionType] = useState<'all' | 'despesa' | 'receita'>('all')
   const [appliedTransactionType, setAppliedTransactionType] = useState<'all' | 'despesa' | 'receita'>('all')
+  const [appliedShareMode, setAppliedShareMode] = useState<ShareMode>('all')
 
   // Estados de busca
   const [searchTerm, setSearchTerm] = useState('')
@@ -383,8 +399,12 @@ const FaturasPage = () => {
       }))
       .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
 
-    // Adiciona "(Vazio)" como primeira opção
-    return [{ id: -1, name: '(Vazio)' }, ...options]
+    // Adiciona "Próprio" (sem compartilhamento) como primeira opção
+    return [
+      { id: -2, name: 'Minha Parte (próprio + compartilhado)' },
+      { id: -1, name: 'Próprio (100% meu)' },
+      ...options,
+    ]
   }, [partners])
 
   const tagOptions = useMemo(
@@ -600,6 +620,9 @@ const FaturasPage = () => {
       selectedPartnerIds,
       selectedIssuerIds,
     }
+    setAppliedShareMode(
+      filters.selectedPartnerIds.includes(-2) ? 'mine' : filters.selectedPartnerIds.includes(-1) ? 'own' : 'all',
+    )
     try {
       const params = buildInvoiceRequestParams(filters)
 
@@ -746,14 +769,21 @@ const FaturasPage = () => {
   }, [filteredItems, activeMonth])
 
   const activeMonthTotals = useMemo(
-    () => computeInvoiceAmountTotals(currentItems),
-    [currentItems],
+    () => computeInvoiceAmountTotals(currentItems, appliedShareMode),
+    [currentItems, appliedShareMode],
   )
 
   const filteredScopeTotals = useMemo(
-    () => computeInvoiceAmountTotals(filteredItems),
-    [filteredItems],
+    () => computeInvoiceAmountTotals(filteredItems, appliedShareMode),
+    [filteredItems, appliedShareMode],
   )
+
+  const shareBadge =
+    appliedShareMode === 'all' ? null : (
+      <span className="ml-2 rounded-full bg-color-primary-light px-2 py-0.5 text-[10px] font-semibold normal-case text-color-primary">
+        {appliedShareMode === 'mine' ? 'Minha parte' : 'Próprio'}
+      </span>
+    )
 
   const invoicePeriodIndex = useMemo(() => {
     const groupedByMonth = filteredItems.reduce((acc, item) => {
@@ -801,8 +831,8 @@ const FaturasPage = () => {
   }, [filteredItems, activeYear, monthsOfActiveYear])
 
   const activeYearTotals = useMemo(
-    () => computeInvoiceAmountTotals(activeYearItems),
-    [activeYearItems],
+    () => computeInvoiceAmountTotals(activeYearItems, appliedShareMode),
+    [activeYearItems, appliedShareMode],
   )
 
   const monthCardBuckets = useMemo((): InvoiceCardBucket[] => {
@@ -822,14 +852,14 @@ const FaturasPage = () => {
           cardName,
           cardNumber,
           items,
-          total: items.reduce((sum, i) => sum + Number(i.amount), 0),
+          total: items.reduce((sum, i) => sum + itemBasisAmount(i, appliedShareMode), 0),
           count: items.length,
           groupId: meta?.invoice_group_id ?? null,
           sectionKey: getCardSectionKey(cardName, cardNumber, cardId),
         }
       })
       .sort((a, b) => (a.cardNumber || '').localeCompare(b.cardNumber || '', 'pt-BR'))
-  }, [currentItems, cardsById])
+  }, [currentItems, cardsById, appliedShareMode])
 
   const invoiceDisplaySections = useMemo((): InvoiceDisplaySection[] => {
     const sections: InvoiceDisplaySection[] = []
@@ -1221,6 +1251,7 @@ const FaturasPage = () => {
             </div>
           </button>
           <div className="flex shrink-0 items-center gap-2 border-l border-gray-200 px-3 dark:border-gray-600">
+            {shareBadge}
             <span className={`text-base font-bold tabular-nums ${invoiceNetAmountClass(cardTotal)}`}>
               {formatCurrency(cardTotal)}
             </span>
@@ -1267,6 +1298,12 @@ const FaturasPage = () => {
                   </th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-32">
                     Valor
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-32">
+                    Minha parte
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-32">
+                    Compartilhado
                   </th>
                   <th className="px-3 py-3 text-center text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-28">
                     Ações
@@ -1340,6 +1377,16 @@ const FaturasPage = () => {
                       className={`px-4 py-3 text-sm text-right font-semibold w-32 ${Number(item.amount) < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}
                     >
                       {formatCurrency(Number(item.amount))}
+                    </td>
+                    <td
+                      className={`px-4 py-3 text-sm text-right w-32 ${itemShares(item).mine < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}
+                    >
+                      {formatCurrency(itemShares(item).mine)}
+                    </td>
+                    <td
+                      className={`px-4 py-3 text-sm text-right w-32 ${itemShares(item).partner < 0 ? 'text-red-600 dark:text-red-400' : itemShares(item).partner > 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}`}
+                    >
+                      {formatCurrency(itemShares(item).partner)}
                     </td>
                     <td className="px-3 py-3 text-center w-28">
                       <div className="flex items-center justify-center gap-0.5">
@@ -1771,6 +1818,7 @@ const FaturasPage = () => {
                   <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
                     <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                       Total geral (filtro)
+                      {shareBadge}
                     </p>
                     <p className={`mt-1 text-xl font-bold tabular-nums ${invoiceNetAmountClass(filteredScopeTotals.totalAmount)}`}>
                       {formatCurrency(filteredScopeTotals.totalAmount)}
@@ -1783,6 +1831,7 @@ const FaturasPage = () => {
                   <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
                     <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                       Total {activeYear || '—'}
+                      {shareBadge}
                     </p>
                     <p className={`mt-1 text-xl font-bold tabular-nums ${invoiceNetAmountClass(activeYearTotals.totalAmount)}`}>
                       {formatCurrency(activeYearTotals.totalAmount)}
@@ -1795,6 +1844,7 @@ const FaturasPage = () => {
                   <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
                     <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                       {activeMonth ? formatYearMonthLabel(activeMonth) : 'Mês'}
+                      {shareBadge}
                     </p>
                     <p className={`mt-1 text-xl font-bold tabular-nums ${invoiceNetAmountClass(activeMonthTotals.totalAmount)}`}>
                       {formatCurrency(activeMonthTotals.totalAmount)}
