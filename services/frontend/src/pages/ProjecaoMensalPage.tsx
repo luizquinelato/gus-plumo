@@ -197,6 +197,49 @@ const monthTitle = (ym: string) => {
   return `${MONTH_NAMES[m - 1]}/${y}`
 }
 
+const MAX_MASK_CENTS = 9999999999
+
+/** Valor guardado como decimal com ponto ("-1234.56"); exibido com máscara BRL ("-1.234,56"). */
+function maskMoneyDisplay(value: string): string {
+  if (!value) return ''
+  if (value === '-') return '-'
+  const n = Number(value)
+  if (Number.isNaN(n)) return ''
+  return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+/** Texto digitado -> decimal com ponto. Dígitos viram centavos; "-" em qualquer posição deixa negativo. */
+function parseMoneyInput(raw: string): string {
+  const negative = raw.includes('-')
+  const digits = raw.replace(/\D/g, '')
+  const cents = parseInt(digits || '0', 10)
+  if (!cents) return negative ? '-' : ''
+  const value = (Math.min(cents, MAX_MASK_CENTS) / 100).toFixed(2)
+  return negative ? `-${value}` : value
+}
+
+function MoneyMaskInput({
+  value,
+  onChange,
+  className,
+}: {
+  value: string
+  onChange: (value: string) => void
+  className?: string
+}) {
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      placeholder="0,00"
+      value={maskMoneyDisplay(value)}
+      onChange={(e) => onChange(parseMoneyInput(e.target.value))}
+      className={className}
+    />
+  )
+}
+
+
 interface ExportLine {
   date: string
   description: string
@@ -1396,12 +1439,9 @@ export default function ProjecaoMensalPage() {
                         onChange={(e) => updateExpenseRow(i, { description: e.target.value })}
                         className={cadastroFieldCls}
                       />
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        placeholder="0.00"
+                      <MoneyMaskInput
                         value={row.amount}
-                        onChange={(e) => /^-?\d*\.?\d*$/.test(e.target.value) && updateExpenseRow(i, { amount: e.target.value })}
+                        onChange={(amount) => updateExpenseRow(i, { amount })}
                         className={`${cadastroFieldCls} text-right font-semibold ${debitCls}`}
                       />
                       <select
@@ -1600,12 +1640,9 @@ export default function ProjecaoMensalPage() {
                       onChange={(e) => updateCardItem(i, { description: e.target.value })}
                       className={cadastroFieldCls}
                     />
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      placeholder="0.00"
+                    <MoneyMaskInput
                       value={item.amount}
-                      onChange={(e) => /^\d*\.?\d*$/.test(e.target.value) && updateCardItem(i, { amount: e.target.value })}
+                      onChange={(amount) => updateCardItem(i, { amount })}
                       className={`${cadastroFieldCls} text-right font-semibold ${debitCls}`}
                     />
                     <select
@@ -1668,7 +1705,7 @@ export default function ProjecaoMensalPage() {
               (cardForm.target === 'card' && cardForm.mode === 'auto' && cardForm.cardIds.length === 0) ||
               (cardForm.target === 'card' && cardForm.mode === 'manual' &&
                 (cardForm.items.length === 0 ||
-                  cardForm.items.some((it) => !it.description.trim() || !(Number(it.amount) > 0))))
+                  cardForm.items.some((it) => !it.description.trim() || !(Math.abs(Number(it.amount)) > 0))))
             }
           />
         </CadastroModalShell>
