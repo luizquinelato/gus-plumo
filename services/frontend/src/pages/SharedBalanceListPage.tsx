@@ -20,6 +20,7 @@ import {
   listPageTableRowHoverCls,
   listPageTableSectionCls,
 } from '../components/CadastroListPageLayout'
+import { CadastroListHeaderActions } from '../components/CadastroExcelMenu'
 import { ListPageNestedTable } from '../components/ListPageTable'
 import BulkSelectCheckbox from '../components/BulkSelectCheckbox'
 import {
@@ -641,14 +642,21 @@ const SharedBalanceListPage = () => {
   const [sendingWhatsapp, setSendingWhatsapp] = useState(false)
 
   const sendClosuresWhatsapp = async () => {
-    const sharing = partners.find((p) => p.shared_account_id === appliedPartnerAccountId)
-    if (!sharing) return
+    const body: { expense_sharing_id?: number; year?: number } = {}
+    if (appliedPartnerAccountId) {
+      const sharing = partners.find((p) => p.shared_account_id === appliedPartnerAccountId)
+      if (!sharing) return
+      body.expense_sharing_id = sharing.id
+    }
     setSendingWhatsapp(true)
     try {
-      const body: { expense_sharing_id: number; year?: number } = { expense_sharing_id: sharing.id }
       if (appliedYear !== null && appliedYear !== 'all') body.year = appliedYear
       const { data } = await axios.post('/api/balance/closures/send-whatsapp', body)
-      setToast({ show: true, message: `Resumo de ${data.closures} fechamento(s) enviado por WhatsApp.`, type: 'success' })
+      setToast({
+        show: true,
+        message: `${data.messages} mensagem(ns) com ${data.closures} fechamento(s) enviada(s) por WhatsApp.`,
+        type: 'success',
+      })
     } catch (error: any) {
       setToast({ show: true, message: error?.response?.data?.detail || 'Erro ao enviar por WhatsApp', type: 'error' })
     } finally {
@@ -1624,14 +1632,32 @@ const SharedBalanceListPage = () => {
               title="Balanço Compartilhado"
               subtitle="Consulte fechamentos por parceiro e ano ou inicie um novo fechamento por período"
               actions={
-                <CadastroListPrimaryButton
-                  label="Realizar fechamento"
-                  icon={<Archive size={18} />}
-                  onClick={() => {
-                    const q = draftPartnerAccountId ? `?partner=${draftPartnerAccountId}` : ''
-                    navigate(`${REALIZAR_PATH}${q}`)
-                  }}
-                />
+                <CadastroListHeaderActions>
+                  <button
+                    type="button"
+                    onClick={sendClosuresWhatsapp}
+                    disabled={!filtersApplied || closuresLoading || closuresScorecards.pendingCount === 0 || sendingWhatsapp}
+                    title={
+                      !filtersApplied
+                        ? 'Aplique os filtros para habilitar o envio por WhatsApp'
+                        : appliedPartnerAccountId
+                          ? 'Enviar resumo dos fechamentos abertos por WhatsApp'
+                          : 'Enviar um resumo por compartilhamento com fechamento aberto por WhatsApp'
+                    }
+                    aria-label="Enviar resumo dos fechamentos abertos por WhatsApp"
+                    className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white p-2 text-green-600 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-600 dark:bg-gray-800 dark:text-green-400 dark:hover:bg-gray-700"
+                  >
+                    <MessageCircle size={18} />
+                  </button>
+                  <CadastroListPrimaryButton
+                    label="Realizar fechamento"
+                    icon={<Archive size={18} />}
+                    onClick={() => {
+                      const q = draftPartnerAccountId ? `?partner=${draftPartnerAccountId}` : ''
+                      navigate(`${REALIZAR_PATH}${q}`)
+                    }}
+                  />
+                </CadastroListHeaderActions>
               }
             />
           }
@@ -1717,16 +1743,6 @@ const SharedBalanceListPage = () => {
                             {closuresScorecards.pendingCount === 1 ? 'fechamento pendente' : 'fechamentos pendentes'}
                           </p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={sendClosuresWhatsapp}
-                          disabled={!appliedPartnerAccountId || closuresScorecards.pendingCount === 0 || sendingWhatsapp}
-                          title={appliedPartnerAccountId ? 'Enviar resumo dos fechamentos abertos por WhatsApp' : 'Escolha uma conta compartilhada nos filtros para habilitar o envio'}
-                          aria-label="Enviar resumo dos fechamentos abertos por WhatsApp"
-                          className="inline-flex shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white p-2 text-green-600 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-600 dark:bg-gray-800 dark:text-green-400 dark:hover:bg-gray-700"
-                        >
-                          <MessageCircle size={18} />
-                        </button>
                       </div>
                       <div className="grid grid-cols-1 divide-y divide-gray-200 dark:divide-gray-600 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
                         <div className="flex min-h-[6.5rem] flex-col justify-center bg-white px-5 py-4 dark:bg-gray-800">

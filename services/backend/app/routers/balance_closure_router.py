@@ -1523,13 +1523,14 @@ def list_balance_closures(
 
 
 class SendClosuresWhatsappRequest(BaseModel):
-    expense_sharing_id: int
+    expense_sharing_id: int | None = None
     year: int | None = None
 
 
 class SendClosuresWhatsappResponse(BaseModel):
     closures: int
     recipients: int
+    messages: int
 
 
 def _brl(value: Decimal) -> str:
@@ -1612,10 +1613,21 @@ def send_closures_whatsapp(
     if not closures:
         raise HTTPException(status_code=404, detail="Nenhum fechamento em aberto para este compartilhamento.")
 
-    message = build_closures_whatsapp_message(closures, int(account_id), db)
+    # Uma mensagem por compartilhamento (conta da outra ponta) com fechamentos em aberto
+    groups: dict[int, list] = {}
+    for closure in closures:
+        other_id = closure.shared_account_id if closure.account_id == int(account_id) else closure.account_id
+        groups.setdefault(other_id, []).append(closure)
+
     recipients = whatsapp_service.shared_balance_recipients()
-    whatsapp_service.send_text(message, recipients)
-    return SendClosuresWhatsappResponse(closures=len(closures), recipients=len(recipients))
+    for index, group in enumerate(groups.values()):
+        if index:
+            whatsapp_service.pause()
+        message = build_closures_whatsapp_message(group, int(account_id), db)
+        whatsapp_service.send_text(message, recipients)
+    return SendClosuresWhatsappResponse(
+        closures=len(closures), recipients=len(recipients), messages=len(groups)
+    )
 
 
 

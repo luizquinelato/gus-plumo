@@ -1,9 +1,19 @@
 """Envio de mensagens de texto via Evolution API (WhatsApp, cliente não oficial)."""
 
 import os
+import time
 
 import httpx
 from fastapi import HTTPException
+
+
+def pause() -> None:
+    """Intervalo entre envios para não sobrecarregar a Evolution API (WHATSAPP_SEND_DELAY_SECONDS)."""
+    try:
+        delay = float(os.environ.get("WHATSAPP_SEND_DELAY_SECONDS", "3"))
+    except ValueError:
+        delay = 3.0
+    time.sleep(max(delay, 0.0))
 
 
 def shared_balance_recipients() -> list[str]:
@@ -24,7 +34,9 @@ def send_text(text: str, recipients: list[str] | None = None) -> None:
             status_code=503,
             detail="WhatsApp não configurado (EVOLUTION_API_URL, EVOLUTION_API_KEY, EVOLUTION_INSTANCE, WHATSAPP_DEFAULT_TO).",
         )
-    for to in targets:
+    for index, to in enumerate(targets):
+        if index:
+            pause()
         try:
             response = httpx.post(
                 f"{url}/message/sendText/{instance}",
