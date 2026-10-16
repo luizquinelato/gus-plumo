@@ -109,6 +109,7 @@ class MonthResponse(BaseModel):
 class CloneRequest(BaseModel):
     source_year_month: str
     months: int = Field(1, ge=1, le=24)
+    include_cards: bool = True
 
 
 class CloneResponse(BaseModel):
@@ -369,7 +370,7 @@ async def clone_month(
     tenant_id, account_id, user_id = _scope(current_user)
     _check_ym(body.source_year_month)
     try:
-        target, copied = service.clone_to_next_month(db, tenant_id, account_id, user_id, body.source_year_month, body.months)
+        target, copied = service.clone_to_next_month(db, tenant_id, account_id, user_id, body.source_year_month, body.months, include_cards=body.include_cards)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return CloneResponse(target_year_month=target, copied=copied)

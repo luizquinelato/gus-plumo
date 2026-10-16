@@ -12,7 +12,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { CalendarDays, ChevronLeft, ChevronRight, ChevronsRight, Copy, CreditCard, Eraser, Loader2, Maximize2, Pencil, Plus, Trash2, Wallet } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, ChevronsRight, Copy, CreditCard, Eraser, FileSpreadsheet, FileText, Loader2, Maximize2, Pencil, Plus, Trash2, Wallet } from 'lucide-react'
 import { CadastroListHeaderActions } from '../components/CadastroExcelMenu'
 import { DateField } from '../components/date'
 import Sidebar from '../components/Sidebar'
@@ -45,6 +45,9 @@ import {
 } from '../components/CadastroFormLayout'
 import { useConfirm } from '../hooks/useConfirm'
 import { useEscapeKey } from '../hooks/useEscapeKey'
+import { useExportRunner } from '../hooks/useExportRunner'
+import { downloadExcel, excelDateStamp, type ExcelRow } from '../utils/excelExportClient'
+import { downloadPdf, type PdfBlock } from '../utils/pdfExportClient'
 import LoadingSpinner from '../components/LoadingSpinner'
 import { formatCurrency } from '../utils/currency'
 
@@ -105,9 +108,17 @@ interface CardItemForm {
   kind: Kind
 }
 
+interface ExpenseRowForm {
+  expected_date: string
+  description: string
+  amount: string
+  kind: Kind
+}
+
 interface CardFormState {
   cardIds: number[]
-  target: 'expense' | 'income'
+  target: 'expense' | 'card' | 'income'
+  expenseRows: ExpenseRowForm[]
   historyMonths: number
   mode: 'auto' | 'manual'
   method: 'current' | 'average' | 'installments'
@@ -168,6 +179,52 @@ const shiftMonth = (ym: string, delta: number) => {
   const [y, m] = ym.split('-').map(Number)
   const d = new Date(y, m - 1 + delta, 1)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+const SOURCE_LABELS: Record<Expense['source'], string> = {
+  manual: 'Manual',
+  clone: 'Clonado',
+  card_invoice: 'Fatura do cartão',
+  card_item: 'Item de cartão',
+  payroll: 'Folha',
+}
+
+const EXPORT_COLUMNS = ['Data', 'Descrição', 'Tipo', 'Origem', 'Valor', 'Minha parte']
+
+const brDate = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`
+const monthTitle = (ym: string) => {
+  const [y, m] = ym.split('-').map(Number)
+  return `${MONTH_NAMES[m - 1]}/${y}`
+}
+
+interface ExportLine {
+  date: string
+  description: string
+  type: string
+  origin: string
+  amount: number
+  mine: number | null
+}
+
+/** Entradas positivas e gastos negativos, ordenados por data. */
+function monthExportLines(month: MonthData): ExportLine[] {
+  const incomes: ExportLine[] = (month.income ?? []).map((i) => ({
+    date: i.expected_date,
+    description: i.description,
+    type: 'Receita',
+    origin: '',
+    amount: Number(i.amount),
+    mine: null,
+  }))
+  const expenses: ExportLine[] = month.items.map((e) => ({
+    date: e.expected_date,
+    description: e.description,
+    type: e.kind === 'fixed' ? 'Despesa fixa' : 'Despesa variável',
+    origin: SOURCE_LABELS[e.source] ?? e.source,
+    amount: -Number(e.amount),
+    mine: -Number(e.my_amount),
+  }))
+  return [...incomes, ...expenses].sort((a, b) => a.date.localeCompare(b.date))
 }
 
 const debit = (value: number) => (value > 0 ? `-${formatCurrency(value)}` : formatCurrency(0))
@@ -287,6 +344,108 @@ export default function ProjecaoMensalPage() {
     void load()
   }, [load])
 
+  const exportRunner = useExportRunner((message) =>
+    window.dispatchEvent(new CustomEvent('app:error-alert', { detail: { title: 'Erro ao exportar', message } })),
+  )
+
+  const MAX_EXPORT_MONTHS = 36
+  const [exportOpt, setExportOpt] = useState<
+    { kind: 'excel' | 'pdf'; mode: 'current' | 'range'; from: string; to: string } | null
+  >(null)
+  const closeExportOpt = useCallback(() => setExportOpt(null), [])
+  useEscapeKey(closeExportOpt, exportOpt != null)
+
+  const exportRange = (o: { mode: 'current' | 'range'; from: string; to: string }): string[] => {
+    if (o.mode === 'current') return [yearMonth]
+    const list: string[] = []
+    for (let ym = o.from; ym <= o.to && list.length < MAX_EXPORT_MONTHS; ym = shiftMonth(ym, 1)) list.push(ym)
+    return list
+  }
+  const exportRangeValid = (o: { from: string; to: string }) =>
+    /^\d{4}-\d{2}$/.test(o.from) && /^\d{4}-\d{2}$/.test(o.to) && o.from <= o.to
+
+  const confirmExport = () => {
+    if (!exportOpt || (exportOpt.mode === 'range' && !exportRangeValid(exportOpt))) return
+    const months = exportRange(exportOpt)
+    const kind = exportOpt.kind
+    setExportOpt(null)
+    if (kind === 'excel') void handleExportExcel(months)
+    else void handleExportPdf(months)
+  }
+
+  /** Busca os dados de cada mês informado. */
+  const fetchExportMonths = async (months: string[]) => {
+    const results = await Promise.all(
+      months.map((ym) => axios.get<MonthData>('/api/monthly-projections', { params: { year_month: ym } })),
+    )
+    return results.map((res, i) => ({ ym: months[i], lines: monthExportLines(res.data) }))
+  }
+
+  const handleExportExcel = (monthList: string[]) =>
+    exportRunner.run('Gerando Excel…', async () => {
+      const months = await fetchExportMonths(monthList)
+      const sheets = months.map(({ ym, lines }) => {
+        const total = lines.reduce((acc, l) => acc + l.amount, 0)
+        const rows: ExcelRow[] = lines.map((l) => ({
+          Data: brDate(l.date),
+          Descrição: l.description,
+          Tipo: l.type,
+          Origem: l.origin,
+          Valor: l.amount,
+          'Minha parte': l.mine,
+        }))
+        return {
+          name: ym,
+          rows,
+          columns: EXPORT_COLUMNS,
+          kinds: { Valor: 'money' as const, 'Minha parte': 'money' as const },
+          preamble: [[monthTitle(ym)]],
+          footer: [['Resultado do mês', '', '', '', total]],
+        }
+      })
+      await downloadExcel(`projecao_mensal_${excelDateStamp()}.xlsx`, sheets)
+    })
+
+  const handleExportPdf = (monthList: string[]) =>
+    exportRunner.run('Gerando PDF…', async () => {
+      const months = await fetchExportMonths(monthList)
+      const blocks: PdfBlock[] = []
+      months.forEach(({ ym, lines }, idx) => {
+        if (idx > 0) blocks.push({ type: 'page_break' })
+        const total = lines.reduce((acc, l) => acc + l.amount, 0)
+        const money = (v: number) => formatCurrency(v)
+        blocks.push({ type: 'heading', text: monthTitle(ym) })
+        blocks.push({
+          type: 'table',
+          font_size: 7,
+          columns: [
+            { header: 'Data', width_mm: 20 },
+            { header: 'Descrição' },
+            { header: 'Tipo', width_mm: 28 },
+            { header: 'Origem', width_mm: 30 },
+            { header: 'Valor', align: 'right', width_mm: 24 },
+            { header: 'Minha parte', align: 'right', width_mm: 24 },
+          ],
+          rows: lines.map((l) => [
+            brDate(l.date),
+            l.description || '-',
+            l.type,
+            l.origin || '-',
+            money(l.amount),
+            l.mine == null ? '-' : money(l.mine),
+          ]),
+          tones: lines.map((l) => [null, null, null, null, l.amount < 0 ? 'negative' : 'positive', null]),
+          footer: ['Resultado do mês', '', '', '', money(total), ''],
+          footer_tones: [null, null, null, null, total < 0 ? 'negative' : 'positive', null],
+        })
+      })
+      await downloadPdf(`projecao_mensal_${excelDateStamp()}.pdf`, {
+        title: 'Projeção Mensal',
+        subtitle: `${months.length} mês(es)`,
+        blocks,
+      })
+    })
+
   const valueOf = useCallback((e: Expense) => Number(e.amount), [])
 
   const byDay = useMemo(() => {
@@ -372,7 +531,7 @@ export default function ProjecaoMensalPage() {
       const allCredit = res.data.filter((c) => c.type === 'credito')
       const credit = allCredit.filter((c) => c.active !== false)
       setCardOptions(credit)
-      setCardForm({ cardIds: allCredit.map((c) => c.id), historyMonths: 6, target: 'expense', mode: 'auto', method: 'current', sharing: 'mine', items: [] })
+      setCardForm({ cardIds: allCredit.map((c) => c.id), historyMonths: 6, target: 'expense', expenseRows: [], mode: 'auto', method: 'current', sharing: 'mine', items: [] })
     } catch (err) {
       console.error('Erro ao carregar cartões:', err)
       setError('Não foi possível carregar os cartões.')
@@ -381,6 +540,31 @@ export default function ProjecaoMensalPage() {
 
   const updateCardItem = (index: number, patch: Partial<CardItemForm>) =>
     setCardForm((prev) => prev && { ...prev, items: prev.items.map((it, i) => (i === index ? { ...it, ...patch } : it)) })
+
+  const updateExpenseRow = (index: number, patch: Partial<ExpenseRowForm>) =>
+    setCardForm((prev) => prev && { ...prev, expenseRows: prev.expenseRows.map((r, i) => (i === index ? { ...r, ...patch } : r)) })
+
+  const launchExpenses = async () => {
+    if (!cardForm) return
+    setSaving(true)
+    try {
+      for (const r of cardForm.expenseRows) {
+        await axios.post('/api/monthly-projections', {
+          expected_date: r.expected_date,
+          description: r.description.trim(),
+          amount: -Math.abs(Number(r.amount)),
+          kind: r.kind,
+        })
+      }
+      await load()
+      setCardForm(null)
+    } catch (err) {
+      console.error('Erro ao lançar despesas:', err)
+      setError('Não foi possível lançar as despesas.')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const launchCards = async () => {
     if (!cardForm) return
@@ -459,15 +643,31 @@ export default function ProjecaoMensalPage() {
     }
   }
 
+  // Seletor rápido: grade de meses do ano; clicar no ano abre a grade de anos.
+  const [picker, setPicker] = useState<{ year: number; view: 'month' | 'year' } | null>(null)
+  const closePicker = useCallback(() => setPicker(null), [])
+  useEscapeKey(closePicker, picker != null)
+  const pickMonth = (m: number) => {
+    if (!picker) return
+    setYearMonth(`${picker.year}-${String(m).padStart(2, '0')}`)
+    setPicker(null)
+  }
+
   const [cloneMonths, setCloneMonths] = useState<string | null>(null)
   const closeClone = useCallback(() => setCloneMonths(null), [])
   useEscapeKey(closeClone, cloneMonths != null && !busy)
+
+  const [cloneCards, setCloneCards] = useState(true)
 
   const cloneNext = async () => {
     const months = Math.min(24, Math.max(1, Math.floor(Number(cloneMonths) || 1)))
     setSaving(true)
     try {
-      await axios.post('/api/monthly-projections/clone', { source_year_month: yearMonth, months })
+      await axios.post('/api/monthly-projections/clone', {
+        source_year_month: yearMonth,
+        months,
+        include_cards: cloneCards,
+      })
       setCloneMonths(null)
       setYearMonth(shiftMonth(yearMonth, 1))
     } catch (err) {
@@ -565,13 +765,15 @@ export default function ProjecaoMensalPage() {
                   menu={{
                     menuTitle: 'Mais ações',
                     extraItems: [
-                      { id: 'clone', label: 'Clonar', icon: <Copy size={16} />, onClick: () => setCloneMonths('1') },
+                      { id: 'clone', label: 'Clonar', icon: <Copy size={16} />, onClick: () => { setCloneCards(true); setCloneMonths('1') } },
+                      { id: 'excel', label: 'Exportar Excel', icon: <FileSpreadsheet size={16} />, onClick: () => setExportOpt({ kind: 'excel', mode: 'current', from: yearMonth, to: yearMonth }) },
+                      { id: 'pdf', label: 'Exportar PDF', icon: <FileText size={16} />, onClick: () => setExportOpt({ kind: 'pdf', mode: 'current', from: yearMonth, to: yearMonth }) },
                       { id: 'clear', label: 'Limpar mês', icon: <Eraser size={16} />, onClick: clearMonth },
                     ],
                   }}
                 >
                   <CadastroListPrimaryButton
-                    label="Lançar projeção"
+                    label="Lançar"
                     icon={<CalendarDays size={18} />}
                     onClick={openCardForm}
                   />
@@ -608,11 +810,24 @@ export default function ProjecaoMensalPage() {
               <button type="button" onClick={() => setYearMonth(shiftMonth(yearMonth, -1))} className="rounded-lg border border-gray-300 p-2 dark:border-gray-600" aria-label="Mês anterior">
                 <ChevronLeft className="h-4 w-4" />
               </button>
-              <h2 className="min-w-[10rem] text-center text-lg font-semibold text-gray-900 dark:text-white">
+              <button
+                type="button"
+                onClick={() => setPicker({ year, view: 'month' })}
+                title="Escolher mês e ano"
+                className="min-w-[10rem] rounded-lg px-2 py-1 text-center text-lg font-semibold text-gray-900 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"
+              >
                 {MONTH_NAMES[month - 1]} {year}
-              </h2>
+              </button>
               <button type="button" onClick={() => setYearMonth(shiftMonth(yearMonth, 1))} className="rounded-lg border border-gray-300 p-2 dark:border-gray-600" aria-label="Próximo mês">
                 <ChevronRight className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setYearMonth(currentYearMonth())}
+                disabled={yearMonth === currentYearMonth()}
+                className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-200"
+              >
+                Mês atual
               </button>
               <div className="ml-auto inline-flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
                 <span className="h-[3px] w-5 rounded-full bg-[var(--color-1)]" />
@@ -816,6 +1031,134 @@ export default function ProjecaoMensalPage() {
         </CadastroModalShell>
       )}
 
+      {picker && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onMouseDown={(e) => e.target === e.currentTarget && closePicker()}
+        >
+          <div className="w-72 rounded-xl border border-gray-200 bg-white p-3 shadow-xl dark:border-gray-700 dark:bg-gray-800">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                aria-label="Anterior"
+                onClick={() => setPicker({ ...picker, year: picker.year - (picker.view === 'year' ? 12 : 1) })}
+                className="rounded-lg border border-gray-300 p-1.5 dark:border-gray-600"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setPicker({ ...picker, view: picker.view === 'month' ? 'year' : 'month' })}
+                title={picker.view === 'month' ? 'Escolher ano' : 'Voltar aos meses'}
+                className="rounded-lg px-2 py-1 text-sm font-semibold text-gray-900 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"
+              >
+                {picker.view === 'month' ? picker.year : `${picker.year - 5} – ${picker.year + 6}`}
+              </button>
+              <button
+                type="button"
+                aria-label="Próximo"
+                onClick={() => setPicker({ ...picker, year: picker.year + (picker.view === 'year' ? 12 : 1) })}
+                className="rounded-lg border border-gray-300 p-1.5 dark:border-gray-600"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {picker.view === 'month'
+                ? MONTH_NAMES.map((name, i) => {
+                    const selected = picker.year === year && i + 1 === month
+                    return (
+                      <button
+                        key={name}
+                        type="button"
+                        onClick={() => pickMonth(i + 1)}
+                        className={`rounded-lg px-2 py-2 text-sm ${selected ? 'bg-[var(--color-primary)] text-white' : 'text-gray-800 hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-gray-700'}`}
+                      >
+                        {name.slice(0, 3)}
+                      </button>
+                    )
+                  })
+                : Array.from({ length: 12 }, (_, i) => picker.year - 5 + i).map((y) => (
+                    <button
+                      key={y}
+                      type="button"
+                      onClick={() => setPicker({ year: y, view: 'month' })}
+                      className={`rounded-lg px-2 py-2 text-sm ${y === year ? 'bg-[var(--color-primary)] text-white' : 'text-gray-800 hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-gray-700'}`}
+                    >
+                      {y}
+                    </button>
+                  ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {exportOpt && (
+        <CadastroModalShell maxWidth="max-w-md">
+          <CadastroModalHeader
+            isEdit={false}
+            title={exportOpt.kind === 'excel' ? 'Exportar Excel' : 'Exportar PDF'}
+            subtitle={`${MONTH_NAMES[month - 1]} ${year}`}
+            onClose={closeExportOpt}
+            icon={exportOpt.kind === 'excel' ? <FileSpreadsheet size={18} /> : <FileText size={18} />}
+          />
+          <CadastroModalBody>
+            <div className="space-y-3 p-4 text-sm text-gray-700 dark:text-gray-300">
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  checked={exportOpt.mode === 'current'}
+                  onChange={() => setExportOpt({ ...exportOpt, mode: 'current' })}
+                />
+                Apenas o mês selecionado ({MONTH_NAMES[month - 1]} {year})
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  checked={exportOpt.mode === 'range'}
+                  onChange={() => setExportOpt({ ...exportOpt, mode: 'range' })}
+                />
+                Período (de / até)
+              </label>
+              {exportOpt.mode === 'range' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <CadastroFieldLabel>De</CadastroFieldLabel>
+                    <input
+                      type="month"
+                      value={exportOpt.from}
+                      onChange={(e) => setExportOpt({ ...exportOpt, from: e.target.value })}
+                      className={cadastroFieldCls}
+                    />
+                  </div>
+                  <div>
+                    <CadastroFieldLabel>Até</CadastroFieldLabel>
+                    <input
+                      type="month"
+                      value={exportOpt.to}
+                      onChange={(e) => setExportOpt({ ...exportOpt, to: e.target.value })}
+                      className={cadastroFieldCls}
+                    />
+                  </div>
+                  <p className="col-span-2 text-xs text-gray-500">
+                    {exportRangeValid(exportOpt)
+                      ? `${exportRange(exportOpt).length} mês(es), no máximo ${MAX_EXPORT_MONTHS}.`
+                      : 'Informe um período válido (De deve ser anterior ou igual a Até).'}
+                  </p>
+                </div>
+              )}
+            </div>
+          </CadastroModalBody>
+          <CadastroModalFooter
+            onClose={closeExportOpt}
+            onSave={confirmExport}
+            saving={false}
+            saveLabel="Exportar"
+            disabled={exportOpt.mode === 'range' && !exportRangeValid(exportOpt)}
+          />
+        </CadastroModalShell>
+      )}
+
       {cloneMonths != null && (
         <CadastroModalShell maxWidth="max-w-md">
           <CadastroModalHeader
@@ -839,6 +1182,10 @@ export default function ProjecaoMensalPage() {
                   className={cadastroFieldCls}
                 />
               </div>
+              <label className="inline-flex items-center gap-2">
+                <input type="checkbox" checked={cloneCards} onChange={(e) => setCloneCards(e.target.checked)} />
+                Replicar gastos de cartão de crédito
+              </label>
               <p>
                 Copia todas as receitas e despesas de {MONTH_NAMES[month - 1]} {year} para os próximos{' '}
                 {Math.min(24, Math.max(1, Math.floor(Number(cloneMonths) || 1)))} mês(es). Itens iguais (mesma descrição, mesmo dia do mês e mesma direção: receita ou despesa) que já
@@ -1006,16 +1353,20 @@ export default function ProjecaoMensalPage() {
         <CadastroModalShell maxWidth="max-w-3xl">
           <CadastroModalHeader
             isEdit={false}
-            title="Lançar projeção"
-            subtitle={`${MONTH_NAMES[month - 1]} ${year} • substitui as projeções automáticas já lançadas no mês`}
+            title="Lançar"
+            subtitle={
+              cardForm.target === 'expense'
+                ? `${MONTH_NAMES[month - 1]} ${year} • lançamentos manuais de despesa`
+                : `${MONTH_NAMES[month - 1]} ${year} • substitui as projeções automáticas já lançadas no mês`
+            }
             onClose={closeCardForm}
             closeDisabled={busy}
-            icon={cardForm.target === 'income' ? <Wallet size={18} /> : <CreditCard size={18} />}
+            icon={cardForm.target === 'income' ? <Wallet size={18} /> : cardForm.target === 'card' ? <CreditCard size={18} /> : <Plus size={18} />}
           />
           <CadastroModalBody>
             <CadastroFormSection title="Tipo" icon={<CalendarDays size={14} />}>
-              <div role="radiogroup" className="grid grid-cols-[16rem_auto] items-center gap-x-4 text-sm text-gray-800 dark:text-gray-100">
-                {(['expense', 'income'] as const).map((t) => (
+              <div role="radiogroup" className="grid grid-cols-[16rem_16rem_auto] items-center gap-x-4 text-sm text-gray-800 dark:text-gray-100">
+                {(['expense', 'card', 'income'] as const).map((t) => (
                   <label key={t} className="inline-flex items-center gap-2">
                     <input
                       type="radio"
@@ -1023,12 +1374,73 @@ export default function ProjecaoMensalPage() {
                       checked={cardForm.target === t}
                       onChange={() => setCardForm({ ...cardForm, target: t })}
                     />
-                    {t === 'expense' ? 'Despesa' : 'Receita'}
+                    {t === 'expense' ? 'Despesa' : t === 'card' ? 'Cartão de crédito' : 'Receita'}
                   </label>
                 ))}
               </div>
             </CadastroFormSection>
             {cardForm.target === 'expense' && (
+              <CadastroFormSection title="Despesas (várias de uma vez)" icon={<Plus size={14} />}>
+                <div className="space-y-2">
+                  {cardForm.expenseRows.map((row, i) => (
+                    <div key={i} className="grid grid-cols-[9rem_1.5fr_7rem_6rem_auto] items-center gap-2">
+                      <DateField
+                        value={row.expected_date}
+                        onChange={(value) => updateExpenseRow(i, { expected_date: value })}
+                        className={cadastroFieldCls}
+                      />
+                      <input
+                        type="text"
+                        placeholder="Descrição"
+                        value={row.description}
+                        onChange={(e) => updateExpenseRow(i, { description: e.target.value })}
+                        className={cadastroFieldCls}
+                      />
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="0.00"
+                        value={row.amount}
+                        onChange={(e) => /^\d*\.?\d*$/.test(e.target.value) && updateExpenseRow(i, { amount: e.target.value })}
+                        className={`${cadastroFieldCls} text-right font-semibold ${debitCls}`}
+                      />
+                      <select
+                        value={row.kind}
+                        onChange={(e) => updateExpenseRow(i, { kind: e.target.value as Kind })}
+                        className={cadastroFieldCls}
+                      >
+                        <option value="fixed">Fixo</option>
+                        <option value="variable">Variável</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => setCardForm({ ...cardForm, expenseRows: cardForm.expenseRows.filter((_, j) => j !== i) })}
+                        className="rounded p-1 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-gray-700"
+                        aria-label="Remover despesa"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setCardForm({
+                        ...cardForm,
+                        expenseRows: [
+                          ...cardForm.expenseRows,
+                          { expected_date: `${yearMonth}-01`, description: '', amount: '', kind: 'fixed' },
+                        ],
+                      })
+                    }
+                    className="inline-flex items-center gap-1 text-sm font-medium text-[var(--color-1)]"
+                  >
+                    <Plus className="h-4 w-4" /> Adicionar despesa
+                  </button>
+                </div>
+              </CadastroFormSection>
+            )}
+            {cardForm.target === 'card' && (
               <>
             <CadastroFormSection title="Modo" icon={<CreditCard size={14} />}>
               <div role="radiogroup" className="grid grid-cols-[16rem_auto] items-center gap-x-4 text-sm text-gray-800 dark:text-gray-100">
@@ -1245,13 +1657,16 @@ export default function ProjecaoMensalPage() {
           <CadastroModalFooter
             onClose={closeCardForm}
             closeDisabled={busy}
-            onSave={cardForm.target === 'income' ? launchIncome : launchCards}
+            onSave={cardForm.target === 'income' ? launchIncome : cardForm.target === 'expense' ? launchExpenses : launchCards}
             saving={saving}
             saveLabel="Lançar"
             disabled={
               saving ||
-              (cardForm.target === 'expense' && cardForm.mode === 'auto' && cardForm.cardIds.length === 0) ||
-              (cardForm.target === 'expense' && cardForm.mode === 'manual' &&
+              (cardForm.target === 'expense' &&
+                (cardForm.expenseRows.length === 0 ||
+                  cardForm.expenseRows.some((r) => !r.expected_date || !r.description.trim() || !(Number(r.amount) > 0)))) ||
+              (cardForm.target === 'card' && cardForm.mode === 'auto' && cardForm.cardIds.length === 0) ||
+              (cardForm.target === 'card' && cardForm.mode === 'manual' &&
                 (cardForm.items.length === 0 ||
                   cardForm.items.some((it) => !it.description.trim() || !(Number(it.amount) > 0))))
             }
@@ -1260,6 +1675,7 @@ export default function ProjecaoMensalPage() {
       )}
 
       <ConfirmComponent />
+      {exportRunner.overlay}
     </div>
   )
 }

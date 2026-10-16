@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_HISTORY_MONTHS = 6
 AUTOMATIC_SOURCES = ("card_invoice", "payroll")
+CARD_SOURCES = ("card_invoice", "card_item")
 INCOME_KINDS = {"advance": "Adiantamento salarial", "final": "Salário (fim do mês)"}
 
 
@@ -512,7 +513,8 @@ def launch_card_projections(
 
 
 def clone_to_next_month(
-    db: Session, tenant_id: int, account_id: int, user_id: int, source_ym: str, months: int = 1
+    db: Session, tenant_id: int, account_id: int, user_id: int, source_ym: str, months: int = 1,
+    include_cards: bool = True,
 ) -> tuple[str, int]:
     """Copia todos os itens ativos (receitas e despesas, inclusive os gerados pela projeção, com
     cartão e detalhamento) para os `months` meses seguintes. Dia inexistente -> último dia.
@@ -533,6 +535,8 @@ def clone_to_next_month(
         ym = next_year_month(ym)
         targets.append(ym)
     items = base.filter(MonthlyProjection.year_month == source_ym).all()
+    if not include_cards:
+        items = [i for i in items if i.source not in CARD_SOURCES]
 
     def _key(description: str, expected: date, kind: str) -> tuple:
         # Direção: receita (kind "income") ou despesa (fixed/variable).
