@@ -19,7 +19,7 @@ services:
       retries: 10
 
   evolution-api:
-    image: evoapicloud/evolution-api:v2.3.7
+    image: evoapicloud/evolution-api:v2.3.6
     container_name: plumo_evolution_api
     restart: unless-stopped
     depends_on:
