@@ -594,14 +594,7 @@ async def get_annual_history(
             BenefitCardStatement.amount < 0
         ).all()
 
-        main_bc_revenues = db.query(BenefitCardStatement).filter(
-            BenefitCardStatement.tenant_id == tenant_id,
-            BenefitCardStatement.account_id == account_id,
-            BenefitCardStatement.expense_sharing_id.in_(sharing_ids),
-            extract('year', BenefitCardStatement.date) == target_year,
-            extract('month', BenefitCardStatement.date) == month_num,
-            BenefitCardStatement.amount > 0
-        ).all()
+        main_bc_revenues = []  # receitas do cartão de benefício ignoradas
 
         # ========== BANK STATEMENTS - CONTA COMPARTILHADA ==========
         shared_bank_expenses = db.query(BankStatement).filter(
@@ -649,14 +642,7 @@ async def get_annual_history(
             BenefitCardStatement.amount < 0
         ).all()
 
-        shared_bc_revenues = db.query(BenefitCardStatement).filter(
-            BenefitCardStatement.tenant_id == tenant_id,
-            BenefitCardStatement.account_id == partner_account_id,
-            BenefitCardStatement.expense_sharing_id.in_(sharing_ids),
-            extract('year', BenefitCardStatement.date) == target_year,
-            extract('month', BenefitCardStatement.date) == month_num,
-            BenefitCardStatement.amount > 0
-        ).all()
+        shared_bc_revenues = []  # receitas do cartão de benefício ignoradas
 
         # ========== CÁLCULOS - CONTA LOGADA ==========
         # Combina todas as despesas da conta logada
@@ -940,17 +926,7 @@ async def get_monthly_details(
         BenefitCardStatement.amount < 0
     ).order_by(BenefitCardStatement.date.desc()).all()
 
-    main_bc_revenues_raw = db.query(BenefitCardStatement).options(
-        joinedload(BenefitCardStatement.subtag).joinedload(Subtag.tag),
-        joinedload(BenefitCardStatement.credit_card)
-    ).filter(
-        BenefitCardStatement.tenant_id == tenant_id,
-        BenefitCardStatement.account_id == account_id,
-        BenefitCardStatement.expense_sharing_id.in_(sharing_ids),
-        extract('year', BenefitCardStatement.date) == year,
-        extract('month', BenefitCardStatement.date) == month,
-        BenefitCardStatement.amount > 0
-    ).order_by(BenefitCardStatement.date.desc()).all()
+    main_bc_revenues_raw = []  # receitas do cartão de benefício ignoradas
 
     # ========== BANK STATEMENTS - CONTA PARCEIRA ==========
     partner_bank_expenses_raw = db.query(BankStatement).options(
@@ -1011,17 +987,7 @@ async def get_monthly_details(
         BenefitCardStatement.amount < 0
     ).order_by(BenefitCardStatement.date.desc()).all()
 
-    partner_bc_revenues_raw = db.query(BenefitCardStatement).options(
-        joinedload(BenefitCardStatement.subtag).joinedload(Subtag.tag),
-        joinedload(BenefitCardStatement.credit_card)
-    ).filter(
-        BenefitCardStatement.tenant_id == tenant_id,
-        BenefitCardStatement.account_id == partner_account_id,
-        BenefitCardStatement.expense_sharing_id.in_(sharing_ids),
-        extract('year', BenefitCardStatement.date) == year,
-        extract('month', BenefitCardStatement.date) == month,
-        BenefitCardStatement.amount > 0
-    ).order_by(BenefitCardStatement.date.desc()).all()
+    partner_bc_revenues_raw = []  # receitas do cartão de benefício ignoradas
 
     # ========== CONVERTER PARA MonthlyDetailItem ==========
     # Conta Logada
@@ -1451,12 +1417,8 @@ async def calculate_balance(
     ).order_by(BenefitCardStatement.date.desc()).all()
 
     # Busca itens individuais de receitas (cartão de benefícios - estornos, etc)
-    main_bc_revenue_items = db.query(BenefitCardStatement).options(
-        joinedload(BenefitCardStatement.subtag).joinedload(Subtag.tag)
-    ).filter(
-        and_(*main_bc_filters),
-        BenefitCardStatement.amount > 0
-    ).order_by(BenefitCardStatement.date.desc()).all()
+    # Receitas do cartão de benefício não entram no balanço compartilhado.
+    main_bc_revenue_items = []
 
     # Calcula valores de benefit_card_statements para a CONTA LOGADA
     for item in main_bc_expense_items:
@@ -1656,12 +1618,8 @@ async def calculate_balance(
     ).order_by(BenefitCardStatement.date.desc()).all()
 
     # Busca itens individuais de receitas (cartão de benefícios) da conta compartilhada
-    shared_bc_revenue_items = db.query(BenefitCardStatement).options(
-        joinedload(BenefitCardStatement.subtag).joinedload(Subtag.tag)
-    ).filter(
-        and_(*shared_bc_filters),
-        BenefitCardStatement.amount > 0
-    ).order_by(BenefitCardStatement.date.desc()).all()
+    # Receitas do cartão de benefício não entram no balanço compartilhado.
+    shared_bc_revenue_items = []
 
     # Calcula valores de benefit_card_statements para a CONTA COMPARTILHADA
     for item in shared_bc_expense_items:

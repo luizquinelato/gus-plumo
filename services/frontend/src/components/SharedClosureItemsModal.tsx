@@ -93,10 +93,20 @@ function moneyCls(value: number) {
   return value < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'
 }
 
-function MoneyCell({ value, bold = false, blankZero = false }: { value: number; bold?: boolean; blankZero?: boolean }) {
+function MoneyCell({
+  value,
+  bold = false,
+  blankZero = false,
+  cls = tdCls,
+}: {
+  value: number
+  bold?: boolean
+  blankZero?: boolean
+  cls?: string
+}) {
   const zero = Math.abs(value) < 0.005
   return (
-    <td className={`${tdCls} whitespace-nowrap text-right tabular-nums ${bold ? 'font-semibold' : ''} ${moneyCls(value)}`}>
+    <td className={`${cls} whitespace-nowrap text-right tabular-nums ${bold ? 'font-semibold' : ''} ${moneyCls(value)}`}>
       {zero && blankZero ? <span className="text-gray-400">—</span> : formatSigned(value)}
     </td>
   )
@@ -555,7 +565,36 @@ function SourceSummaryDeltaTable({
   )
 }
 
-function SourceSummaryTable({ bySource }: { bySource: { key: SourceKey; label: string; icon: ReactNode; totals: Totals }[] }) {
+const dividerCls = 'border-l border-gray-200 dark:border-gray-600'
+
+function ResultCell({ value, bold = false, cls = tdCls }: { value: number; bold?: boolean; cls?: string }) {
+  return (
+    <td className={`${cls} whitespace-nowrap text-right tabular-nums ${bold ? 'font-semibold' : ''} ${moneyCls(value)}`}>
+      {formatSigned(value)}
+    </td>
+  )
+}
+
+type FlowResult = { toReceive: number; toPay: number; result: number }
+
+function SourceSummaryTable({
+  bySource,
+  viewerNetByKey,
+}: {
+  bySource: { key: SourceKey; label: string; icon: ReactNode; totals: Totals }[]
+  viewerNetByKey: Partial<Record<SourceKey, FlowResult>>
+}) {
+  const sumFlow = bySource.reduce(
+    (acc, row) => {
+      const f = viewerNetByKey[row.key]
+      return {
+        toReceive: acc.toReceive + (f?.toReceive ?? 0),
+        toPay: acc.toPay + (f?.toPay ?? 0),
+        result: acc.result + (f?.result ?? 0),
+      }
+    },
+    { toReceive: 0, toPay: 0, result: 0 },
+  )
   const total = bySource.reduce((acc, row) => ({
     count: acc.count + row.totals.count,
     raw: acc.raw + row.totals.raw,
@@ -572,6 +611,9 @@ function SourceSummaryTable({ bySource }: { bySource: { key: SourceKey; label: s
             <th className={thRightCls}>Valor total</th>
             <th className={thRightCls}>Minha parte</th>
             <th className={thRightCls}>Contraparte</th>
+            <th className={`${thRightCls} ${dividerCls}`}>A receber</th>
+            <th className={thRightCls}>A pagar</th>
+            <th className={`${thRightCls} ${dividerCls}`}>Resultado</th>
           </tr>
         </thead>
         <tbody>
@@ -587,6 +629,9 @@ function SourceSummaryTable({ bySource }: { bySource: { key: SourceKey; label: s
               <MoneyCell value={row.totals.raw} bold />
               <MoneyCell value={row.totals.mine} bold />
               <MoneyCell value={row.totals.partner} bold />
+              <MoneyCell value={viewerNetByKey[row.key]?.toReceive ?? 0} bold cls={`${tdCls} ${dividerCls}`} />
+              <MoneyCell value={viewerNetByKey[row.key]?.toPay ?? 0} bold />
+              <ResultCell value={viewerNetByKey[row.key]?.result ?? 0} bold cls={`${tdCls} ${dividerCls}`} />
             </tr>
           ))}
         </tbody>
@@ -597,6 +642,9 @@ function SourceSummaryTable({ bySource }: { bySource: { key: SourceKey; label: s
             <td className={`${footTdCls} text-right tabular-nums ${moneyCls(total.raw)}`}>{formatSigned(total.raw)}</td>
             <td className={`${footTdCls} text-right tabular-nums ${moneyCls(total.mine)}`}>{formatSigned(total.mine)}</td>
             <td className={`${footTdCls} text-right tabular-nums ${moneyCls(total.partner)}`}>{formatSigned(total.partner)}</td>
+            <td className={`${footTdCls} ${dividerCls} text-right tabular-nums ${moneyCls(sumFlow.toReceive)}`}>{formatSigned(sumFlow.toReceive)}</td>
+            <td className={`${footTdCls} text-right tabular-nums ${moneyCls(sumFlow.toPay)}`}>{formatSigned(sumFlow.toPay)}</td>
+            <ResultCell value={sumFlow.result} bold cls={`${footTdCls} ${dividerCls}`} />
           </tr>
         </tfoot>
       </table>
@@ -1072,6 +1120,13 @@ export function SharedClosureItemsView({
     () => (compareSavedClosureData ? computeClosureBalanceBySource(compareSavedClosureData, isPartnerView) : []),
     [compareSavedClosureData, isPartnerView],
   )
+  const viewerNetByKey = useMemo(() => {
+    const out: Partial<Record<SourceKey, FlowResult>> = {}
+    for (const row of computeClosureBalanceBySource(closure?.closure_data, isPartnerView)) {
+      out[row.key] = { toReceive: row.toReceive, toPay: row.toPay, result: row.result }
+    }
+    return out
+  }, [closure?.closure_data, isPartnerView])
   const activeSource = activeTab === 'geral' ? null : bySource.find((source) => source.key === activeTab) ?? null
 
   return (
@@ -1132,7 +1187,7 @@ export function SharedClosureItemsView({
                   expectedRemovedCount={recalcExpectedRemovedCount}
                 />
               ) : (
-                <SourceSummaryTable bySource={bySource} />
+                <SourceSummaryTable bySource={bySource} viewerNetByKey={viewerNetByKey} />
               )}
             </CadastroFormSection>
             {regularLoans.length > 0 && (
@@ -1160,12 +1215,28 @@ export default function SharedClosureItemsModal({
   onClose: () => void
 }) {
   const [activeTab, setActiveTab] = useState<TabKey>('geral')
+  const headerResult = useMemo(
+    () => computeClosureBalanceBySource(closure?.closure_data, isPartnerView).reduce((acc, row) => acc + row.result, 0),
+    [closure?.closure_data, isPartnerView],
+  )
 
   return (
     <CadastroModalShell maxWidth="max-w-[95vw] xl:max-w-[90rem]" maxHeight="max-h-[90vh]" zClass="z-50">
       <CadastroModalHeader
         isEdit={false}
         title={`Itens do Fechamento - ${String(closure.month).padStart(2, '0')}/${closure.year}`}
+        titleAddon={
+          Math.abs(headerResult) < 0.005 ? null : (
+            <span
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium text-white ${
+                headerResult > 0 ? 'bg-green-600' : 'bg-red-600'
+              }`}
+            >
+              {headerResult > 0 ? <ArrowUp size={12} /> : <ArrowDown size={12} />}
+              {headerResult > 0 ? 'A Receber' : 'A Pagar'}
+            </span>
+          )
+        }
         subtitle={`${items.length} itens • ${formatDateTimeBR(closure.period_start_date)} a ${formatDateTimeBR(closure.closing_date)}`}
         onClose={onClose}
         icon={<Receipt size={18} />}

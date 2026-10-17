@@ -50,6 +50,7 @@ import {
   dailyBalanceRowClass,
   EXTRATO_DAILY_BALANCE_SOURCE,
   isExtratoDailyBalanceRow,
+  localDateKeyFromIso,
   mergeExpensesWithDailyBalance,
   sortExtratoExpenses,
 } from '../utils/extratoDailyBalance'
@@ -784,16 +785,22 @@ const ExtratoPage = () => {
     return matchesDescription && matchesAmount && matchesType
   }) ?? [], [detailedReport, searchTerm, searchAmount, appliedTransactionType])
 
+  // O backend não conhece tipo (despesa/receita) nem busca por texto/valor: com esses filtros,
+  // o saldo diário é recalculado no frontend só com as linhas visíveis (abertura = 0).
+  const useServerDailyBalance =
+    appliedTransactionType === 'all' && !searchTerm.trim() && !searchAmount.trim()
+
   const filteredExpenses = useMemo(() => {
     const openingBefore =
-      detailedReport?.opening_balance_before_period != null
+      useServerDailyBalance && detailedReport?.opening_balance_before_period != null
         ? Number(detailedReport.opening_balance_before_period)
         : 0
-    const serverDailyRows =
-      detailedReport?.daily_balance_rows?.map((row) => ({
-        ...row,
-        source: row.source || EXTRATO_DAILY_BALANCE_SOURCE,
-      })) ?? null
+    const serverDailyRows = useServerDailyBalance
+      ? detailedReport?.daily_balance_rows?.map((row) => ({
+          ...row,
+          source: row.source || EXTRATO_DAILY_BALANCE_SOURCE,
+        })) ?? null
+      : null
 
     const merged = mergeExpensesWithDailyBalance(
       searchedExpenses,
@@ -809,9 +816,41 @@ const ExtratoPage = () => {
     detailedReport?.opening_balance_before_period,
     detailedReport?.daily_balance_rows,
     appliedPeriodStartKey,
+    useServerDailyBalance,
     sortField,
     sortDirection,
   ])
+
+  // Parte do compartilhado acumulada até cada linha de saldo diário (chave: data local do dia).
+  // A abertura anterior ao período não tem divisão no backend; fica toda em "Minha parte".
+  const dailyPartnerCumulative = useMemo(() => {
+    const byDay = new Map<string, number>()
+    for (const row of searchedExpenses) {
+      if (isExtratoDailyBalanceRow(row)) continue
+      const dayKey = localDateKeyFromIso(row.date)
+      if (!dayKey || (appliedPeriodStartKey && dayKey < appliedPeriodStartKey)) continue
+      const amount = Number(row.amount)
+      const pct = row.ownership_percentage == null ? 100 : Number(row.ownership_percentage)
+      const partner = amount - Math.round(amount * pct) / 100
+      byDay.set(dayKey, (byDay.get(dayKey) ?? 0) + partner)
+    }
+    const cumulative = new Map<string, number>()
+    let running = 0
+    for (const dayKey of [...byDay.keys()].sort()) {
+      running += byDay.get(dayKey) ?? 0
+      cumulative.set(dayKey, Math.round(running * 100) / 100)
+    }
+    const sortedKeys = [...cumulative.keys()]
+    return (dayKey: string | null): number => {
+      if (!dayKey) return 0
+      let value = 0
+      for (const key of sortedKeys) {
+        if (key <= dayKey) value = cumulative.get(key) ?? value
+        else break
+      }
+      return value
+    }
+  }, [searchedExpenses, appliedPeriodStartKey])
 
   const exportExpenses = useMemo(
     () => searchedExpenses.filter((row) => !isExtratoDailyBalanceRow(row)),
@@ -1341,7 +1380,7 @@ const ExtratoPage = () => {
                     if (parsed) setStartDate(new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate(), 0, 0, 0, 0))
                   }}
                   maxDate={endDate ? parseLocalDate(dateToLocalString(endDate)) ?? undefined : undefined}
-                  className="flex-1 px-2 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-color-primary focus:border-color-primary transition-all"
+                  className="flex-1 h-9 px-2 py-0 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-color-primary focus:border-color-primary transition-all"
                 />
               </div>
 
@@ -1362,27 +1401,24 @@ const ExtratoPage = () => {
                     if (parsed) setEndDate(new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate(), 23, 59, 59, 999))
                   }}
                   minDate={startDate ? parseLocalDate(dateToLocalString(startDate)) ?? undefined : undefined}
-                  className="flex-1 px-2 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-color-primary focus:border-color-primary transition-all"
+                  className="flex-1 h-9 px-2 py-0 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-color-primary focus:border-color-primary transition-all"
                 />
               </div>
 
-              <label className="flex items-center gap-2 min-w-[200px] cursor-pointer rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800 dark:border-gray-600 dark:bg-gray-800/60 dark:text-gray-100">
+              <label className="flex items-center gap-2 h-9 cursor-pointer rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-800 dark:border-gray-600 dark:bg-gray-800/60 dark:text-gray-100">
                 <input
                   type="checkbox"
                   checked={includeDailyBalance}
                   onChange={(event) => setIncludeDailyBalance(event.target.checked)}
                   className="h-4 w-4 rounded border-gray-300 text-[var(--color-1)] focus:ring-[var(--color-1)]"
                 />
-                <span className="flex flex-col leading-tight">
-                  <span className="font-medium">Incluir saldo diário</span>
-                  <span className="text-[11px] text-gray-500 dark:text-gray-400">Linha de resultado por dia na lista</span>
-                </span>
+                <span className="font-medium">Incluir saldo diário</span>
               </label>
 
               {/* Botão Aplicar */}
               <button
                 onClick={handleApplyFilters}
-                className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-all hover:opacity-90"
+                className="flex h-9 items-center gap-1.5 px-4 text-sm font-medium rounded-lg transition-all hover:opacity-90"
                 style={{ backgroundColor: 'var(--crud-create)', color: 'var(--on-crud-create)' }}
               >
                 <Filter size={14} />
@@ -1595,9 +1631,6 @@ const ExtratoPage = () => {
                       <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:text-color-primary" onClick={() => handleSort('description')}>
                         Descrição {sortField === 'description' && (sortDirection === 'asc' ? '↑' : '↓')}
                       </th>
-                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-color-primary" onClick={() => handleSort('amount')}>
-                        Valor {sortField === 'amount' && (sortDirection === 'asc' ? '↑' : '↓')}
-                      </th>
                       <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:text-color-primary" onClick={() => handleSort('tag_name')}>
                         Tag {sortField === 'tag_name' && (sortDirection === 'asc' ? '↑' : '↓')}
                       </th>
@@ -1606,6 +1639,15 @@ const ExtratoPage = () => {
                       </th>
                       <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap min-w-[180px] cursor-pointer hover:text-color-primary" onClick={() => handleSort('shared_partner_name')}>
                         Compartilhamento {sortField === 'shared_partner_name' && (sortDirection === 'asc' ? '↑' : '↓')}
+                      </th>
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap">
+                        Minha parte
+                      </th>
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap">
+                        Compartilhado
+                      </th>
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-color-primary" onClick={() => handleSort('amount')}>
+                        Total {sortField === 'amount' && (sortDirection === 'asc' ? '↑' : '↓')}
                       </th>
                       <th
                         className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300 whitespace-nowrap min-w-[160px] ${listPageTableStickyActionsHeaderCls}`}
@@ -1739,15 +1781,6 @@ const ExtratoPage = () => {
                                 </div>
                               </td>
 
-                              {/* Valor */}
-                              <td className="px-3 py-4 text-left whitespace-nowrap">
-                                <span
-                                  className={`text-sm ${isDailyBalance ? 'font-semibold' : ''} ${expense.amount >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}
-                                >
-                                  {formatCurrency(expense.amount)}
-                                </span>
-                              </td>
-
                               {/* Tag */}
                               <td className="px-3 py-4 text-left">
                                 <span className="text-sm text-gray-900 dark:text-white truncate block" title={expense.tag_name || undefined}>
@@ -1778,6 +1811,56 @@ const ExtratoPage = () => {
                                   ownershipPercentage={expense.ownership_percentage}
                                 />
                                 )}
+                              </td>
+
+                              {/* Minha parte */}
+                              <td className="px-3 py-4 text-left whitespace-nowrap">
+                                {isDailyBalance ? (() => {
+                                  const partnerCum = dailyPartnerCumulative(localDateKeyFromIso(expense.date))
+                                  const mineCum = Math.round((expense.amount - partnerCum) * 100) / 100
+                                  return (
+                                    <span className={`text-sm font-semibold ${mineCum >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                      {formatCurrency(mineCum)}
+                                    </span>
+                                  )
+                                })() : (() => {
+                                  const pct = expense.ownership_percentage == null ? 100 : Number(expense.ownership_percentage)
+                                  const mine = Math.round(expense.amount * pct) / 100
+                                  return (
+                                    <span className={`text-sm ${mine >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                      {formatCurrency(mine)}
+                                    </span>
+                                  )
+                                })()}
+                              </td>
+
+                              {/* Compartilhado */}
+                              <td className="px-3 py-4 text-left whitespace-nowrap">
+                                {isDailyBalance ? (() => {
+                                  const partnerCum = dailyPartnerCumulative(localDateKeyFromIso(expense.date))
+                                  return (
+                                    <span className={`text-sm font-semibold ${partnerCum < 0 ? 'text-red-600 dark:text-red-400' : partnerCum > 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}`}>
+                                      {formatCurrency(partnerCum)}
+                                    </span>
+                                  )
+                                })() : (() => {
+                                  const pct = expense.ownership_percentage == null ? 100 : Number(expense.ownership_percentage)
+                                  const partner = Math.round((expense.amount - Math.round(expense.amount * pct) / 100) * 100) / 100
+                                  return (
+                                    <span className={`text-sm ${partner < 0 ? 'text-red-600 dark:text-red-400' : partner > 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}`}>
+                                      {formatCurrency(partner)}
+                                    </span>
+                                  )
+                                })()}
+                              </td>
+
+                              {/* Total */}
+                              <td className="px-3 py-4 text-left whitespace-nowrap">
+                                <span
+                                  className={`text-sm ${isDailyBalance ? 'font-semibold' : ''} ${expense.amount >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}
+                                >
+                                  {formatCurrency(expense.amount)}
+                                </span>
                               </td>
 
                               {/* Ações */}

@@ -636,15 +636,16 @@ def save_benefit_dataframe(
 
                 # PRIORIDADE 2: Mapeamento (se tiver expense_sharing_id definido)
                 # Sobrescreve configuração do cartão
-                if mapping_result:
+                # Só sobrescreve (compartilhamento e %) se o mapeamento for compartilhado;
+                # mapeamento "próprio" (sem expense_sharing_id) não impõe seus 100%.
+                if mapping_result and mapping_result.get('expense_sharing_id') is not None:
+                    expense_sharing_id = mapping_result['expense_sharing_id']
                     ownership_percentage = resolve_ownership_percentage(
                         tipo=tipo,
                         mapping=mapping_result,
                         card=cartao,
                         sharing=cartao.expense_sharing,
                     )
-                    if mapping_result.get('expense_sharing_id') is not None:
-                        expense_sharing_id = mapping_result['expense_sharing_id']
 
                 # PRIORIDADE 1: Arquivo Excel (se houver colunas de compartilhamento)
                 # Sobrescreve configuração do mapeamento/cartão

@@ -84,7 +84,7 @@ type InvoiceDisplaySection =
   | { kind: 'group'; group: InvoiceGroup; cards: InvoiceCardBucket[]; total: number; count: number }
   | { kind: 'card'; card: InvoiceCardBucket }
 
-type ShareMode = 'all' | 'mine' | 'own'
+type ShareMode = 'all' | 'mine' | 'own' | 'partner'
 
 /** Divide o valor do item entre "minha parte" e a parte do parceiro. */
 function itemShares(item: InvoiceItem): { mine: number; partner: number } {
@@ -94,18 +94,39 @@ function itemShares(item: InvoiceItem): { mine: number; partner: number } {
   return { mine, partner: Math.round((amount - mine) * 100) / 100 }
 }
 
-/** Valor usado nos totais: total do item em "all"; só a minha parte em "mine"/"own". */
-function itemBasisAmount(item: InvoiceItem, mode: ShareMode): number {
-  return mode === 'all' ? Number(item.amount) : itemShares(item).mine
+/** Valor usado nos totais: total do item em "all"; minha parte em "mine"/"own"; parte da contraparte em "partner". */
+function itemBasisParts(
+  item: InvoiceItem,
+  mode: ShareMode,
+  partnerIds: number[] = [],
+): { mine: number; partner: number } {
+  const shares = itemShares(item)
+  if (mode === 'all') return shares
+  if (mode === 'partner') return { mine: 0, partner: shares.partner }
+  if (item.shared_partner_id != null && partnerIds.includes(item.shared_partner_id)) {
+    // "Minha parte" + conta filtrada: minha parte + parte da contraparte = total do item
+    // "Próprio" + conta filtrada: só a parte da contraparte (o "próprio" são os itens sem compartilhamento)
+    return mode === 'mine' ? shares : { mine: 0, partner: shares.partner }
+  }
+  return { mine: shares.mine, partner: 0 }
 }
 
-function computeInvoiceAmountTotals(items: InvoiceItem[], mode: ShareMode = 'all'): InvoiceAmountTotals {
+function itemBasisAmount(item: InvoiceItem, mode: ShareMode, partnerIds: number[] = []): number {
+  const { mine, partner } = itemBasisParts(item, mode, partnerIds)
+  return mine + partner
+}
+
+function computeInvoiceAmountTotals(
+  items: InvoiceItem[],
+  mode: ShareMode = 'all',
+  partnerIds: number[] = [],
+): InvoiceAmountTotals {
   let totalIncome = 0
   let totalIncomeCount = 0
   let totalExpenses = 0
   let totalExpensesCount = 0
   for (const item of items) {
-    const amount = itemBasisAmount(item, mode)
+    const amount = itemBasisAmount(item, mode, partnerIds)
     if (amount > 0) {
       totalIncome += amount
       totalIncomeCount += 1
@@ -287,6 +308,8 @@ const FaturasPage = () => {
   const [selectedTransactionType, setSelectedTransactionType] = useState<'all' | 'despesa' | 'receita'>('all')
   const [appliedTransactionType, setAppliedTransactionType] = useState<'all' | 'despesa' | 'receita'>('all')
   const [appliedShareMode, setAppliedShareMode] = useState<ShareMode>('all')
+  const [appliedPartnerNames, setAppliedPartnerNames] = useState<string[]>([])
+  const [appliedPartnerIds, setAppliedPartnerIds] = useState<number[]>([])
 
   // Estados de busca
   const [searchTerm, setSearchTerm] = useState('')
@@ -620,8 +643,19 @@ const FaturasPage = () => {
       selectedPartnerIds,
       selectedIssuerIds,
     }
+    const realPartnerIdsApplied = filters.selectedPartnerIds.filter((id) => id > 0)
     setAppliedShareMode(
-      filters.selectedPartnerIds.includes(-2) ? 'mine' : filters.selectedPartnerIds.includes(-1) ? 'own' : 'all',
+      filters.selectedPartnerIds.includes(-2)
+        ? 'mine'
+        : filters.selectedPartnerIds.includes(-1)
+          ? 'own'
+          : realPartnerIdsApplied.length > 0
+            ? 'partner'
+            : 'all',
+    )
+    setAppliedPartnerIds(realPartnerIdsApplied)
+    setAppliedPartnerNames(
+      partnerOptions.filter((o) => realPartnerIdsApplied.includes(o.id)).map((o) => o.name),
     )
     try {
       const params = buildInvoiceRequestParams(filters)
@@ -769,21 +803,76 @@ const FaturasPage = () => {
   }, [filteredItems, activeMonth])
 
   const activeMonthTotals = useMemo(
-    () => computeInvoiceAmountTotals(currentItems, appliedShareMode),
-    [currentItems, appliedShareMode],
+    () => computeInvoiceAmountTotals(currentItems, appliedShareMode, appliedPartnerIds),
+    [currentItems, appliedShareMode, appliedPartnerIds],
   )
 
   const filteredScopeTotals = useMemo(
-    () => computeInvoiceAmountTotals(filteredItems, appliedShareMode),
-    [filteredItems, appliedShareMode],
+    () => computeInvoiceAmountTotals(filteredItems, appliedShareMode, appliedPartnerIds),
+    [filteredItems, appliedShareMode, appliedPartnerIds],
   )
 
+  // --color-1 é reservado para "Próprio"/"Minha parte"; cada conta usa --color-2..5 (cíclico).
+  const badgeColorStyle = (n: number) => {
+    const idx = ((n - 1) % 5) + 1
+    return { backgroundColor: `var(--color-${idx})`, color: `var(--on-color-${idx})` }
+  }
+  const accountBadgeStyle = (index: number) => badgeColorStyle(2 + (index % 4))
+  const badgeClass =
+    'ml-2 inline-flex items-center rounded px-2 py-0.5 text-xs font-medium normal-case'
+
   const shareBadge =
-    appliedShareMode === 'all' ? null : (
-      <span className="ml-2 rounded-full bg-color-primary-light px-2 py-0.5 text-[10px] font-semibold normal-case text-color-primary">
-        {appliedShareMode === 'mine' ? 'Minha parte' : 'Próprio'}
-      </span>
+    appliedShareMode === 'all' ? null : appliedShareMode === 'partner' ? (
+      <>
+        {appliedPartnerNames.map((name, i) => (
+          <span key={name} className={badgeClass} style={accountBadgeStyle(i)}>
+            {name}
+          </span>
+        ))}
+      </>
+    ) : (
+      <>
+        <span className={badgeClass} style={badgeColorStyle(1)}>
+          {appliedShareMode === 'mine' ? 'Minha parte' : 'Próprio'}
+        </span>
+        {(appliedShareMode === 'mine' || appliedShareMode === 'own') &&
+          appliedPartnerNames.map((name, i) => (
+            <span key={name} className={badgeClass} style={accountBadgeStyle(i)}>
+              {name}
+            </span>
+          ))}
+      </>
     )
+
+  const sumParts = (items: InvoiceItem[]) =>
+    items.reduce(
+      (acc, i) => {
+        const p = appliedShareMode === 'partner' ? itemShares(i) : itemBasisParts(i, appliedShareMode, appliedPartnerIds)
+        return { mine: acc.mine + p.mine, partner: acc.partner + p.partner }
+      },
+      { mine: 0, partner: 0 },
+    )
+
+  const renderScorecardParts = (items: InvoiceItem[]) => {
+    const parts = sumParts(items)
+    const total = parts.mine + parts.partner
+    return (
+      <div className="mt-1 flex items-stretch divide-x divide-gray-200 tabular-nums dark:divide-gray-600">
+        <div className="pr-3">
+          <p className="text-[10px] uppercase text-gray-500 dark:text-gray-400">Minha parte</p>
+          <p className={`text-sm font-semibold ${invoiceNetAmountClass(parts.mine)}`}>{formatCurrency(parts.mine)}</p>
+        </div>
+        <div className="px-3">
+          <p className="text-[10px] uppercase text-gray-500 dark:text-gray-400">Compartilhado</p>
+          <p className={`text-sm font-semibold ${invoiceNetAmountClass(parts.partner)}`}>{formatCurrency(parts.partner)}</p>
+        </div>
+        <div className="pl-3">
+          <p className="text-[10px] uppercase text-gray-500 dark:text-gray-400">Total</p>
+          <p className={`text-sm font-semibold ${invoiceNetAmountClass(total)}`}>{formatCurrency(total)}</p>
+        </div>
+      </div>
+    )
+  }
 
   const invoicePeriodIndex = useMemo(() => {
     const groupedByMonth = filteredItems.reduce((acc, item) => {
@@ -831,8 +920,8 @@ const FaturasPage = () => {
   }, [filteredItems, activeYear, monthsOfActiveYear])
 
   const activeYearTotals = useMemo(
-    () => computeInvoiceAmountTotals(activeYearItems, appliedShareMode),
-    [activeYearItems, appliedShareMode],
+    () => computeInvoiceAmountTotals(activeYearItems, appliedShareMode, appliedPartnerIds),
+    [activeYearItems, appliedShareMode, appliedPartnerIds],
   )
 
   const monthCardBuckets = useMemo((): InvoiceCardBucket[] => {
@@ -852,14 +941,14 @@ const FaturasPage = () => {
           cardName,
           cardNumber,
           items,
-          total: items.reduce((sum, i) => sum + itemBasisAmount(i, appliedShareMode), 0),
+          total: items.reduce((sum, i) => sum + itemBasisAmount(i, appliedShareMode, appliedPartnerIds), 0),
           count: items.length,
           groupId: meta?.invoice_group_id ?? null,
           sectionKey: getCardSectionKey(cardName, cardNumber, cardId),
         }
       })
       .sort((a, b) => (a.cardNumber || '').localeCompare(b.cardNumber || '', 'pt-BR'))
-  }, [currentItems, cardsById, appliedShareMode])
+  }, [currentItems, cardsById, appliedShareMode, appliedPartnerIds])
 
   const invoiceDisplaySections = useMemo((): InvoiceDisplaySection[] => {
     const sections: InvoiceDisplaySection[] = []
@@ -1167,7 +1256,16 @@ const FaturasPage = () => {
   }
 
   const renderInvoiceCardPanel = (bucket: InvoiceCardBucket) => {
-    const { cardName, cardNumber, items, sectionKey, total: cardTotal, cardId } = bucket
+    const { cardName, cardNumber, items, sectionKey, cardId } = bucket
+    // No filtro "Compartilhado", o painel mostra as duas partes reais e o total é a soma delas.
+    const cardParts = items.reduce(
+      (acc, i) => {
+        const p = appliedShareMode === 'partner' ? itemShares(i) : itemBasisParts(i, appliedShareMode, appliedPartnerIds)
+        return { mine: acc.mine + p.mine, partner: acc.partner + p.partner }
+      },
+      { mine: 0, partner: 0 },
+    )
+    const cardTotal = cardParts.mine + cardParts.partner
     const sortedItems = sortRowsByDate(
       items,
       (item) => item.date,
@@ -1251,10 +1349,32 @@ const FaturasPage = () => {
             </div>
           </button>
           <div className="flex shrink-0 items-center gap-2 border-l border-gray-200 px-3 dark:border-gray-600">
-            {shareBadge}
-            <span className={`text-base font-bold tabular-nums ${invoiceNetAmountClass(cardTotal)}`}>
-              {formatCurrency(cardTotal)}
-            </span>
+            {shareBadge ? (
+              <>
+                {shareBadge}
+                <div className="self-stretch border-l border-gray-200 dark:border-gray-600" aria-hidden="true" />
+              </>
+            ) : null}
+            <div className="flex items-stretch divide-x divide-gray-200 text-right tabular-nums dark:divide-gray-600">
+              <div className="px-3">
+                <p className="text-[10px] uppercase text-gray-500 dark:text-gray-400">Minha parte</p>
+                <p className={`text-sm font-semibold ${invoiceNetAmountClass(cardParts.mine)}`}>
+                  {formatCurrency(cardParts.mine)}
+                </p>
+              </div>
+              <div className="px-3">
+                <p className="text-[10px] uppercase text-gray-500 dark:text-gray-400">Compartilhado</p>
+                <p className={`text-sm font-semibold ${invoiceNetAmountClass(cardParts.partner)}`}>
+                  {formatCurrency(cardParts.partner)}
+                </p>
+              </div>
+              <div className="pl-3">
+                <p className="text-[10px] uppercase text-gray-500 dark:text-gray-400">Total</p>
+                <p className={`text-base font-bold ${invoiceNetAmountClass(cardTotal)}`}>
+                  {formatCurrency(cardTotal)}
+                </p>
+              </div>
+            </div>
             {canManualAdjust ? (
               <button
                 type="button"
@@ -1297,13 +1417,13 @@ const FaturasPage = () => {
                     Compartilhamento
                   </th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-32">
-                    Valor
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-32">
                     Minha parte
                   </th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-32">
                     Compartilhado
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-32">
+                    Total
                   </th>
                   <th className="px-3 py-3 text-center text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider w-28">
                     Ações
@@ -1374,11 +1494,6 @@ const FaturasPage = () => {
                       />
                     </td>
                     <td
-                      className={`px-4 py-3 text-sm text-right font-semibold w-32 ${Number(item.amount) < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}
-                    >
-                      {formatCurrency(Number(item.amount))}
-                    </td>
-                    <td
                       className={`px-4 py-3 text-sm text-right w-32 ${itemShares(item).mine < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}
                     >
                       {formatCurrency(itemShares(item).mine)}
@@ -1387,6 +1502,11 @@ const FaturasPage = () => {
                       className={`px-4 py-3 text-sm text-right w-32 ${itemShares(item).partner < 0 ? 'text-red-600 dark:text-red-400' : itemShares(item).partner > 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}`}
                     >
                       {formatCurrency(itemShares(item).partner)}
+                    </td>
+                    <td
+                      className={`px-4 py-3 text-sm text-right font-semibold w-32 ${Number(item.amount) < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}
+                    >
+                      {formatCurrency(Number(item.amount))}
                     </td>
                     <td className="px-3 py-3 text-center w-28">
                       <div className="flex items-center justify-center gap-0.5">
@@ -1820,9 +1940,7 @@ const FaturasPage = () => {
                       Total geral (filtro)
                       {shareBadge}
                     </p>
-                    <p className={`mt-1 text-xl font-bold tabular-nums ${invoiceNetAmountClass(filteredScopeTotals.totalAmount)}`}>
-                      {formatCurrency(filteredScopeTotals.totalAmount)}
-                    </p>
+                    {renderScorecardParts(filteredItems)}
                     <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
                       {filteredScopeTotals.totalCount}{' '}
                       {filteredScopeTotals.totalCount === 1 ? 'lançamento' : 'lançamentos'}
@@ -1833,9 +1951,7 @@ const FaturasPage = () => {
                       Total {activeYear || '—'}
                       {shareBadge}
                     </p>
-                    <p className={`mt-1 text-xl font-bold tabular-nums ${invoiceNetAmountClass(activeYearTotals.totalAmount)}`}>
-                      {formatCurrency(activeYearTotals.totalAmount)}
-                    </p>
+                    {renderScorecardParts(activeYearItems)}
                     <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
                       {activeYearTotals.totalCount}{' '}
                       {activeYearTotals.totalCount === 1 ? 'lançamento' : 'lançamentos'}
@@ -1846,9 +1962,7 @@ const FaturasPage = () => {
                       {activeMonth ? formatYearMonthLabel(activeMonth) : 'Mês'}
                       {shareBadge}
                     </p>
-                    <p className={`mt-1 text-xl font-bold tabular-nums ${invoiceNetAmountClass(activeMonthTotals.totalAmount)}`}>
-                      {formatCurrency(activeMonthTotals.totalAmount)}
-                    </p>
+                    {renderScorecardParts(currentItems)}
                     <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
                       {activeMonthTotals.totalCount}{' '}
                       {activeMonthTotals.totalCount === 1 ? 'lançamento' : 'lançamentos'}

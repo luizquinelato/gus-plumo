@@ -407,8 +407,6 @@ function ClosureAccountBalancePanel({
   loanPay,
   showLoanBreakdown,
   netBalance,
-  itemCount,
-  onViewItems,
 }: {
   accentVar: string
   accountName: string
@@ -419,8 +417,6 @@ function ClosureAccountBalancePanel({
   loanPay: number
   showLoanBreakdown: boolean
   netBalance: number
-  itemCount: number
-  onViewItems: () => void
 }) {
   const direction = netBalance > 0.005 ? 'receive' : netBalance < -0.005 ? 'pay' : 'even'
   const netColor =
@@ -519,20 +515,6 @@ function ClosureAccountBalancePanel({
           {formatPanelCurrency(Math.abs(netBalance))}
         </span>
       </div>
-      {itemCount > 0 ? (
-        <button
-          type="button"
-          onClick={onViewItems}
-          className="group flex w-full items-center justify-between border-t border-gray-200 px-5 py-3 text-left transition-colors hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700/40"
-        >
-          <span className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
-            <Eye size={16} className="text-gray-500 group-hover:text-[var(--color-1)]" />
-            Visualizar itens
-            <span className="text-xs font-normal tabular-nums text-gray-500 dark:text-gray-400">({itemCount})</span>
-          </span>
-          <ChevronRight size={16} className="text-gray-400 group-hover:text-[var(--color-1)]" />
-        </button>
-      ) : null}
     </article>
   )
 }
@@ -2493,9 +2475,9 @@ const SharedBalanceClosureWizardPage = () => {
     return monthName.charAt(0).toUpperCase() + monthName.slice(1)
   }
 
-  const openPreviewItemsModal = (accountScope: 'main' | 'partner') => {
+  const openPreviewItemsModal = () => {
     if (!balanceData) return
-    const isPartnerView = accountScope === 'partner'
+    const isPartnerView = false
 
     const loanTotals = calculateTotalLoanPayments()
     const closureData = buildClosureDataSnapshot(balanceData, loanTotals)
@@ -2562,7 +2544,7 @@ const SharedBalanceClosureWizardPage = () => {
     }
 
     setSelectedClosure(previewClosure)
-    setClosureItems(buildAllClosureItems(closureData, isPartnerView, accountScope))
+    setClosureItems(buildAllClosureItems(closureData, isPartnerView))
     setClosureLoanPayments(previewLoanPayments)
     setIsClosurePartnerView(isPartnerView)
     setShowDetailsModal(true)
@@ -2776,8 +2758,6 @@ const SharedBalanceClosureWizardPage = () => {
                           loanPay={mainFlow.loanPay}
                           showLoanBreakdown={mainFlow.showLoanBreakdown}
                           netBalance={mainFlow.net}
-                          itemCount={countCardItems(balanceData.main_account_card)}
-                          onViewItems={() => openPreviewItemsModal('main')}
                         />
                         <ClosureAccountBalancePanel
                           accentVar="var(--color-2)"
@@ -2789,13 +2769,27 @@ const SharedBalanceClosureWizardPage = () => {
                           loanPay={partnerFlow.loanPay}
                           showLoanBreakdown={partnerFlow.showLoanBreakdown}
                           netBalance={partnerFlow.net}
-                          itemCount={countCardItems(balanceData.partner_account_card)}
-                          onViewItems={() => openPreviewItemsModal('partner')}
                         />
                       </>
                     )
                   })()}
                 </div>
+                {countCardItems(balanceData.main_account_card) + countCardItems(balanceData.partner_account_card) > 0 && (
+                  <button
+                    type="button"
+                    onClick={openPreviewItemsModal}
+                    className="group mt-4 flex w-full items-center justify-between rounded-lg border border-gray-200 px-5 py-3 text-left transition-colors hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700/40"
+                  >
+                    <span className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
+                      <Eye size={16} className="text-gray-500 group-hover:text-[var(--color-1)]" />
+                      Visualizar itens
+                      <span className="text-xs font-normal tabular-nums text-gray-500 dark:text-gray-400">
+                        ({countCardItems(balanceData.main_account_card) + countCardItems(balanceData.partner_account_card)})
+                      </span>
+                    </span>
+                    <ChevronRight size={16} className="text-gray-400 group-hover:text-[var(--color-1)]" />
+                  </button>
+                )}
                 </div>
 
                 {/* ========== CARD DE EMPRÉSTIMOS ========== */}

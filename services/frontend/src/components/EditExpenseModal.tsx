@@ -102,6 +102,7 @@ interface EditExpenseModalProps {
     card_number: string | null
     ownership_percentage: number | null
     shared_partner_id: number | null
+    expense_sharing_id?: number | null
     current_installment?: number | null
     total_installments?: number | null
   } | null
@@ -260,7 +261,15 @@ const EditExpenseModal = ({
       setTargetCardId('')
 
       // Determinar se é compartilhado baseado nos dados do expense
-      const isShared = expense.shared_partner_id !== null && expense.shared_partner_id !== undefined
+      // O select usa o id da configuração (expense_sharing_id); shared_partner_id é o id da conta parceira
+      let sharingId = expense.expense_sharing_id ?? expense.shared_partner_id ?? null
+      // Se a configuração do item não está na lista (ex.: existe uma direta com o mesmo parceiro),
+      // resolve pela conta parceira
+      if (sharingId !== null && !partners.some(p => p.id === sharingId)) {
+        const byAccount = partners.find(p => p.shared_account_id === expense.shared_partner_id)
+        if (byAccount) sharingId = byAccount.id
+      }
+      const isShared = sharingId !== null
       const adjustmentType = isShared ? 'compartilhado' : 'proprio'
 
       setFormData({
@@ -270,7 +279,7 @@ const EditExpenseModal = ({
         subtag_id: expense.subtag_id || 0,
         card_number: expense.card_number || '',
         adjustment_type: adjustmentType,
-        shared_partner_id: expense.shared_partner_id || null,
+        shared_partner_id: sharingId,
         ownership_percentage: expense.ownership_percentage?.toString() || '100.00',
         current_installment:
           expense.current_installment != null ? String(expense.current_installment) : '',

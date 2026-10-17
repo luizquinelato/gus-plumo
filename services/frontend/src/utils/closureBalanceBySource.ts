@@ -67,6 +67,12 @@ export type ClosureSourceBalanceRow = {
   partnerAccountNet: number
   /** Efeito líquido no saldo do fechamento (itens), mesma regra do backend. */
   viewerNet: number
+  /** A receber (itens), positivo. Soma = total_to_receive do fechamento. */
+  toReceive: number
+  /** A pagar (itens), negativo. Soma = total_to_pay do fechamento. */
+  toPay: number
+  /** toReceive + toPay (positivo = a receber). */
+  result: number
 }
 
 export function sourceTableToKey(sourceTable: string | undefined): ClosureSourceKey | null {
@@ -131,8 +137,13 @@ export function computeClosureBalanceBySource(
     const myAccountNet = sideNet(mine)
     const partnerAccountNet = -other.aPagar + -other.aReceber
     const viewerNet = viewerNetFromSides(mine, other)
+    const toReceive = -mine.aReceber + other.aPagar
+    const toPay = -(mine.aPagar - other.aReceber)
 
     return {
+      toReceive,
+      toPay,
+      result: toReceive + toPay,
       key,
       count,
       myAccountCount,
