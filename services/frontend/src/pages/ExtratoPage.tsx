@@ -246,7 +246,10 @@ const ExtratoPage = () => {
   // Estados de dados
   const [detailedReport, setDetailedReport] = useState<DetailedReport | null>(null)
   const [timeSeriesData, setTimeSeriesData] = useState<TimeSeriesData | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [reportLoading, setReportLoading] = useState(false)
+  const [seriesLoading, setSeriesLoading] = useState(false)
+  // Loading até as duas consultas (extrato e gráficos) terminarem
+  const loading = reportLoading || seriesLoading
   const [error, setError] = useState<string | null>(null)
   const [cards, setCards] = useState<any[]>([])
   const [cardsLoading, setCardsLoading] = useState(true)
@@ -257,9 +260,6 @@ const ExtratoPage = () => {
   const [subtags, setSubtags] = useState<SubtagOption[]>([])
   const [subtagsLoading, setSubtagsLoading] = useState(true)
   const [subtagsLoaded, setSubtagsLoaded] = useState(false)
-
-  // Verifica se todos os filtros estão carregados
-  const filtersLoading = cardsLoading || partnersLoading || tagsLoading || subtagsLoading
 
   // Estado da aba ativa (extrato ou gráficos)
   const [activeTab, setActiveTab] = useState<'extrato' | 'graficos'>('extrato')
@@ -491,7 +491,7 @@ const ExtratoPage = () => {
   // Agora o usuário deve clicar em "Aplicar" para carregar os dados
 
   const loadDetailedReport = async (options?: { withDailyBalance?: boolean }) => {
-    setLoading(true)
+    setReportLoading(true)
     setError(null)
     try {
       const params = new URLSearchParams()
@@ -501,7 +501,7 @@ const ExtratoPage = () => {
       if (sources.length === 0) {
         // Não mostra erro, apenas limpa os dados
         setDetailedReport(null)
-        setLoading(false)
+        setReportLoading(false)
         return
       }
 
@@ -546,12 +546,12 @@ const ExtratoPage = () => {
       const errorMessage = error.response?.data?.detail || error.message || 'Erro desconhecido ao carregar dados'
       setError(errorMessage)
     } finally {
-      setLoading(false)
+      setReportLoading(false)
     }
   }
 
   const loadTimeSeriesData = async () => {
-    setLoading(true)
+    setSeriesLoading(true)
     setError(null)
     try {
       const params = new URLSearchParams()
@@ -560,7 +560,7 @@ const ExtratoPage = () => {
 
       if (sources.length === 0 || !sources.includes('bank')) {
         setTimeSeriesData(null)
-        setLoading(false)
+        setSeriesLoading(false)
         return
       }
 
@@ -590,7 +590,7 @@ const ExtratoPage = () => {
       const errorMessage = error.response?.data?.detail || error.message || 'Erro ao carregar gráficos'
       setError(errorMessage)
     } finally {
-      setLoading(false)
+      setSeriesLoading(false)
     }
   }
 
@@ -1129,18 +1129,6 @@ const ExtratoPage = () => {
       }))
     : [] // Não mostra subtags se nenhuma tag está selecionada
 
-  // Mostra loading inicial enquanto os filtros estão carregando
-  if (filtersLoading) {
-    return (
-      <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900">
-        <Sidebar />
-        <CadastroListPageShell>
-          <LoadingSpinner fullScreen message="Carregando filtros..." />
-        </CadastroListPageShell>
-      </div>
-    )
-  }
-
   return (
     <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900">
       <Sidebar />
@@ -1266,6 +1254,7 @@ const ExtratoPage = () => {
                   }))}
                   selectedIds={selectedCardIds}
                   onChange={setSelectedCardIds}
+                  loading={cardsLoading}
                   placeholder="Selecione..."
                 />
               </div>
@@ -1314,6 +1303,7 @@ const ExtratoPage = () => {
                       setSelectedSubtagIds(prev => prev.filter(id => validSubtagIds.includes(id)))
                     }
                   }}
+                  loading={tagsLoading}
                   placeholder="Selecione..."
                 />
               </div>
@@ -1329,6 +1319,7 @@ const ExtratoPage = () => {
                   options={filteredSubtags}
                   selectedIds={selectedSubtagIds}
                   onChange={setSelectedSubtagIds}
+                  loading={subtagsLoading}
                   placeholder={selectedTagIds.length === 0 ? "Selecione uma tag primeiro" : "Selecione..."}
                   groupByKey={selectedTagIds.length > 1}
                   disabled={selectedTagIds.length === 0}
@@ -1355,6 +1346,7 @@ const ExtratoPage = () => {
                   ]}
                   selectedIds={selectedPartnerIds}
                   onChange={setSelectedPartnerIds}
+                  loading={partnersLoading}
                   placeholder="Selecione..."
                   icon={<Users size={14} className="text-gray-500" />}
                 />
@@ -1418,7 +1410,8 @@ const ExtratoPage = () => {
               {/* Botão Aplicar */}
               <button
                 onClick={handleApplyFilters}
-                className="flex h-9 items-center gap-1.5 px-4 text-sm font-medium rounded-lg transition-all hover:opacity-90"
+                disabled={cardsLoading || partnersLoading || tagsLoading || subtagsLoading}
+                className="flex h-9 items-center gap-1.5 px-4 text-sm font-medium rounded-lg transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                 style={{ backgroundColor: 'var(--crud-create)', color: 'var(--on-crud-create)' }}
               >
                 <Filter size={14} />
@@ -1592,9 +1585,8 @@ const ExtratoPage = () => {
             <>
               {/* Loading */}
           {loading && (
-            <div className="text-center py-12">
-              <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 dark:border-white"></div>
-              <p className="mt-4 text-gray-600 dark:text-gray-400">Carregando...</p>
+            <div className="flex justify-center items-center py-12">
+              <LoadingSpinner message="Carregando extrato..." />
             </div>
           )}
 
@@ -2083,8 +2075,8 @@ const ExtratoPage = () => {
             <>
               {/* Loading */}
               {loading && (
-                <div className="flex items-center justify-center h-64">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-color-primary"></div>
+                <div className="flex justify-center items-center py-12">
+                  <LoadingSpinner message="Carregando gráficos..." />
                 </div>
               )}
 

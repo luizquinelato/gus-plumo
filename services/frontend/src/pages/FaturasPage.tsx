@@ -1561,18 +1561,6 @@ const FaturasPage = () => {
     )
   }
 
-  // Mostra loading inicial enquanto os filtros estão carregando
-  if (filtersLoading) {
-    return (
-      <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900">
-        <Sidebar />
-        <CadastroListPageShell>
-          <LoadingSpinner fullScreen message="Carregando filtros..." />
-        </CadastroListPageShell>
-      </div>
-    )
-  }
-
   return (
     <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900">
       <Sidebar />
@@ -1720,6 +1708,7 @@ const FaturasPage = () => {
                     }))}
                     selectedIds={selectedCardIds}
                     onChange={setSelectedCardIds}
+                    loading={cardsLoading}
                     placeholder="Selecione..."
                   />
                 </div>
@@ -1757,6 +1746,7 @@ const FaturasPage = () => {
                         setSelectedSubtagIds([])
                       }
                     }}
+                    loading={tagsLoading}
                     placeholder="Selecione..."
                   />
                 </div>
@@ -1772,6 +1762,7 @@ const FaturasPage = () => {
                     options={filteredSubtags}
                     selectedIds={selectedSubtagIds}
                     onChange={setSelectedSubtagIds}
+                    loading={subtagsLoading}
                     placeholder="Selecione..."
                   />
                 </div>
@@ -1787,6 +1778,7 @@ const FaturasPage = () => {
                     options={partnerOptions}
                     selectedIds={selectedPartnerIds}
                     onChange={setSelectedPartnerIds}
+                    loading={partnersLoading}
                     placeholder="Selecione..."
                     icon={<Users size={14} className="text-gray-500" />}
                   />
@@ -1797,7 +1789,8 @@ const FaturasPage = () => {
               <div className="flex items-end flex-shrink-0">
                 <button
                   onClick={() => loadInvoiceData()}
-                  className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-all hover:opacity-90"
+                  disabled={filtersLoading}
+                  className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                   style={{ backgroundColor: 'var(--crud-create)', color: 'var(--on-crud-create)' }}
                 >
                   <Filter size={14} />

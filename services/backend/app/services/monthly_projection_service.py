@@ -28,7 +28,10 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_HISTORY_MONTHS = 6
 AUTOMATIC_SOURCES = ("card_invoice", "payroll")
-CARD_SOURCES = ("card_invoice", "card_item")
+INSTALLMENT_SOURCE = "card_item_installment"
+CARD_ITEM_SOURCE = "card_item_manual"
+CARD_SOURCES = ("card_invoice", CARD_ITEM_SOURCE, INSTALLMENT_SOURCE)
+MAX_INSTALLMENT_MONTHS = 24
 INCOME_KINDS = {"advance": "Adiantamento salarial", "final": "Salário (fim do mês)"}
 
 
@@ -305,7 +308,7 @@ def _deactivate(db: Session, tenant_id: int, account_id: int, year_month: str, i
     """Desativa só as projeções geradas automaticamente do mês: holerite (receitas) ou
     cartão (despesas). Itens manuais e clonados são preservados."""
     kind_filter = MonthlyProjection.kind == "income" if income else MonthlyProjection.kind != "income"
-    sources = ("payroll",) if income else ("card_invoice", "card_item")
+    sources = ("payroll",) if income else CARD_SOURCES
     db.query(MonthlyProjection).filter(
         MonthlyProjection.tenant_id == tenant_id,
         MonthlyProjection.account_id == account_id,
@@ -317,31 +320,50 @@ def _deactivate(db: Session, tenant_id: int, account_id: int, year_month: str, i
 
 
 def launch_income_projections(
-    db: Session, tenant_id: int, account_id: int, user_id: int, year_month: str
+    db: Session, tenant_id: int, account_id: int, user_id: int, year_month: str, periods: int = 1
 ) -> int:
-    """Apaga as receitas geradas (holerite) do mês e as refaz. Retorna a quantidade criada."""
-    _deactivate(db, tenant_id, account_id, year_month, income=True)
-    projections = income_projections(db, tenant_id, account_id, year_month)
-    for proj in projections:
-        db.add(MonthlyProjection(
-            tenant_id=tenant_id, account_id=account_id, created_by=user_id,
-            year_month=year_month, kind="income", source="payroll",
-            description=proj["description"], expected_date=proj["expected_date"],
-            amount=proj["amount"], my_amount=proj["amount"],
-        ))
+    """Apaga as receitas geradas (holerite) do mês e as refaz, e o mesmo nos `periods - 1`
+    meses seguintes. Retorna a quantidade criada."""
+    created = 0
+    ym = year_month
+    for step in range(max(periods, 1)):
+        if step:
+            ym = next_year_month(ym)
+        _deactivate(db, tenant_id, account_id, ym, income=True)
+        for proj in income_projections(db, tenant_id, account_id, ym):
+            db.add(MonthlyProjection(
+                tenant_id=tenant_id, account_id=account_id, created_by=user_id,
+                year_month=ym, kind="income", source="payroll",
+                description=proj["description"], expected_date=proj["expected_date"],
+                amount=proj["amount"], my_amount=proj["amount"],
+            ))
+            created += 1
     db.commit()
-    logger.info("Projeção de entradas lançada: %s (%s, conta %s)", len(projections), year_month, account_id)
-    return len(projections)
+    logger.info("Projeção de entradas lançada: %s (%s, %s período(s), conta %s)", created, year_month, periods, account_id)
+    return created
 
 
 def _months_between(start_ym: str, end_ym: str) -> int:
     return (int(end_ym[:4]) * 12 + int(end_ym[5:7])) - (int(start_ym[:4]) * 12 + int(start_ym[5:7]))
 
 
+def _sharing_matches(pct: Decimal, sharing: str) -> bool:
+    """own = participação 100%; mine = participação > 0; all = todos."""
+    if sharing == "own":
+        return pct == 100
+    if sharing == "mine":
+        return pct > 0
+    return True
+
+
 def installments_for_month(
-    db: Session, tenant_id: int, account_id: int, year_month: str, card_ids: list[int]
+    db: Session, tenant_id: int, account_id: int, year_month: str, card_ids: list[int],
+    sharing: str = "all",
 ) -> list[dict]:
-    """Parcelas em aberto que vencem na fatura paga em `year_month` (saldo parcelado)."""
+    """Parcelas em aberto que vencem na fatura paga em `year_month` (saldo parcelado).
+
+    `sharing` filtra pela participação do item (own/mine/all), como nas faturas.
+    """
     cards = (
         db.query(Cartao)
         .options(joinedload(Cartao.invoice_group))
@@ -372,6 +394,8 @@ def installments_for_month(
                     continue
                 amount = abs(_money(r.amount))
                 pct = Decimal(r.ownership_percentage if r.ownership_percentage is not None else 100)
+                if not _sharing_matches(pct, sharing):
+                    continue
                 out.append({
                     "card_id": card.id, "card_name": card.name, "card_number": card.number,
                     "description": r.description, "installment": r.current_installment,
@@ -384,6 +408,8 @@ def installments_for_month(
             offset = _months_between(p.last_year_month, inv_ym)
             if not 1 <= offset <= p.remaining_installments:
                 continue
+            if not _sharing_matches(Decimal(p.ownership_percentage), sharing):
+                continue
             out.append({
                 "card_id": card.id, "card_name": card.name, "card_number": card.number,
                 "description": p.description, "installment": p.current_installment + offset,
@@ -393,6 +419,46 @@ def installments_for_month(
             })
     out.sort(key=lambda r: (r["card_name"] or "", r["description"]))
     return out
+
+
+def _replace_installments(
+    db: Session, tenant_id: int, account_id: int, user_id: int, year_month: str,
+    card_ids: list[int], sharing: str, include_future: bool = False,
+) -> int:
+    """Refaz as parcelas (source card_item_installment) de `year_month` e, com `include_future`,
+    dos meses seguintes enquanto ainda houver parcelas (até MAX_INSTALLMENT_MONTHS).
+
+    Desativa antes só as parcelas do mês; itens manuais e demais origens ficam. Não faz commit.
+    O compartilhamento fica gravado na linha para o clonar recalcular com a mesma regra.
+    """
+    own_only = sharing != "all"
+    created = 0
+    ym = year_month
+    for step in range(MAX_INSTALLMENT_MONTHS + 1 if include_future else 1):
+        if step:
+            ym = next_year_month(ym)
+        rows = installments_for_month(db, tenant_id, account_id, ym, card_ids, sharing)
+        db.query(MonthlyProjection).filter(
+            MonthlyProjection.tenant_id == tenant_id,
+            MonthlyProjection.account_id == account_id,
+            MonthlyProjection.year_month == ym,
+            MonthlyProjection.source == INSTALLMENT_SOURCE,
+            MonthlyProjection.credit_card_id.in_(card_ids),
+            MonthlyProjection.active.is_(True),
+        ).update({"active": False}, synchronize_session=False)
+        if not rows and step:
+            break
+        for inst in rows:
+            db.add(MonthlyProjection(
+                tenant_id=tenant_id, account_id=account_id, created_by=user_id, year_month=ym,
+                kind="fixed", source=INSTALLMENT_SOURCE, credit_card_id=inst["card_id"],
+                description=f"{inst['description']} ({inst['installment']}/{inst['total_installments']})"[:255],
+                expected_date=inst["expected_date"],
+                amount=inst["my_amount"] if own_only else inst["amount"], my_amount=inst["my_amount"],
+                sharing=sharing,
+            ))
+            created += 1
+    return created
 
 
 def launch_card_projections(
@@ -489,19 +555,15 @@ def launch_card_projections(
                 )
 
     if include_installments:
-        for inst in installments_for_month(db, tenant_id, account_id, year_month, list(by_id)):
-            _add(
-                kind="fixed", source="card_item", credit_card_id=inst["card_id"],
-                description=f"{inst['description']} ({inst['installment']}/{inst['total_installments']})"[:255],
-                expected_date=inst["expected_date"],
-                amount=inst["my_amount"] if own_only else inst["amount"], my_amount=inst["my_amount"],
-            )
+        created += _replace_installments(
+            db, tenant_id, account_id, user_id, year_month, list(by_id), sharing, include_future=True,
+        )
 
     for item in items:
         card = by_id[item["card_id"]]
         amount = abs(_money(item["amount"]))
         _add(
-            kind=item["kind"], source="card_item", credit_card_id=card.id,
+            kind=item["kind"], source=CARD_ITEM_SOURCE, credit_card_id=card.id,
             description=item["description"].strip(),
             expected_date=_clamped_date(year_month, _closing_due(card)[1]),
             amount=amount, my_amount=amount,
@@ -537,6 +599,13 @@ def clone_to_next_month(
     items = base.filter(MonthlyProjection.year_month == source_ym).all()
     if not include_cards:
         items = [i for i in items if i.source not in CARD_SOURCES]
+    # Parcelas não são copiadas: são recalculadas em cada mês de destino (abaixo).
+    installment_cards: dict[str, set[int]] = defaultdict(set)
+    for i in items:
+        if i.source == INSTALLMENT_SOURCE and i.credit_card_id:
+            installment_cards[i.sharing or "all"].add(i.credit_card_id)
+    items = [i for i in items if i.source != INSTALLMENT_SOURCE]
+    recalculated = 0
 
     def _key(description: str, expected: date, kind: str) -> tuple:
         # Direção: receita (kind "income") ou despesa (fixed/variable).
@@ -545,7 +614,10 @@ def clone_to_next_month(
     # Copia exatamente os valores gravados na geração, sem recalcular nem consultar faturas.
     for target_ym in targets:
         existing: dict[tuple, list[MonthlyProjection]] = defaultdict(list)
-        for row in base.filter(MonthlyProjection.year_month == target_ym).order_by(MonthlyProjection.id):
+        target_rows = base.filter(
+            MonthlyProjection.year_month == target_ym, MonthlyProjection.source != INSTALLMENT_SOURCE,
+        )
+        for row in target_rows.order_by(MonthlyProjection.id):
             existing[_key(row.description, row.expected_date, row.kind)].append(row)
         for item in items:
             target_date = _clamped_date(target_ym, item.expected_date.day)
@@ -566,8 +638,12 @@ def clone_to_next_month(
                 tenant_id=tenant_id, account_id=account_id, created_by=user_id,
                 year_month=target_ym, description=item.description, **values,
             ))
+        for sharing, card_ids in installment_cards.items():
+            recalculated += _replace_installments(
+                db, tenant_id, account_id, user_id, target_ym, sorted(card_ids), sharing,
+            )
     db.commit()
-    return targets[0], len(items) * len(targets)
+    return targets[0], len(items) * len(targets) + recalculated
 
 
 def clear_month(db: Session, tenant_id: int, account_id: int, year_month: str) -> int:

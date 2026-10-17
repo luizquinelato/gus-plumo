@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 import {
   Bar,
@@ -71,7 +71,7 @@ interface Expense {
   amount: string
   my_amount: string
   kind: Kind
-  source: 'manual' | 'clone' | 'card_invoice' | 'card_item' | 'payroll'
+  source: 'manual' | 'clone' | 'card_invoice' | 'card_item_manual' | 'card_item_installment' | 'payroll'
   breakdown?: BreakdownItem[] | null
   editable?: boolean
   is_actual?: boolean
@@ -121,6 +121,7 @@ interface CardFormState {
   target: 'expense' | 'card' | 'income'
   expenseRows: ExpenseRowForm[]
   historyMonths: number
+  periods: number
   mode: 'auto' | 'manual'
   method: 'current' | 'average' | 'installments'
   sharing: 'own' | 'mine' | 'all'
@@ -191,7 +192,8 @@ const SOURCE_LABELS: Record<Expense['source'], string> = {
   manual: 'Manual',
   clone: 'Clonado',
   card_invoice: 'Fatura do cartão',
-  card_item: 'Item de cartão',
+  card_item_manual: 'Item de cartão',
+  card_item_installment: 'Parcela de cartão',
   payroll: 'Folha',
 }
 
@@ -304,6 +306,7 @@ export default function ProjecaoMensalPage() {
   const [previewLoading, setPreviewLoading] = useState(false)
   const previewActive = cardForm?.mode === 'auto' && cardForm.method === 'installments'
   const previewCardKey = cardForm ? cardForm.cardIds.join(',') : ''
+  const previewSharing = cardForm?.sharing ?? 'all'
   useEffect(() => {
     if (!previewActive || !previewCardKey) {
       setInstallmentPreview([])
@@ -313,7 +316,7 @@ export default function ProjecaoMensalPage() {
     setPreviewLoading(true)
     axios
       .get<InstallmentPreview[]>('/api/monthly-projections/installments-preview', {
-        params: { year_month: yearMonth, card_ids: previewCardKey },
+        params: { year_month: yearMonth, card_ids: previewCardKey, sharing: previewSharing },
       })
       .then((res) => !cancelled && setInstallmentPreview(res.data))
       .catch((err) => {
@@ -324,7 +327,7 @@ export default function ProjecaoMensalPage() {
     return () => {
       cancelled = true
     }
-  }, [previewActive, previewCardKey, yearMonth])
+  }, [previewActive, previewCardKey, previewSharing, yearMonth])
   const closeCardForm = useCallback(() => setCardForm(null), [])
   useEscapeKey(closeCardForm, cardForm != null && !busy)
 
@@ -565,7 +568,10 @@ export default function ProjecaoMensalPage() {
 
   const launchIncome = async () => {
     try {
-      await axios.post('/api/monthly-projections/launch-income', { year_month: yearMonth })
+      await axios.post('/api/monthly-projections/launch-income', {
+        year_month: yearMonth,
+        periods: cardForm?.periods ?? 1,
+      })
       await load()
       setCardForm(null)
     } catch (err) {
@@ -580,7 +586,7 @@ export default function ProjecaoMensalPage() {
       const allCredit = res.data.filter((c) => c.type === 'credito')
       const credit = allCredit.filter((c) => c.active !== false)
       setCardOptions(credit)
-      setCardForm({ cardIds: allCredit.map((c) => c.id), historyMonths: 6, target: 'expense', expenseRows: [], mode: 'auto', method: 'current', sharing: 'mine', items: [] })
+      setCardForm({ cardIds: allCredit.map((c) => c.id), historyMonths: 6, periods: 1, target: 'expense', expenseRows: [], mode: 'auto', method: 'current', sharing: 'mine', items: [] })
     } catch (err) {
       console.error('Erro ao carregar cartões:', err)
       setError('Não foi possível carregar os cartões.')
@@ -769,8 +775,23 @@ export default function ProjecaoMensalPage() {
   }
 
   const [year, month] = yearMonth.split('-').map(Number)
-  const totals = data?.totals
-  const result = Number(data?.income_total ?? 0) - Number(totals?.total ?? 0)
+
+  // Totais por metade do mês: 1ª = dias 1–14, 2ª = dias 15 em diante.
+  const halfSummary = (second: boolean) => {
+    const inHalf = (date: string) => (Number(date.slice(8, 10)) >= 15) === second
+    const income = (data?.income ?? []).filter((i) => inHalf(i.expected_date)).reduce((s, i) => s + Number(i.amount), 0)
+    const expenses = (data?.items ?? []).filter((e) => inHalf(e.expected_date))
+    const sumKind = (kind: Kind) => expenses.filter((e) => e.kind === kind).reduce((s, e) => s + Number(e.amount), 0)
+    const fixed = sumKind('fixed')
+    const variable = sumKind('variable')
+    const daysInMonth = new Date(year, month, 0).getDate()
+    const days = second ? daysInMonth - 14 : 14
+    return { income, fixed, variable, total: fixed + variable, result: income - (fixed + variable), days }
+  }
+  const halves = [
+    { title: 'Dias 1 a 14', ...halfSummary(false) },
+    { title: 'Dia 15 ao fim', ...halfSummary(true) },
+  ]
 
   const chartViewToggle = (
     <div className="inline-flex rounded-lg border border-gray-200 bg-gray-100 p-0.5 dark:border-gray-700 dark:bg-gray-800">
@@ -914,24 +935,56 @@ export default function ProjecaoMensalPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-              <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
-                <p className="text-xs text-gray-500">Entradas</p>
-                <p className={`text-lg font-semibold ${creditCls}`}>{formatCurrency(Number(data?.income_total ?? 0))}</p>
-              </div>
-              {[
-                ['Gastos Fixos', Number(totals?.fixed ?? 0)],
-                ['Gastos Variáveis', Number(totals?.variable ?? 0)],
-              ].map(([label, value]) => (
-                <div key={label as string} className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
-                  <p className="text-xs text-gray-500">{label}</p>
-                  <p className={`text-lg font-semibold ${debitCls}`}>{debit(value as number)}</p>
-                </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto_1fr]">
+              {halves.map((h, idx) => (
+                <Fragment key={h.title}>
+                  {idx === 1 && (
+                    <div className="relative hidden w-[3px] rounded-full bg-[var(--color-1)] md:block">
+                      <span
+                        title="Segunda metade do mês (dia 15 em diante)"
+                        className="pointer-events-none absolute left-1/2 top-1/2 z-10 flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-[var(--color-1)] text-white shadow"
+                      >
+                        <ChevronsRight className="h-4 w-4" />
+                      </span>
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{h.title}</p>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+                        <p className="text-xs text-gray-500">Entradas</p>
+                        <p className={`text-lg font-semibold tabular-nums ${creditCls}`}>{formatCurrency(h.income)}</p>
+                      </div>
+                      <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+                        <p className="text-xs text-gray-500">Gastos</p>
+                        <p className={`text-lg font-semibold tabular-nums ${debitCls}`}>{debit(h.total)}</p>
+                        <div className="mt-1 flex items-stretch divide-x divide-gray-200 tabular-nums dark:divide-gray-600">
+                          <div className="pr-2">
+                            <p className="text-[10px] uppercase text-gray-500 dark:text-gray-400">Fixos</p>
+                            <p className={`text-xs font-semibold ${debitCls}`}>{debit(h.fixed)}</p>
+                          </div>
+                          <div className="pl-2">
+                            <p className="text-[10px] uppercase text-gray-500 dark:text-gray-400">Variáveis</p>
+                            <p className={`text-xs font-semibold ${debitCls}`}>{debit(h.variable)}</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+                        <p className="text-xs text-gray-500">Resultado</p>
+                        <p className={`text-lg font-semibold tabular-nums ${h.result >= 0 ? creditCls : debitCls}`}>{formatCurrency(h.result)}</p>
+                        {h.result > 0 && (
+                          <p
+                            title={`Resultado dividido pelos ${h.days} dias desta metade`}
+                            className="mt-1 text-xs tabular-nums text-gray-500 dark:text-gray-400"
+                          >
+                            Pode gastar ~{formatCurrency(h.result / h.days)}/dia
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </Fragment>
               ))}
-              <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
-                <p className="text-xs text-gray-500">Resultado</p>
-                <p className={`text-lg font-semibold ${result >= 0 ? creditCls : debitCls}`}>{formatCurrency(result)}</p>
-              </div>
             </div>
 
             {error && <p className="text-sm text-red-600">{error}</p>}
@@ -1675,12 +1728,12 @@ export default function ProjecaoMensalPage() {
                             {p.description} ({p.installment}/{p.total_installments})
                             <span className="ml-2 text-xs text-gray-500">{p.card_name} •{p.card_number}</span>
                           </span>
-                          <span className={`shrink-0 tabular-nums font-semibold ${debitCls}`}>{formatCurrency(Number(p.amount))}</span>
+                          <span className={`shrink-0 tabular-nums font-semibold ${debitCls}`}>{formatCurrency(Number(cardForm.sharing === 'all' ? p.amount : p.my_amount))}</span>
                         </li>
                       ))}
                     </ul>
                     <p className="mt-2 text-right text-sm font-semibold text-gray-800 dark:text-gray-100">
-                      Total: {formatCurrency(installmentPreview.reduce((s, p) => s + Number(p.amount), 0))}
+                      Total: {formatCurrency(installmentPreview.reduce((s, p) => s + Number(cardForm.sharing === 'all' ? p.amount : p.my_amount), 0))}
                     </p>
                   </>
                 )}
@@ -1751,6 +1804,17 @@ export default function ProjecaoMensalPage() {
             {cardForm.target === 'income' && (
               <p className="p-4 text-sm text-gray-700 dark:text-gray-300">
                 Refaz as receitas do mês a partir dos holerites (valor real ou média dos últimos 6 meses). Substitui as receitas automáticas já lançadas.
+                <label className="mt-3 flex items-center gap-2">
+                  Períodos (este mês e os seguintes)
+                  <input
+                    type="number"
+                    min={1}
+                    max={24}
+                    value={cardForm.periods}
+                    onChange={(e) => setCardForm({ ...cardForm, periods: Math.min(24, Math.max(1, Number(e.target.value) || 1)) })}
+                    className={`${cadastroFieldCls} w-20`}
+                  />
+                </label>
                 <span className="mt-2 block rounded-lg border border-blue-200 bg-blue-50 p-3 text-blue-900 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-100">
                   <strong>Nota:</strong> o holerite de final de mês (pago no fim do mês) entra no primeiro dia do mês seguinte,
                   pois é ele que paga as despesas dos primeiros 15 dias.

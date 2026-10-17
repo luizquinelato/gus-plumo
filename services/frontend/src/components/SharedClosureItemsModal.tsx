@@ -580,11 +580,14 @@ type FlowResult = { toReceive: number; toPay: number; result: number }
 function SourceSummaryTable({
   bySource,
   viewerNetByKey,
+  storedFlow,
 }: {
   bySource: { key: SourceKey; label: string; icon: ReactNode; totals: Totals }[]
   viewerNetByKey: Partial<Record<SourceKey, FlowResult>>
+  /** Totais gravados no fechamento (mesma base do saldo exibido); evita diferença de centavos. */
+  storedFlow?: FlowResult
 }) {
-  const sumFlow = bySource.reduce(
+  const summedFlow = bySource.reduce(
     (acc, row) => {
       const f = viewerNetByKey[row.key]
       return {
@@ -595,6 +598,7 @@ function SourceSummaryTable({
     },
     { toReceive: 0, toPay: 0, result: 0 },
   )
+  const sumFlow = storedFlow ?? summedFlow
   const total = bySource.reduce((acc, row) => ({
     count: acc.count + row.totals.count,
     raw: acc.raw + row.totals.raw,
@@ -1127,6 +1131,14 @@ export function SharedClosureItemsView({
     }
     return out
   }, [closure?.closure_data, isPartnerView])
+  const storedFlow = useMemo<FlowResult | undefined>(() => {
+    const cd = closure?.closure_data
+    const card = isPartnerView ? cd?.partner_account_card : cd?.main_account_card
+    if (!card || card.total_to_receive == null || card.total_to_pay == null) return undefined
+    const toReceive = parseFloat(card.total_to_receive)
+    const toPay = -Math.abs(parseFloat(card.total_to_pay))
+    return { toReceive, toPay, result: toReceive + toPay }
+  }, [closure?.closure_data, isPartnerView])
   const activeSource = activeTab === 'geral' ? null : bySource.find((source) => source.key === activeTab) ?? null
 
   return (
@@ -1187,7 +1199,7 @@ export function SharedClosureItemsView({
                   expectedRemovedCount={recalcExpectedRemovedCount}
                 />
               ) : (
-                <SourceSummaryTable bySource={bySource} viewerNetByKey={viewerNetByKey} />
+                <SourceSummaryTable bySource={bySource} viewerNetByKey={viewerNetByKey} storedFlow={storedFlow} />
               )}
             </CadastroFormSection>
             {regularLoans.length > 0 && (

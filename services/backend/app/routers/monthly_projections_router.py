@@ -120,6 +120,7 @@ class CloneResponse(BaseModel):
 
 class LaunchIncomeRequest(BaseModel):
     year_month: str
+    periods: int = Field(1, ge=1, le=24)
 
 
 class CardItemIn(BaseModel):
@@ -166,6 +167,7 @@ class InstallmentPreviewOut(BaseModel):
 async def installments_preview(
     year_month: str = Query(..., description="YYYY-MM"),
     card_ids: str = Query(..., description="IDs separados por vírgula"),
+    sharing: str = Query("all", pattern="^(own|mine|all)$"),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_account),
 ):
@@ -175,7 +177,7 @@ async def installments_preview(
         ids = [int(x) for x in card_ids.split(",") if x.strip()]
     except ValueError:
         raise HTTPException(status_code=422, detail="card_ids inválido")
-    return service.installments_for_month(db, tenant_id, account_id, year_month, ids)
+    return service.installments_for_month(db, tenant_id, account_id, year_month, ids, sharing)
 
 
 def _month_response(db: Session, tenant_id: int, account_id: int, year_month: str) -> MonthResponse:
@@ -417,7 +419,7 @@ async def launch_income(
 ):
     tenant_id, account_id, user_id = _scope(current_user)
     _check_ym(body.year_month)
-    created = service.launch_income_projections(db, tenant_id, account_id, user_id, body.year_month)
+    created = service.launch_income_projections(db, tenant_id, account_id, user_id, body.year_month, body.periods)
     return LaunchResponse(created=created)
 
 

@@ -128,15 +128,21 @@ const GrupoPage = () => {
   const [tags, setTags] = useState<Array<{ id: number; name: string }>>([])
   const [subtags, setSubtags] = useState<Array<{ id: number; name: string; tag_id: number; tag_name: string }>>([])
 
+  const [tagsLoading, setTagsLoading] = useState(true)
+  const [subtagsLoading, setSubtagsLoading] = useState(true)
+  const [partnersLoading, setPartnersLoading] = useState(true)
+
   useEffect(() => {
     axios
       .get('/api/reports/tags')
       .then((response) => setTags(response.data))
       .catch((err) => console.error('Erro ao carregar tags:', err))
+      .finally(() => setTagsLoading(false))
     axios
       .get('/api/reports/subtags')
       .then((response) => setSubtags(response.data))
       .catch((err) => console.error('Erro ao carregar subtags:', err))
+      .finally(() => setSubtagsLoading(false))
   }, [])
 
   const tagOptions = useMemo(
@@ -157,6 +163,7 @@ const GrupoPage = () => {
       .get('/api/expense-sharing/')
       .then((response) => setPartners(response.data))
       .catch((err) => console.error('Erro ao carregar parceiros:', err))
+      .finally(() => setPartnersLoading(false))
   }, [])
 
   const partnerOptions = useMemo(() => {
@@ -334,12 +341,10 @@ const GrupoPage = () => {
       if (selectedSources.length === 0 || selectedSources.length === 3) {
         // Todas as fontes
         params.append('source', 'combined')
-      } else if (selectedSources.length === 1) {
-        const sourceMap: Record<string, string> = { bank: 'bank', card: 'cards', benefit: 'benefit' }
-        params.append('source', sourceMap[selectedSources[0]])
       } else {
-        // 2 fontes selecionadas
-        params.append('sources', selectedSources.join(','))
+        // 1 ou 2 fontes: o backend lê só `source`, com nomes separados por vírgula
+        const sourceMap: Record<string, string> = { bank: 'bank', card: 'cards', benefit: 'benefits' }
+        params.append('source', selectedSources.map((s) => sourceMap[s]).join(','))
       }
 
       // Datas
@@ -689,6 +694,7 @@ const GrupoPage = () => {
                     options={partnerOptions}
                     selectedIds={selectedPartnerIds}
                     onChange={setSelectedPartnerIds}
+                    loading={partnersLoading}
                     placeholder="Selecione..."
                     icon={<Users size={14} className="text-gray-500" />}
                   />
@@ -714,6 +720,7 @@ const GrupoPage = () => {
                         setSelectedSubtagIds((prev) => prev.filter((id) => valid.includes(id)))
                       }
                     }}
+                    loading={tagsLoading}
                     placeholder="Selecione..."
                     icon={<Tag size={14} className="text-gray-500" />}
                   />
@@ -730,6 +737,7 @@ const GrupoPage = () => {
                     options={subtagOptions}
                     selectedIds={selectedSubtagIds}
                     onChange={setSelectedSubtagIds}
+                    loading={subtagsLoading}
                     placeholder={selectedTagIds.filter((id) => id !== -1).length === 0 ? 'Selecione uma tag primeiro' : 'Selecione...'}
                     groupByKey={selectedTagIds.filter((id) => id !== -1).length > 1}
                     disabled={selectedTagIds.filter((id) => id !== -1).length === 0}
@@ -789,7 +797,8 @@ const GrupoPage = () => {
               <div className="flex items-end flex-shrink-0">
                 <button
                   onClick={loadData}
-                  className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-all hover:opacity-90"
+                  disabled={tagsLoading || subtagsLoading || partnersLoading}
+                  className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                   style={{ backgroundColor: 'var(--crud-create)', color: 'var(--on-crud-create)' }}
                 >
                   <Filter size={14} />

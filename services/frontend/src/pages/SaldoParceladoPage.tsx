@@ -273,6 +273,7 @@ export default function SaldoParceladoPage() {
 
   const [report, setReport] = useState<InstallmentsReport | null>(null)
   const [loading, setLoading] = useState(false)
+  const [optionsLoading, setOptionsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const exportRunner = useExportRunner(setError)
   const chartCardRef = useRef<HTMLDivElement>(null)
@@ -370,6 +371,8 @@ export default function SaldoParceladoPage() {
         setPartners(partnersRes.data)
       } catch (err) {
         console.error('Erro ao carregar filtros:', err)
+      } finally {
+        setOptionsLoading(false)
       }
     }
     void loadOptions()
@@ -651,6 +654,7 @@ export default function SaldoParceladoPage() {
                     }))}
                     selectedIds={selectedCardIds}
                     onChange={setSelectedCardIds}
+                    loading={optionsLoading}
                     placeholder="Selecione..."
                   />
                 </CadastroFilterField>
@@ -664,6 +668,7 @@ export default function SaldoParceladoPage() {
                       setSelectedTagIds(ids)
                       if (!ids.some((id) => id !== -1)) setSelectedSubtagIds([])
                     }}
+                    loading={optionsLoading}
                     placeholder="Selecione..."
                   />
                 </CadastroFilterField>
@@ -674,6 +679,7 @@ export default function SaldoParceladoPage() {
                     options={filteredSubtags}
                     selectedIds={selectedSubtagIds}
                     onChange={setSelectedSubtagIds}
+                    loading={optionsLoading}
                     placeholder="Selecione..."
                   />
                 </CadastroFilterField>
@@ -688,6 +694,7 @@ export default function SaldoParceladoPage() {
                       options={partnerOptions}
                       selectedIds={selectedPartnerIds}
                       onChange={setSelectedPartnerIds}
+                      loading={optionsLoading}
                       placeholder="Selecione..."
                       icon={<Users size={14} className="text-gray-500" />}
                     />
@@ -723,7 +730,7 @@ export default function SaldoParceladoPage() {
                   <button
                     type="button"
                     onClick={() => void loadReport()}
-                    disabled={loading}
+                    disabled={loading || optionsLoading}
                     className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                     style={{ backgroundColor: 'var(--crud-create)', color: 'var(--on-crud-create)' }}
                   >

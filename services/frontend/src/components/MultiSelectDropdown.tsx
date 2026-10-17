@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { ChevronDown, Check, Target } from 'lucide-react'
+import { ChevronDown, Check, Target, Loader2 } from 'lucide-react'
 
 interface Option<T = number> {
   id: T
@@ -22,6 +22,7 @@ interface MultiSelectDropdownProps<T = number> {
   showOnlyButton?: boolean // Mostrar botão "Apenas" em cada opção
   groupByKey?: boolean // Se true, agrupa opções por groupKey
   disabled?: boolean // Se true, desabilita o dropdown
+  loading?: boolean // Se true, mostra spinner e desabilita enquanto as opções carregam
 }
 
 // Componente para IDs numéricos (compatibilidade com código existente)
@@ -34,8 +35,10 @@ export const MultiSelectDropdown: React.FC<MultiSelectDropdownProps<number>> = (
   icon,
   showOnlyButton = true,
   groupByKey = false,
-  disabled = false
+  disabled: disabledProp = false,
+  loading = false
 }) => {
+  const disabled = disabledProp || loading
   const [isOpen, setIsOpen] = useState(false)
   const [hoveredOptionId, setHoveredOptionId] = useState<number | null>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -94,12 +97,16 @@ export const MultiSelectDropdown: React.FC<MultiSelectDropdownProps<number>> = (
       >
         <span className="flex items-center gap-2 truncate">
           {icon}
-          <span className="truncate">{getDisplayText()}</span>
+          <span className="truncate">{loading ? 'Carregando...' : getDisplayText()}</span>
         </span>
-        <ChevronDown
-          size={16}
-          className={`flex-shrink-0 text-gray-500 transition-transform ${isOpen ? 'rotate-180' : ''}`}
-        />
+        {loading ? (
+          <Loader2 size={16} className="flex-shrink-0 animate-spin text-gray-500" />
+        ) : (
+          <ChevronDown
+            size={16}
+            className={`flex-shrink-0 text-gray-500 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          />
+        )}
       </button>
 
       {isOpen && (
