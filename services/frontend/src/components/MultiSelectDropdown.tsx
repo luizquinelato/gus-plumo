@@ -10,6 +10,7 @@ interface Option<T = number> {
   color?: string
   groupKey?: string // Chave para agrupamento (ex: tag_name)
   groupName?: string // Nome do grupo para exibição
+  disabled?: boolean // Opção visível porém não selecionável
 }
 
 interface MultiSelectDropdownProps<T = number> {
@@ -70,7 +71,7 @@ export const MultiSelectDropdown: React.FC<MultiSelectDropdownProps<number>> = (
   }
 
   const selectAll = () => {
-    onChange(options.map(opt => opt.id))
+    onChange(options.filter(opt => !opt.disabled).map(opt => opt.id))
   }
 
   const clearAll = () => {
@@ -79,7 +80,7 @@ export const MultiSelectDropdown: React.FC<MultiSelectDropdownProps<number>> = (
 
   const getDisplayText = () => {
     if (selectedIds.length === 0) return placeholder
-    if (selectedIds.length === options.length) return 'Todos'
+    if (selectedIds.length === options.filter(opt => !opt.disabled).length) return 'Todos'
     if (selectedIds.length === 1) {
       const selected = options.find(opt => opt.id === selectedIds[0])
       return selected?.name || placeholder
@@ -173,13 +174,14 @@ export const MultiSelectDropdown: React.FC<MultiSelectDropdownProps<number>> = (
                     {group.options.map(option => (
                       <div
                         key={option.id}
-                        className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors group"
+                        className={`flex items-center gap-2 px-3 py-2 transition-colors group ${option.disabled ? 'opacity-50' : 'hover:bg-gray-50 dark:hover:bg-gray-600'}`}
                         onMouseEnter={() => setHoveredOptionId(option.id)}
                         onMouseLeave={() => setHoveredOptionId(null)}
                       >
-                        <label className="flex items-center gap-3 flex-1 cursor-pointer">
+                        <label className={`flex items-center gap-3 flex-1 ${option.disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
                           <input
                             type="checkbox"
+                            disabled={option.disabled}
                             checked={selectedIds.includes(option.id)}
                             onChange={() => toggleOption(option.id)}
                             className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
@@ -204,7 +206,7 @@ export const MultiSelectDropdown: React.FC<MultiSelectDropdownProps<number>> = (
                           )}
                         </label>
                         {/* Botão "Apenas" - aparece no hover */}
-                        {showOnlyButton && options.length > 1 && (
+                        {showOnlyButton && options.length > 1 && !option.disabled && (
                           <button
                             type="button"
                             onClick={(e) => {
@@ -235,13 +237,14 @@ export const MultiSelectDropdown: React.FC<MultiSelectDropdownProps<number>> = (
               options.map(option => (
                 <div
                   key={option.id}
-                  className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors group"
+                  className={`flex items-center gap-2 px-3 py-2 transition-colors group ${option.disabled ? 'opacity-50' : 'hover:bg-gray-50 dark:hover:bg-gray-600'}`}
                   onMouseEnter={() => setHoveredOptionId(option.id)}
                   onMouseLeave={() => setHoveredOptionId(null)}
                 >
-                  <label className="flex items-center gap-3 flex-1 cursor-pointer">
+                  <label className={`flex items-center gap-3 flex-1 ${option.disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
                     <input
                       type="checkbox"
+                      disabled={option.disabled}
                       checked={selectedIds.includes(option.id)}
                       onChange={() => toggleOption(option.id)}
                       className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
@@ -266,7 +269,7 @@ export const MultiSelectDropdown: React.FC<MultiSelectDropdownProps<number>> = (
                     )}
                   </label>
                   {/* Botão "Apenas" - aparece no hover */}
-                  {showOnlyButton && options.length > 1 && (
+                  {showOnlyButton && options.length > 1 && !option.disabled && (
                     <button
                       type="button"
                       onClick={(e) => {

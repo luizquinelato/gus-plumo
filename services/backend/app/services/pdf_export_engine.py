@@ -12,6 +12,8 @@ from typing import List, Literal
 from xml.sax.saxutils import escape as xml_escape
 
 from pydantic import BaseModel, Field
+from reportlab.graphics.charts.piecharts import Pie
+from reportlab.graphics.shapes import Drawing
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A4
@@ -78,10 +80,18 @@ class PdfLegendEntry(BaseModel):
     kind: Literal["bar", "line"] = "bar"
 
 
+class PdfPieSlice(BaseModel):
+    name: str = Field(max_length=60)
+    value: float
+    color: str = Field(default="#2563eb", max_length=9)
+
+
 class PdfBlock(BaseModel):
     """Bloco de conteúdo do documento, desenhado na ordem recebida."""
 
-    type: Literal["table", "heading", "text", "cards", "image", "legend", "page_break"]
+    type: Literal["table", "heading", "text", "cards", "image", "legend", "pie", "page_break"]
+    # pie (gráfico de pizza nativo, vetorial)
+    slices: List[PdfPieSlice] = Field(default_factory=list, max_length=60)
     # heading / text
     text: str = Field(default="", max_length=400)
     tone: Tone = "text"
@@ -363,7 +373,34 @@ def _legend_flowable(block: PdfBlock):
     return Paragraph("&nbsp;&nbsp;&nbsp; ".join(parts), style)
 
 
+def _pie_flowable(block: PdfBlock):
+    slices = [s for s in block.slices if s.value > 0]
+    if not slices:
+        return Paragraph("Sem dados para o gráfico.", ParagraphStyle("np", fontName="Helvetica", fontSize=8, textColor=MUTED))
+    total = sum(s.value for s in slices)
+    width, height = A4[0] - 2 * MARGIN_X, 95 * mm
+    drawing = Drawing(width, height)
+    pie = Pie()
+    pie.x, pie.y = width / 2 - 30 * mm, height / 2 - 30 * mm
+    pie.width = pie.height = 60 * mm
+    pie.data = [s.value for s in slices]
+    pie.labels = [f"{_safe(s.name)[:20]} {s.value / total * 100:.1f}%" for s in slices]
+    pie.sideLabels = 1
+    pie.simpleLabels = 0
+    pie.slices.strokeWidth = 0.5
+    pie.slices.strokeColor = colors.white
+    pie.slices.fontName, pie.slices.fontSize = "Helvetica", 7
+    pie.slices.labelRadius = 1.15
+    for i, s in enumerate(slices):
+        color = s.color if re.fullmatch(r"#[0-9a-fA-F]{6}", s.color or "") else "#9ca3af"
+        pie.slices[i].fillColor = colors.HexColor(color)
+    drawing.add(pie)
+    return drawing
+
+
 def _block_flowables(block: PdfBlock) -> list:
+    if block.type == "pie":
+        return [_pie_flowable(block), Spacer(1, 3 * mm)]
     if block.type == "table":
         table = _table_flowable(block)
         return [table, Spacer(1, 3 * mm)] if table is not None else []

@@ -6,7 +6,6 @@ import {
   CadastroListPageBody,
   CadastroListPageHero,
   CadastroListPageShell,
-  CadastroListPageTabs,
   CadastroListPrimaryButton,
   listPageTableRowHoverCls,
   listPageTableStickyActionsCellCls,
@@ -32,7 +31,7 @@ import type { ExpenseEditSuccessPayload } from '../utils/closureEditImpact'
 import SharedAccountDisplay from '../components/SharedAccountDisplay'
 import { MultiSelectDropdown, SourceMultiSelectDropdown } from '../components/MultiSelectDropdown'
 import { DateField } from '../components/date'
-import { FileText, Edit2, Trash2, Split, ArrowDownCircle, ArrowUpCircle, Search, X, Filter, Calendar, Landmark, Gift, ArrowUpDown, ArrowUp, CheckSquare, Square, MinusSquare, Database, Tag, Tags, Users, TrendingUp, BarChart3, Wallet, PlusCircle, ArrowLeftRight, AlertTriangle, ArrowRight, Link2 } from 'lucide-react'
+import { FileText, Edit2, Trash2, Split, ArrowDownCircle, ArrowUpCircle, Search, X, Filter, Calendar, Landmark, Gift, ArrowUpDown, ArrowUp, CheckSquare, Square, MinusSquare, Database, Tag, Tags, Users, TrendingUp, Wallet, PlusCircle, ArrowLeftRight, AlertTriangle, ArrowRight, Link2 } from 'lucide-react'
 import LinkedInvoiceItemsModal, { type LinkedInvoiceSummary } from '../components/LinkedInvoiceItemsModal'
 import { useConfirm } from '../hooks/useConfirm'
 import { dateToLocalString, parseLocalDate } from '../utils/dateUtils'
@@ -45,7 +44,6 @@ import SendToLoanModal from '../components/SendToLoanModal'
 import ManualTransactionModal from '../components/ManualTransactionModal'
 import Toast from '../components/Toast'
 // import { formatAccountDisplay } from '../utils/accountFormatter'
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import {
   dailyBalanceRowClass,
   EXTRATO_DAILY_BALANCE_SOURCE,
@@ -166,37 +164,6 @@ interface DetailedReport {
   expenses: ExpenseDetail[]
 }
 
-interface MonthlyData {
-  year: number
-  month: number
-  year_month: string
-  total: number
-  count: number
-  income: number
-  expenses: number
-}
-
-interface DailyData {
-  date: string
-  total: number
-  count: number
-  income: number
-  expenses: number
-}
-
-interface TimeSeriesData {
-  data: (MonthlyData | DailyData)[]
-  total_amount: number
-  total_count: number
-  total_income: number
-  total_income_count: number
-  total_expenses: number
-  total_expenses_count: number
-  start_date: string
-  end_date: string
-  granularity: 'monthly' | 'daily'
-}
-
 // Opções de fonte de dados para o dropdown
 const SOURCE_OPTIONS = [
   { id: 'bank', name: 'Extratos Bancários', icon: <Landmark size={14} />, color: 'var(--color-1)' },
@@ -245,11 +212,8 @@ const ExtratoPage = () => {
 
   // Estados de dados
   const [detailedReport, setDetailedReport] = useState<DetailedReport | null>(null)
-  const [timeSeriesData, setTimeSeriesData] = useState<TimeSeriesData | null>(null)
   const [reportLoading, setReportLoading] = useState(false)
-  const [seriesLoading, setSeriesLoading] = useState(false)
-  // Loading até as duas consultas (extrato e gráficos) terminarem
-  const loading = reportLoading || seriesLoading
+  const loading = reportLoading
   const [error, setError] = useState<string | null>(null)
   const [cards, setCards] = useState<any[]>([])
   const [cardsLoading, setCardsLoading] = useState(true)
@@ -260,9 +224,6 @@ const ExtratoPage = () => {
   const [subtags, setSubtags] = useState<SubtagOption[]>([])
   const [subtagsLoading, setSubtagsLoading] = useState(true)
   const [subtagsLoaded, setSubtagsLoaded] = useState(false)
-
-  // Estado da aba ativa (extrato ou gráficos)
-  const [activeTab, setActiveTab] = useState<'extrato' | 'graficos'>('extrato')
 
   // Estados de modais
   const [isSplitModalOpen, setIsSplitModalOpen] = useState(false)
@@ -550,57 +511,12 @@ const ExtratoPage = () => {
     }
   }
 
-  const loadTimeSeriesData = async () => {
-    setSeriesLoading(true)
-    setError(null)
-    try {
-      const params = new URLSearchParams()
-
-      const sources = resolveExtratoApiSources(selectedSources)
-
-      if (sources.length === 0 || !sources.includes('bank')) {
-        setTimeSeriesData(null)
-        setSeriesLoading(false)
-        return
-      }
-
-      // Gráficos: série temporal cobre extrato bancário (benefícios não entram na API time-series).
-      params.append('source', 'bank')
-
-      appendOptionalDateRangeParams(params, startDate, endDate)
-
-      // Filtros opcionais - Trata opção "Vazio" (id=-1) para tags
-      const hasEmptyTag = selectedTagIds.includes(-1)
-      const realTagIds = selectedTagIds.filter(id => id !== -1)
-      if (hasEmptyTag) params.append('include_empty_tag', 'true')
-      if (realTagIds.length > 0) params.append('tag_ids', realTagIds.join(','))
-
-      if (selectedSubtagIds.length > 0) params.append('subtag_ids', selectedSubtagIds.join(','))
-
-      // Trata opção "Vazio" (id=-1) para compartilhamento
-      const hasEmptySharing = selectedPartnerIds.includes(-1)
-      const realPartnerIds = selectedPartnerIds.filter(id => id !== -1)
-      if (hasEmptySharing) params.append('include_empty_sharing', 'true')
-      if (realPartnerIds.length > 0) params.append('partner_ids', realPartnerIds.join(','))
-
-      const response = await axios.get(`/api/reports/time-series?${params}`)
-      setTimeSeriesData(response.data)
-    } catch (error: any) {
-      console.error('Erro ao carregar dados de gráfico:', error)
-      const errorMessage = error.response?.data?.detail || error.message || 'Erro ao carregar gráficos'
-      setError(errorMessage)
-    } finally {
-      setSeriesLoading(false)
-    }
-  }
-
-  // Função para aplicar filtros - carrega dados de ambas as abas
+  // Função para aplicar filtros
   const handleApplyFilters = () => {
     setAppliedTransactionType(selectedTransactionType)
     setAppliedIncludeDailyBalance(includeDailyBalance)
     setAppliedPeriodStartKey(startDate ? dateToLocalString(startDate) : null)
     loadDetailedReport({ withDailyBalance: includeDailyBalance })
-    loadTimeSeriesData()
   }
 
   // Auto-aplica filtros quando vindo da HomePage
@@ -725,17 +641,6 @@ const ExtratoPage = () => {
       style: 'currency',
       currency: 'BRL'
     }).format(value)
-  }
-
-  const formatDateChart = (dateStr: string, granularity: 'monthly' | 'daily') => {
-    if (granularity === 'monthly') {
-      const [year, month] = dateStr.split('-')
-      const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
-      return `${monthNames[parseInt(month) - 1]}/${year}`
-    } else {
-      const date = new Date(dateStr)
-      return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
-    }
   }
 
   const formatDateTime = (dateStr: string) => {
@@ -1422,18 +1327,8 @@ const ExtratoPage = () => {
 
           {/* Abas + Totais + Busca */}
           <div>
-            {/* Abas: Extrato / Gráficos */}
-            <CadastroListPageTabs
-              tabs={[
-                { key: 'extrato', label: 'Extrato', icon: <FileText size={16} /> },
-                { key: 'graficos', label: 'Gráficos', icon: <BarChart3 size={16} /> },
-              ]}
-              active={activeTab}
-              onChange={setActiveTab}
-            />
-
-            {/* Cards de resumo + busca da aba Extrato */}
-            {activeTab === 'extrato' && !loading && !error && detailedReport && (
+            {/* Cards de resumo + busca */}
+            {!loading && !error && detailedReport && (
               <>
                 {/* Cards de Resumo */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
@@ -1580,10 +1475,7 @@ const ExtratoPage = () => {
             </div>
           )}
 
-          {/* ========== ABA EXTRATO ========== */}
-          {activeTab === 'extrato' && (
-            <>
-              {/* Loading */}
+          {/* Loading */}
           {loading && (
             <div className="flex justify-center items-center py-12">
               <LoadingSpinner message="Carregando extrato..." />
@@ -2066,176 +1958,6 @@ const ExtratoPage = () => {
                 </div>
               </div>
             </div>
-          )}
-            </>
-          )}
-
-          {/* ========== ABA GRÁFICOS ========== */}
-          {activeTab === 'graficos' && (
-            <>
-              {/* Loading */}
-              {loading && (
-                <div className="flex justify-center items-center py-12">
-                  <LoadingSpinner message="Carregando gráficos..." />
-                </div>
-              )}
-
-              {/* Estado Inicial - Sem dados */}
-              {!loading && !error && !timeSeriesData && (
-                <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-12 text-center">
-                  <div className="flex flex-col items-center gap-4">
-                    <div className="p-4 bg-gray-100 dark:bg-gray-700 rounded-full">
-                      <BarChart3 className="h-12 w-12 text-gray-400" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Selecione os filtros</h3>
-                      <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                        Configure os filtros acima e clique em "Aplicar" para visualizar os gráficos.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Conteúdo dos Gráficos */}
-              {!loading && !error && timeSeriesData && (
-                <div className="space-y-6">
-                  {/* Cards de Resumo - Gráficos */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    {/* Despesas */}
-                    <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700 transition-all hover:border-color-primary hover:shadow-md">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <ArrowUpCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
-                          <div>
-                            <p className="text-xs text-gray-600 dark:text-gray-400">Despesas</p>
-                            <p className="text-lg font-bold text-red-600 dark:text-red-400">
-                              {formatCurrency(Math.abs(timeSeriesData.total_expenses))}
-                            </p>
-                          </div>
-                        </div>
-                        <span className="text-xs text-gray-500 dark:text-gray-500">
-                          {timeSeriesData.total_expenses_count} trans.
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Receitas */}
-                    <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700 transition-all hover:border-color-primary hover:shadow-md">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <ArrowDownCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
-                          <div>
-                            <p className="text-xs text-gray-600 dark:text-gray-400">Receitas</p>
-                            <p className="text-lg font-bold text-green-600 dark:text-green-400">
-                              {formatCurrency(timeSeriesData.total_income)}
-                            </p>
-                          </div>
-                        </div>
-                        <span className="text-xs text-gray-500 dark:text-gray-500">
-                          {timeSeriesData.total_income_count} trans.
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Total Líquido */}
-                    <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700 transition-all hover:border-color-primary hover:shadow-md">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <TrendingUp className="w-5 h-5 text-color-primary" />
-                          <div>
-                            <p className="text-xs text-gray-600 dark:text-gray-400">Total Líquido</p>
-                            <p className={`text-lg font-bold ${
-                              timeSeriesData.total_amount >= 0
-                                ? 'text-green-600 dark:text-green-400'
-                                : 'text-red-600 dark:text-red-400'
-                            }`}>
-                              {formatCurrency(timeSeriesData.total_amount)}
-                            </p>
-                          </div>
-                        </div>
-                        <span className="text-xs text-gray-500 dark:text-gray-500">
-                          {timeSeriesData.total_count} trans.
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Gráfico de Linha - Evolução Temporal */}
-                  <div className="bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                      <TrendingUp size={20} className="text-color-primary" />
-                      Evolução Temporal
-                    </h3>
-                    <ResponsiveContainer width="100%" height={300}>
-                      <LineChart data={timeSeriesData.data}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                        <XAxis
-                          dataKey={timeSeriesData.granularity === 'monthly' ? 'year_month' : 'date'}
-                          tickFormatter={(value) => formatDateChart(value, timeSeriesData.granularity)}
-                          stroke="#6b7280"
-                          fontSize={12}
-                        />
-                        <YAxis
-                          tickFormatter={(value) => formatCurrency(value)}
-                          stroke="#6b7280"
-                          fontSize={12}
-                        />
-                        <Tooltip
-                          formatter={(value) => value !== undefined ? formatCurrency(Number(value)) : ''}
-                          labelFormatter={(label) => formatDateChart(String(label), timeSeriesData.granularity)}
-                          contentStyle={{
-                            backgroundColor: 'var(--bg-card)',
-                            border: '1px solid var(--border-color)',
-                            borderRadius: '8px'
-                          }}
-                        />
-                        <Legend />
-                        <Line type="monotone" dataKey="income" stroke="#10b981" name="Receitas" strokeWidth={2} dot={{ r: 3 }} />
-                        <Line type="monotone" dataKey="expenses" stroke="#ef4444" name="Despesas" strokeWidth={2} dot={{ r: 3 }} />
-                        <Line type="monotone" dataKey="total" stroke="#3b82f6" name="Líquido" strokeWidth={2} dot={{ r: 3 }} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-
-                  {/* Gráfico de Barras - Comparativo */}
-                  <div className="bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                      <BarChart3 size={20} className="text-color-primary" />
-                      Comparativo de Receitas vs Despesas
-                    </h3>
-                    <ResponsiveContainer width="100%" height={300}>
-                      <BarChart data={timeSeriesData.data}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                        <XAxis
-                          dataKey={timeSeriesData.granularity === 'monthly' ? 'year_month' : 'date'}
-                          tickFormatter={(value) => formatDateChart(value, timeSeriesData.granularity)}
-                          stroke="#6b7280"
-                          fontSize={12}
-                        />
-                        <YAxis
-                          tickFormatter={(value) => formatCurrency(value)}
-                          stroke="#6b7280"
-                          fontSize={12}
-                        />
-                        <Tooltip
-                          formatter={(value) => value !== undefined ? formatCurrency(Number(value)) : ''}
-                          labelFormatter={(label) => formatDateChart(String(label), timeSeriesData.granularity)}
-                          contentStyle={{
-                            backgroundColor: 'var(--bg-card)',
-                            border: '1px solid var(--border-color)',
-                            borderRadius: '8px'
-                          }}
-                        />
-                        <Legend />
-                        <Bar dataKey="income" fill="#10b981" name="Receitas" radius={[4, 4, 0, 0]} />
-                        <Bar dataKey="expenses" fill="#ef4444" name="Despesas" radius={[4, 4, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-              )}
-            </>
           )}
         </CadastroListPageBody>
       </CadastroListPageShell>

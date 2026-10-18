@@ -5,26 +5,15 @@ import {
   CadastroListPageBody,
   CadastroListPageHero,
   CadastroListPageShell,
-  cadastroRowIconBtnCls,
 } from '../components/CadastroListPageLayout'
-import {
-  CadastroFieldLabel,
-  CadastroFormSection,
-  CadastroModalBody,
-  CadastroModalFieldsGrid,
-  CadastroModalFieldsRow,
-  CadastroModalFooter,
-  CadastroModalHeader,
-  CadastroModalShell,
-} from '../components/CadastroFormLayout'
 import FloatingFooterBar from '../components/FloatingFooterBar'
-import SharedAccountDisplay from '../components/SharedAccountDisplay'
 import LoadingSpinner from '../components/LoadingSpinner'
-import { Layers, Search, X, ChevronDown, ChevronRight, Landmark, CreditCard, Gift, Filter, Calendar, Info, TrendingUp, TrendingDown, Minus, BarChart3, ArrowUp, Users, FileText, Tag, Tags } from 'lucide-react'
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts'
+import { Layers, Search, X, Landmark, CreditCard, Gift, Filter, Calendar, ArrowUp, Users, FileText, Tag, Tags } from 'lucide-react'
 import { CadastroListHeaderActions } from '../components/CadastroExcelMenu'
 import { useExportRunner } from '../hooks/useExportRunner'
 import { downloadExcel, excelDateStamp } from '../utils/excelExportClient'
-import { downloadPdf } from '../utils/pdfExportClient'
+import { downloadPdf, type PdfBlock } from '../utils/pdfExportClient'
 import { DateField } from '../components/date'
 import { dateToLocalString, parseLocalDate } from '../utils/dateUtils'
 import { formatCurrency } from '../utils/currency'
@@ -59,47 +48,74 @@ interface ExpenseDetail {
   year_month?: string | null  // Ano/mês da fatura (YYYY-MM) - usado apenas para faturas de cartão
 }
 
-interface GroupedExpenses {
-  description: string
-  items: ExpenseDetail[]
-  totalAmount: number
-  count: number
-}
+type ChartTab = 'expense' | 'revenue'
 
-interface SubtagGroup {
+interface ChartSlice {
   name: string
-  items: ExpenseDetail[]
-  totalAmount: number
-  count: number
+  value: number
+  pct: number
 }
-
-interface TagGroup {
-  name: string
-  subtags: SubtagGroup[]
-  totalAmount: number
-  count: number
-}
-
-type GroupMode = 'item' | 'tag'
 
 const NO_TAG = '(Sem tag)'
 const NO_SUBTAG = '(Sem subtag)'
 
-interface GroupStats {
-  description: string
-  periodStart: Date
-  periodEnd: Date
-  periodDays: number
-  totalAmount: number
-  count: number
-  avgAmount: number
-  avgIntervalDays: number
-  trend: 'up' | 'down' | 'stable'
-  trendPercentage: number
-  maxAmount: number
-  minAmount: number
-  stdDeviation: number
-  frequencyPerMonth: number
+// Por posição (maior valor primeiro): vermelho, laranja, amarelo; depois cores distintas.
+// Tons escurecidos de laranja/amarelo para manterem contraste no tema claro.
+const RANK_COLORS = [
+  '#dc2626', // 1º - vermelho
+  '#ea580c', // 2º - laranja
+  '#ca8a04', // 3º - amarelo (âmbar escuro)
+  '#2563eb', // azul
+  '#7c3aed', // roxo
+  '#0d9488', // verde-azulado
+  '#db2777', // rosa
+  '#0891b2', // ciano
+  '#65a30d', // verde-limão
+  '#4f46e5', // índigo
+  '#92400e', // marrom
+  '#be185d', // magenta
+]
+const NO_TAG_COLOR = '#374151' // cinza escuro
+const OTHERS = 'Demais'
+const OTHERS_COLOR = '#9ca3af' // cinza claro
+const MAX_SLICES = 10
+
+// Subtag do extrato que é detalhada pelos itens da fatura; sempre ignorada para não duplicar.
+const BANK_CARD_SUBTAG = 'banco>cartao'
+const normalizeName = (name?: string | null) =>
+  (name ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '')
+    .toLowerCase()
+// Reconhece "Banco>Cartão" como nome da subtag ou como tag "Banco" + subtag "Cartão".
+const isBankCardSubtag = (subtagName?: string | null, tagName?: string | null) => {
+  const sub = normalizeName(subtagName)
+  return sub === BANK_CARD_SUBTAG || (normalizeName(tagName) === 'banco' && sub === 'cartao')
+}
+
+const isNeutral = (name: string) => name === NO_TAG || name === NO_SUBTAG || name === OTHERS
+
+// Fatias sem tag/subtag e "Demais" ficam cinza e não consomem posição na paleta.
+const sliceColor = (slices: ChartSlice[], name: string) => {
+  if (name === OTHERS) return OTHERS_COLOR
+  if (name === NO_TAG || name === NO_SUBTAG) return NO_TAG_COLOR
+  const rank = slices.filter((s) => !isNeutral(s.name)).findIndex((s) => s.name === name)
+  return RANK_COLORS[rank % RANK_COLORS.length]
+}
+
+const truncateLabel = (s: string) => (s.length > 16 ? `${s.slice(0, 15)}…` : s)
+
+// Com `limit`, mantém as (limit - 1) maiores e agrupa o resto em "Demais".
+const buildSlices = (map: Map<string, number>, limit?: number): ChartSlice[] => {
+  const total = Array.from(map.values()).reduce((s, v) => s + v, 0)
+  const slices = Array.from(map.entries())
+    .map(([name, value]) => ({ name, value, pct: total > 0 ? (value / total) * 100 : 0 }))
+    .sort((a, b) => b.value - a.value)
+  if (!limit || slices.length <= limit) return slices
+  const rest = slices.slice(limit - 1)
+  const value = rest.reduce((s, r) => s + r.value, 0)
+  return [...slices.slice(0, limit - 1), { name: OTHERS, value, pct: total > 0 ? (value / total) * 100 : 0 }]
 }
 
 // Opções de fonte
@@ -122,7 +138,6 @@ const GrupoPage = () => {
     shared_account?: { name?: string; description?: string }
   }>>([])
   const exportRunner = useExportRunner((message) => setError(message))
-  const [groupMode, setGroupMode] = useState<GroupMode>('item')
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([])
   const [selectedSubtagIds, setSelectedSubtagIds] = useState<number[]>([])
   const [tags, setTags] = useState<Array<{ id: number; name: string }>>([])
@@ -155,7 +170,17 @@ const GrupoPage = () => {
     if (realTagIds.length === 0) return []
     return subtags
       .filter((st) => realTagIds.includes(st.tag_id))
-      .map((st) => ({ id: st.id, name: st.name, groupKey: st.tag_name, groupName: st.tag_name }))
+      .map((st) => {
+        const ignored = isBankCardSubtag(st.name, st.tag_name)
+        return {
+          id: st.id,
+          name: st.name,
+          groupKey: st.tag_name,
+          groupName: st.tag_name,
+          disabled: ignored,
+          badge: ignored ? 'Ignorada' : undefined,
+        }
+      })
   }, [subtags, selectedTagIds])
 
   useEffect(() => {
@@ -185,34 +210,14 @@ const GrupoPage = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Estados de expansão
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
-
-  // Estado para modal de estatísticas do grupo
-  const [groupStatsModal, setGroupStatsModal] = useState<{
-    isOpen: boolean
-    stats: GroupStats | null
-  }>({
-    isOpen: false,
-    stats: null
-  })
+  // Aba de gráficos e tag selecionada (filtra as subtags)
+  const [chartTab, setChartTab] = useState<ChartTab>('expense')
+  const [selectedChartTag, setSelectedChartTag] = useState<string | null>(null)
+  const [limitSlices, setLimitSlices] = useState(true)
 
   // Estado para botão Back to Top
   const [showBackToTop, setShowBackToTop] = useState(false)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
-
-  // ESC para fechar modais
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        if (groupStatsModal.isOpen) {
-          setGroupStatsModal(prev => ({ ...prev, isOpen: false }))
-        }
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [groupStatsModal.isOpen])
 
   // Detecta scroll para mostrar/esconder botão Back to Top
   useEffect(() => {
@@ -235,99 +240,6 @@ const GrupoPage = () => {
   const scrollToTop = () => {
     setShowBackToTop(false)
     scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
-  }
-
-  // Formata data/hora
-  const formatDateTime = (dateStr: string) => {
-    const date = new Date(dateStr)
-    return date.toLocaleString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
-  }
-
-  // Formata apenas data
-  const formatDate = (date: Date) => {
-    return date.toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    })
-  }
-
-  // Calcula estatísticas do grupo
-  const calculateGroupStats = (group: GroupedExpenses): GroupStats => {
-    const items = group.items
-    const amounts = items.map(i => Number(i.amount) || 0)
-    const dates = items.map(i => new Date(i.date)).sort((a, b) => a.getTime() - b.getTime())
-
-    // Período
-    const periodStart = dates[0]
-    const periodEnd = dates[dates.length - 1]
-    const periodDays = Math.max(1, Math.ceil((periodEnd.getTime() - periodStart.getTime()) / (1000 * 60 * 60 * 24)))
-
-    // Valores
-    const totalAmount = amounts.reduce((sum, a) => sum + a, 0)
-    const avgAmount = totalAmount / items.length
-    const maxAmount = Math.max(...amounts)
-    const minAmount = Math.min(...amounts)
-
-    // Desvio padrão
-    const variance = amounts.reduce((sum, a) => sum + Math.pow(a - avgAmount, 2), 0) / amounts.length
-    const stdDeviation = Math.sqrt(variance)
-
-    // Intervalo médio entre itens (em dias)
-    let avgIntervalDays = 0
-    if (dates.length > 1) {
-      const intervals: number[] = []
-      for (let i = 1; i < dates.length; i++) {
-        const diffDays = (dates[i].getTime() - dates[i - 1].getTime()) / (1000 * 60 * 60 * 24)
-        intervals.push(diffDays)
-      }
-      avgIntervalDays = intervals.reduce((sum, d) => sum + d, 0) / intervals.length
-    }
-
-    // Frequência por mês
-    const frequencyPerMonth = periodDays > 0 ? (items.length / periodDays) * 30 : items.length
-
-    // Tendência: compara média da primeira metade com a segunda metade
-    let trend: 'up' | 'down' | 'stable' = 'stable'
-    let trendPercentage = 0
-    if (items.length >= 4) {
-      const sortedByDate = [...items].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-      const midPoint = Math.floor(sortedByDate.length / 2)
-      const firstHalf = sortedByDate.slice(0, midPoint)
-      const secondHalf = sortedByDate.slice(midPoint)
-
-      const avgFirst = firstHalf.reduce((sum, i) => sum + (Number(i.amount) || 0), 0) / firstHalf.length
-      const avgSecond = secondHalf.reduce((sum, i) => sum + (Number(i.amount) || 0), 0) / secondHalf.length
-
-      if (avgFirst !== 0) {
-        trendPercentage = ((avgSecond - avgFirst) / Math.abs(avgFirst)) * 100
-        if (trendPercentage > 10) trend = 'up'
-        else if (trendPercentage < -10) trend = 'down'
-      }
-    }
-
-    return {
-      description: group.description,
-      periodStart,
-      periodEnd,
-      periodDays,
-      totalAmount,
-      count: items.length,
-      avgAmount,
-      avgIntervalDays,
-      trend,
-      trendPercentage,
-      maxAmount,
-      minAmount,
-      stdDeviation,
-      frequencyPerMonth
-    }
   }
 
   // Carrega dados
@@ -372,89 +284,85 @@ const GrupoPage = () => {
     }
   }
 
-  // Agrupa por descrição
-  const groupedExpenses: GroupedExpenses[] = (() => {
-    // Filtra por termo de busca
-    const filtered = expenses.filter(exp => 
-      !searchTerm || exp.description.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-
-    // Agrupa por descrição
-    const grouped = filtered.reduce((acc, exp) => {
-      const desc = exp.description
-      if (!acc[desc]) {
-        acc[desc] = { description: desc, items: [], totalAmount: 0, count: 0 }
-      }
-      acc[desc].items.push(exp)
-      acc[desc].totalAmount += Number(exp.amount) || 0
-      acc[desc].count++
-      return acc
-    }, {} as Record<string, GroupedExpenses>)
-
-    // Filtra apenas grupos com 2+ items e ordena por quantidade
-    return Object.values(grouped)
-      .filter(g => g.count >= 2)
-      .sort((a, b) => b.count - a.count)
-  })()
-
-  // Agrupa por tag e, dentro dela, por subtag (com totais em cada nível)
-  const tagGroups: TagGroup[] = useMemo(() => {
+  // Dados dos gráficos: despesas (valores < 0) ou receitas (valores > 0), conforme a aba
+  const chartData = useMemo(() => {
     const term = searchTerm.toLowerCase()
-    const byTag = new Map<string, TagGroup>()
+    const tagMap = new Map<string, number>()
+    const subMap = new Map<string, number>()
     expenses
       .filter((exp) => !term || exp.description.toLowerCase().includes(term))
       .forEach((exp) => {
-        const tagName = exp.tag_name || NO_TAG
-        const subName = exp.subtag_name || NO_SUBTAG
         const amount = Number(exp.amount) || 0
-        let tag = byTag.get(tagName)
-        if (!tag) {
-          tag = { name: tagName, subtags: [], totalAmount: 0, count: 0 }
-          byTag.set(tagName, tag)
+        if (chartTab === 'expense' ? amount >= 0 : amount <= 0) return
+        if (isBankCardSubtag(exp.subtag_name, exp.tag_name)) return
+        const value = Math.abs(amount)
+        const tag = exp.tag_name || NO_TAG
+        const subtag = exp.subtag_name || NO_SUBTAG
+        tagMap.set(tag, (tagMap.get(tag) || 0) + value)
+        if (!selectedChartTag || selectedChartTag === tag) {
+          subMap.set(subtag, (subMap.get(subtag) || 0) + value)
         }
-        let sub = tag.subtags.find((s) => s.name === subName)
-        if (!sub) {
-          sub = { name: subName, items: [], totalAmount: 0, count: 0 }
-          tag.subtags.push(sub)
-        }
-        sub.items.push(exp)
-        sub.totalAmount += amount
-        sub.count++
-        tag.totalAmount += amount
-        tag.count++
       })
-    const byAbs = (a: { totalAmount: number }, b: { totalAmount: number }) =>
-      Math.abs(b.totalAmount) - Math.abs(a.totalAmount)
-    const result = Array.from(byTag.values()).sort(byAbs)
-    result.forEach((t) => t.subtags.sort(byAbs))
-    return result
-  }, [expenses, searchTerm])
-
-  const tagKey = (tag: TagGroup) => `tag:${tag.name}`
-  const subtagKey = (tag: TagGroup, sub: SubtagGroup) => `sub:${tag.name}|${sub.name}`
-
-  const hasResults = groupMode === 'tag' ? tagGroups.length > 0 : groupedExpenses.length > 0
-
-  // Toggle expansão
-  const toggleGroup = (description: string) => {
-    const newExpanded = new Set(expandedGroups)
-    if (newExpanded.has(description)) {
-      newExpanded.delete(description)
-    } else {
-      newExpanded.add(description)
+    return {
+      tagSlices: buildSlices(tagMap, limitSlices ? MAX_SLICES : undefined),
+      subtagSlices: buildSlices(subMap, limitSlices ? MAX_SLICES : undefined),
     }
-    setExpandedGroups(newExpanded)
-  }
+  }, [expenses, searchTerm, chartTab, selectedChartTag, limitSlices])
 
-  const expandAll = () =>
-    setExpandedGroups(
-      new Set(
-        groupMode === 'tag'
-          ? tagGroups.flatMap((t) => [tagKey(t), ...t.subtags.map((s) => subtagKey(t, s))])
-          : groupedExpenses.map((g) => g.description),
-      ),
-    )
-  const collapseAll = () => setExpandedGroups(new Set())
+  const { tagSlices, subtagSlices } = chartData
+  const hasResults = tagSlices.length > 0
+
+  const renderChartCard = (title: string, slices: ChartSlice[], clickable: boolean) => (
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+      <h3 className="text-base font-bold text-gray-800 dark:text-gray-200 mb-2">{title}</h3>
+      <ResponsiveContainer width="100%" height={520}>
+        <PieChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+          <Pie
+            data={slices as unknown as Array<Record<string, unknown>>}
+            dataKey="value"
+            nameKey="name"
+            outerRadius={170}
+            minAngle={3}
+            labelLine
+            label={(p: { x: number; y: number; textAnchor?: 'start' | 'middle' | 'end' | 'inherit'; name?: string; payload?: ChartSlice }) => (
+              <text
+                x={p.x}
+                y={p.y}
+                textAnchor={p.textAnchor}
+                dominantBaseline="central"
+                fontSize={12}
+                className="fill-gray-800 dark:fill-gray-200"
+              >
+                {`${truncateLabel(String(p.name ?? ''))} ${(p.payload?.pct ?? 0).toFixed(1)}%`}
+              </text>
+            )}
+            onClick={(d: { name?: string }) => {
+              if (clickable && d?.name && d.name !== OTHERS) setSelectedChartTag((prev) => (prev === d.name ? null : d.name!))
+            }}
+          >
+            {slices.map((s) => (
+              <Cell key={s.name} fill={sliceColor(slices, s.name)} cursor={clickable ? 'pointer' : 'default'} />
+            ))}
+          </Pie>
+          <Tooltip formatter={(v) => formatCurrency(Number(v))} />
+        </PieChart>
+      </ResponsiveContainer>
+      <div className="mt-2 space-y-1">
+        {slices.map((s) => (
+          <div
+            key={s.name}
+            className={`flex items-center gap-2 text-sm ${clickable ? 'cursor-pointer' : ''}`}
+            onClick={() => clickable && s.name !== OTHERS && setSelectedChartTag((prev) => (prev === s.name ? null : s.name))}
+          >
+            <span className="w-3 h-3 rounded-full" style={{ backgroundColor: sliceColor(slices, s.name) }} />
+            <span className="w-14 text-right text-gray-500 dark:text-gray-400">{s.pct.toFixed(1)}%</span>
+            <span className="flex-1 text-gray-800 dark:text-gray-200 truncate">{s.name}</span>
+            <span className="font-semibold text-gray-900 dark:text-white">{formatCurrency(s.value)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 
   const clearFilters = () => {
     setSelectedSources([]) // Vazio = busca todas as fontes
@@ -466,136 +374,59 @@ const GrupoPage = () => {
     setSelectedSubtagIds([])
   }
 
-  const SOURCE_LABELS: Record<string, string> = { bank: 'Extrato', card: 'Fatura', benefit: 'Benefício' }
-
-  const exportDate = (value: string) => {
-    const d = new Date(value)
-    return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString('pt-BR')
-  }
-
-  const exportInstallment = (item: ExpenseDetail) =>
-    item.current_installment && item.total_installments
-      ? `${item.current_installment}/${item.total_installments}`
-      : ''
+  const typeLabel = chartTab === 'expense' ? 'Despesas' : 'Receitas'
 
   const handleExportExcel = () => {
     if (!hasResults) return
-    if (groupMode === 'tag') {
-      void exportRunner.run('Gerando Excel…', () => {
-        const rows: Array<Record<string, string | number>> = []
-        tagGroups.forEach((tag) => {
-          tag.subtags.forEach((sub) => {
-            sub.items.forEach((item) => {
-              rows.push({
-                Tag: tag.name,
-                Subtag: sub.name,
-                Data: exportDate(item.date),
-                Fonte: SOURCE_LABELS[item.source] ?? item.source,
-                Descrição: item.description,
-                Compartilhamento: item.shared_partner_name ?? '',
-                Valor: Number(item.amount) || 0,
-              })
-            })
-            rows.push({ Tag: tag.name, Subtag: `Total ${sub.name}`, Valor: sub.totalAmount })
-          })
-          rows.push({ Tag: `Total ${tag.name}`, Valor: tag.totalAmount })
-        })
-        return downloadExcel(`relatorio_grupos_tag_${excelDateStamp()}.xlsx`, [
-          {
-            name: 'Tags',
-            rows,
-            columns: ['Tag', 'Subtag', 'Data', 'Fonte', 'Descrição', 'Compartilhamento', 'Valor'],
-            kinds: { Valor: 'money' },
-          },
-        ])
-      })
-      return
-    }
     void exportRunner.run('Gerando Excel…', () => {
-      const rows = groupedExpenses.flatMap((group) =>
-        group.items.map((item) => ({
-          Grupo: group.description,
-          Data: exportDate(item.date),
-          Fonte: SOURCE_LABELS[item.source] ?? item.source,
-          Cartão: item.card_name ?? '',
-          Parcela: exportInstallment(item),
-          Compartilhamento: item.shared_partner_name ?? '',
-          'Minha parte (%)': item.ownership_percentage ?? '',
-          Valor: Number(item.amount) || 0,
-        })),
-      )
-      return downloadExcel(`relatorio_grupos_${excelDateStamp()}.xlsx`, [
-        {
-          name: 'Grupos',
-          rows,
-          columns: ['Grupo', 'Data', 'Fonte', 'Cartão', 'Parcela', 'Compartilhamento', 'Minha parte (%)', 'Valor'],
-          kinds: { Parcela: 'text', 'Minha parte (%)': 'decimal', Valor: 'money' },
+      const sheet = (name: string, label: string, slices: ChartSlice[]) => ({
+        name,
+        rows: slices.map((s) => ({ [label]: s.name, '%': Number(s.pct.toFixed(2)), Valor: s.value })),
+        columns: [label, '%', 'Valor'],
+        kinds: { Valor: 'money' as const },
+        pie: {
+          title: `${typeLabel} por ${label}`,
+          category_column: label,
+          value_column: 'Valor',
+          colors: slices.map((s) => sliceColor(slices, s.name)),
         },
+      })
+      return downloadExcel(`relatorio_grupos_${typeLabel.toLowerCase()}_${excelDateStamp()}.xlsx`, [
+        sheet('Tags', 'Tag', tagSlices),
+        sheet('Subtags', 'Subtag', subtagSlices),
       ])
     })
   }
 
   const handleExportPdf = () => {
     if (!hasResults) return
-    if (groupMode === 'tag') {
-      void exportRunner.run('Gerando PDF…', () => {
-        const rows: string[][] = []
-        tagGroups.forEach((tag) => {
-          rows.push([tag.name, '', '', '', formatCurrency(tag.totalAmount)])
-          tag.subtags.forEach((sub) => {
-            rows.push([`    ${sub.name}`, '', '', '', formatCurrency(sub.totalAmount)])
-            sub.items.forEach((item) => {
-              rows.push([
-                `        ${item.description}`,
-                exportDate(item.date),
-                SOURCE_LABELS[item.source] ?? item.source,
-                item.shared_partner_name ?? '',
-                formatCurrency(Number(item.amount) || 0),
-              ])
-            })
-          })
-        })
-        const total = tagGroups.reduce((sum, t) => sum + t.totalAmount, 0)
-        return downloadPdf(`relatorio_grupos_tag_${excelDateStamp()}.pdf`, {
-          title: 'Relatório por Tag/Subtag',
-          subtitle: `${tagGroups.length} tags`,
-          columns: [
-            { header: 'Tag / Subtag / Descrição' },
-            { header: 'Data', width_mm: 24 },
-            { header: 'Fonte', width_mm: 24 },
-            { header: 'Compartilhamento', width_mm: 36 },
-            { header: 'Valor', width_mm: 28, align: 'right' },
-          ],
-          rows,
-          footer: ['Total', '', '', '', formatCurrency(total)],
-        })
-      })
-      return
-    }
-    if (groupedExpenses.length === 0) return
     void exportRunner.run('Gerando PDF…', () => {
-      const rows = groupedExpenses.flatMap((group) =>
-        group.items.map((item) => [
-          group.description,
-          exportDate(item.date),
-          SOURCE_LABELS[item.source] ?? item.source,
-          item.shared_partner_name ?? '',
-          formatCurrency(Number(item.amount) || 0),
-        ]),
-      )
-      const total = groupedExpenses.reduce((sum, g) => sum + g.totalAmount, 0)
-      return downloadPdf(`relatorio_grupos_${excelDateStamp()}.pdf`, {
-        title: 'Relatório por Grupo',
-        subtitle: `${groupedExpenses.length} grupos`,
+      const table = (label: string, slices: ChartSlice[]): PdfBlock => ({
+        type: 'table',
         columns: [
-          { header: 'Grupo' },
-          { header: 'Data', width_mm: 24 },
-          { header: 'Fonte', width_mm: 24 },
-          { header: 'Compartilhamento', width_mm: 36 },
-          { header: 'Valor', width_mm: 28, align: 'right' },
+          { header: label },
+          { header: '%', width_mm: 20, align: 'right' },
+          { header: 'Valor', width_mm: 32, align: 'right' },
         ],
-        rows,
-        footer: ['Total', '', '', '', formatCurrency(total)],
+        rows: slices.map((s) => [s.name, `${s.pct.toFixed(1)}%`, formatCurrency(s.value)]),
+        footer: ['Total', '', formatCurrency(slices.reduce((sum, s) => sum + s.value, 0))],
+      })
+      const pie = (slices: ChartSlice[]): PdfBlock => ({
+        type: 'pie',
+        slices: slices.map((s) => ({ name: s.name, value: s.value, color: sliceColor(slices, s.name) })),
+      })
+      const subtagHeading = selectedChartTag ? `Por Subtag — ${selectedChartTag}` : 'Por Subtag'
+      return downloadPdf(`relatorio_grupos_${typeLabel.toLowerCase()}_${excelDateStamp()}.pdf`, {
+        title: `Relatório por Tag/Subtag — ${typeLabel}`,
+        blocks: [
+          { type: 'heading', text: 'Por Tag' },
+          pie(tagSlices),
+          table('Tag', tagSlices),
+          { type: 'page_break' },
+          { type: 'heading', text: subtagHeading },
+          pie(subtagSlices),
+          table('Subtag', subtagSlices),
+        ],
       })
     })
   }
@@ -621,7 +452,7 @@ const GrupoPage = () => {
             <CadastroListPageHero
               icon={<Layers className="w-8 h-8" />}
               title="Relatório por Grupo"
-              subtitle="Transações agrupadas por descrição (apenas grupos com 2+ itens)"
+              subtitle="Distribuição de despesas e receitas por tag e subtag"
               actions={
                 <CadastroListHeaderActions
                   menu={{
@@ -747,9 +578,9 @@ const GrupoPage = () => {
               </div>
             </div>
 
-            {/* Linha 2: Datas + Agrupar por + Botão Aplicar */}
+            {/* Linha 2: Datas + Botão Aplicar */}
             <div className="mt-3 flex items-end gap-3">
-              <div className="w-40">
+              <div className="flex-1">
                 <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
                   <Calendar size={12} className="inline mr-1 text-color-primary" />
                   Data Início
@@ -761,7 +592,7 @@ const GrupoPage = () => {
                   className="w-full px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-color-primary focus:border-color-primary transition-all"
                 />
               </div>
-              <div className="w-40">
+              <div className="flex-1">
                 <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
                   <Calendar size={12} className="inline mr-1 text-color-primary" />
                   Data Fim
@@ -772,27 +603,6 @@ const GrupoPage = () => {
                   minDate={startDate ?? undefined}
                   className="w-full px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-color-primary focus:border-color-primary transition-all"
                 />
-              </div>
-              <div className="flex-1 flex flex-wrap items-center gap-4 pb-1.5 pl-4">
-              <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Agrupar por:</span>
-              {([
-                { id: 'item', label: 'Item (descrição)' },
-                { id: 'tag', label: 'Tag / Subtag' },
-              ] as const).map((opt) => (
-                <label key={opt.id} className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="groupMode"
-                    value={opt.id}
-                    checked={groupMode === opt.id}
-                    onChange={() => {
-                      setGroupMode(opt.id)
-                      setExpandedGroups(new Set())
-                    }}
-                  />
-                  {opt.label}
-                </label>
-              ))}
               </div>
               <div className="flex items-end flex-shrink-0">
                 <button
@@ -830,21 +640,6 @@ const GrupoPage = () => {
             </div>
           </div>
 
-          {/* Controles de Expansão */}
-          <div className="flex items-center justify-end gap-3 mt-4">
-            <button
-              onClick={expandAll}
-              className="px-3 py-2 text-xs font-medium border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-            >
-              Expandir Tudo
-            </button>
-            <button
-              onClick={collapseAll}
-              className="px-3 py-2 text-xs font-medium border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-            >
-              Recolher Tudo
-            </button>
-          </div>
             </div>
           }
         >
@@ -879,421 +674,60 @@ const GrupoPage = () => {
             </div>
           )}
 
-          {/* Grupos por Tag / Subtag */}
-          {!loading && !error && expenses.length > 0 && groupMode === 'tag' && (
-            <div className={`space-y-2 ${showBackToTop ? 'pb-20' : ''}`}>
-              {tagGroups.length === 0 ? (
+          {/* Gráficos */}
+          {!loading && !error && expenses.length > 0 && (
+            <div className={`space-y-4 ${showBackToTop ? 'pb-20' : ''}`}>
+              <div className="flex gap-2 border-b border-gray-200 dark:border-gray-700">
+                {([
+                  { id: 'expense', label: 'Despesas' },
+                  { id: 'revenue', label: 'Receitas' },
+                ] as const).map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => {
+                      setChartTab(t.id)
+                      setSelectedChartTag(null)
+                    }}
+                    className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+                      chartTab === t.id
+                        ? 'border-color-primary text-color-primary'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer w-fit">
+                <input
+                  type="checkbox"
+                  checked={limitSlices}
+                  onChange={(e) => setLimitSlices(e.target.checked)}
+                />
+                Limitar a {MAX_SLICES} itens (agrupar o restante em "{OTHERS}")
+              </label>
+              {tagSlices.length === 0 ? (
                 <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                   Nenhum item encontrado
                 </div>
               ) : (
-                tagGroups.map((tag) => {
-                  const tagOpen = expandedGroups.has(tagKey(tag))
-                  return (
-                    <div
-                      key={tagKey(tag)}
-                      className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden"
-                    >
-                      <div
-                        className="flex items-center p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer"
-                        onClick={() => toggleGroup(tagKey(tag))}
-                      >
-                        <span className="mr-3 text-gray-500 dark:text-gray-400">
-                          {tagOpen ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-                        </span>
-                        <div className="p-2 rounded-lg mr-3 bg-color-primary-light">
-                          <Tag size={20} className="text-color-primary" />
-                        </div>
-                        <div className="flex-1 font-semibold text-gray-900 dark:text-white">{tag.name}</div>
-                        <div className="text-sm text-gray-500 dark:text-gray-400 mr-4">
-                          <span className="font-medium">{tag.count}</span> {tag.count === 1 ? 'item' : 'itens'}
-                        </div>
-                        <div className={`text-lg font-bold ${tag.totalAmount < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                          {formatCurrency(tag.totalAmount)}
-                        </div>
-                      </div>
-
-                      {tagOpen && (
-                        <div className="bg-gray-50 dark:bg-gray-900/50 border-t border-gray-200 dark:border-gray-700">
-                          {tag.subtags.map((sub) => {
-                            const subOpen = expandedGroups.has(subtagKey(tag, sub))
-                            return (
-                              <div key={subtagKey(tag, sub)} className="border-b last:border-b-0 border-gray-200 dark:border-gray-700">
-                                <div
-                                  className="flex items-center py-3 pl-10 pr-4 hover:bg-gray-100 dark:hover:bg-gray-700/50 cursor-pointer"
-                                  onClick={() => toggleGroup(subtagKey(tag, sub))}
-                                >
-                                  <span className="mr-2 text-gray-500 dark:text-gray-400">
-                                    {subOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                                  </span>
-                                  <Tags size={16} className="mr-2 text-color-primary" />
-                                  <div className="flex-1 text-sm font-medium text-gray-800 dark:text-gray-200">{sub.name}</div>
-                                  <div className="text-xs text-gray-500 dark:text-gray-400 mr-4">
-                                    {sub.count} {sub.count === 1 ? 'item' : 'itens'}
-                                  </div>
-                                  <div className={`text-sm font-bold ${sub.totalAmount < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                                    {formatCurrency(sub.totalAmount)}
-                                  </div>
-                                </div>
-
-                                {subOpen && (
-                                  <div>
-                                    {[...sub.items]
-                                      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                                      .map((item) => (
-                                        <div
-                                          key={`${item.source}-${item.id}`}
-                                          className="grid grid-cols-[50px_1fr_2fr_1fr_100px] gap-2 py-2 pl-16 pr-4 border-t border-gray-200 dark:border-gray-700 text-sm items-center"
-                                        >
-                                          <div className="flex items-center">
-                                            {item.source === 'bank' && <Landmark size={16} style={{ color: 'var(--color-1)' }} />}
-                                            {item.source === 'card' && <CreditCard size={16} style={{ color: 'var(--color-2)' }} />}
-                                            {item.source === 'benefit' && <Gift size={16} style={{ color: 'var(--color-3)' }} />}
-                                          </div>
-                                          <span className="text-xs text-gray-700 dark:text-gray-300">{formatDateTime(item.date)}</span>
-                                          <span className="text-gray-800 dark:text-gray-200 truncate" title={item.description}>{item.description}</span>
-                                          <span className="text-xs text-gray-500 dark:text-gray-400 truncate">{item.shared_partner_name || ''}</span>
-                                          <span className={`text-right font-semibold ${item.amount < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                                            {formatCurrency(item.amount)}
-                                          </span>
-                                        </div>
-                                      ))}
-                                  </div>
-                                )}
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })
-              )}
-            </div>
-          )}
-
-          {/* Grupos */}
-          {!loading && !error && expenses.length > 0 && groupMode === 'item' && (
-            <div className={`space-y-2 ${showBackToTop ? 'pb-20' : ''}`}>
-              {groupedExpenses.length === 0 ? (
-                <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-                  Nenhum grupo encontrado com 2+ itens
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {renderChartCard('Por Tag', tagSlices, true)}
+                  {renderChartCard(
+                    selectedChartTag ? `Por Subtag — ${selectedChartTag}` : 'Por Subtag',
+                    subtagSlices,
+                    false,
+                  )}
                 </div>
-              ) : (
-                <>
-                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                    Encontrados <span className="font-semibold text-gray-900 dark:text-white">{groupedExpenses.length}</span> grupos
-                  </div>
-                  {groupedExpenses.map((group) => {
-                    const isExpanded = expandedGroups.has(group.description)
-                    const isNegative = group.totalAmount < 0
-
-                    return (
-                      <div
-                        key={group.description}
-                        className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden"
-                      >
-                        {/* Header do Grupo */}
-                        <div
-                          className="flex items-center p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer"
-                          onClick={() => toggleGroup(group.description)}
-                        >
-                          {/* Botão expansão */}
-                          <button className="mr-3 text-gray-500 dark:text-gray-400">
-                            {isExpanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-                          </button>
-
-                          {/* Ícone tipo */}
-                          <div className="p-2 rounded-lg mr-3 bg-color-primary-light">
-                            <Layers size={20} className="text-color-primary" />
-                          </div>
-
-                          {/* Descrição */}
-                          <div className="flex-1">
-                            <span className="font-semibold text-gray-900 dark:text-white">
-                              {group.description}
-                            </span>
-                          </div>
-
-                          {/* Contador */}
-                          <div className="text-sm text-gray-500 dark:text-gray-400 mr-4">
-                            <span className="font-medium">{group.count}</span> {group.count === 1 ? 'item' : 'itens'}
-                          </div>
-
-                          {/* Total */}
-                          <div className={`text-lg font-bold ${isNegative ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                            {formatCurrency(group.totalAmount)}
-                          </div>
-
-                          {/* Botão Info */}
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              const stats = calculateGroupStats(group)
-                              setGroupStatsModal({ isOpen: true, stats })
-                            }}
-                            className={`${cadastroRowIconBtnCls} ml-2`}
-                            title="Ver estatísticas do grupo"
-                          >
-                            <Info size={18} />
-                          </button>
-                        </div>
-
-                        {/* Items expandidos */}
-                        {isExpanded && (
-                          <div className="bg-gray-50 dark:bg-gray-900/50 border-t border-gray-200 dark:border-gray-700">
-                            {/* Cabeçalho */}
-                            <div className="grid grid-cols-[40px_50px_1fr_1.5fr_1fr_1fr_1fr_100px] gap-2 p-2.5 px-4 bg-gray-50 dark:bg-gray-700/50">
-                              <span className="text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">#</span>
-                              <span className="text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Origem</span>
-                              <span className="text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Data/Hora</span>
-                              <span className="text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Conta/Cartão</span>
-                              <span className="text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Tag/Subtag</span>
-                              <span className="text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Compartilhamento</span>
-                              <span className="text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider text-right">Valor</span>
-                            </div>
-
-                            {/* Linhas */}
-                            <div>
-                              {group.items
-                                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                                .map((item, index) => (
-                                <div
-                                  key={`${item.source}-${item.id}`}
-                                  className="grid grid-cols-[40px_50px_1fr_1.5fr_1fr_1fr_1fr_100px] gap-2 p-2.5 px-4 border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 border-l-gray-300 dark:border-l-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all text-sm items-center"
-                                  onMouseEnter={(e) => { e.currentTarget.style.borderLeftColor = 'var(--color-1)' }}
-                                  onMouseLeave={(e) => { e.currentTarget.style.borderLeftColor = '' }}
-                                >
-                                  {/* Número */}
-                                  <span className="font-medium text-gray-500 dark:text-gray-400">#{index + 1}</span>
-
-                                  {/* Origem (ícone + manual se aplicável) */}
-                                  <div className="flex items-center gap-1">
-                                    {item.source === 'bank' && <Landmark size={16} style={{ color: 'var(--color-1)' }} />}
-                                    {item.source === 'card' && <CreditCard size={16} style={{ color: 'var(--color-2)' }} />}
-                                    {item.source === 'benefit' && <Gift size={16} style={{ color: 'var(--color-3)' }} />}
-                                    {/* Mostra "M" apenas para bank_statements manuais (sem category) */}
-                                    {item.source === 'bank' && item.category === null && (
-                                      <span
-                                        className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold rounded-full bg-orange-500 text-white shadow-sm"
-                                        title="Lançamento Manual"
-                                      >
-                                        M
-                                      </span>
-                                    )}
-                                  </div>
-
-                                  {/* Data/Hora */}
-                                  <span className="text-gray-700 dark:text-gray-300 text-xs">
-                                    {formatDateTime(item.date)}
-                                  </span>
-
-                                  {/* Conta/Cartão */}
-                                  <div className="text-gray-600 dark:text-gray-400 text-xs truncate">
-                                    {item.source === 'card' || item.source === 'benefit' ? (
-                                      <>
-                                        {item.card_name || '-'}
-                                        {item.card_number && <span className="text-gray-400"> • ***{item.card_number.slice(-4)}</span>}
-                                      </>
-                                    ) : (
-                                      item.account_name || '-'
-                                    )}
-                                  </div>
-
-                                  {/* Tag/Subtag */}
-                                  <div className="text-gray-700 dark:text-gray-300 text-xs truncate">
-                                    {item.tag_name || '-'}
-                                    {item.subtag_name && <span className="text-gray-400"> / {item.subtag_name}</span>}
-                                  </div>
-
-                                  {/* Compartilhamento */}
-                                  <div className="flex items-center gap-1 min-w-0" onClick={(e) => e.stopPropagation()}>
-                                    <SharedAccountDisplay
-                                      account={item.shared_partner_name ? {
-                                        id: item.shared_partner_id || 0,
-                                        name: item.shared_partner_name,
-                                        bank: item.shared_partner_bank ? { name: item.shared_partner_bank } : null,
-                                        agency: item.shared_partner_agency,
-                                        account_number: item.shared_partner_account_number
-                                      } : null}
-                                      ownershipPercentage={item.ownership_percentage}
-                                    />
-                                  </div>
-
-                                  {/* Valor */}
-                                  <div className="text-right">
-                                    <span className={`font-semibold ${item.amount < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                                      {formatCurrency(item.amount)}
-                                    </span>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </>
               )}
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Nota: a subtag Banco&gt;Cartão é ignorada neste relatório, pois os itens de cartão têm mapeamento próprio.
+              </p>
             </div>
           )}
         </CadastroListPageBody>
         {exportRunner.overlay}
       </CadastroListPageShell>
-
-      {groupStatsModal.isOpen && groupStatsModal.stats && (
-        <CadastroModalShell
-          maxWidth="max-w-lg"
-          zClass="z-[60]"
-          onBackdropClick={() => setGroupStatsModal({ isOpen: false, stats: null })}
-        >
-          <CadastroModalHeader
-            isEdit={false}
-            title="Estatísticas do Grupo"
-            onClose={() => setGroupStatsModal({ isOpen: false, stats: null })}
-            icon={<BarChart3 size={18} />}
-          />
-          <CadastroModalBody>
-            <CadastroFormSection title="Identificação" icon={<Layers size={14} />}>
-              <p
-                className="truncate text-sm font-medium text-gray-800 dark:text-gray-100"
-                title={groupStatsModal.stats.description}
-              >
-                {groupStatsModal.stats.description}
-              </p>
-            </CadastroFormSection>
-
-            <CadastroFormSection title="Período" icon={<Calendar size={14} />}>
-              <CadastroModalFieldsGrid>
-                <CadastroModalFieldsRow cols={3}>
-                  <div className="min-w-0">
-                    <CadastroFieldLabel>De</CadastroFieldLabel>
-                    <p className="mt-0.5 text-sm font-medium text-gray-800 dark:text-gray-100">
-                      {formatDate(groupStatsModal.stats.periodStart)}
-                    </p>
-                  </div>
-                  <div className="min-w-0">
-                    <CadastroFieldLabel>Até</CadastroFieldLabel>
-                    <p className="mt-0.5 text-sm font-medium text-gray-800 dark:text-gray-100">
-                      {formatDate(groupStatsModal.stats.periodEnd)}
-                    </p>
-                  </div>
-                  <div className="min-w-0">
-                    <CadastroFieldLabel>Duração</CadastroFieldLabel>
-                    <p className="mt-0.5 text-sm font-medium text-gray-800 dark:text-gray-100">
-                      {groupStatsModal.stats.periodDays} dias
-                    </p>
-                  </div>
-                </CadastroModalFieldsRow>
-              </CadastroModalFieldsGrid>
-            </CadastroFormSection>
-
-            <CadastroFormSection title="Valores" icon={<BarChart3 size={14} />}>
-              <CadastroModalFieldsGrid>
-                <CadastroModalFieldsRow cols={2}>
-                  <div className="min-w-0">
-                    <CadastroFieldLabel>Total</CadastroFieldLabel>
-                    <p className={`mt-0.5 text-lg font-bold ${groupStatsModal.stats.totalAmount < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                      {formatCurrency(groupStatsModal.stats.totalAmount)}
-                    </p>
-                  </div>
-                  <div className="min-w-0">
-                    <CadastroFieldLabel>Média por Item</CadastroFieldLabel>
-                    <p className={`mt-0.5 text-lg font-bold ${groupStatsModal.stats.avgAmount < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                      {formatCurrency(groupStatsModal.stats.avgAmount)}
-                    </p>
-                  </div>
-                </CadastroModalFieldsRow>
-                <CadastroModalFieldsRow cols={2}>
-                  <div className="min-w-0">
-                    <CadastroFieldLabel>Menor Valor</CadastroFieldLabel>
-                    <p className={`mt-0.5 font-semibold ${groupStatsModal.stats.minAmount < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                      {formatCurrency(groupStatsModal.stats.minAmount)}
-                    </p>
-                  </div>
-                  <div className="min-w-0">
-                    <CadastroFieldLabel>Maior Valor</CadastroFieldLabel>
-                    <p className={`mt-0.5 font-semibold ${groupStatsModal.stats.maxAmount < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                      {formatCurrency(groupStatsModal.stats.maxAmount)}
-                    </p>
-                  </div>
-                </CadastroModalFieldsRow>
-                <CadastroModalFieldsRow cols={2}>
-                  <div className="min-w-0">
-                    <CadastroFieldLabel>Frequência</CadastroFieldLabel>
-                    <p className="mt-0.5 font-semibold text-gray-800 dark:text-gray-100">
-                      {groupStatsModal.stats.frequencyPerMonth.toFixed(1)}x{' '}
-                      <span className="text-sm font-normal text-gray-500">por mês</span>
-                    </p>
-                  </div>
-                  <div className="min-w-0">
-                    <CadastroFieldLabel>Intervalo Médio</CadastroFieldLabel>
-                    <p className="mt-0.5 font-semibold text-gray-800 dark:text-gray-100">
-                      {groupStatsModal.stats.avgIntervalDays.toFixed(1)}{' '}
-                      <span className="text-sm font-normal text-gray-500">dias</span>
-                    </p>
-                  </div>
-                </CadastroModalFieldsRow>
-                <CadastroModalFieldsRow>
-                  <div className="min-w-0">
-                    <CadastroFieldLabel>Desvio Padrão</CadastroFieldLabel>
-                    <p className="mt-0.5 font-semibold text-gray-800 dark:text-gray-100">
-                      {formatCurrency(Math.abs(groupStatsModal.stats.stdDeviation))}
-                    </p>
-                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      {groupStatsModal.stats.stdDeviation < Math.abs(groupStatsModal.stats.avgAmount) * 0.3
-                        ? '✓ Valores consistentes'
-                        : '⚠ Alta variação nos valores'}
-                    </p>
-                  </div>
-                </CadastroModalFieldsRow>
-              </CadastroModalFieldsGrid>
-            </CadastroFormSection>
-
-            <CadastroFormSection title="Tendência" icon={<TrendingUp size={14} />}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  {groupStatsModal.stats.trend === 'up' && (
-                    <>
-                      <TrendingUp size={20} className="text-red-500" />
-                      <span className="font-semibold text-red-600 dark:text-red-400">Crescimento</span>
-                    </>
-                  )}
-                  {groupStatsModal.stats.trend === 'down' && (
-                    <>
-                      <TrendingDown size={20} className="text-green-500" />
-                      <span className="font-semibold text-green-600 dark:text-green-400">Declínio</span>
-                    </>
-                  )}
-                  {groupStatsModal.stats.trend === 'stable' && (
-                    <>
-                      <Minus size={20} className="text-gray-500" />
-                      <span className="font-semibold text-gray-600 dark:text-gray-400">Estável</span>
-                    </>
-                  )}
-                </div>
-                <div className="text-right">
-                  <span className={`text-xl font-bold ${
-                    groupStatsModal.stats.trend === 'up' ? 'text-red-600 dark:text-red-400' :
-                    groupStatsModal.stats.trend === 'down' ? 'text-green-600 dark:text-green-400' :
-                    'text-gray-600 dark:text-gray-400'
-                  }`}>
-                    {groupStatsModal.stats.trendPercentage > 0 ? '+' : ''}{groupStatsModal.stats.trendPercentage.toFixed(1)}%
-                  </span>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">variação média</p>
-                </div>
-              </div>
-            </CadastroFormSection>
-          </CadastroModalBody>
-          <CadastroModalFooter
-            onClose={() => setGroupStatsModal({ isOpen: false, stats: null })}
-            hideSave
-            closeLabel="Fechar"
-          />
-        </CadastroModalShell>
-      )}
 
       {/* Barra Flutuante Back to Top */}
       {showBackToTop && (

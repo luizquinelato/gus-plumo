@@ -44,6 +44,19 @@ _BAD_SHEET_CHARS = re.compile(r"[\[\]:*?/\\]")
 Cell = str | int | float | bool | None
 
 
+PIE_CHART_ROWS = 27  # linhas reservadas acima da tabela para o gráfico
+
+
+class PieSpec(BaseModel):
+    """Pizza nativa posicionada acima da tabela da aba."""
+
+    title: str = Field(default="", max_length=100)
+    category_column: str
+    value_column: str
+    # Cor (#RRGGBB) por linha de `rows`, na mesma ordem.
+    colors: List[str] = Field(default_factory=list)
+
+
 class SheetSpec(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     rows: List[Dict[str, Cell]] = Field(default_factory=list)
@@ -55,6 +68,8 @@ class SheetSpec(BaseModel):
     footer: List[List[Cell]] = Field(default_factory=list)
     # Estilo por linha de `rows` (mesma ordem): "", "daily" ou "daily_month_end".
     row_styles: List[str] = Field(default_factory=list)
+    # Gráfico de pizza acima da tabela (opcional).
+    pie: PieSpec | None = None
 
 
 class ExcelExportPayload(BaseModel):
@@ -142,6 +157,10 @@ def build_table_xlsx(payload: ExcelExportPayload) -> bytes:
                 else:
                     _write_cell(ws, i, c, v, _free_kind(v), fmts)
         top = len(spec.preamble) + (1 if spec.preamble else 0)
+        pie = spec.pie if spec.pie and spec.rows else None
+        pie_row = top
+        if pie:
+            top += PIE_CHART_ROWS
 
         for c, h in enumerate(headers):
             ws.write_string(top, c, h, head)
@@ -170,7 +189,33 @@ def build_table_xlsx(payload: ExcelExportPayload) -> bytes:
         for j, line in enumerate(spec.footer, start=1):
             for c, v in enumerate(line):
                 _write_cell(ws, last + j, c, v, _free_kind(v), fmts)
-        ws.freeze_panes(top + 1, 0)
+        if pie and pie.category_column in headers and pie.value_column in headers:
+            cat_col, val_col = headers.index(pie.category_column), headers.index(pie.value_column)
+            sheet_ref = "'" + ws.get_name().replace("'", "''") + "'"
+            points = [
+                {"fill": {"color": c if re.fullmatch(r"#[0-9a-fA-F]{6}", c or "") else "#9ca3af"}}
+                for c in pie.colors[: len(spec.rows)]
+            ]
+            chart = wb.add_chart({"type": "pie"})
+            chart.add_series({
+                "name": pie.title or pie.category_column,
+                "categories": [sheet_ref, top + 1, cat_col, last, cat_col],
+                "values": [sheet_ref, top + 1, val_col, last, val_col],
+                "points": points,
+                "data_labels": {
+                    "category": True, "percentage": True, "leader_lines": True,
+                    "position": "outside_end", "separator": "\n",
+                },
+            })
+            if pie.title:
+                chart.set_title({"name": pie.title})
+            chart.set_legend({"position": "right"})
+            chart.set_size({"width": 760, "height": 500})
+            ws.insert_chart(pie_row, 0, chart)
+        else:
+            pie = None
+        if not pie:
+            ws.freeze_panes(top + 1, 0)
         if headers:
             ws.autofilter(top, 0, max(last, top + 1), len(headers) - 1)
 

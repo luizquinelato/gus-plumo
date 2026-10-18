@@ -47,6 +47,7 @@ export type PdfBlock =
   | { type: 'cards'; cards: PdfCard[] }
   | { type: 'image'; image_data_url: string; max_height_mm?: number }
   | { type: 'legend'; legend: PdfLegendEntry[] }
+  | { type: 'pie'; slices: { name: string; value: number; color: string }[] }
   | { type: 'page_break' }
 
 /** Documento com vários blocos, desenhados na ordem. */

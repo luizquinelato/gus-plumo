@@ -22,6 +22,8 @@ export interface ExcelSheetSpec {
   footer?: ExcelCell[][]
   /** Estilo por linha (mesma ordem de `rows`): '', 'daily' ou 'daily_month_end'. */
   row_styles?: string[]
+  /** Pizza nativa acima da tabela; `colors` na ordem de `rows` (#RRGGBB). */
+  pie?: { title?: string; category_column: string; value_column: string; colors: string[] }
 }
 
 export function excelDateStamp(now: Date = new Date()): string {
@@ -48,6 +50,7 @@ export async function downloadExcel(filename: string, sheets: ExcelSheetSpec[]):
       preamble: s.preamble ?? [],
       footer: s.footer ?? [],
       row_styles: s.row_styles ?? [],
+      pie: s.pie ?? null,
     })),
   }
   const response = await axios.post<Blob>('/api/reports/export-excel', payload, { responseType: 'blob' })
