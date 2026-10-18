@@ -3,6 +3,7 @@ import axios from 'axios'
 import Sidebar from '../components/Sidebar'
 import {
   CadastroListPageBody,
+  CadastroListPageEmptyCard,
   CadastroListPageHero,
   CadastroListPageShell,
 } from '../components/CadastroListPageLayout'
@@ -18,6 +19,33 @@ import { DateField } from '../components/date'
 import { dateToLocalString, parseLocalDate } from '../utils/dateUtils'
 import { formatCurrency } from '../utils/currency'
 import { MultiSelectDropdown, SourceMultiSelectDropdown } from '../components/MultiSelectDropdown'
+import { ListPageTable } from '../components/ListPageTable'
+import SharedAccountDisplay from '../components/SharedAccountDisplay'
+import {
+  ListTableIndexCell,
+  ListTableIndexHeader,
+  ListTableSpacerCell,
+  ListTableSpacerCol,
+  ListTableSpacerHeader,
+  ListTableSortableHeader,
+} from '../components/ListTableSelectColumns'
+import {
+  listPageTableTdCls,
+  listPageTableRowHoverCls,
+  listPageTableChromeFooterBgCls,
+} from '../components/CadastroListPageLayout'
+
+type ListSortKey =
+  | 'source'
+  | 'date'
+  | 'invoice'
+  | 'description'
+  | 'tag'
+  | 'subtag'
+  | 'sharing'
+  | 'mine'
+  | 'partner'
+  | 'total'
 
 // Interfaces
 interface ExpenseDetail {
@@ -36,6 +64,7 @@ interface ExpenseDetail {
   total_installments?: number | null
   adjustment_type?: string | null
   ownership_percentage?: number | null
+  expense_sharing_id?: number | null
   shared_partner_id?: number | null
   shared_partner_name?: string | null
   shared_partner_bank?: string | null
@@ -105,6 +134,69 @@ const sliceColor = (slices: ChartSlice[], name: string) => {
 }
 
 const truncateLabel = (s: string) => (s.length > 16 ? `${s.slice(0, 15)}…` : s)
+
+interface AppliedShare {
+  active: boolean // algum filtro de compartilhamento aplicado
+  partnerIds: number[] // compartilhamentos específicos (ids > 0)
+  onlyMine: boolean // "apenas minha parte" (só vale com compartilhamento específico)
+}
+const DEFAULT_APPLIED_SHARE: AppliedShare = { active: false, partnerIds: [], onlyMine: false }
+
+interface ItemRow {
+  exp: ExpenseDetail
+  mine: number // minha parte (ajustada pela %)
+  partner: number // parte do parceiro
+  total: number // valor total do item
+  basis: number // valor considerado nos gráficos e totais
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100
+
+const SOURCE_LABELS: Record<string, string> = { bank: 'Extrato', card: 'Cartão', benefit: 'Benefício' }
+const sourceLabel = (s: string) => SOURCE_LABELS[s] ?? s
+
+const sharingText = (e: ExpenseDetail) => {
+  if (!e.shared_partner_name) return ''
+  const pct = e.ownership_percentage
+  return pct == null ? e.shared_partner_name : `${e.shared_partner_name} (${Number(pct)}%)`
+}
+
+const formatInvoiceMonth = (ym?: string | null) => {
+  if (!ym) return ''
+  const [y, m] = ym.split('-')
+  return y && m ? `${m}/${y}` : ym
+}
+
+// Descrição com parcela (x/y) quando houver
+const descriptionText = (exp: ExpenseDetail) =>
+  exp.current_installment && exp.total_installments
+    ? `${exp.description} (${exp.current_installment}/${exp.total_installments})`
+    : exp.description
+
+// Cartão: "mês • final do cartão • nome" (só para itens de cartão)
+const cardColumn = (exp: ExpenseDetail) =>
+  exp.source === 'card'
+    ? [formatInvoiceMonth(exp.year_month), exp.card_number ? String(exp.card_number).slice(-4) : '', exp.card_name || '']
+        .filter(Boolean)
+        .join(' • ')
+    : ''
+
+const SourceIcon = ({ source }: { source: string }) =>
+  source === 'card' ? (
+    <CreditCard size={16} style={{ color: 'var(--color-2)' }} aria-label="Cartão" />
+  ) : source === 'benefit' ? (
+    <Gift size={16} style={{ color: 'var(--color-3)' }} aria-label="Benefício" />
+  ) : (
+    <Landmark size={16} style={{ color: 'var(--color-1)' }} aria-label="Extrato" />
+  )
+
+const formatItemDate = (iso: string) => {
+  const [y, m, d] = iso.slice(0, 10).split('-')
+  return y && m && d ? `${d}/${m}/${y}` : iso
+}
+
+const valueClass = (n: number) =>
+  n < 0 ? 'text-red-600 dark:text-red-400' : n > 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-400'
 
 // Com `limit`, mantém as (limit - 1) maiores e agrupa o resto em "Demais".
 const buildSlices = (map: Map<string, number>, limit?: number): ChartSlice[] => {
@@ -208,12 +300,17 @@ const GrupoPage = () => {
   // Estados de dados
   const [expenses, setExpenses] = useState<ExpenseDetail[]>([])
   const [loading, setLoading] = useState(false)
+  const [rendering, setRendering] = useState(false)
+  const busy = loading || rendering
   const [error, setError] = useState<string | null>(null)
 
   // Aba de gráficos e tag selecionada (filtra as subtags)
   const [chartTab, setChartTab] = useState<ChartTab>('expense')
   const [selectedChartTag, setSelectedChartTag] = useState<string | null>(null)
+  const [selectedChartSubtag, setSelectedChartSubtag] = useState<string | null>(null)
   const [limitSlices, setLimitSlices] = useState(true)
+  const [onlyMyShare, setOnlyMyShare] = useState(false)
+  const [appliedShare, setAppliedShare] = useState<AppliedShare>(DEFAULT_APPLIED_SHARE)
 
   // Estado para botão Back to Top
   const [showBackToTop, setShowBackToTop] = useState(false)
@@ -275,6 +372,15 @@ const GrupoPage = () => {
       params.append('limit', '10000')
 
       const response = await axios.get(`/api/reports/detailed?${params}`)
+      setAppliedShare({
+        active: selectedPartnerIds.length > 0,
+        partnerIds: selectedPartnerIds.filter((id) => id > 0),
+        onlyMine: onlyMyShare && selectedPartnerIds.some((id) => id > 0),
+      })
+      setSelectedChartTag(null)
+      setSelectedChartSubtag(null)
+      setListSort({ key: 'date', direction: 'desc' })
+      setRendering(true)
       setExpenses(response.data.expenses || [])
     } catch (err: any) {
       console.error('Erro ao carregar dados:', err)
@@ -284,35 +390,161 @@ const GrupoPage = () => {
     }
   }
 
+  // Mantém filtros bloqueados até os gráficos/lista serem desenhados após a resposta
+  useEffect(() => {
+    if (!rendering) return
+    let raf2 = 0
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => setRendering(false))
+    })
+    return () => {
+      cancelAnimationFrame(raf1)
+      cancelAnimationFrame(raf2)
+    }
+  }, [rendering, expenses])
+
   // Dados dos gráficos: despesas (valores < 0) ou receitas (valores > 0), conforme a aba
-  const chartData = useMemo(() => {
+  // Itens com minha parte / parte do parceiro / total, conforme o compartilhamento aplicado:
+  // - sem filtro: valor total; "Próprio"/"Minha parte": minha parte (próprios + % > 0 dos compartilhados)
+  // - compartilhamento específico: total do item, ou só minha parte (e % > 0) com "apenas minha parte"
+  const baseRows = useMemo<ItemRow[]>(() => {
     const term = searchTerm.toLowerCase()
+    const rows: ItemRow[] = []
+    expenses.forEach((exp) => {
+      if (term && !exp.description.toLowerCase().includes(term)) return
+      if (isBankCardSubtag(exp.subtag_name, exp.tag_name)) return
+      const total = Number(exp.amount) || 0
+      const shared = exp.expense_sharing_id != null
+      const pct = exp.ownership_percentage == null ? 100 : Number(exp.ownership_percentage)
+      const mine = shared ? round2((total * pct) / 100) : total
+      const partner = round2(total - mine)
+      const withSelected = shared && appliedShare.partnerIds.includes(exp.expense_sharing_id as number)
+      let basis = total
+      if (appliedShare.active && shared) {
+        if (withSelected) {
+          if (appliedShare.onlyMine && pct <= 0) return
+          basis = appliedShare.onlyMine ? mine : total
+        } else {
+          if (pct <= 0) return
+          basis = mine
+        }
+      }
+      rows.push({ exp, mine, partner, total, basis })
+    })
+    return rows
+  }, [expenses, searchTerm, appliedShare])
+
+  // Totais por fonte da aba ativa (despesas ou receitas, nunca somadas) + total geral
+  const sourceTotals = useMemo(() => {
+    const empty = () => ({ mine: 0, partner: 0, total: 0, count: 0 })
+    const acc: Record<string, ReturnType<typeof empty>> = { all: empty(), account: empty(), bank: empty(), card: empty(), benefit: empty() }
+    baseRows.forEach((r) => {
+      if (chartTab === 'expense' ? r.total >= 0 : r.total <= 0) return
+      const keys = ['all', r.exp.source]
+      if (r.exp.source === 'bank' || r.exp.source === 'card') keys.push('account')
+      for (const k of keys) {
+        acc[k].mine += r.mine
+        acc[k].partner += r.partner
+        acc[k].total += r.total
+        acc[k].count += 1
+      }
+    })
+    const labels: Record<string, string> = { all: 'Total geral', account: 'Total conta', bank: 'Extrato', card: 'Cartão', benefit: 'Benefício' }
+    return ['all', 'account', 'bank', 'card', 'benefit'].map((key) => ({ key, label: labels[key], ...acc[key] }))
+  }, [baseRows, chartTab])
+
+  const chartData = useMemo(() => {
     const tagMap = new Map<string, number>()
     const subMap = new Map<string, number>()
-    expenses
-      .filter((exp) => !term || exp.description.toLowerCase().includes(term))
-      .forEach((exp) => {
-        const amount = Number(exp.amount) || 0
-        if (chartTab === 'expense' ? amount >= 0 : amount <= 0) return
-        if (isBankCardSubtag(exp.subtag_name, exp.tag_name)) return
-        const value = Math.abs(amount)
-        const tag = exp.tag_name || NO_TAG
-        const subtag = exp.subtag_name || NO_SUBTAG
-        tagMap.set(tag, (tagMap.get(tag) || 0) + value)
-        if (!selectedChartTag || selectedChartTag === tag) {
-          subMap.set(subtag, (subMap.get(subtag) || 0) + value)
-        }
-      })
+    baseRows.forEach(({ exp, total, basis }) => {
+      if (chartTab === 'expense' ? total >= 0 : total <= 0) return
+      const value = Math.abs(basis)
+      if (value === 0) return
+      const tag = exp.tag_name || NO_TAG
+      const subtag = exp.subtag_name || NO_SUBTAG
+      tagMap.set(tag, (tagMap.get(tag) || 0) + value)
+      if (!selectedChartTag || selectedChartTag === tag) {
+        subMap.set(subtag, (subMap.get(subtag) || 0) + value)
+      }
+    })
     return {
       tagSlices: buildSlices(tagMap, limitSlices ? MAX_SLICES : undefined),
       subtagSlices: buildSlices(subMap, limitSlices ? MAX_SLICES : undefined),
     }
-  }, [expenses, searchTerm, chartTab, selectedChartTag, limitSlices])
+  }, [baseRows, chartTab, selectedChartTag, limitSlices])
 
   const { tagSlices, subtagSlices } = chartData
   const hasResults = tagSlices.length > 0
 
-  const renderChartCard = (title: string, slices: ChartSlice[], clickable: boolean) => (
+  // Lista de itens: acompanha a aba e as fatias selecionadas (tag e subtag)
+  const [listSort, setListSort] = useState<{ key: ListSortKey; direction: 'asc' | 'desc' }>({
+    key: 'date',
+    direction: 'desc',
+  })
+  const toggleListSort = (key: ListSortKey) =>
+    setListSort((cur) =>
+      cur.key === key
+        ? { key, direction: cur.direction === 'asc' ? 'desc' : 'asc' }
+        : { key, direction: key === 'date' || key === 'invoice' || ['mine', 'partner', 'total'].includes(key) ? 'desc' : 'asc' },
+    )
+  const listRows = useMemo(() => {
+    const factor = listSort.direction === 'asc' ? 1 : -1
+    const text = (a: string, b: string) => a.localeCompare(b, 'pt-BR')
+    const compare = (a: (typeof baseRows)[number], b: (typeof baseRows)[number]): number => {
+      switch (listSort.key) {
+        case 'source':
+          return text(sourceLabel(a.exp.source), sourceLabel(b.exp.source))
+        case 'date':
+          return a.exp.date.localeCompare(b.exp.date)
+        case 'invoice':
+          return cardColumn(a.exp).localeCompare(cardColumn(b.exp))
+        case 'description':
+          return text(a.exp.description || '', b.exp.description || '')
+        case 'tag':
+          return text(a.exp.tag_name || NO_TAG, b.exp.tag_name || NO_TAG)
+        case 'subtag':
+          return text(a.exp.subtag_name || NO_SUBTAG, b.exp.subtag_name || NO_SUBTAG)
+        case 'sharing':
+          return text(a.exp.shared_partner_name || '', b.exp.shared_partner_name || '')
+        case 'mine':
+          return a.mine - b.mine
+        case 'partner':
+          return a.partner - b.partner
+        default:
+          return a.total - b.total
+      }
+    }
+    return baseRows
+      .filter(({ exp, total }) => {
+        if (chartTab === 'expense' ? total >= 0 : total <= 0) return false
+        if (selectedChartTag && (exp.tag_name || NO_TAG) !== selectedChartTag) return false
+        if (selectedChartSubtag && (exp.subtag_name || NO_SUBTAG) !== selectedChartSubtag) return false
+        return true
+      })
+      .sort((a, b) => compare(a, b) * factor || b.exp.date.localeCompare(a.exp.date) || b.exp.id - a.exp.id)
+  }, [baseRows, chartTab, selectedChartTag, selectedChartSubtag, listSort])
+
+  const listTotals = useMemo(
+    () =>
+      listRows.reduce(
+        (acc, r) => ({ mine: acc.mine + r.mine, partner: acc.partner + r.partner, total: acc.total + r.total }),
+        { mine: 0, partner: 0, total: 0 },
+      ),
+    [listRows],
+  )
+
+  const toggleChartTag = (name: string) => {
+    setSelectedChartTag((prev) => (prev === name ? null : name))
+    setSelectedChartSubtag(null)
+  }
+  const toggleChartSubtag = (name: string) => setSelectedChartSubtag((prev) => (prev === name ? null : name))
+
+  const renderChartCard = (
+    title: string,
+    slices: ChartSlice[],
+    selected: string | null,
+    onSelect: (name: string) => void,
+  ) => (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
       <h3 className="text-base font-bold text-gray-800 dark:text-gray-200 mb-2">{title}</h3>
       <ResponsiveContainer width="100%" height={520}>
@@ -323,6 +555,7 @@ const GrupoPage = () => {
             nameKey="name"
             outerRadius={170}
             minAngle={3}
+            isAnimationActive={false}
             labelLine
             label={(p: { x: number; y: number; textAnchor?: 'start' | 'middle' | 'end' | 'inherit'; name?: string; payload?: ChartSlice }) => (
               <text
@@ -337,11 +570,16 @@ const GrupoPage = () => {
               </text>
             )}
             onClick={(d: { name?: string }) => {
-              if (clickable && d?.name && d.name !== OTHERS) setSelectedChartTag((prev) => (prev === d.name ? null : d.name!))
+              if (d?.name && d.name !== OTHERS) onSelect(d.name)
             }}
           >
             {slices.map((s) => (
-              <Cell key={s.name} fill={sliceColor(slices, s.name)} cursor={clickable ? 'pointer' : 'default'} />
+              <Cell
+                key={s.name}
+                fill={sliceColor(slices, s.name)}
+                fillOpacity={selected && selected !== s.name ? 0.35 : 1}
+                cursor={s.name === OTHERS ? 'default' : 'pointer'}
+              />
             ))}
           </Pie>
           <Tooltip formatter={(v) => formatCurrency(Number(v))} />
@@ -351,8 +589,8 @@ const GrupoPage = () => {
         {slices.map((s) => (
           <div
             key={s.name}
-            className={`flex items-center gap-2 text-sm ${clickable ? 'cursor-pointer' : ''}`}
-            onClick={() => clickable && s.name !== OTHERS && setSelectedChartTag((prev) => (prev === s.name ? null : s.name))}
+            className={`flex items-center gap-2 text-sm ${s.name !== OTHERS ? 'cursor-pointer' : ''} ${selected === s.name ? 'font-bold' : ''}`}
+            onClick={() => s.name !== OTHERS && onSelect(s.name)}
           >
             <span className="w-3 h-3 rounded-full" style={{ backgroundColor: sliceColor(slices, s.name) }} />
             <span className="w-14 text-right text-gray-500 dark:text-gray-400">{s.pct.toFixed(1)}%</span>
@@ -372,6 +610,7 @@ const GrupoPage = () => {
     setSelectedPartnerIds([])
     setSelectedTagIds([])
     setSelectedSubtagIds([])
+    setOnlyMyShare(false)
   }
 
   const typeLabel = chartTab === 'expense' ? 'Despesas' : 'Receitas'
@@ -394,6 +633,24 @@ const GrupoPage = () => {
       return downloadExcel(`relatorio_grupos_${typeLabel.toLowerCase()}_${excelDateStamp()}.xlsx`, [
         sheet('Tags', 'Tag', tagSlices),
         sheet('Subtags', 'Subtag', subtagSlices),
+        {
+          name: 'Itens',
+          rows: listRows.map((r, i) => ({
+            '#': i + 1,
+            Fonte: sourceLabel(r.exp.source),
+            Data: formatItemDate(r.exp.date),
+            Descrição: descriptionText(r.exp),
+            Cartão: cardColumn(r.exp),
+            Tag: r.exp.tag_name || NO_TAG,
+            Subtag: r.exp.subtag_name || NO_SUBTAG,
+            Compartilhamento: sharingText(r.exp),
+            'Minha parte': r.mine,
+            Compartilhado: r.partner,
+            Total: r.total,
+          })),
+          columns: ['#', 'Fonte', 'Data', 'Descrição', 'Cartão', 'Tag', 'Subtag', 'Compartilhamento', 'Minha parte', 'Compartilhado', 'Total'],
+          kinds: { 'Minha parte': 'money' as const, Compartilhado: 'money' as const, Total: 'money' as const },
+        },
       ])
     })
   }
@@ -426,6 +683,50 @@ const GrupoPage = () => {
           { type: 'heading', text: subtagHeading },
           pie(subtagSlices),
           table('Subtag', subtagSlices),
+          { type: 'page_break' },
+          { type: 'heading', text: 'Itens' },
+          {
+            type: 'table',
+            columns: [
+              { header: '#', width_mm: 10, align: 'center' },
+              { header: 'Fonte', width_mm: 18 },
+              { header: 'Data', width_mm: 20 },
+              { header: 'Descrição' },
+              { header: 'Cartão', width_mm: 36 },
+              { header: 'Tag', width_mm: 28 },
+              { header: 'Subtag', width_mm: 28 },
+              { header: 'Compartilhamento', width_mm: 32 },
+              { header: 'Minha parte', width_mm: 26, align: 'right' },
+              { header: 'Compartilhado', width_mm: 28, align: 'right' },
+              { header: 'Total', width_mm: 26, align: 'right' },
+            ],
+            rows: listRows.map((r, i) => [
+              String(i + 1),
+              sourceLabel(r.exp.source),
+              formatItemDate(r.exp.date),
+              descriptionText(r.exp),
+              cardColumn(r.exp),
+              r.exp.tag_name || NO_TAG,
+              r.exp.subtag_name || NO_SUBTAG,
+              sharingText(r.exp),
+              formatCurrency(r.mine),
+              formatCurrency(r.partner),
+              formatCurrency(r.total),
+            ]),
+            footer: [
+              'Total',
+              '',
+              '',
+              '',
+              '',
+              '',
+              '',
+              '',
+              formatCurrency(listTotals.mine),
+              formatCurrency(listTotals.partner),
+              formatCurrency(listTotals.total),
+            ],
+          },
         ],
       })
     })
@@ -510,6 +811,7 @@ const GrupoPage = () => {
                     options={SOURCE_OPTIONS}
                     selectedIds={selectedSources}
                     onChange={setSelectedSources}
+                    disabled={busy}
                     placeholder="Selecione..."
                   />
                 </div>
@@ -526,6 +828,7 @@ const GrupoPage = () => {
                     selectedIds={selectedPartnerIds}
                     onChange={setSelectedPartnerIds}
                     loading={partnersLoading}
+                    disabled={busy}
                     placeholder="Selecione..."
                     icon={<Users size={14} className="text-gray-500" />}
                   />
@@ -552,6 +855,7 @@ const GrupoPage = () => {
                       }
                     }}
                     loading={tagsLoading}
+                    disabled={busy}
                     placeholder="Selecione..."
                     icon={<Tag size={14} className="text-gray-500" />}
                   />
@@ -571,7 +875,7 @@ const GrupoPage = () => {
                     loading={subtagsLoading}
                     placeholder={selectedTagIds.filter((id) => id !== -1).length === 0 ? 'Selecione uma tag primeiro' : 'Selecione...'}
                     groupByKey={selectedTagIds.filter((id) => id !== -1).length > 1}
-                    disabled={selectedTagIds.filter((id) => id !== -1).length === 0}
+                    disabled={busy || selectedTagIds.filter((id) => id !== -1).length === 0}
                     icon={<Tags size={14} className="text-gray-500" />}
                   />
                 </div>
@@ -589,6 +893,7 @@ const GrupoPage = () => {
                   value={startDate ? dateToLocalString(startDate) : ''}
                   onChange={(value) => setStartDate(value ? parseLocalDate(value) : null)}
                   maxDate={endDate ?? undefined}
+                  disabled={busy}
                   className="w-full px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-color-primary focus:border-color-primary transition-all"
                 />
               </div>
@@ -601,13 +906,20 @@ const GrupoPage = () => {
                   value={endDate ? dateToLocalString(endDate) : ''}
                   onChange={(value) => setEndDate(value ? parseLocalDate(value) : null)}
                   minDate={startDate ?? undefined}
+                  disabled={busy}
                   className="w-full px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-color-primary focus:border-color-primary transition-all"
                 />
               </div>
+              {selectedPartnerIds.some((id) => id > 0) && (
+                <label className="flex items-center gap-2 h-[36px] px-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-700 dark:text-gray-200 cursor-pointer flex-shrink-0">
+                  <input type="checkbox" checked={onlyMyShare} disabled={busy} onChange={(e) => setOnlyMyShare(e.target.checked)} />
+                  Apenas minha parte
+                </label>
+              )}
               <div className="flex items-end flex-shrink-0">
                 <button
                   onClick={loadData}
-                  disabled={tagsLoading || subtagsLoading || partnersLoading}
+                  disabled={busy || tagsLoading || subtagsLoading || partnersLoading}
                   className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                   style={{ backgroundColor: 'var(--crud-create)', color: 'var(--on-crud-create)' }}
                 >
@@ -687,6 +999,7 @@ const GrupoPage = () => {
                     onClick={() => {
                       setChartTab(t.id)
                       setSelectedChartTag(null)
+                      setSelectedChartSubtag(null)
                     }}
                     className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
                       chartTab === t.id
@@ -698,6 +1011,41 @@ const GrupoPage = () => {
                   </button>
                 ))}
               </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                {sourceTotals.map((c) => (
+                  <div
+                    key={c.key}
+                    className="rounded-xl border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800"
+                  >
+                    <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      {c.key !== 'all' && c.key !== 'account' && <SourceIcon source={c.key} />}
+                      {c.label}
+                      {(c.key === 'account' || c.key === 'all') && (
+                        <span className="font-normal normal-case text-gray-400 dark:text-gray-500">
+                          {c.key === 'account' ? '(extrato+cartão)' : '(extrato+cartão+benefício)'}
+                        </span>
+                      )}
+                    </p>
+                    <div className="mt-1 flex items-stretch divide-x divide-gray-200 tabular-nums dark:divide-gray-600">
+                      <div className="pr-3">
+                        <p className="text-[10px] uppercase text-gray-500 dark:text-gray-400">Minha parte</p>
+                        <p className={`text-sm font-semibold ${valueClass(c.mine)}`}>{formatCurrency(c.mine)}</p>
+                      </div>
+                      <div className="px-3">
+                        <p className="text-[10px] uppercase text-gray-500 dark:text-gray-400">Compartilhado</p>
+                        <p className={`text-sm font-semibold ${valueClass(c.partner)}`}>{formatCurrency(c.partner)}</p>
+                      </div>
+                      <div className="pl-3">
+                        <p className="text-[10px] uppercase text-gray-500 dark:text-gray-400">Total</p>
+                        <p className={`text-sm font-semibold ${valueClass(c.total)}`}>{formatCurrency(c.total)}</p>
+                      </div>
+                    </div>
+                    <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                      {c.count} {c.count === 1 ? 'lançamento' : 'lançamentos'}
+                    </p>
+                  </div>
+                ))}
+              </div>
               <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer w-fit">
                 <input
                   type="checkbox"
@@ -707,17 +1055,119 @@ const GrupoPage = () => {
                 Limitar a {MAX_SLICES} itens (agrupar o restante em "{OTHERS}")
               </label>
               {tagSlices.length === 0 ? (
-                <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-                  Nenhum item encontrado
-                </div>
+                <CadastroListPageEmptyCard
+                  icon={<Layers size={32} className="text-gray-400" />}
+                  title={chartTab === 'expense' ? 'Nenhuma despesa encontrada' : 'Nenhuma receita encontrada'}
+                  description={`Não há ${chartTab === 'expense' ? 'despesas' : 'receitas'} para os filtros selecionados.`}
+                />
               ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {renderChartCard('Por Tag', tagSlices, true)}
+                  {renderChartCard('Por Tag', tagSlices, selectedChartTag, toggleChartTag)}
                   {renderChartCard(
                     selectedChartTag ? `Por Subtag — ${selectedChartTag}` : 'Por Subtag',
                     subtagSlices,
-                    false,
+                    selectedChartSubtag,
+                    toggleChartSubtag,
                   )}
+                </div>
+              )}
+              {tagSlices.length > 0 && (
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 text-sm font-bold text-gray-800 dark:text-gray-200">
+                    Itens — {typeLabel}
+                    {selectedChartTag ? ` · ${selectedChartTag}` : ''}
+                    {selectedChartSubtag ? ` · ${selectedChartSubtag}` : ''} ({listRows.length})
+                  </div>
+                  <ListPageTable
+                    minWidth={1000}
+                    fixedLayout={false}
+                    framed={false}
+                    colsRest={
+                      <>
+                        <ListTableSpacerCol />
+                        <col style={{ width: 72 }} />
+                        <col style={{ width: 104 }} />
+                        <col style={{ width: '30%' }} />
+                        <col style={{ width: 200 }} />
+                        <col />
+                        <col />
+                        <col />
+                        <col />
+                        <col />
+                        <col />
+                      </>
+                    }
+                    head={
+                      <tr>
+                        <ListTableIndexHeader />
+                        <ListTableSpacerHeader />
+                        {([
+                          ['source', 'Fonte', 'left', ''],
+                          ['date', 'Data', 'left', ''],
+                          ['description', 'Descrição', 'left', ''],
+                          ['invoice', 'Cartão', 'left', 'whitespace-nowrap'],
+                          ['tag', 'Tag', 'left', ''],
+                          ['subtag', 'Subtag', 'left', ''],
+                          ['sharing', 'Compartilhamento', 'left', ''],
+                          ['mine', 'Minha parte', 'right', ''],
+                          ['partner', 'Compartilhado', 'right', ''],
+                          ['total', 'Total', 'right', ''],
+                        ] as const).map(([key, label, align, cls]) => (
+                          <ListTableSortableHeader
+                            key={key}
+                            label={label}
+                            align={align}
+                            className={cls}
+                            active={listSort.key === key}
+                            direction={listSort.direction}
+                            onToggle={() => toggleListSort(key)}
+                          />
+                        ))}
+                      </tr>
+                    }
+                  >
+                    {listRows.map((r, i) => (
+                      <tr key={r.exp.id} className={listPageTableRowHoverCls}>
+                        <ListTableIndexCell index={i + 1} />
+                        <ListTableSpacerCell />
+                        <td className={listPageTableTdCls} title={sourceLabel(r.exp.source)}>
+                          <SourceIcon source={r.exp.source} />
+                        </td>
+                        <td className={`${listPageTableTdCls} whitespace-nowrap`}>{formatItemDate(r.exp.date)}</td>
+                        <td className={`${listPageTableTdCls} break-words`}>{descriptionText(r.exp)}</td>
+                        <td className={`${listPageTableTdCls} whitespace-nowrap`}>
+                          {cardColumn(r.exp)}
+                        </td>
+                        <td className={listPageTableTdCls}>{r.exp.tag_name || NO_TAG}</td>
+                        <td className={listPageTableTdCls}>{r.exp.subtag_name || NO_SUBTAG}</td>
+                        <td className={listPageTableTdCls}>
+                          <SharedAccountDisplay
+                            account={
+                              r.exp.shared_partner_name
+                                ? {
+                                    id: r.exp.shared_partner_id || 0,
+                                    name: r.exp.shared_partner_name,
+                                    bank: r.exp.shared_partner_bank ? { name: r.exp.shared_partner_bank } : null,
+                                    agency: r.exp.shared_partner_agency,
+                                    account_number: r.exp.shared_partner_account_number,
+                                  }
+                                : null
+                            }
+                            ownershipPercentage={r.exp.ownership_percentage}
+                          />
+                        </td>
+                        <td className={`${listPageTableTdCls} text-right tabular-nums ${valueClass(r.mine)}`}>{formatCurrency(r.mine)}</td>
+                        <td className={`${listPageTableTdCls} text-right tabular-nums ${valueClass(r.partner)}`}>{formatCurrency(r.partner)}</td>
+                        <td className={`${listPageTableTdCls} text-right tabular-nums font-semibold ${valueClass(r.total)}`}>{formatCurrency(r.total)}</td>
+                      </tr>
+                    ))}
+                    <tr className={`${listPageTableChromeFooterBgCls} font-bold text-gray-900 dark:text-white`}>
+                      <td colSpan={9} className={listPageTableTdCls}>Total</td>
+                      <td className={`${listPageTableTdCls} text-right tabular-nums`}>{formatCurrency(listTotals.mine)}</td>
+                      <td className={`${listPageTableTdCls} text-right tabular-nums`}>{formatCurrency(listTotals.partner)}</td>
+                      <td className={`${listPageTableTdCls} text-right tabular-nums`}>{formatCurrency(listTotals.total)}</td>
+                    </tr>
+                  </ListPageTable>
                 </div>
               )}
               <p className="text-xs text-gray-500 dark:text-gray-400">

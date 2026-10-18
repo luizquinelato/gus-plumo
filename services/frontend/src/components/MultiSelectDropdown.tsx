@@ -316,6 +316,7 @@ interface StringMultiSelectDropdownProps {
   placeholder?: string
   icon?: React.ReactNode
   showOnlyButton?: boolean
+  disabled?: boolean
 }
 
 export const SourceMultiSelectDropdown: React.FC<StringMultiSelectDropdownProps> = ({
@@ -325,7 +326,8 @@ export const SourceMultiSelectDropdown: React.FC<StringMultiSelectDropdownProps>
   onChange,
   placeholder = 'Selecione...',
   icon,
-  showOnlyButton = true
+  showOnlyButton = true,
+  disabled = false
 }) => {
   const [isOpen, setIsOpen] = useState(false)
   const [hoveredOptionId, setHoveredOptionId] = useState<string | null>(null)
@@ -378,8 +380,9 @@ export const SourceMultiSelectDropdown: React.FC<StringMultiSelectDropdownProps>
     <div ref={dropdownRef} className="relative">
       <button
         type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white hover:border-gray-400 dark:hover:border-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm flex items-center justify-between gap-2"
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        disabled={disabled}
+        className={`w-full px-3 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm flex items-center justify-between gap-2 ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:border-gray-400 dark:hover:border-gray-500'}`}
       >
         <span className="flex items-center gap-2 truncate">
           {icon}
