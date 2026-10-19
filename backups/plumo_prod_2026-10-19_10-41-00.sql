@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict yxNAQdL6N4HZZ9gTNRbxENHFGXQAdMVH6uNjOSjRFfrhveIboRvLjNuZceMtiNc
+\restrict u6Ooyghqehrt73e3afJ2uCDbDUNyuCtLzYJCIlsxS2WSAbVycAGeqr1FmWVPc2U
 
 -- Dumped from database version 18.4 (Debian 18.4-1.pgdg13+1)
 -- Dumped by pg_dump version 18.4 (Debian 18.4-1.pgdg13+1)
@@ -15835,6 +15835,7 @@ COPY public.migration_history (id, version, name, status, applied_at, rollback_a
 --
 
 COPY public.monthly_projections (id, year_month, expected_date, description, amount, my_amount, kind, source, credit_card_id, invoice_group_id, breakdown, account_id, tenant_id, created_by, created_at, last_updated_at, active, sharing) FROM stdin;
+23	2026-11	2026-11-16	Carla	150.00	150.00	fixed	manual	\N	\N	null	1	1	1	2026-10-16 15:50:19.284867	2026-10-18 14:58:52.096774	t	\N
 6	2026-10	2026-10-15	Adiantamento salarial (estimativa)	8018.40	8018.40	income	payroll	\N	\N	\N	1	1	1	2026-10-16 15:02:11.216644	2026-10-16 15:02:11.21665	t	\N
 7	2026-10	2026-10-01	Salário (fim do mês)	6523.95	6523.95	income	payroll	\N	\N	\N	1	1	1	2026-10-16 15:02:11.216652	2026-10-16 15:02:11.216654	t	\N
 8	2026-10	2026-10-19	Fatura BTG Família	17015.45	17015.45	variable	card_invoice	\N	1	[{"amount": "12653.22", "card_id": 3, "card_name": "Gustavo", "my_amount": "12653.22", "card_number": "3529"}, {"amount": "8146.64", "card_id": 10, "card_name": "Polezel", "my_amount": "4073.32", "card_number": "9833"}, {"amount": "288.91", "card_id": 8, "card_name": "Natália", "my_amount": "288.91", "card_number": "7970"}]	1	1	1	2026-10-16 15:02:22.557415	2026-10-16 15:02:22.557422	t	mine
@@ -15851,10 +15852,8 @@ COPY public.monthly_projections (id, year_month, expected_date, description, amo
 19	2026-11	2026-11-01	Salário (fim do mês)	6523.95	6523.95	income	payroll	\N	\N	null	1	1	1	2026-10-16 15:50:19.284854	2026-10-16 15:50:19.284855	t	\N
 20	2026-11	2026-11-10	Rodobens	4446.59	4446.59	fixed	manual	\N	\N	null	1	1	1	2026-10-16 15:50:19.284857	2026-10-16 15:50:19.284859	t	\N
 22	2026-11	2026-11-10	Natação (Luigi & Ivy)	440.00	440.00	fixed	manual	\N	\N	null	1	1	1	2026-10-16 15:50:19.284864	2026-10-16 15:50:19.284865	t	\N
-23	2026-11	2026-11-16	Carla	550.00	550.00	fixed	manual	\N	\N	null	1	1	1	2026-10-16 15:50:19.284867	2026-10-16 15:50:19.284868	t	\N
 24	2026-11	2026-11-17	Combustível	350.00	350.00	variable	manual	\N	\N	null	1	1	1	2026-10-16 15:50:19.28487	2026-10-16 15:50:19.284871	t	\N
 25	2026-11	2026-11-17	Cabelo (Luigi & Gu)	110.00	110.00	fixed	manual	\N	\N	null	1	1	1	2026-10-16 15:50:19.284873	2026-10-16 15:50:19.284874	t	\N
-26	2026-11	2026-11-23	Marta (Fono)	400.00	400.00	fixed	manual	\N	\N	null	1	1	1	2026-10-16 15:50:19.284875	2026-10-16 15:50:19.284877	t	\N
 27	2026-11	2026-11-29	Estacionamento Ná	170.00	170.00	fixed	manual	\N	\N	null	1	1	1	2026-10-16 15:50:19.284878	2026-10-16 15:50:19.284879	t	\N
 28	2026-12	2026-12-15	Adiantamento salarial (estimativa)	8018.40	8018.40	income	payroll	\N	\N	null	1	1	1	2026-10-16 15:50:19.284881	2026-10-16 15:50:19.284882	t	\N
 29	2026-12	2026-12-01	Salário (fim do mês)	6523.95	6523.95	income	payroll	\N	\N	null	1	1	1	2026-10-16 15:50:19.284884	2026-10-16 15:50:19.284885	t	\N
@@ -15875,6 +15874,7 @@ COPY public.monthly_projections (id, year_month, expected_date, description, amo
 43	2026-11	2026-11-19	Milon Rio Claro (4/5)	203.50	203.50	fixed	card_item_installment	3	\N	\N	1	1	1	2026-10-17 16:35:18.554017	2026-10-17 16:35:18.554019	t	mine
 44	2026-11	2026-11-19	Refritec (2/2)	162.50	162.50	fixed	card_item_installment	3	\N	\N	1	1	1	2026-10-17 16:35:18.55402	2026-10-17 16:35:18.554022	t	mine
 45	2026-11	2026-11-19	Sapataria Lago Azul (2/2)	189.90	189.90	fixed	card_item_installment	3	\N	\N	1	1	1	2026-10-17 16:35:18.554023	2026-10-17 16:35:18.554025	t	mine
+26	2026-11	2026-11-23	Marta (Fono)	400.00	400.00	fixed	manual	\N	\N	null	1	1	1	2026-10-16 15:50:19.284875	2026-10-18 15:03:02.316756	f	\N
 46	2026-11	2026-11-19	School Picture (2/2)	222.00	222.00	fixed	card_item_installment	3	\N	\N	1	1	1	2026-10-17 16:35:18.554026	2026-10-17 16:35:18.554027	t	mine
 47	2026-11	2026-11-19	Shopee (2/2)	96.33	96.33	fixed	card_item_installment	3	\N	\N	1	1	1	2026-10-17 16:35:18.554028	2026-10-17 16:35:18.55403	t	mine
 48	2026-11	2026-11-19	Twinstore (2/4)	192.50	192.50	fixed	card_item_installment	3	\N	\N	1	1	1	2026-10-17 16:35:18.554031	2026-10-17 16:35:18.554032	t	mine
@@ -15903,6 +15903,19 @@ COPY public.monthly_projections (id, year_month, expected_date, description, amo
 71	2027-07	2027-07-19	Brbikecomerciodeb (10/12)	358.37	358.37	fixed	card_item_installment	3	\N	\N	1	1	1	2026-10-17 16:35:18.554093	2026-10-17 16:35:18.554094	t	mine
 72	2027-08	2027-08-19	Brbikecomerciodeb (11/12)	358.37	358.37	fixed	card_item_installment	3	\N	\N	1	1	1	2026-10-17 16:35:18.554095	2026-10-17 16:35:18.554097	t	mine
 73	2027-09	2027-09-19	Brbikecomerciodeb (12/12)	358.37	358.37	fixed	card_item_installment	3	\N	\N	1	1	1	2026-10-17 16:35:18.554098	2026-10-17 16:35:18.554099	t	mine
+74	2026-10	2026-10-30	Dentista Ná	120.00	120.00	fixed	manual	\N	\N	\N	1	1	1	2026-10-18 14:32:35.78753	2026-10-18 14:32:35.787776	t	\N
+75	2026-10	2026-10-28	Aniversário da Clarinha	120.00	120.00	fixed	manual	\N	\N	\N	1	1	1	2026-10-18 14:33:14.646098	2026-10-18 14:33:14.646104	t	\N
+76	2026-11	2026-11-10	Fantasia Ivy	155.00	155.00	fixed	manual	\N	\N	\N	1	1	1	2026-10-18 14:34:04.508012	2026-10-18 14:34:04.508018	t	\N
+77	2026-11	2026-11-19	K+ Luigi (Out+Nov)	510.00	510.00	fixed	manual	\N	\N	\N	1	1	1	2026-10-18 14:34:40.357123	2026-10-18 14:34:40.357129	t	\N
+78	2026-10	2026-10-27	Depilação Ná	175.00	175.00	fixed	manual	\N	\N	\N	1	1	1	2026-10-18 14:55:20.806376	2026-10-18 14:55:48.102488	t	\N
+79	2026-11	2026-11-10	Balé Ivy	231.00	231.00	fixed	manual	\N	\N	null	1	1	1	2026-10-18 14:57:17.302482	2026-10-18 14:57:17.302488	t	\N
+80	2026-11	2026-11-30	Dentista Ná	120.00	120.00	fixed	manual	\N	\N	null	1	1	1	2026-10-18 14:57:17.30249	2026-10-18 14:57:17.302491	t	\N
+81	2026-11	2026-11-28	Aniversário da Clarinha	120.00	120.00	fixed	manual	\N	\N	null	1	1	1	2026-10-18 14:57:17.302493	2026-10-18 14:57:17.302494	t	\N
+82	2026-11	2026-11-27	Depilação Ná	175.00	175.00	fixed	manual	\N	\N	null	1	1	1	2026-10-18 14:57:17.302496	2026-10-18 14:57:17.302497	t	\N
+83	2026-11	2026-11-15	Água	153.00	153.00	fixed	manual	\N	\N	\N	1	1	1	2026-10-18 15:01:21.004137	2026-10-18 15:01:21.004145	t	\N
+84	2026-11	2026-11-15	Narizinho	80.00	80.00	fixed	manual	\N	\N	\N	1	1	1	2026-10-18 15:02:35.400047	2026-10-18 15:02:35.400053	t	\N
+85	2026-11	2026-11-15	Dentista Luigi	200.00	200.00	fixed	manual	\N	\N	\N	1	1	1	2026-10-18 15:03:36.085451	2026-10-18 15:03:36.085457	t	\N
+86	2026-11	2026-11-19	Cartao Polezel	2000.00	2000.00	fixed	manual	\N	\N	\N	1	1	1	2026-10-18 15:06:40.562791	2026-10-18 15:06:40.562798	t	\N
 \.
 
 
@@ -18023,7 +18036,7 @@ SELECT pg_catalog.setval('public.migration_history_id_seq', 703, true);
 -- Name: monthly_projections_id_seq; Type: SEQUENCE SET; Schema: public; Owner: plumo
 --
 
-SELECT pg_catalog.setval('public.monthly_projections_id_seq', 73, true);
+SELECT pg_catalog.setval('public.monthly_projections_id_seq', 86, true);
 
 
 --
@@ -20476,5 +20489,5 @@ GRANT ALL ON SCHEMA public TO PUBLIC;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict yxNAQdL6N4HZZ9gTNRbxENHFGXQAdMVH6uNjOSjRFfrhveIboRvLjNuZceMtiNc
+\unrestrict u6Ooyghqehrt73e3afJ2uCDbDUNyuCtLzYJCIlsxS2WSAbVycAGeqr1FmWVPc2U
 
