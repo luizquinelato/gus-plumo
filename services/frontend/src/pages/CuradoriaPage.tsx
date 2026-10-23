@@ -20,6 +20,7 @@ import {
   CadastroModalShell,
 } from '../components/CadastroFormLayout'
 import FloatingFooterBar from '../components/FloatingFooterBar'
+import ListPagination from '../components/ListPagination'
 import Toast from '../components/Toast'
 import LoadingSpinner from '../components/LoadingSpinner'
 import {
@@ -601,11 +602,6 @@ const CuradoriaPage = () => {
     return tabDisplayGroups.slice(startIndex, endIndex)
   }, [tabDisplayGroups, currentPage, itemsPerPage])
 
-  // Calcular total de páginas
-  const totalPages = useMemo(() => {
-    if (itemsPerPage === 0) return 1
-    return Math.ceil(tabDisplayGroups.length / itemsPerPage)
-  }, [tabDisplayGroups.length, itemsPerPage])
 
   /** Grupos com tag/subtag completos e estado diferente do carregamento (alinhado ao "Salvar todos"). */
   const savePendingCount = useMemo(() => {
@@ -2435,48 +2431,14 @@ const CuradoriaPage = () => {
                 )}
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 px-4 py-3 text-sm dark:border-gray-700">
-                <div className="flex items-center gap-2">
-                  <span className="text-gray-500">Por página</span>
-                  <select
-                    value={itemsPerPage}
-                    onChange={(e) => setItemsPerPage(Number(e.target.value))}
-                    className={cadastroFilterFieldCls}
-                  >
-                    <option value={50}>50</option>
-                    <option value={100}>100</option>
-                    <option value={200}>200</option>
-                    <option value={500}>500</option>
-                    <option value={0}>Todos</option>
-                  </select>
-                </div>
-                <span className="text-gray-600 dark:text-gray-400">
-                  {paginatedGroups.length} / {tabDisplayGroups.length} grupos nesta aba
-                </span>
-                {itemsPerPage > 0 && totalPages > 1 ? (
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      disabled={currentPage === 1}
-                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                      className="rounded-lg border border-gray-300 px-3 py-1 disabled:opacity-50 dark:border-gray-600"
-                    >
-                      Anterior
-                    </button>
-                    <span>
-                      {currentPage}/{totalPages}
-                    </span>
-                    <button
-                      type="button"
-                      disabled={currentPage === totalPages}
-                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                      className="rounded-lg border border-gray-300 px-3 py-1 disabled:opacity-50 dark:border-gray-600"
-                    >
-                      Próxima
-                    </button>
-                  </div>
-                ) : null}
-              </div>
+              <ListPagination
+                total={tabDisplayGroups.length}
+                page={currentPage}
+                perPage={itemsPerPage}
+                onPageChange={setCurrentPage}
+                onPerPageChange={setItemsPerPage}
+                options={[50, 100, 200, 500, 0]}
+              />
             </div>
           )}
         </CadastroListPageBody>

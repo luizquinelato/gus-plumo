@@ -45,7 +45,12 @@ class ExtratoETL:
         self.extractor = ExtratoExtractor()
         self.transformer = ExtratoTransformer(mapping_helper=mapping_helper)
     
-    def process(self, file_paths: List[str], return_dataframe: bool = True) -> Dict[str, Any]:
+    def process(
+        self,
+        file_paths: List[str],
+        return_dataframe: bool = True,
+        passwords: Optional[List[Optional[str]]] = None,
+    ) -> Dict[str, Any]:
         """
         Executa Extract + Transform (sem Load).
 
@@ -73,7 +78,7 @@ class ExtratoETL:
             # ========================================
             print("\n📥 ETAPA 1/2: EXTRACT (Extração de Dados Brutos)")
             print("-" * 80)
-            raw_records = self.extractor.extract_from_files(file_paths)
+            raw_records = self.extractor.extract_from_files(file_paths, passwords)
 
             if not raw_records:
                 return {

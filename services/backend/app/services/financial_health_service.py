@@ -731,6 +731,7 @@ def _statements_in_periods(
             BankStatement.amount,
             BankStatement.subtag_id,
             BankStatement.category,
+            BankStatement.is_manual,
             BankStatement.migrated_from_account_id,
             BankStatement.ownership_percentage,
             BankStatement.expense_sharing_id,
@@ -1274,7 +1275,7 @@ def get_details(
             "year_month": year_month,
             "amount": float(share),
             "source": "bank",
-            "is_manual": row.category is None and row.migrated_from_account_id is None,
+            "is_manual": bool(row.is_manual) and row.migrated_from_account_id is None,
             "migrated_from_account_id": (
                 int(row.migrated_from_account_id) if row.migrated_from_account_id else None
             ),

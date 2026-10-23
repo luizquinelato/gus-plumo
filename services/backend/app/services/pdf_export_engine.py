@@ -89,7 +89,9 @@ class PdfPieSlice(BaseModel):
 class PdfBlock(BaseModel):
     """Bloco de conteúdo do documento, desenhado na ordem recebida."""
 
-    type: Literal["table", "heading", "text", "cards", "image", "legend", "pie", "page_break"]
+    type: Literal["table", "heading", "text", "cards", "image", "legend", "pie", "page_break", "spacer"]
+    # spacer (espaço vertical em branco)
+    space_mm: float = Field(default=0, ge=0, le=100)
     # pie (gráfico de pizza nativo, vetorial)
     slices: List[PdfPieSlice] = Field(default_factory=list, max_length=60)
     # heading / text
@@ -413,6 +415,8 @@ def _block_flowables(block: PdfBlock) -> list:
         return [_image_flowable(block), Spacer(1, 2 * mm)]
     if block.type == "legend":
         return [_legend_flowable(block)] if block.legend else []
+    if block.type == "spacer":
+        return [Spacer(1, block.space_mm * mm)]
     return [PageBreak()]
 
 

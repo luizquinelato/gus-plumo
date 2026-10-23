@@ -493,6 +493,24 @@ async function processRawFile(
     return preview
   }
   try {
+    if (file.kind === 'consorcio') {
+      const form = new FormData()
+      form.append('files', file.file)
+      form.append('passwords', file.pdfPassword ?? '')
+      const response = await axios.post<{ results: ConsortiumClassifyResult[] }>('/api/consortiums/classify-pdfs', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      const hit = response.data.results?.[0]
+      if (!hit || hit.status !== 'ok') return { ...base, error: hit?.message || 'Não foi possível ler o PDF.' }
+      return store([], [], {
+        ...base,
+        payroll: {
+          action: hit.action === 'updated' ? 'updated' : 'created',
+          summary: consortiumSummary(hit),
+          lineCount: hit.installment_count ?? null,
+        },
+      })
+    }
     if (file.kind === 'holerite' || file.kind === 'informe') {
       const form = new FormData()
       form.append('files', file.file)
@@ -520,6 +538,7 @@ async function processRawFile(
     if (file.kind === 'extrato_bruto') {
       url = '/api/import/extrato/process'
       form.append('files', file.file)
+      form.append('passwords', file.pdfPassword ?? '')
     } else if (file.kind === 'fatura_bruta') {
       url = '/api/import/cartao/process'
       form.append('files', file.file)
@@ -728,6 +747,55 @@ async function markPasswordProtected(items: WizardFile[]): Promise<void> {
   }
 }
 
+interface ConsortiumClassifyResult {
+  filename: string
+  status: string
+  message?: string | null
+  company_label?: string | null
+  group_code?: string | null
+  quota?: string | null
+  installment_count?: number | null
+  action?: 'created' | 'updated' | null
+}
+
+function consortiumSummary(hit: ConsortiumClassifyResult): string {
+  return [hit.group_code ? `Grupo ${hit.group_code}` : null, hit.quota ? `Cota ${hit.quota}` : null]
+    .filter(Boolean)
+    .join(' · ')
+}
+
+/** Marca como consórcio os PDFs reconhecidos; devolve os que continuam sem classificação. */
+async function identifyConsortiumPdfs(items: WizardFile[], all: WizardFile[]): Promise<WizardFile[]> {
+  if (!items.length) return items
+  let results: ConsortiumClassifyResult[] = []
+  try {
+    const form = new FormData()
+    items.forEach((item) => form.append('files', item.file))
+    items.forEach((item) => form.append('passwords', item.pdfPassword ?? ''))
+    const response = await axios.post<{ results: ConsortiumClassifyResult[] }>('/api/consortiums/classify-pdfs', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    results = response.data.results || []
+  } catch {
+    return items
+  }
+  const rest: WizardFile[] = []
+  items.forEach((item, index) => {
+    const hit = results.find((row) => row.filename === item.file.name) || results[index]
+    if (hit?.status !== 'ok') {
+      rest.push(item)
+      return
+    }
+    const target = all.find((row) => row.id === item.id) ?? item
+    target.kind = 'consorcio'
+    target.issuerLabel = hit.company_label ?? undefined
+    target.error = undefined
+    target.needsPassword = false
+    target.payrollPreview = consortiumSummary(hit)
+  })
+  return rest
+}
+
 async function identifyPdfs(items: WizardFile[]): Promise<WizardFile[]> {
   const pdfs = items.filter((item) => isPdfFileName(item.file.name))
   if (!pdfs.length) return items
@@ -764,6 +832,10 @@ async function identifyPdfs(items: WizardFile[]): Promise<WizardFile[]> {
     remaining.push(target)
   })
 
+  const afterConsortium = await identifyConsortiumPdfs(remaining, next)
+  remaining.length = 0
+  remaining.push(...afterConsortium)
+
   if (!remaining.length) return next
   try {
     const form = new FormData()
@@ -790,7 +862,7 @@ async function identifyPdfs(items: WizardFile[]): Promise<WizardFile[]> {
         if (hit?.message && PDF_PASSWORD_MESSAGES.has(hit.message)) item.needsPassword = true
         return
       }
-      item.kind = 'fatura_bruta'
+      item.kind = hit.issuer === 'itau_extrato' ? 'extrato_bruto' : 'fatura_bruta'
       item.error = undefined
       item.needsPassword = false
       item.issuer = hit.issuer ?? undefined
@@ -1046,7 +1118,14 @@ export default function ImportWizardPage() {
     setDetecting(true)
     try {
       const prepared = await prepareIncoming(supported, benefitCards)
-      setFiles((prev) => sortWizardFiles([...prev, ...prepared]))
+      const sameFile = (a: File, b: File) =>
+        a.name === b.name && a.size === b.size && a.lastModified === b.lastModified
+      setFiles((prev) =>
+        sortWizardFiles([
+          ...prev.filter((old) => !prepared.some((item) => sameFile(old.file, item.file))),
+          ...prepared,
+        ]),
+      )
       setFileVersion((version) => version + 1)
       setAdjustVersion(-1)
     } catch (error) {
@@ -2480,12 +2559,12 @@ async function importFile(
 
   if (!isRawKind(file.kind)) throw new Error(file.error || 'Arquivo não reconhecido.')
 
-  if (file.kind === 'holerite' || file.kind === 'informe') {
+  if (file.kind === 'holerite' || file.kind === 'informe' || file.kind === 'consorcio') {
     const form = new FormData()
     form.append('files', file.file)
     form.append('passwords', file.pdfPassword ?? '')
     const response = await postImportWithProgress<{ results: Array<{ status: string; message?: string | null; action?: string | null }> }>(
-      '/api/payroll/import-pdfs',
+      file.kind === 'consorcio' ? '/api/consortiums/import-pdfs' : '/api/payroll/import-pdfs',
       form,
       jobId,
       onProgress,

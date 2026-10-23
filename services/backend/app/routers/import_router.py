@@ -25,6 +25,7 @@ from ..utils.account_import_password import (
 from ..utils.pdf_password import (
     PdfPasswordInvalid,
     PdfPasswordRequired,
+    extract_pdf_text,
     pdf_still_needs_user_password,
     resolve_pdf_password_at_index,
 )
@@ -212,6 +213,8 @@ def _run_extrato_etl(
     tenant_id: int,
     user_id: int,
     account_id: int,
+    passwords: Optional[List[str]] = None,
+    current_user: Optional[dict] = None,
 ) -> dict:
     """Extract + Transform dos extratos brutos. Retorna dataframe, ignored_rows e arquivos_processados."""
     if not files:
@@ -219,10 +222,10 @@ def _run_extrato_etl(
 
     # Valida extensões
     for file in files:
-        if not (file.filename or "").lower().endswith(('.xls', '.xlsx')):
+        if not (file.filename or "").lower().endswith(('.xls', '.xlsx', '.pdf')):
             raise HTTPException(
                 status_code=400,
-                detail=f"Arquivo {file.filename} não é um arquivo Excel válido (.xls ou .xlsx)"
+                detail=f"Arquivo {file.filename} não é um extrato válido (.xls, .xlsx ou .pdf)"
             )
 
     # Cria diretórios temporários
@@ -261,7 +264,12 @@ def _run_extrato_etl(
         )
 
         # Executa pipeline ETL (Extract + Transform) e retorna DataFrame
-        result = etl.process(file_paths=file_paths, return_dataframe=True)
+        default_password = _account_default_pdf_password(db, current_user) if current_user else None
+        file_passwords = [
+            resolve_pdf_password_at_index(passwords or [], i, default_password)
+            for i in range(len(file_paths))
+        ]
+        result = etl.process(file_paths=file_paths, return_dataframe=True, passwords=file_passwords)
 
         if not result["success"]:
             raise HTTPException(
@@ -379,6 +387,7 @@ EXTRATO_ROW_COLUMNS = ("Data e hora", "Descrição", "Valor")
 @router.post("/extrato/process")
 def process_extrato(
     files: List[UploadFile] = File(...),
+    passwords: List[str] = Form([]),
     progress_job_id: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_account),
@@ -387,7 +396,7 @@ def process_extrato(
     scope = activate_import_job(progress_job_id, current_user)
     try:
         tenant_id, user_id, account_id = _resolve_extrato_account(db, current_user, None)
-        etl = _run_extrato_etl(files, db, tenant_id, user_id, account_id)
+        etl = _run_extrato_etl(files, db, tenant_id, user_id, account_id, passwords, current_user)
         df = etl["dataframe"].drop(columns=["subtag_id"], errors="ignore")
         rows = df_to_rows(df)
         save_result = EMPTY_EXTRATO_SAVE
@@ -542,6 +551,25 @@ async def detect_cartao_pdfs(
                 passwords, index, default_password
             )
             try:
+                from ..converters.itau_extrato_pdf import (
+                    ITAU_ISSUER_LABEL,
+                    extract_itau_extrato_period,
+                    is_itau_extrato_text,
+                )
+                pdf_text = extract_pdf_text(temp_path, pdf_password)
+                if is_itau_extrato_text(pdf_text):
+                    year, month = extract_itau_extrato_period(pdf_text)
+                    results.append(
+                        DetectInvoiceFileResult(
+                            filename=filename,
+                            status="ok",
+                            issuer="itau_extrato",
+                            issuer_label=ITAU_ISSUER_LABEL,
+                            year=year,
+                            month=month,
+                        )
+                    )
+                    continue
                 inspected = inspect_invoice_pdf(temp_path, pdf_password, source_filename=filename)
                 issuer = inspected.get("issuer") or "unknown"
                 results.append(

@@ -51,7 +51,7 @@ def _apply_bank_filters(
         if "manual" in origin_list:
             origin_conditions.append(
                 and_(
-                    BankStatement.category.is_(None),
+                    BankStatement.is_manual.is_(True),
                     BankStatement.migrated_from_account_id.is_(None),
                 )
             )

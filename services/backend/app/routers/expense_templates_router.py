@@ -506,7 +506,8 @@ async def aplicar_template(
             subtag_id=item_dict.get('subtag_id'),  # Opcional - pode ser None
             ownership_percentage=Decimal(str(item_dict.get('ownership_percentage', 100.00))),
             expense_sharing_id=item_dict.get('expense_sharing_id'),
-            adjustment_notes=item_dict.get('adjustment_notes')
+            adjustment_notes=item_dict.get('adjustment_notes'),
+            is_manual=True,
         )
 
         db.add(novo_statement)

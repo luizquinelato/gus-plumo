@@ -3,10 +3,12 @@
 Layout mínimo padrão para todas as exportações em tabela: cabeçalho escuro,
 painel congelado, autofiltro, larguras automáticas e formatos por tipo de coluna.
 Recebe dados já prontos (a tela decide filtros/ordenação) e apenas os formata.
-Gráficos não fazem parte do motor genérico; o Saldo Parcelado os monta à parte
-reutilizando `HEAD_BG` e `MONEY_FMT`.
+Gráficos de tabela não fazem parte do motor genérico; o Saldo Parcelado os monta à parte
+reutilizando `HEAD_BG` e `MONEY_FMT`. Abas de layout livre (`cells`) aceitam fórmulas, nomes
+definidos e gráficos de linha nativos (projeção de consórcio).
 """
 
+import datetime
 import io
 import math
 import re
@@ -21,9 +23,10 @@ XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.s
 
 # `decimal` é o número sem símbolo de moeda, usado nas planilhas que o wizard
 # /importar reimporta (extratos, faturas, benefícios, relatório de faturas).
-ColumnKind = Literal["text", "int", "month", "money", "decimal", "percent", "date", "datetime"]
+ColumnKind = Literal["text", "int", "month", "money", "decimal", "percent", "date", "datetime", "monthyear"]
 
 _NUM_FORMATS: Dict[str, str] = {
+    "monthyear": "mm/yyyy",
     "int": "0",
     "month": "00",
     "money": MONEY_FMT,
@@ -57,8 +60,64 @@ class PieSpec(BaseModel):
     colors: List[str] = Field(default_factory=list)
 
 
+CellStyle = Literal["", "title", "section", "head", "label", "input", "calc", "note"]
+
+_CELL_STYLES: Dict[str, Dict[str, Any]] = {
+    "title": {"bold": True, "font_size": 14},
+    "section": {"bold": True, "bg_color": "#E5E7EB", "bottom": 1},
+    "head": {"bold": True, "font_color": "#FFFFFF", "bg_color": HEAD_BG, "valign": "vcenter"},
+    "label": {"bold": True},
+    # Campos que o usuário edita: fundo amarelo e borda.
+    "input": {"bold": True, "bg_color": "#FEF9C3", "border": 1, "border_color": "#CA8A04"},
+    "calc": {"font_color": "#6B7280"},
+    "note": {"italic": True, "font_color": "#6B7280"},
+}
+
+
+class CellSpec(BaseModel):
+    """Célula posicionada (planilhas com layout livre e fórmulas)."""
+
+    r: int = Field(ge=0, le=200_000)
+    c: int = Field(ge=0, le=500)
+    v: Cell = None
+    # Fórmula em inglês, com vírgulas e começando por "=". `v` vira o valor em cache.
+    f: str | None = Field(default=None, max_length=2000)
+    kind: ColumnKind | None = None
+    style: CellStyle = ""
+
+
+class RangeSpec(BaseModel):
+    sheet: str
+    r1: int = Field(ge=0)
+    c1: int = Field(ge=0)
+    r2: int = Field(ge=0)
+    c2: int = Field(ge=0)
+
+
+class SeriesSpec(BaseModel):
+    name: str = Field(max_length=100)
+    values: RangeSpec
+    color: str = "#6b7280"
+
+
+class LineChartSpec(BaseModel):
+    title: str = Field(default="", max_length=100)
+    row: int = Field(ge=0)
+    col: int = Field(ge=0)
+    width: int = Field(default=760, ge=200, le=2000)
+    height: int = Field(default=340, ge=150, le=1200)
+    categories: RangeSpec
+    series: List[SeriesSpec] = Field(min_length=1, max_length=6)
+    y_kind: ColumnKind = "money"
+    x_kind: ColumnKind = "monthyear"
+
+
 class SheetSpec(BaseModel):
     name: str = Field(min_length=1, max_length=100)
+    # Layout livre: quando informado, `rows`/`columns` são ignorados.
+    cells: List[CellSpec] = Field(default_factory=list)
+    col_widths: Dict[int, int] = Field(default_factory=dict)
+    line_charts: List[LineChartSpec] = Field(default_factory=list)
     rows: List[Dict[str, Cell]] = Field(default_factory=list)
     # Ordem das colunas; se vazio, usa a união das chaves na ordem de aparição.
     columns: List[str] = Field(default_factory=list)
@@ -74,6 +133,8 @@ class SheetSpec(BaseModel):
 
 class ExcelExportPayload(BaseModel):
     sheets: List[SheetSpec] = Field(min_length=1, max_length=MAX_SHEETS)
+    # Nomes definidos (nome → referência, ex.: "='Projeção'!$B$5"), usados nas fórmulas das células livres.
+    names: Dict[str, str] = Field(default_factory=dict)
 
 
 def _sheet_name(raw: str, used: set) -> str:
@@ -122,6 +183,64 @@ def _widths(headers: List[str], rows: List[Dict[str, Cell]]) -> List[int]:
     return out
 
 
+_ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _write_free_sheet(wb, ws, spec: SheetSpec, final_names: Dict[str, str]) -> None:
+    """Planilha de layout livre: células posicionadas (valor ou fórmula) e gráficos de linha nativos."""
+    cache: Dict[tuple, Any] = {}
+
+    def fmt(style: str, kind: str | None):
+        key = (style, kind)
+        if key not in cache:
+            props = dict(_CELL_STYLES.get(style, {}))
+            if kind in _NUM_FORMATS:
+                props["num_format"] = _NUM_FORMATS[kind]
+            cache[key] = wb.add_format(props) if props else None
+        return cache[key]
+
+    for cell in spec.cells:
+        f = fmt(cell.style, cell.kind)
+        if cell.f:
+            formula = cell.f if cell.f.startswith("=") else "=" + cell.f
+            cached = cell.v if isinstance(cell.v, (int, float, str)) and not isinstance(cell.v, bool) else 0
+            ws.write_formula(cell.r, cell.c, formula, f, cached)
+        elif cell.v is None or cell.v == "":
+            if f is not None:
+                ws.write_blank(cell.r, cell.c, None, f)
+        elif cell.kind in ("date", "monthyear") and isinstance(cell.v, str) and _ISO_DATE.fullmatch(cell.v):
+            ws.write_datetime(cell.r, cell.c, datetime.datetime.fromisoformat(cell.v), f)
+        elif isinstance(cell.v, (int, float)) and not isinstance(cell.v, bool):
+            if not (isinstance(cell.v, float) and not math.isfinite(cell.v)):
+                ws.write_number(cell.r, cell.c, cell.v, f)
+        else:
+            ws.write_string(cell.r, cell.c, str(cell.v), f)
+
+    for col, width in spec.col_widths.items():
+        ws.set_column(col, col, width)
+
+    def ref(rng: RangeSpec) -> list:
+        return [final_names.get(rng.sheet, rng.sheet), rng.r1, rng.c1, rng.r2, rng.c2]
+
+    for spec_chart in spec.line_charts:
+        chart = wb.add_chart({"type": "line"})
+        for s in spec_chart.series:
+            color = s.color if re.fullmatch(r"#[0-9a-fA-F]{6}", s.color or "") else "#6b7280"
+            chart.add_series({
+                "name": s.name,
+                "categories": ref(spec_chart.categories),
+                "values": ref(s.values),
+                "line": {"color": color, "width": 2.25},
+            })
+        if spec_chart.title:
+            chart.set_title({"name": spec_chart.title})
+        chart.set_x_axis({"num_format": _NUM_FORMATS.get(spec_chart.x_kind, "General"), "label_position": "low"})
+        chart.set_y_axis({"num_format": _NUM_FORMATS.get(spec_chart.y_kind, "General")})
+        chart.set_legend({"position": "bottom"})
+        chart.set_size({"width": spec_chart.width, "height": spec_chart.height})
+        ws.insert_chart(spec_chart.row, spec_chart.col, chart)
+
+
 def build_table_xlsx(payload: ExcelExportPayload) -> bytes:
     total = sum(len(s.rows) for s in payload.sheets)
     if total > MAX_TOTAL_ROWS:
@@ -144,8 +263,14 @@ def build_table_xlsx(payload: ExcelExportPayload) -> bytes:
             styled_cache[bg] = d
         return styled_cache[bg]
 
-    for spec in payload.sheets:
-        ws = wb.add_worksheet(_sheet_name(spec.name, used))
+    finals = [_sheet_name(s.name, used) for s in payload.sheets]
+    final_names = {s.name: f for s, f in zip(payload.sheets, finals)}
+
+    for idx_sheet, spec in enumerate(payload.sheets):
+        ws = wb.add_worksheet(finals[idx_sheet])
+        if spec.cells or spec.line_charts:
+            _write_free_sheet(wb, ws, spec, final_names)
+            continue
         headers = list(spec.columns)
         for r in spec.rows:
             headers.extend(k for k in r if k not in headers)
@@ -218,6 +343,10 @@ def build_table_xlsx(payload: ExcelExportPayload) -> bytes:
             ws.freeze_panes(top + 1, 0)
         if headers:
             ws.autofilter(top, 0, max(last, top + 1), len(headers) - 1)
+
+    for name, reference in payload.names.items():
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,60}", name):
+            wb.define_name(name, reference)
 
     wb.close()
     return buffer.getvalue()

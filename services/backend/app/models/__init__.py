@@ -8,7 +8,7 @@ from app.models.base_entity import BaseEntity
 from app.models.unified_models import (
     Tag, Subtag, Cartao, CreditCardInvoice, CreditCardInvoiceGroup, InvoicePaymentMatch,
     BankStatement, TransactionMapping, Account, ExpenseSharingSetting, ExpenseTemplate,
-    ExpenseTemplateItem, AccountPeriodClosure,
+    ExpenseTemplateItem, AccountPeriodClosure, Consortium, ConsortiumInstallment,
 )
 from app.models.payroll_models import (
     PayrollLineType, Payslip, PayslipLine, IncomeReport, IncomeReportLine
@@ -35,6 +35,8 @@ __all__ = [
     'ExpenseTemplate',
     'ExpenseTemplateItem',
     'AccountPeriodClosure',
+    'Consortium',
+    'ConsortiumInstallment',
     'PayrollLineType',
     'Payslip',
     'PayslipLine',

@@ -2836,6 +2836,7 @@ async def split_bank_statement(
                     description=original.description,
                     amount=part.amount,
                     subtag_id=part.subtag_id,
+                    is_manual=original.is_manual,
                 )
             )
 
@@ -2946,6 +2947,7 @@ async def split_credit_card_invoice(
                     total_installments=original.total_installments,
                     subtag_id=part.subtag_id,
                     issuer=original.issuer or "btg",
+                    is_manual=original.is_manual,
                 )
             )
 
@@ -3110,6 +3112,7 @@ async def create_manual_transaction(
         expense_sharing_id=request.expense_sharing_id,
         ownership_percentage=request.ownership_percentage,
         adjustment_notes=request.adjustment_notes,
+        is_manual=True,
         category=None,  # Lançamento manual não tem categoria do banco
         transaction=None  # Lançamento manual não tem tipo de transação do banco
         # NOTA: bank_statements NÃO tem coluna 'active' - usa hard delete
@@ -3380,6 +3383,7 @@ async def create_manual_credit_card_invoice(
         expense_sharing_id=request.expense_sharing_id,
         ownership_percentage=request.ownership_percentage,
         adjustment_notes=notes,
+        is_manual=True,
         issuer=issuer,
     )
     try:
@@ -3570,6 +3574,7 @@ async def create_manual_benefit_statement(
         expense_sharing_id=request.expense_sharing_id,
         ownership_percentage=request.ownership_percentage,
         adjustment_notes=request.adjustment_notes,
+        is_manual=True,
     )
     try:
         ensure_new_transaction_in_closed_period_allowed(

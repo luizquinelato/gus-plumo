@@ -21,6 +21,7 @@ import {
   CadastroModalShell,
 } from '../components/CadastroFormLayout'
 import FloatingFooterBar from '../components/FloatingFooterBar'
+import ListPagination from '../components/ListPagination'
 import LoadingSpinner from '../components/LoadingSpinner'
 import SplitExpenseModal from '../components/SplitExpenseModal'
 import EditExpenseModal from '../components/EditExpenseModal'
@@ -136,6 +137,7 @@ interface ExpenseDetail {
   account_number: string | null
   year_month: string | null  // Ano/mês da fatura (YYYY-MM) - usado apenas para faturas de cartão
   migrated_from_account_id: number | null  // ID da conta de origem - indica item invertido/migrado
+  is_manual?: boolean  // Lançamento manual ou ajuste de fechamento
   linked_invoice?: LinkedInvoiceSummary | null
   daily_month_end?: boolean
 }
@@ -1631,7 +1633,7 @@ const ExtratoPage = () => {
                                     </span>
                                   )}
                                   {/* Mostra "M" apenas para bank_statements manuais (sem category e não migrado) */}
-                                  {expense.source === 'bank' && expense.category === null && !expense.migrated_from_account_id && (
+                                  {expense.source === 'bank' && expense.is_manual && !expense.migrated_from_account_id && (
                                     <span
                                       className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold rounded-full bg-orange-500 text-white shadow-sm"
                                       title="Lançamento Manual"
@@ -1839,63 +1841,16 @@ const ExtratoPage = () => {
                     </tbody>
 
                     {/* Rodapé com Totais e Paginação */}
-                    <tfoot className="bg-gray-50 dark:bg-gray-700 border-t-2 border-gray-300 dark:border-gray-600">
+                    <tfoot>
                       <tr>
-                        <td colSpan={10} className="px-6 py-4">
-                          {/* Layout: Esquerda | Centro | Direita */}
-                          <div className="grid grid-cols-3 items-center gap-4">
-                            {/* ESQUERDA: Seletor de itens por página */}
-                            <div className="flex items-center gap-2 text-sm justify-start">
-                              <label className="text-gray-600 dark:text-gray-400">Transações por página:</label>
-                              <select
-                                value={itemsPerPage}
-                                onChange={(e) => {
-                                  setItemsPerPage(Number(e.target.value))
-                                  setCurrentPage(1)
-                                }}
-                                className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                              >
-                                <option value={50}>50</option>
-                                <option value={100}>100</option>
-                                <option value={200}>200</option>
-                                <option value={0}>Todos</option>
-                              </select>
-                            </div>
-
-                            {/* CENTRO: Informações de totais */}
-                            <div className="flex items-center justify-center gap-3 text-sm text-gray-600 dark:text-gray-400">
-                              <div>
-                                Mostrando <span className="font-semibold text-gray-900 dark:text-white">
-                                  {itemsPerPage === 0 ? filteredExpenses.length : Math.min(itemsPerPage, filteredExpenses.length - (currentPage - 1) * itemsPerPage)}
-                                </span> de <span className="font-semibold text-gray-900 dark:text-white">{filteredExpenses.length}</span> {filteredExpenses.length === 1 ? 'transação' : 'transações'}
-                              </div>
-                            </div>
-
-                            {/* DIREITA: Navegação de páginas */}
-                            <div className="flex items-center justify-end">
-                              {itemsPerPage > 0 && Math.ceil(filteredExpenses.length / itemsPerPage) > 1 && (
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                                    disabled={currentPage === 1}
-                                    className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                  >
-                                    Anterior
-                                  </button>
-                                  <span className="text-sm text-gray-600 dark:text-gray-400">
-                                    Página <span className="font-semibold text-gray-900 dark:text-white">{currentPage}</span> de <span className="font-semibold text-gray-900 dark:text-white">{Math.ceil(filteredExpenses.length / itemsPerPage)}</span>
-                                  </span>
-                                  <button
-                                    onClick={() => setCurrentPage(prev => Math.min(Math.ceil(filteredExpenses.length / itemsPerPage), prev + 1))}
-                                    disabled={currentPage >= Math.ceil(filteredExpenses.length / itemsPerPage)}
-                                    className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                  >
-                                    Próxima
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          </div>
+                        <td colSpan={10} className="p-0">
+                          <ListPagination
+                            total={filteredExpenses.length}
+                            page={currentPage}
+                            perPage={itemsPerPage}
+                            onPageChange={setCurrentPage}
+                            onPerPageChange={setItemsPerPage}
+                          />
                         </td>
                       </tr>
                     </tfoot>

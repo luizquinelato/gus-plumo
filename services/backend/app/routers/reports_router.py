@@ -116,6 +116,7 @@ class ExpenseDetail(BaseModel):
     account_number: str | None = None
     year_month: str | None = None  # Ano/mês da fatura (YYYY-MM) - usado apenas para faturas de cartão
     migrated_from_account_id: int | None = None  # ID da conta de origem - indica item invertido/migrado
+    is_manual: bool = False  # Lançamento manual ou ajuste de fechamento (não importado)
     linked_invoice: LinkedInvoiceSummary | None = None
     daily_month_end: bool | None = None
 
@@ -1824,6 +1825,7 @@ def _get_bank_expenses_by_date(
         BankStatement.expense_sharing_id,
         BankStatement.account_id,
         BankStatement.migrated_from_account_id,
+        BankStatement.is_manual,
         Subtag.name.label('subtag_name'),
         Tag.name.label('tag_name'),
         # shared_partner_id: prioridade migrated_from > bidirecional
@@ -1921,10 +1923,10 @@ def _get_bank_expenses_by_date(
     if origin_list:
         origin_conditions = []
         if 'manual' in origin_list:
-            # Manual: category IS NULL AND migrated_from_account_id IS NULL
+            # Manual: is_manual = TRUE AND migrated_from_account_id IS NULL
             origin_conditions.append(
                 and_(
-                    BankStatement.category.is_(None),
+                    BankStatement.is_manual.is_(True),
                     BankStatement.migrated_from_account_id.is_(None)
                 )
             )
@@ -1973,7 +1975,8 @@ def _get_bank_expenses_by_date(
             bank_name=r.bank_name,
             account_agency=str(r.account_agency) if r.account_agency is not None else None,
             account_number=str(r.account_number) if r.account_number is not None else None,
-            migrated_from_account_id=r.migrated_from_account_id
+            migrated_from_account_id=r.migrated_from_account_id,
+            is_manual=bool(r.is_manual)
         )
         for r in results
     ]

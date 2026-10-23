@@ -34,9 +34,12 @@ def open_pdf_reader(file_path: str, password: Optional[str] = None) -> PdfReader
         return reader
 
     if password is not None:
-        if reader.decrypt(password) == 0:
-            raise PdfPasswordInvalid()
-        return reader
+        if reader.decrypt(password) > 0:
+            return reader
+        # PDF que abre com senha vazia não deve falhar por causa da senha padrão da conta.
+        if reader.decrypt("") > 0:
+            return reader
+        raise PdfPasswordInvalid()
 
     if reader.decrypt("") > 0:
         return reader

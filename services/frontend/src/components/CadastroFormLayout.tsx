@@ -1,6 +1,6 @@
 import { Children, createContext, isValidElement, useContext, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronRight, Pencil, Plus, Save, X } from 'lucide-react'
+import { ChevronRight, Maximize2, Minimize2, Pencil, Plus, Save, X } from 'lucide-react'
 import {
   CadastroListPageBody,
   CadastroListPageHero,
@@ -421,16 +421,19 @@ export function CadastroModalShell({
   maxHeight = 'max-h-[92vh]',
   onBackdropClick,
   zClass = 'z-[100]',
+  maximized = false,
 }: {
   children: ReactNode
   maxWidth?: string
   maxHeight?: string
   onBackdropClick?: () => void
   zClass?: string
+  /** Ocupa a tela toda, deixando uma borda do fundo escurecido (use com `onToggleMaximize` no CadastroModalHeader). */
+  maximized?: boolean
 }) {
   return createPortal(
     <div
-      className={`fixed inset-0 ${zClass} flex items-center justify-center bg-black/40 p-4`}
+      className={`fixed inset-0 ${zClass} flex items-center justify-center bg-black/40 ${maximized ? 'p-3' : 'p-4'}`}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) e.preventDefault()
       }}
@@ -440,7 +443,9 @@ export function CadastroModalShell({
       }}
     >
       <div
-        className={`flex ${maxHeight} w-full ${maxWidth} flex-col overflow-hidden rounded-xl bg-white shadow-xl dark:bg-gray-800`}
+        className={`flex w-full flex-col overflow-hidden bg-white shadow-xl dark:bg-gray-800 ${
+          maximized ? 'h-full max-w-none rounded-xl' : `${maxHeight} ${maxWidth} rounded-xl`
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         {children}
@@ -461,10 +466,16 @@ export function CadastroModalHeader({
   closeDisabled = false,
   icon,
   iconStyle,
+  maximized = false,
+  onToggleMaximize,
 }: {
   isEdit: boolean
   /** Desabilita o X enquanto uma ação está em andamento. */
   closeDisabled?: boolean
+  /** Estado atual (usado só para o ícone/título do botão de maximizar). */
+  maximized?: boolean
+  /** Quando informado, mostra o botão de maximizar/restaurar ao lado do X. */
+  onToggleMaximize?: () => void
   title?: string
   /** Conteúdo ao lado do título (ex.: badge de status). */
   titleAddon?: ReactNode
@@ -503,16 +514,29 @@ export function CadastroModalHeader({
             )}
           </div>
         </div>
-        {!hideClose && (
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={closeDisabled}
-            className="shrink-0 text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:text-gray-200"
-          >
-            <X size={20} />
-          </button>
-        )}
+        <div className="flex shrink-0 items-center gap-3">
+          {onToggleMaximize && (
+            <button
+              type="button"
+              onClick={onToggleMaximize}
+              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+              title={maximized ? 'Restaurar tamanho' : 'Maximizar'}
+              aria-label={maximized ? 'Restaurar tamanho' : 'Maximizar'}
+            >
+              {maximized ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+            </button>
+          )}
+          {!hideClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={closeDisabled}
+              className="shrink-0 text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:text-gray-200"
+            >
+              <X size={20} />
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )

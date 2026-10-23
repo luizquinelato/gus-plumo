@@ -7,9 +7,54 @@ import axios from 'axios'
 
 export type ExcelCell = string | number | boolean | null
 export type ExcelRow = Record<string, ExcelCell | undefined>
-export type ExcelColumnKind = 'text' | 'int' | 'month' | 'money' | 'decimal' | 'percent' | 'date' | 'datetime'
+export type ExcelColumnKind =
+  | 'text'
+  | 'int'
+  | 'month'
+  | 'money'
+  | 'decimal'
+  | 'percent'
+  | 'date'
+  | 'datetime'
+  | 'monthyear'
+
+export type ExcelCellStyle = '' | 'title' | 'section' | 'head' | 'label' | 'input' | 'calc' | 'note'
+
+/** Célula posicionada de planilha livre: valor fixo (`v`) ou fórmula em inglês (`f`; `v` vira o valor em cache). */
+export interface ExcelFreeCell {
+  r: number
+  c: number
+  v?: ExcelCell
+  f?: string
+  kind?: ExcelColumnKind
+  style?: ExcelCellStyle
+}
+
+export interface ExcelRange {
+  sheet: string
+  r1: number
+  c1: number
+  r2: number
+  c2: number
+}
+
+export interface ExcelLineChart {
+  title?: string
+  row: number
+  col: number
+  width?: number
+  height?: number
+  categories: ExcelRange
+  series: { name: string; values: ExcelRange; color: string }[]
+  y_kind?: ExcelColumnKind
+  x_kind?: ExcelColumnKind
+}
 
 export interface ExcelSheetSpec {
+  /** Layout livre (fórmulas e gráficos de linha); quando informado, `rows` é ignorado. */
+  cells?: ExcelFreeCell[]
+  col_widths?: Record<number, number>
+  line_charts?: ExcelLineChart[]
   name: string
   rows: ExcelRow[]
   /** Ordem das colunas; se omitido, usa a ordem das chaves das linhas. */
@@ -40,9 +85,17 @@ export function saveBlob(blob: Blob, filename: string): void {
 }
 
 /** Gera o .xlsx no backend e baixa. Lança erro se a geração falhar. */
-export async function downloadExcel(filename: string, sheets: ExcelSheetSpec[]): Promise<void> {
+export async function downloadExcel(
+  filename: string,
+  sheets: ExcelSheetSpec[],
+  names: Record<string, string> = {},
+): Promise<void> {
   const payload = {
+    names,
     sheets: sheets.map((s) => ({
+      cells: s.cells ?? [],
+      col_widths: s.col_widths ?? {},
+      line_charts: s.line_charts ?? [],
       name: s.name,
       rows: s.rows,
       columns: s.columns ?? [],

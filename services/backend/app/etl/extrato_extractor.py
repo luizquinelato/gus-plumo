@@ -24,7 +24,10 @@ class ExtratoExtractor:
     """
     
     @staticmethod
-    def extract_from_files(file_paths: List[str]) -> List[Dict[str, Any]]:
+    def extract_from_files(
+        file_paths: List[str],
+        passwords: Optional[List[Optional[str]]] = None,
+    ) -> List[Dict[str, Any]]:
         """
         Extrai dados brutos de múltiplos arquivos Excel.
         
@@ -52,7 +55,12 @@ class ExtratoExtractor:
             filename = os.path.basename(file_path)
             print(f"📄 [EXTRACTOR] Arquivo {idx}/{len(file_paths)}: {filename}")
             
-            records = ExtratoExtractor._extract_from_single_file(file_path)
+            if file_path.lower().endswith('.pdf'):
+                from ..converters.itau_extrato_pdf import extract_itau_extrato_records
+                password = passwords[idx - 1] if passwords and idx - 1 < len(passwords) else None
+                records = extract_itau_extrato_records(file_path, password)
+            else:
+                records = ExtratoExtractor._extract_from_single_file(file_path)
             all_records.extend(records)
             print(f"   ✅ Extraídos: {len(records)} registros")
         

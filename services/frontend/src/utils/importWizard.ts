@@ -24,6 +24,7 @@ export type WizardKind =
   | 'beneficio_csv'
   | 'holerite'
   | 'informe'
+  | 'consorcio'
   | 'extrato_export'
   | 'fatura_export'
   | 'mapeamentos'
@@ -40,6 +41,7 @@ export const KIND_LABEL: Record<WizardKind, string> = {
   beneficio_csv: 'Benefício',
   holerite: 'Holerite',
   informe: 'Informe',
+  consorcio: 'Consórcio',
   extrato_export: 'Extrato',
   fatura_export: 'Faturas',
   mapeamentos: 'Mapeamentos',
@@ -65,6 +67,7 @@ export const KIND_ORDER: WizardKind[] = [
   'beneficio_csv',
   'holerite',
   'informe',
+  'consorcio',
   'blocked',
 ]
 
@@ -101,7 +104,8 @@ export function isRawKind(kind: WizardKind): boolean {
     kind === 'fatura_bruta' ||
     kind === 'beneficio_csv' ||
     kind === 'holerite' ||
-    kind === 'informe'
+    kind === 'informe' ||
+    kind === 'consorcio'
   )
 }
 

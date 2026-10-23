@@ -9,6 +9,7 @@ import { useExportRunner } from '../../hooks/useExportRunner'
 import { useEscapeKey } from '../../hooks/useEscapeKey'
 import Toast from '../../components/Toast'
 import FloatingFooterBar from '../../components/FloatingFooterBar'
+import ListPagination from '../../components/ListPagination'
 import {
   CadastroFilterField,
   CadastroListPageBody,
@@ -1932,73 +1933,13 @@ const TransactionMappingsTab = () => {
                     </tr>
                   }
                   footer={
-                    <div className={`${listPageTableChromeFooterCls} flex flex-wrap items-center justify-between gap-3`}>
-                      <div className="flex items-center gap-2 text-sm">
-                        <label className="text-gray-600 dark:text-gray-400">Itens por página:</label>
-                        <select
-                          value={itemsPerPage}
-                          onChange={(e) => {
-                            setItemsPerPage(Number(e.target.value))
-                            setCurrentPage(1)
-                          }}
-                          className={cadastroFilterFieldCls}
-                        >
-                          <option value={50}>50</option>
-                          <option value={100}>100</option>
-                          <option value={200}>200</option>
-                          <option value={0}>Todos</option>
-                        </select>
-                      </div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">
-                        Mostrando{' '}
-                        <span className="font-semibold text-gray-900 dark:text-white">
-                          {itemsPerPage === 0
-                            ? filteredMappings.length
-                            : Math.min(
-                                itemsPerPage,
-                                Math.max(0, filteredMappings.length - (currentPage - 1) * itemsPerPage),
-                              )}
-                        </span>{' '}
-                        de{' '}
-                        <span className="font-semibold text-gray-900 dark:text-white">
-                          {filteredMappings.length}
-                        </span>{' '}
-                        {filteredMappings.length === 1 ? 'mapeamento' : 'mapeamentos'}
-                      </div>
-                      {itemsPerPage > 0 && Math.ceil(filteredMappings.length / itemsPerPage) > 1 ? (
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
-                            disabled={currentPage === 1}
-                            className="rounded-lg border border-gray-300 px-3 py-1 text-sm text-gray-900 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700"
-                          >
-                            Anterior
-                          </button>
-                          <span className="text-sm text-gray-600 dark:text-gray-400">
-                            Página{' '}
-                            <span className="font-semibold text-gray-900 dark:text-white">{currentPage}</span> de{' '}
-                            <span className="font-semibold text-gray-900 dark:text-white">
-                              {Math.ceil(filteredMappings.length / itemsPerPage)}
-                            </span>
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setCurrentPage((prev) =>
-                                Math.min(Math.ceil(filteredMappings.length / itemsPerPage), prev + 1),
-                              )
-                            }
-                            disabled={currentPage >= Math.ceil(filteredMappings.length / itemsPerPage)}
-                            className="rounded-lg border border-gray-300 px-3 py-1 text-sm text-gray-900 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700"
-                          >
-                            Próxima
-                          </button>
-                        </div>
-                      ) : (
-                        <span className="w-px shrink-0 sm:invisible" aria-hidden />
-                      )}
-                    </div>
+                    <ListPagination
+                      total={filteredMappings.length}
+                      page={currentPage}
+                      perPage={itemsPerPage}
+                      onPageChange={setCurrentPage}
+                      onPerPageChange={setItemsPerPage}
+                    />
                   }
                 >
                   {paginatedMappings.map((mapping, index) => {

@@ -28,6 +28,7 @@ import GrupoPage from './pages/GrupoPage'
 import EmprestimosPage from './pages/EmprestimosPage'
 import ProfilePage from './pages/ProfilePage'
 import PayrollPage from './pages/PayrollPage'
+import ConsorciosPage from './pages/ConsorciosPage'
 import AccountClosuresPage from './pages/AccountClosuresPage'
 import HealthCheckPage from './pages/HealthCheckPage'
 import { useColorApplication } from './hooks/useColorApplication'
@@ -241,6 +242,14 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <PayrollPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/consorcios"
+                element={
+                  <ProtectedRoute>
+                    <ConsorciosPage />
                   </ProtectedRoute>
                 }
               />

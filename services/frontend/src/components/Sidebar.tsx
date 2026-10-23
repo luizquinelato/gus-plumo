@@ -1,4 +1,4 @@
-import { Home, Palette, TrendingUp, Sun, Moon, CreditCard, LogOut, Tags, ClipboardCheck, FolderTree, Settings, ChevronRight, ChevronLeft, Building2, Users, User, FileText, RefreshCw, Copy, Scale, Layers, Wallet, Feather, Camera, FolderOpen, Link2, Landmark, Activity, FileUp, CalendarDays } from 'lucide-react'
+import { Home, Palette, TrendingUp, Sun, Moon, CreditCard, LogOut, Tags, ClipboardCheck, FolderTree, Settings, ChevronRight, ChevronLeft, Building2, Users, User, FileText, RefreshCw, Copy, Scale, Layers, Wallet, Feather, Camera, FolderOpen, Link2, Landmark, Handshake, Activity, FileUp, CalendarDays } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -75,6 +75,7 @@ const afterFechamentosMenuItems = [
   { icon: ClipboardCheck, label: 'Curadoria', path: '/curadoria' },
   { icon: Wallet, label: 'Empréstimos', path: '/emprestimos' },
   { icon: FileText, label: 'Informes', path: '/informes' },
+  { icon: Handshake, label: 'Consórcios', path: '/consorcios' },
 ]
 
 function activeNavGroupId(pathname: string): NavGroupId | null {

@@ -49,6 +49,7 @@ export type PdfBlock =
   | { type: 'legend'; legend: PdfLegendEntry[] }
   | { type: 'pie'; slices: { name: string; value: number; color: string }[] }
   | { type: 'page_break' }
+  | { type: 'spacer'; space_mm: number }
 
 /** Documento com vários blocos, desenhados na ordem. */
 export interface PdfDocumentSpec {

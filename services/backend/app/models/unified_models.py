@@ -7,6 +7,7 @@ Data: 2025-12-19
 
 from decimal import Decimal
 from sqlalchemy import Column, Integer, BigInteger, String, ForeignKey, Text, Numeric, Date, DateTime, CheckConstraint, Boolean, TIMESTAMP, UniqueConstraint
+from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from app.models.base import Base
@@ -328,6 +329,8 @@ class CreditCardInvoice(Base, BaseEntity):
     ownership_percentage = Column(Numeric(5, 2), nullable=False, default=100.00, name="ownership_percentage")
     expense_sharing_id = Column(Integer, ForeignKey('expense_sharing_settings.id'), nullable=True, name="expense_sharing_id")
     adjustment_notes = Column(Text, nullable=True, name="adjustment_notes")
+    is_manual = Column(Boolean, nullable=False, default=False, server_default=text("false"), name="is_manual")
+
     account_id = Column(Integer, ForeignKey('accounts.id'), nullable=True, name="account_id")
     issuer = Column(String(20), nullable=False, default='btg', server_default='btg', name="issuer")
     bank_statement_id = Column(Integer, ForeignKey('bank_statements.id', ondelete='SET NULL'), nullable=True, name="bank_statement_id", index=True)
@@ -377,6 +380,8 @@ class BankStatement(Base, BaseEntity):
     ownership_percentage = Column(Numeric(5, 2), nullable=False, default=100.00, name="ownership_percentage")
     expense_sharing_id = Column(Integer, ForeignKey('expense_sharing_settings.id'), nullable=True, name="expense_sharing_id")
     adjustment_notes = Column(Text, nullable=True, name="adjustment_notes")
+    is_manual = Column(Boolean, nullable=False, default=False, server_default=text("false"), name="is_manual")
+
     # Campos de rastreamento para itens migrados por inversão de compartilhamento
     migrated_from_account_id = Column(Integer, ForeignKey('accounts.id'), nullable=True, name="migrated_from_account_id")
     migrated_from_table = Column(String(50), nullable=True, name="migrated_from_table")  # 'credit_card_invoices' ou 'benefit_card_statements'
@@ -424,6 +429,8 @@ class BenefitCardStatement(Base, BaseEntity):
     ownership_percentage = Column(Numeric(5, 2), nullable=False, default=100.00, name="ownership_percentage")
     expense_sharing_id = Column(Integer, ForeignKey('expense_sharing_settings.id'), nullable=True, name="expense_sharing_id")
     adjustment_notes = Column(Text, nullable=True, name="adjustment_notes")
+    is_manual = Column(Boolean, nullable=False, default=False, server_default=text("false"), name="is_manual")
+
     account_id = Column(Integer, ForeignKey('accounts.id'), nullable=True, name="account_id")
 
     # Relacionamentos
@@ -795,3 +802,92 @@ class MonthlyProjection(Base, AccountBaseEntity):
     breakdown = Column(JSONB, nullable=True, name="breakdown")
     sharing = Column(String(10), nullable=True, name="sharing")
     active = Column(Boolean, nullable=False, default=True, name="active")
+
+
+
+class Consortium(Base, AccountBaseEntity):
+    """
+    Consórcio importado do extrato da administradora (Porto Seguro ou Rodobens).
+
+    remaining_installments não é gravado: plan_term_months - paid_installments.
+    catch_up_installments: parcelas de entrada tardia no grupo (Rodobens "prorrogadas"; Porto = 0).
+    """
+    __tablename__ = 'consortiums'
+    __table_args__ = (
+        CheckConstraint("company IN ('porto_seguro', 'rodobens')", name='consortiums_company_check'),
+        CheckConstraint("segment IN ('auto', 'imovel')", name='consortiums_segment_check'),
+        UniqueConstraint('account_id', 'company', 'group_code', 'quota', name='uq_consortiums_account_company_group_quota'),
+        {'quote': False},
+    )
+
+    company = Column(String(20), nullable=False, name="company")
+    segment = Column(String(20), nullable=False, name="segment")
+    group_code = Column(String(20), nullable=False, name="group_code")
+    quota = Column(String(20), nullable=False, name="quota")
+    contract_number = Column(String(30), nullable=True, name="contract_number")
+    asset_code = Column(String(20), nullable=True, name="asset_code")
+    asset_description = Column(String(255), nullable=True, name="asset_description")
+    credit_amount = Column(Numeric(15, 2), nullable=True, name="credit_amount")
+    plan_term_months = Column(Integer, nullable=False, name="plan_term_months")
+    paid_installments = Column(Integer, nullable=False, default=0, name="paid_installments")
+    catch_up_installments = Column(Integer, nullable=False, default=0, name="catch_up_installments")
+    catch_up_installment_amount = Column(Numeric(15, 2), nullable=True, name="catch_up_installment_amount")
+    # Fator de redução da parcela (Porto Seguro), em % (0–100). Não vem no extrato; informado pelo usuário.
+    reduction_factor = Column(Numeric(7, 4), nullable=True, name="reduction_factor")
+    monthly_amount = Column(Numeric(15, 2), nullable=True, name="monthly_amount")
+    outstanding_balance = Column(Numeric(15, 2), nullable=True, name="outstanding_balance")
+    joined_date = Column(Date, nullable=True, name="joined_date")
+    next_due_date = Column(Date, nullable=True, name="next_due_date")
+    last_due_date = Column(Date, nullable=True, name="last_due_date")
+    group_end_date = Column(Date, nullable=True, name="group_end_date")
+    next_adjustment_date = Column(Date, nullable=True, name="next_adjustment_date")
+    admin_fee_pct = Column(Numeric(10, 4), nullable=True, name="admin_fee_pct")
+    reserve_fund_pct = Column(Numeric(10, 4), nullable=True, name="reserve_fund_pct")
+    monthly_pct = Column(Numeric(10, 4), nullable=True, name="monthly_pct")
+    monthly_pct_with_fees = Column(Numeric(10, 4), nullable=True, name="monthly_pct_with_fees")
+    insurance_pct = Column(Numeric(10, 6), nullable=True, name="insurance_pct")
+    paid_pct = Column(Numeric(10, 4), nullable=True, name="paid_pct")
+    pending_pct = Column(Numeric(10, 4), nullable=True, name="pending_pct")
+    to_collect_pct = Column(Numeric(10, 4), nullable=True, name="to_collect_pct")
+    ideal_paid_pct = Column(Numeric(10, 4), nullable=True, name="ideal_paid_pct")
+    ideal_due_pct = Column(Numeric(10, 4), nullable=True, name="ideal_due_pct")
+    diff_pct = Column(Numeric(10, 4), nullable=True, name="diff_pct")
+    source_filename = Column(String(255), nullable=True, name="source_filename")
+    imported_at = Column(TIMESTAMP, nullable=True, name="imported_at")
+    active = Column(Boolean, nullable=False, default=True, name="active")
+
+    account = relationship("Account", foreign_keys="[Consortium.account_id]")
+    installments = relationship(
+        "ConsortiumInstallment", back_populates="consortium", cascade="all, delete-orphan"
+    )
+
+
+class ConsortiumInstallment(Base, AccountBaseEntity):
+    """Lançamento do conta corrente do consórcio (inclui estornos com valor negativo)."""
+    __tablename__ = 'consortium_installments'
+    __table_args__ = {'quote': False}
+
+    consortium_id = Column(Integer, ForeignKey('consortiums.id', ondelete='CASCADE'), nullable=False, name="consortium_id", index=True)
+    installment_number = Column(Integer, nullable=True, name="installment_number")
+    entry_code = Column(String(10), nullable=True, name="entry_code")
+    entry_description = Column(String(100), nullable=False, name="entry_description")
+    due_date = Column(Date, nullable=True, name="due_date")
+    accounting_date = Column(Date, nullable=True, name="accounting_date")
+    payment_date = Column(Date, nullable=True, name="payment_date")
+    amount_due = Column(Numeric(15, 2), nullable=True, name="amount_due")
+    amount_paid = Column(Numeric(15, 2), nullable=True, name="amount_paid")
+    fine_amount = Column(Numeric(15, 2), nullable=True, name="fine_amount")
+    interest_amount = Column(Numeric(15, 2), nullable=True, name="interest_amount")
+    fine_interest_pct = Column(Numeric(10, 4), nullable=True, name="fine_interest_pct")
+    fc_pct = Column(Numeric(10, 4), nullable=True, name="fc_pct")
+    fr_pct = Column(Numeric(10, 4), nullable=True, name="fr_pct")
+    admin_fee_pct = Column(Numeric(10, 4), nullable=True, name="admin_fee_pct")
+    insurance_pct = Column(Numeric(10, 6), nullable=True, name="insurance_pct")
+    paid_pct = Column(Numeric(10, 4), nullable=True, name="paid_pct")
+    diff_pct = Column(Numeric(10, 4), nullable=True, name="diff_pct")
+    has_insurance = Column(Boolean, nullable=True, name="has_insurance")
+    asset_code = Column(String(20), nullable=True, name="asset_code")
+    credit_amount = Column(Numeric(15, 2), nullable=True, name="credit_amount")
+    notice_number = Column(String(30), nullable=True, name="notice_number")
+
+    consortium = relationship("Consortium", back_populates="installments")

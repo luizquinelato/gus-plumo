@@ -7,6 +7,7 @@ import {
   FileText,
   FolderTree,
   Gift,
+  Handshake,
   Landmark,
   Tags,
   Users,
@@ -35,6 +36,24 @@ const EXTRATO_BTG: BadgeSpec = {
   title: 'Extrato BTG Pactual (arquivo original)',
   className:
     'bg-[#C5D4EF] text-[#001E62] border border-[#001E62]/25 dark:bg-[#163875] dark:text-[#E8EEF7] dark:border-[#4A7BC8]/45',
+}
+
+const EXTRATO_ITAU: BadgeSpec = {
+  text: 'Itaú - Extrato',
+  title: 'Extrato Itaú (PDF)',
+  className: 'bg-[#EC7000] text-white dark:bg-[#EC7000] dark:text-white',
+}
+
+const CONSORCIO_PORTO: BadgeSpec = {
+  text: 'Porto Seguro',
+  title: 'Extrato de consórcio Porto Seguro (PDF)',
+  className: 'bg-[#0046C0] text-white dark:bg-[#0046C0] dark:text-white',
+}
+
+const CONSORCIO_RODOBENS: BadgeSpec = {
+  text: 'Rodobens',
+  title: 'Extrato de consórcio Rodobens (PDF)',
+  className: 'bg-[#00A651] text-white dark:bg-[#00A651] dark:text-white',
 }
 
 function issuerBadge(issuer?: string | null, label?: string | null): BadgeSpec {
@@ -69,10 +88,14 @@ function badgeSpec(kind: WizardKind, info: KindBadgeInfo): BadgeSpec {
       return colorBadge('Holerite', 'Holerite (PDF)', '--color-1')
     case 'informe':
       return colorBadge('Informe', 'Informe de rendimentos (PDF)', '--color-2')
+    case 'consorcio':
+      if (info.issuerLabel === 'Porto Seguro') return CONSORCIO_PORTO
+      if (info.issuerLabel === 'Rodobens') return CONSORCIO_RODOBENS
+      return colorBadge('Consórcio', 'Extrato de consórcio (PDF)', '--color-3')
     case 'beneficio_csv':
       return colorBadge('Benefício CSV', 'Extrato do cartão de benefícios (CSV)', '--color-3')
     case 'extrato_bruto':
-      return EXTRATO_BTG
+      return info.issuer === 'itau_extrato' ? EXTRATO_ITAU : EXTRATO_BTG
     case 'fatura_bruta': {
       const badge = issuerBadge(info.issuer, info.issuerLabel)
       return { ...badge, title: [badge.title, info.cardLast4 ? `final ${info.cardLast4}` : null].filter(Boolean).join(' • ') }
@@ -104,6 +127,7 @@ export function KindBadge({ kind, info = {} }: { kind: WizardKind; info?: KindBa
 const KIND_ICON: Record<WizardKind, { icon: LucideIcon; color: string; title: string }> = {
   holerite: { icon: Briefcase, color: 'var(--color-1)', title: 'Holerite' },
   informe: { icon: Briefcase, color: 'var(--color-2)', title: 'Informe de rendimentos' },
+  consorcio: { icon: Handshake, color: 'var(--color-3)', title: 'Extrato de consórcio' },
   beneficio_csv: { icon: Gift, color: 'var(--color-3)', title: 'Benefício' },
   fatura_bruta: { icon: CreditCard, color: 'var(--color-2)', title: 'Fatura de cartão' },
   extrato_bruto: { icon: Landmark, color: 'var(--color-1)', title: 'Extrato bancário' },
