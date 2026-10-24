@@ -16,6 +16,7 @@ import { useEscapeKey } from '../hooks/useEscapeKey'
 import { formatCurrency, formatCurrencyWithColor } from '../utils/currency'
 import {
   buildBase,
+  defaultFuroTotal,
   DEFAULT_RATE_PCT,
   inputToYm,
   simulate,
@@ -305,11 +306,8 @@ const ConsortiumProjectionModal = ({ consortium: c, onClose }: { consortium: Mod
     return {
       rate,
       reduction: c.reduction_factor != null ? String(c.reduction_factor) : '',
-      // Total do furo = qtde × parcela cadastradas (vazio se não houver).
-      furo:
-        c.catch_up_installment_amount != null && c.catch_up_installments > 0
-          ? String(Math.round(Math.abs(c.catch_up_installment_amount) * c.catch_up_installments * 100) / 100)
-          : '',
+      // Total do furo: cadastrado (qtde × parcela) ou estimado pela diferença saldo − parcelas regulares.
+      furo: base && defaultFuroTotal(c, base) > 0 ? String(defaultFuroTotal(c, base)) : '',
       contemplation: base ? ymToInput(base.firstYm) : '',
     }
   }, [c, base])
@@ -550,21 +548,21 @@ const ConsortiumProjectionModal = ({ consortium: c, onClose }: { consortium: Mod
                 </InputField>
                 <InputField
                   label="Fator de redução até a contemplação (%)"
-                  hint="Desconto na parcela até a contemplação. A parcela atual já tem a redução cadastrada embutida; mudar o fator recalcula a parcela (ex.: 0% = parcela cheia). Acima de 0 (ou havendo furo), depois da contemplação a parcela é recalculada: saldo ÷ parcelas restantes."
+                  hint="Desconto na parcela até a contemplação. A parcela atual já tem a redução cadastrada embutida; mudar o fator recalcula a parcela (ex.: 0% = parcela cheia). Acima de 0 (ou com furo informado), depois da contemplação a parcela é recalculada: saldo ÷ parcelas restantes. Com 0 e sem furo, a parcela não muda e o furo é calculado automaticamente."
                 >
                   {numberInput(reduction, setReduction, '0.01')}
                 </InputField>
                 <InputField
                   label="Total furo (R$)"
-                  hint="Valor total do furo, pago de uma vez na contemplação, depois da parcela do mês, e abatido do saldo."
+                  hint="Valor total do furo, pago de uma vez na contemplação, depois da parcela do mês, e abatido do saldo. Deixe 0 (e redução 0) para o furo ser calculado automaticamente: é o que as parcelas até o último vencimento não cobrem, pago na contemplação, sem aumentar a parcela."
                 >
                   {numberInput(furo, setFuro, '0.01')}
                 </InputField>
               </div>
               <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
                 A contemplação em {contemplationLabel} é a virada de chave: nesse mês você paga a parcela atual e, depois dela, o total
-                do furo (se houver) é pago de uma vez e amortiza o saldo. A nova parcela vale a partir do mês seguinte: com furo ou fator de
-                redução ela é refeita pelo saldo (já amortizado) ÷ parcelas restantes, então o saldo zera no fim do prazo; sem nenhum dos dois, a parcela só segue a correção. Sem contemplação, a parcela só segue a correção
+                do furo (se houver) é pago de uma vez e amortiza o saldo. A nova parcela vale a partir do mês seguinte: com fator
+                de redução ou furo informado ela é refeita pelo saldo (já amortizado) ÷ parcelas restantes; sem os dois, a parcela não muda e o furo é calculado sozinho: é o que as parcelas até o último vencimento não cobrem, pago na contemplação (o saldo zera no fim). Sem contemplação, a parcela só segue a correção
                 anual, o furo não entra e o saldo que sobrar é quitado no fim do plano ({lastLabel}). As taxas são premissas suas (não vêm do extrato) e a edição aqui
                 não é salva.
               </p>

@@ -7,9 +7,9 @@
  *  - O saldo devedor é corrigido pela taxa do saldo nos reajustes e abatido a cada parcela paga.
  *  - No mês da contemplação paga-se a parcela antiga e, DEPOIS dela, o total do furo (se houver) é pago de
  *    uma vez e abate o saldo. A nova parcela vale a partir do mês seguinte.
- *  - Com fator de redução OU com furo, a nova parcela é saldo ÷ parcelas restantes (saldo já amortizado pelo
- *    furo) e é recalculada a cada reajuste, de modo que o saldo chegue a zero no fim do prazo. Sem redução e
- *    sem furo, a parcela só segue a correção do saldo (não muda).
+ *  - Com fator de redução ou furo informado, a nova parcela é saldo ÷ parcelas restantes (saldo já amortizado
+ *    pelo furo) e é recalculada a cada reajuste. Sem os dois, a parcela não muda e o furo é calculado
+ *    automaticamente: o que as parcelas até o último vencimento não cobrem é pago na contemplação.
  *  - Sem contemplação o furo não entra à parte (já está no saldo): o cenário é fixo e o saldo que sobrar
  *    é quitado no fim do plano.
  */
@@ -112,18 +112,51 @@ export function buildBase(c: ProjectionConsortium): ProjectionBase | null {
   }
 }
 
+/**
+ * Furo informado como premissa: qtde × parcela do furo, só se estiver cadastrada. Sem cadastro fica 0, e a
+ * simulação calcula o furo sozinha (o que as parcelas até o último vencimento não cobrem).
+ */
+export function defaultFuroTotal(c: ProjectionConsortium, _base: ProjectionBase): number {
+  if (c.catch_up_installments <= 0 || c.catch_up_installment_amount == null) return 0
+  return Math.round(Math.abs(c.catch_up_installment_amount) * c.catch_up_installments * 100) / 100
+}
+
 /** Quantos reajustes anuais já ocorreram até o mês `ym` (inclusive). */
 const adjustmentsUntil = (base: ProjectionBase, ym: number) =>
   ym < base.adjYm ? 0 : Math.floor((ym - base.adjYm) / 12) + 1
 
+/**
+ * Simula um cenário. Depois da contemplação:
+ *  - Com fator de redução (a parcela estava reduzida) ou com furo informado: a parcela é refeita pelo saldo
+ *    (saldo ÷ parcelas restantes) e o furo informado é pago na contemplação.
+ *  - Sem redução e sem furo informado: a parcela NÃO muda (só a correção anual). O furo é calculado sozinho:
+ *    é o que as parcelas até o último vencimento não cobrem, pago de uma vez na contemplação, de modo que o
+ *    saldo chegue a zero no fim.
+ */
 export function simulate(base: ProjectionBase, params: ProjectionParams, contemplationIdx: number | null): Scenario {
+  const manual = params.reductionPct > 0 || params.furoTotal > 0
+  if (contemplationIdx == null || manual) {
+    return runScenario(base, params, contemplationIdx, manual, Math.max(0, params.furoTotal))
+  }
+  // Ensaio sem furo: o saldo que sobra no fim é o que o furo precisa quitar. Ele é abatido na contemplação,
+  // depois do reajuste do mês, e por isso só é corrigido pelos reajustes seguintes.
+  const dry = runScenario(base, params, contemplationIdx, false, 0)
+  const rs = 1 + params.balanceRatePct / 100
+  const stepsAfter =
+    adjustmentsUntil(base, base.firstYm + base.remaining - 1) - adjustmentsUntil(base, base.firstYm + contemplationIdx)
+  const furo = Math.round((dry.finalSettlement / rs ** stepsAfter) * 100) / 100
+  return runScenario(base, params, contemplationIdx, false, furo)
+}
+
+function runScenario(
+  base: ProjectionBase,
+  params: ProjectionParams,
+  contemplationIdx: number | null,
+  recalc: boolean,
+  furoTotal: number,
+): Scenario {
   const rc = 1 + params.creditRatePct / 100
   const rs = 1 + params.balanceRatePct / 100
-  const reduced = params.reductionPct > 0
-  const furoTotal = Math.max(0, params.furoTotal)
-  // Com redução ou com furo, depois da contemplação a parcela é refeita pelo saldo (saldo ÷ parcelas restantes),
-  // então o saldo zera no fim do prazo. Sem nenhum dos dois, a parcela só acompanha a correção.
-  const recalc = reduced || furoTotal > 0
   // A parcela atual já tem a redução cadastrada embutida: recupera a parcela cheia e aplica a redução simulada.
   const reductionScale =
     (1 - Math.min(Math.max(params.reductionPct, 0), 99.99) / 100) / (1 - base.baseReductionPct / 100)

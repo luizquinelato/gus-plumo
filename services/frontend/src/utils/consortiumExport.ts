@@ -5,6 +5,7 @@ import type { SaldoExportChartImage } from './saldoParceladoExportShared'
 import { buildProjectionWorkbook, type ProjectionWorkbook } from './consortiumProjectionWorkbook'
 import {
   buildBase,
+  defaultFuroTotal,
   DEFAULT_RATE_PCT,
   simulate,
   ymLabel,
@@ -290,10 +291,7 @@ export function defaultProjectionPremises(c: ProjectionSource): ProjectionPremis
     contemplationYm: base.firstYm,
     ratePct: DEFAULT_RATE_PCT[c.segment] ?? 4.5,
     reductionPct: Math.min(Math.max(c.reduction_factor ?? 0, 0), 100),
-    furoTotal:
-      c.catch_up_installment_amount != null && c.catch_up_installments > 0
-        ? Math.round(Math.abs(c.catch_up_installment_amount) * c.catch_up_installments * 100) / 100
-        : 0,
+    furoTotal: defaultFuroTotal(c, base),
   }
 }
 

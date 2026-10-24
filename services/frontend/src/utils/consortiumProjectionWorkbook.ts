@@ -94,12 +94,18 @@ export function buildProjectionWorkbook(input: {
   aux(24, 'Parcela inicial (com a redução)', 'ParcelaAtual*EscalaReducao', base.monthly, 'money')
   aux(
     25,
-    'Parcela refeita pelo saldo após a contemplação (1 = sim; há redução ou furo)',
-    'IF(OR(MIN(MAX(ReducaoPct,0),100)>0,FuroEfetivo>0),1,0)',
+    'Parcela refeita pelo saldo após a contemplação (1 = sim; há redução ou furo informado)',
+    'IF(OR(MIN(MAX(ReducaoPct,0),100)>0,FuroTotal>0),1,0)',
     p.reductionPct > 0 || p.furoTotal > 0 ? 1 : 0,
     'int',
   )
-  aux(26, 'Furo considerado', 'MAX(0,FuroTotal)', Math.max(0, p.furoTotal), 'money')
+  aux(
+    26,
+    'Furo pago na contemplação (informado, ou calculado: o que as parcelas até o fim não cobrem)',
+    `IF(Recalcula=1,MAX(0,FuroTotal),MAX(0,INDEX(${G},NParcelas))/FatorAnual^(INDEX(${rng('C')},NParcelas)-INDEX(${rng('C')},MesContemp)))`,
+    contemplated.furoPaid,
+    'money',
+  )
   aux(27, 'Parcelas restantes após a contemplação', 'NParcelas-MesContemp', N - k, 'int')
   const settleN = Math.max(0, none.finalSettlement)
   const settleC = contemplated.finalSettlement + (contemplated.contemplationIdx != null && contemplated.contemplationIdx >= N - 1 ? contemplated.furoPaid : 0)
