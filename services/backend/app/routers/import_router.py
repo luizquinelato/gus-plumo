@@ -311,7 +311,7 @@ EMPTY_EXTRATO_SAVE = {
 
 
 def _extrato_import_response(save_result: dict, ignored_rows: list, arquivos_processados: int) -> dict:
-    return {
+    out = {
         "success": True,
         "message": "Extratos importados com sucesso via ETL",
         "arquivos_processados": arquivos_processados,
@@ -328,6 +328,10 @@ def _extrato_import_response(save_result: dict, ignored_rows: list, arquivos_pro
         "linhas_ignoradas_politica_count": len(ignored_rows),
         "debug_data": save_result.get("debug_data")  # Dados de debug para salvar após resolução
     }
+    impact = save_result.get("closure_impact")
+    if impact and impact.get("impact_type") != "none":
+        out["closure_impact"] = impact
+    return out
 
 
 def _import_extrato_work(
@@ -379,6 +383,14 @@ class RawRowsPersistRequest(BaseModel):
     rows: List[dict]
     ignored_rows: List[dict] = []
     progress_job_id: Optional[str] = None
+    confirm_closed_closure_impact: bool = False
+
+
+def _closure_impact_http_detail(exc) -> dict | str:
+    detail: dict | str = exc.message
+    if exc.payload:
+        detail = {"message": exc.message, **exc.payload}
+    return detail
 
 
 EXTRATO_ROW_COLUMNS = ("Data e hora", "Descrição", "Valor")
@@ -444,10 +456,14 @@ def persist_extrato(
                 save_result = save_extrato_records(
                     df, db, tenant_id=tenant_id, account_id=account_id, user_id=user_id,
                     detect_conflicts=True,
+                    confirm_closed_closure_impact=body.confirm_closed_closure_impact,
                 )
             except Exception as e:
                 db.rollback()
-                raise HTTPException(status_code=500, detail=f"Erro ao gravar extratos: {str(e)}")
+                from app.services.account_period_closure_service import AccountPeriodClosedError
+                if isinstance(e, AccountPeriodClosedError):
+                    raise HTTPException(status_code=409, detail=_closure_impact_http_detail(e)) from e
+                raise HTTPException(status_code=500, detail=f"Erro ao gravar extratos: {str(e)}") from e
         return _extrato_import_response(save_result, body.ignored_rows, 1)
     finally:
         deactivate_import_job(scope)

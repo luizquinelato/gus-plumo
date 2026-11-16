@@ -35,6 +35,8 @@ interface SharedAccountDisplayProps {
   compact?: boolean  // Se true, mostra apenas nome da conta
   /** Classes extras no texto do nome (ex.: contraparte na lista de fechamentos) */
   nameClassName?: string
+  /** Quebra o nome em várias linhas em vez de truncar (ex.: tabelas estreitas). */
+  allowWrap?: boolean
 }
 
 /**
@@ -46,6 +48,7 @@ const SharedAccountDisplay = ({
   ownershipPercentage,
   compact = false,
   nameClassName = '',
+  allowWrap = false,
 }: SharedAccountDisplayProps) => {
   const [isModalOpen, setIsModalOpen] = useState(false)
 
@@ -80,14 +83,16 @@ const SharedAccountDisplay = ({
 
   return (
     <>
-      <span className="inline-flex items-center gap-2">
+      <span className={`inline-flex gap-2 ${allowWrap ? 'items-start flex-wrap' : 'items-center'}`}>
         <span
           className={
-            nameClassName
-              ? `text-sm truncate ${nameClassName}`
-              : 'text-sm text-gray-900 dark:text-white truncate'
+            allowWrap
+              ? `text-sm break-words text-gray-900 dark:text-white ${nameClassName}`
+              : nameClassName
+                ? `text-sm truncate ${nameClassName}`
+                : 'text-sm text-gray-900 dark:text-white truncate'
           }
-          title={displayName}
+          title={allowWrap ? undefined : displayName}
         >
           {displayName}
         </span>

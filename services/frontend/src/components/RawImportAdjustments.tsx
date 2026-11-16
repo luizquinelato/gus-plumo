@@ -1,7 +1,13 @@
-import { CollapsiblePreviewSection, PreviewDataTable } from './ImportPreviewShared'
+import {
+  CollapsiblePreviewSection,
+  PreviewDataTable,
+  previewAmountCell,
+  previewCompoundFieldValueCell,
+  previewFieldValueCell,
+} from './ImportPreviewShared'
 import { cadastroFilterFieldCls } from './CadastroListPageLayout'
 import { conflictChange, previewDateMs } from './RawImportPreview'
-import { fieldLabel, formatChangeDisplay, type VisualImportPreviewRow } from './ExtratoVisualImportPreview'
+import { fieldLabel, type VisualImportPreviewRow } from './ExtratoVisualImportPreview'
 import { formatCurrency } from '../utils/currency'
 import type { ConflictResolution, ImportConflict } from '../types/importConflict'
 
@@ -148,8 +154,8 @@ function ConflictDecisionTable({
         date,
         description: conflict.description,
         campo: change.campo,
-        de: change.de,
-        para: change.para,
+        de: previewCompoundFieldValueCell(change.campo, change.de),
+        para: previewCompoundFieldValueCell(change.campo, change.para),
         decision: (
           <div className="flex flex-col items-start gap-1.5">
             <ChoiceToggle
@@ -207,11 +213,11 @@ function ConflictDecisionTable({
   )
 }
 
-function ChangeLines({ values }: { values: string[] }) {
+function ChangeLines({ fields, values }: { fields: string[]; values: unknown[] }) {
   return (
     <div className="space-y-1">
       {values.map((value, index) => (
-        <div key={index}>{value}</div>
+        <div key={index}>{previewFieldValueCell(fields[index] ?? '', value)}</div>
       ))}
     </div>
   )
@@ -239,10 +245,25 @@ function UpdateDecisionTable({
           row: update.row,
           date: update.date,
           description: update.description,
-          amount: formatCurrency(update.amount),
-          campo: <ChangeLines values={changes.map((change) => fieldLabel(change.field))} />,
-          de: <ChangeLines values={changes.map((change) => formatChangeDisplay(change.field, change.before))} />,
-          para: <ChangeLines values={changes.map((change) => formatChangeDisplay(change.field, change.after))} />,
+          amount: previewAmountCell(update.amount),
+          campo: (
+            <ChangeLines
+              fields={changes.map(() => '_')}
+              values={changes.map((change) => fieldLabel(change.field))}
+            />
+          ),
+          de: (
+            <ChangeLines
+              fields={changes.map((change) => change.field)}
+              values={changes.map((change) => change.before)}
+            />
+          ),
+          para: (
+            <ChangeLines
+              fields={changes.map((change) => change.field)}
+              values={changes.map((change) => change.after)}
+            />
+          ),
           decision: (
             <ChoiceToggle
               value={decisions[key]?.choice ?? 'atual'}

@@ -20,10 +20,14 @@ from app.models.unified_models import BankStatement, CreditCardInvoice, Subtag, 
 from app.dependencies.auth import require_account
 from sqlalchemy import or_
 from app.services.fatura_service import FaturaService
-from app.services.account_period_closure_service import closed_periods
+from app.services.account_period_closure_service import AccountPeriodClosedError, closed_periods
+from app.services.closed_period_edit_service import (
+    after_extrato_bulk_import_in_closed_periods,
+    ensure_extrato_import_closed_periods_allowed,
+)
 from app.utils.card_helper import CardHelper
 from app.utils.import_progress import report_row_progress
-from app.utils.import_rows import mapping_hint, subtag_override
+from app.utils.import_rows import import_tag_subtag_conflict, mapping_hint, subtag_override
 from app.utils.mapping_helper import MappingHelper
 from app.utils.sharing_percentage import resolve_ownership_percentage, card_adjustment_config
 from app.core.logging_config import get_logger
@@ -442,7 +446,7 @@ def _extrato_row_has_changes(
         return True
     if (existing_data.get("transaction") or "") != (transaction or ""):
         return True
-    if not _optional_id_equal(existing_data.get("subtag_id"), subtag_id):
+    if subtag_id is not None and not _optional_id_equal(existing_data.get("subtag_id"), subtag_id):
         return True
     if not _optional_id_equal(existing_data.get("expense_sharing_id"), expense_sharing_id):
         return True
@@ -455,7 +459,7 @@ def _extrato_row_has_changes(
     return False
 
 
-def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_id: int, force_retag: bool = False, user_id: int = None, detect_conflicts: bool = True, enable_tracing: bool = False, original_filenames: list = None, commit: bool = True, collect_details: bool = False) -> dict:
+def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_id: int, force_retag: bool = False, user_id: int = None, detect_conflicts: bool = True, enable_tracing: bool = False, original_filenames: list = None, commit: bool = True, collect_details: bool = False, confirm_closed_closure_impact: bool = False) -> dict:
     """
     Função única de insert/update para extratos bancários.
     Usada após ETL de extrato bruto (import_router).
@@ -614,6 +618,8 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
 
     closed_months = closed_periods(db, tenant_id, account_id)
 
+    closure_mutation_dates: list[Any] = []
+
     # ========================================
     # ETAPA 4: PROCESSAMENTO EM LOTE
     # ========================================
@@ -673,28 +679,6 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
             # pd.Timestamp e datetime têm hashes diferentes, causando falha no lookup do dict
             if isinstance(date_obj, pd.Timestamp):
                 date_obj = date_obj.to_pydatetime()
-
-            if (date_obj.year, date_obj.month) in closed_months:
-                error_msg = (
-                    f"Linha {idx + 2}: mês {date_obj.month:02d}/{date_obj.year} já está fechado"
-                )
-                errors.append(error_msg)
-                skipped_count += 1
-                row_dict = {
-                    "Linha": idx + 2,
-                    "Erro": error_msg,
-                }
-                for k, v in row.items():
-                    if pd.isna(v):
-                        row_dict[k] = None
-                    elif isinstance(v, (pd.Timestamp, datetime)):
-                        row_dict[k] = v.strftime('%Y-%m-%d %H:%M:%S') if hasattr(v, 'strftime') else str(v)
-                    elif isinstance(v, (int, float, str, bool)):
-                        row_dict[k] = v
-                    else:
-                        row_dict[k] = str(v)
-                skipped_rows.append(row_dict)
-                continue
 
             description = str(row['Descrição'])
             amount = float(row['Valor'])
@@ -928,10 +912,8 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
                 existing_amount = existing_data.get('amount', 0.0)
 
                 # Detecta conflitos de tag/subtag e valor
-                has_tag_conflict = (
-                    detect_conflicts and
-                    existing_subtag_id is not None and
-                    existing_subtag_id != subtag_id
+                has_tag_conflict = detect_conflicts and import_tag_subtag_conflict(
+                    existing_subtag_id, subtag_id
                 )
                 # Conflito de valor: verifica se há diferença no valor (tolerância de 0.001 para erros de float)
                 has_amount_conflict = (
@@ -1024,14 +1006,17 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
                             'id': existing_id,
                             'category': category,
                             'transaction': transaction,
-                            'subtag_id': subtag_id,
                             'expense_sharing_id': expense_sharing_id,
                             'ownership_percentage': ownership_percentage,
                             'amount': amount_decimal
                         }
+                        if subtag_id is not None:
+                            update_record['subtag_id'] = subtag_id
                         if apply_description_update:
                             update_record['description'] = final_description
                         records_to_update.append(update_record)
+                        if (date_obj.year, date_obj.month) in closed_months:
+                            closure_mutation_dates.append(date_obj)
                         duplicate_count += 1
                         if collect_details:
                             preview_updates.append({
@@ -1110,6 +1095,8 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
                     'expense_sharing_id': expense_sharing_id,
                     'created_by': user_id  # ✅ Campo obrigatório do BaseEntity
                 })
+                if (date_obj.year, date_obj.month) in closed_months:
+                    closure_mutation_dates.append(date_obj)
                 created_count += 1
                 if collect_details:
                     preview_creates.append({
@@ -1196,14 +1183,35 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
     if len(conflicts) > 0:
         print(f"   ⚠️  {len(conflicts)} conflitos detectados (aguardando resolução)")
 
+    if commit:
+        ensure_extrato_import_closed_periods_allowed(
+            db,
+            tenant_id,
+            account_id,
+            closure_mutation_dates,
+            confirm_closed_closure_impact,
+        )
+
     if records_to_insert:
         db.bulk_insert_mappings(BankStatement, records_to_insert)
 
     if records_to_update:
         db.bulk_update_mappings(BankStatement, records_to_update)
 
+    closure_impact = None
     if commit:
         db.commit()
+        if user_id and closure_mutation_dates:
+            closure_impact = after_extrato_bulk_import_in_closed_periods(
+                db,
+                tenant_id,
+                account_id,
+                user_id,
+                closure_mutation_dates,
+                note="Importação de extrato",
+            )
+            if closure_impact.get("impact_type") != "none":
+                db.commit()
 
     # Fecha conexão psycopg2
     psycopg2_conn.close()
@@ -1272,7 +1280,7 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
                 print(f"⚠️ Erro ao salvar debug JSON: {e}")
     # ===== FIM DEBUG =====
 
-    return {
+    result = {
         "success": True,
         "created": created_count,
         "skipped": skipped_count,
@@ -1288,3 +1296,6 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
         "debug_data": debug_data,  # Dados de debug para salvar após resolução
         **({"preview_creates": preview_creates, "preview_updates": preview_updates} if collect_details else {}),
     }
+    if closure_impact and closure_impact.get("impact_type") != "none":
+        result["closure_impact"] = closure_impact
+    return result

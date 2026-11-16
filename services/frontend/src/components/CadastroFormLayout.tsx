@@ -586,12 +586,14 @@ export function CadastroModalBody({
 
 export function CadastroModalFooter({
   onClose,
+  onBack,
   onSave,
   saving = false,
   disabled = false,
   closeDisabled = false,
   saveLabel = 'Salvar',
   closeLabel = 'Cancelar',
+  backLabel = 'Voltar',
   hideSave = false,
   leading,
   secondaryActions,
@@ -599,6 +601,8 @@ export function CadastroModalFooter({
   saveTone = 'default',
 }: {
   onClose: () => void
+  /** Volta ao menu anterior sem fechar o fluxo inteiro (ex.: hub → sub-tela). */
+  onBack?: () => void
   onSave?: () => void
   saving?: boolean
   disabled?: boolean
@@ -606,6 +610,7 @@ export function CadastroModalFooter({
   closeDisabled?: boolean
   saveLabel?: string
   closeLabel?: string
+  backLabel?: string
   hideSave?: boolean
   leading?: ReactNode
   secondaryActions?: ReactNode
@@ -630,15 +635,26 @@ export function CadastroModalFooter({
         <div className="flex min-w-0 flex-wrap items-center gap-2">{leading}</div>
       ) : null}
       <div className={`flex min-w-0 flex-wrap items-center justify-end gap-2 ${hasLeading ? 'ml-auto' : 'w-full'}`}>
-        <button
-          type="button"
-          onClick={onClose}
-          disabled={closeDisabled}
-          className="rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-          style={{ backgroundColor: 'var(--color-cancel)' }}
-        >
-          {closeLabel}
-        </button>
+        {onBack ? (
+          <button
+            type="button"
+            onClick={onBack}
+            disabled={closeDisabled}
+            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700"
+          >
+            {backLabel}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={closeDisabled}
+            className="rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+            style={{ backgroundColor: 'var(--color-cancel)' }}
+          >
+            {closeLabel}
+          </button>
+        )}
         {secondaryActions}
         {!hideSave && onSave ? (
           <button

@@ -2,7 +2,12 @@ import { useState } from 'react'
 import { ChevronDown, ChevronRight, CreditCard, Layers } from 'lucide-react'
 import Badge, { type BadgeTone } from './Badge'
 import { badgeVariantForColumnRole } from '../utils/badgeSurfaces'
-import { CollapsiblePreviewSection, ImportPreviewIssuesSection, PreviewDataTable } from './ImportPreviewShared'
+import {
+  CollapsiblePreviewSection,
+  ImportPreviewIssuesSection,
+  PreviewDataTable,
+  previewFieldValueCell,
+} from './ImportPreviewShared'
 import type { CadastroImportPreviewData, CadastroImportPreviewRow, CardGroupPreviewMeta } from './CadastroImportPreview'
 
 type Mode = 'create' | 'update'
@@ -56,8 +61,8 @@ function ChangesTable({ rows, withRecord }: { rows: CadastroImportPreviewRow[]; 
       row: row.row,
       registro: row.label || '—',
       campo: change.label || change.field,
-      de: change.before || '—',
-      para: change.after || '—',
+      de: previewFieldValueCell(change.label || change.field, change.before || '—'),
+      para: previewFieldValueCell(change.label || change.field, change.after || '—'),
     })),
   )
   return (

@@ -524,12 +524,20 @@ class BalanceClosure(Base, BaseEntity):
     settled_at = Column(TIMESTAMP, nullable=True, name="settled_at")
     settled_by = Column(Integer, ForeignKey('users.id'), nullable=True, name="settled_by")
     settlement_notes = Column(Text, nullable=True, name="settlement_notes")
+    settlement_status = Column(
+        String(24), nullable=False, default='pending', index=True, name="settlement_status"
+    )
+    settlement_loan_id = Column(
+        Integer, ForeignKey('loans.id', ondelete='SET NULL'), nullable=True,
+        name="settlement_loan_id", index=True
+    )
 
     # SNAPSHOT DO CABEÇALHO (JSON)
     closure_data = Column(JSONB, nullable=False, name="closure_data")
 
     # Relacionamentos
     settler = relationship("Usuario", foreign_keys=[settled_by])
+    settlement_loan = relationship("Loan", foreign_keys=[settlement_loan_id])
     closure_payments = relationship("BalanceClosurePayment", back_populates="balance_closure", cascade="all, delete-orphan")
 
 

@@ -12,7 +12,28 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { CalendarDays, ChevronLeft, ChevronRight, ChevronsRight, Copy, CreditCard, Eraser, FileSpreadsheet, FileText, Loader2, Maximize2, MessageCircle, Pencil, Plus, Trash2, Wallet } from 'lucide-react'
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  CalendarDays,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsRight,
+  Copy,
+  CreditCard,
+  Eraser,
+  FileSpreadsheet,
+  FileText,
+  Loader2,
+  Maximize2,
+  MessageCircle,
+  Pencil,
+  Plus,
+  Trash2,
+  Wallet,
+} from 'lucide-react'
 import { CadastroListHeaderActions } from '../components/CadastroExcelMenu'
 import { DateField } from '../components/date'
 import Sidebar from '../components/Sidebar'
@@ -22,6 +43,7 @@ import {
   CadastroListPageShell,
   CadastroListPrimaryButton,
   listPageTableRowHoverCls,
+  listPageTableThCls,
 } from '../components/CadastroListPageLayout'
 import { ListPageNestedTable } from '../components/ListPageTable'
 import {
@@ -37,7 +59,9 @@ import {
   CadastroFormSection,
   CadastroModalFieldsGrid,
   CadastroModalFieldsRow,
+  cadastroAccentControlCls,
   cadastroFieldCls,
+  cadastroOptionLabelCls,
   CadastroModalBody,
   CadastroModalFooter,
   CadastroModalHeader,
@@ -60,6 +84,8 @@ interface BreakdownItem {
   card_number: string
   amount: string
   my_amount: string
+  description?: string
+  date?: string | null
   inactive?: boolean
 }
 
@@ -102,13 +128,6 @@ interface CardOption {
   active?: boolean
 }
 
-interface CardItemForm {
-  card_id: number
-  description: string
-  amount: string
-  kind: Kind
-}
-
 interface ExpenseRowForm {
   expected_date: string
   description: string
@@ -118,15 +137,38 @@ interface ExpenseRowForm {
 
 interface CardFormState {
   cardIds: number[]
-  target: 'expense' | 'card' | 'income'
-  expenseRows: ExpenseRowForm[]
-  historyMonths: number
-  periods: number
-  mode: 'auto' | 'manual'
-  method: 'current' | 'average' | 'installments'
-  sharing: 'own' | 'mine' | 'all'
-  items: CardItemForm[]
+  launchMode: 'invoice' | 'installments'
+  sharing: 'own' | 'mine'
 }
+
+interface InvoicePreviewRow {
+  card_id: number
+  card_name: string
+  card_number: string
+  invoice_year_month: string
+  due_day: number
+  has_invoice: boolean
+  amount: string
+  my_amount: string
+}
+
+interface ManualExpenseLaunchForm {
+  expenseRows: ExpenseRowForm[]
+}
+
+interface IncomeLaunchForm {
+  periods: number
+  /** Adiantamento na projeção no dia 15, mesmo quando o holerite veio em outra data. */
+  advanceOnDay15: boolean
+}
+
+const launchOptionBtnCls =
+  'flex w-full items-center gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left transition-colors hover:border-[var(--color-1)] hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:hover:bg-gray-700/50'
+
+const launchHubBtnCls = (active: boolean) =>
+  active
+    ? 'flex w-full items-center gap-3 rounded-lg border-2 border-[var(--color-1)] bg-[var(--color-1)]/5 px-3 py-2.5 text-left'
+    : launchOptionBtnCls
 
 interface InstallmentPreview {
   card_id: number
@@ -282,6 +324,193 @@ const debit = (value: number) => (value > 0 ? `-${formatCurrency(value)}` : form
 const debitCls = 'text-red-600 dark:text-red-400'
 const creditCls = 'text-green-600 dark:text-green-400'
 
+type DetailBreakdownSortField = 'date' | 'description' | 'amount'
+
+const formatProjectionLineDate = (d?: string | null) => {
+  if (!d) return '—'
+  const s = d.slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '—'
+  const [y, m, day] = s.split('-')
+  return `${day}/${m}/${y}`
+}
+
+function compareBreakdownRows(
+  a: BreakdownItem,
+  b: BreakdownItem,
+  field: DetailBreakdownSortField,
+  direction: 'asc' | 'desc',
+) {
+  let cmp = 0
+  if (field === 'date') {
+    const da = a.date?.slice(0, 10) ?? ''
+    const db = b.date?.slice(0, 10) ?? ''
+    if (!da && db) cmp = 1
+    else if (da && !db) cmp = -1
+    else cmp = da.localeCompare(db)
+  } else if (field === 'description') {
+    const ta = a.description ?? a.card_name ?? ''
+    const tb = b.description ?? b.card_name ?? ''
+    cmp = ta.localeCompare(tb, 'pt-BR', { sensitivity: 'base' })
+  } else {
+    cmp = Number(a.my_amount ?? a.amount) - Number(b.my_amount ?? b.amount)
+  }
+  return direction === 'asc' ? cmp : -cmp
+}
+
+function DetailSortableTh({
+  label,
+  field,
+  activeField,
+  direction,
+  onSort,
+  align = 'left',
+}: {
+  label: string
+  field: DetailBreakdownSortField
+  activeField: DetailBreakdownSortField
+  direction: 'asc' | 'desc'
+  onSort: (field: DetailBreakdownSortField) => void
+  align?: 'left' | 'right'
+}) {
+  const active = activeField === field
+  const alignCls = align === 'right' ? 'text-right' : 'text-left'
+  const flexCls = align === 'right' ? 'justify-end' : 'justify-start'
+  return (
+    <th
+      onClick={() => onSort(field)}
+      className={`${listPageTableThCls} ${alignCls} cursor-pointer select-none transition-colors hover:bg-gray-200/60 dark:hover:bg-gray-700/50`}
+    >
+      <span className={`inline-flex items-center gap-1 px-3 py-2 ${flexCls}`}>
+        <span>{label}</span>
+        {active ? (
+          direction === 'asc' ? (
+            <ArrowUp size={13} className="shrink-0 text-[var(--color-1)]" />
+          ) : (
+            <ArrowDown size={13} className="shrink-0 text-[var(--color-1)]" />
+          )
+        ) : (
+          <ArrowUpDown size={13} className="shrink-0 text-gray-400 opacity-40" />
+        )}
+      </span>
+    </th>
+  )
+}
+
+function CardProjectionDetailTable({
+  detail,
+  valueOf,
+}: {
+  detail: Expense
+  valueOf: (e: Expense) => number
+}) {
+  const [sort, setSort] = useState<{ field: DetailBreakdownSortField; direction: 'asc' | 'desc' }>({
+    field: 'date',
+    direction: 'desc',
+  })
+
+  useEffect(() => {
+    setSort({ field: 'date', direction: 'desc' })
+  }, [detail.id])
+
+  const rows = useMemo(() => {
+    const base: BreakdownItem[] = detail.breakdown?.length
+      ? detail.breakdown
+      : [
+          {
+            card_id: 0,
+            card_name: detail.description,
+            card_number: '',
+            amount: detail.amount,
+            my_amount: detail.my_amount,
+            date: detail.expected_date,
+            description: detail.description,
+          },
+        ]
+    return [...base].sort((a, b) => compareBreakdownRows(a, b, sort.field, sort.direction))
+  }, [detail, sort])
+
+  const onSort = (field: DetailBreakdownSortField) => {
+    setSort((prev) =>
+      prev.field === field
+        ? { field, direction: prev.direction === 'asc' ? 'desc' : 'asc' }
+        : { field, direction: field === 'date' ? 'desc' : 'asc' },
+    )
+  }
+
+  return (
+    <>
+      <ListPageNestedTable
+        alignWithListLeading
+        leadingMode="index-only"
+        colsRest={
+          <>
+            <ListTableSpacerCol />
+            <col style={{ width: 108 }} />
+            <col />
+            <col style={{ width: 120 }} />
+          </>
+        }
+        head={
+          <tr>
+            <ListTableIndexHeader />
+            <ListTableSpacerHeader />
+            <DetailSortableTh
+              label="Data"
+              field="date"
+              activeField={sort.field}
+              direction={sort.direction}
+              onSort={onSort}
+            />
+            <DetailSortableTh
+              label="Descrição"
+              field="description"
+              activeField={sort.field}
+              direction={sort.direction}
+              onSort={onSort}
+            />
+            <DetailSortableTh
+              label="Valor"
+              field="amount"
+              activeField={sort.field}
+              direction={sort.direction}
+              onSort={onSort}
+              align="right"
+            />
+          </tr>
+        }
+      >
+        {rows.map((b, i) => (
+          <tr key={`${b.card_id}-${b.description ?? ''}-${b.date ?? ''}-${i}`} className={listPageTableRowHoverCls}>
+            <ListTableIndexCell index={i + 1} />
+            <ListTableSpacerCell />
+            <td className="whitespace-nowrap px-3 py-2 tabular-nums text-sm text-gray-700 dark:text-gray-300">
+              {formatProjectionLineDate(b.date)}
+            </td>
+            <td className="px-3 py-2">
+              <span className="block text-gray-900 dark:text-gray-100">
+                {b.description ?? `${b.card_name}${b.card_number ? ` •${b.card_number}` : ''}`}
+              </span>
+              {b.description && b.card_name ? (
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  {b.card_name}
+                  {b.card_number ? ` •${b.card_number}` : ''}
+                  {b.inactive ? ' · Inativo' : ''}
+                </span>
+              ) : null}
+            </td>
+            <td className={`px-3 py-2 text-right tabular-nums ${debitCls}`}>
+              {debit(Number(b.my_amount ?? b.amount))}
+            </td>
+          </tr>
+        ))}
+      </ListPageNestedTable>
+      <p className="border-t border-gray-200 px-3 py-2 text-right text-sm font-semibold text-gray-800 dark:border-gray-700 dark:text-gray-100">
+        Total <span className={debitCls}>{debit(valueOf(detail))}</span>
+      </p>
+    </>
+  )
+}
+
 export default function ProjecaoMensalPage() {
   const { showConfirm, ConfirmComponent } = useConfirm()
   const [yearMonth, setYearMonth] = useState(currentYearMonth())
@@ -300,39 +529,103 @@ export default function ProjecaoMensalPage() {
   const [autoIncome, setAutoIncome] = useState<Income | null>(null)
   const closeAutoIncome = useCallback(() => setAutoIncome(null), [])
   useEscapeKey(closeAutoIncome, autoIncome != null && !busy)
+  const [launchHubOpen, setLaunchHubOpen] = useState(false)
+  const [manualExpenseForm, setManualExpenseForm] = useState<ManualExpenseLaunchForm | null>(null)
+  const [incomeLaunchForm, setIncomeLaunchForm] = useState<IncomeLaunchForm | null>(null)
   const [cardForm, setCardForm] = useState<CardFormState | null>(null)
   const [cardOptions, setCardOptions] = useState<CardOption[]>([])
+  const [invoicePreview, setInvoicePreview] = useState<InvoicePreviewRow[]>([])
   const [installmentPreview, setInstallmentPreview] = useState<InstallmentPreview[]>([])
-  const [previewLoading, setPreviewLoading] = useState(false)
-  const previewActive = cardForm?.mode === 'auto' && cardForm.method === 'installments'
-  const previewCardKey = cardForm ? cardForm.cardIds.join(',') : ''
-  const previewSharing = cardForm?.sharing ?? 'all'
-  useEffect(() => {
-    if (!previewActive || !previewCardKey) {
-      setInstallmentPreview([])
-      return
-    }
-    let cancelled = false
-    setPreviewLoading(true)
-    axios
-      .get<InstallmentPreview[]>('/api/monthly-projections/installments-preview', {
-        params: { year_month: yearMonth, card_ids: previewCardKey, sharing: previewSharing },
+  const [cardPreviewLoading, setCardPreviewLoading] = useState(false)
+  /** Preferência de seleção entre modos (fatura / estimativa); não encolhe ao trocar de opção. */
+  const [cardLaunchSelection, setCardLaunchSelection] = useState<number[]>([])
+
+  const launchableIdsFromInvoice = (rows: InvoicePreviewRow[]) =>
+    rows.filter((r) => r.has_invoice).map((r) => r.card_id)
+
+  const launchableIdsFromInstallments = (rows: InstallmentPreview[]) => {
+    const counts = new Map<number, number>()
+    for (const p of rows) counts.set(p.card_id, (counts.get(p.card_id) ?? 0) + 1)
+    return [...counts.keys()]
+  }
+
+  const applyCardSelectionForPreview = useCallback(
+    (launchMode: 'invoice' | 'installments', invoice: InvoicePreviewRow[], installments: InstallmentPreview[]) => {
+      const launchableIds =
+        launchMode === 'invoice'
+          ? launchableIdsFromInvoice(invoice)
+          : launchableIdsFromInstallments(installments)
+      setCardLaunchSelection((pref) => {
+        const preference = pref.length === 0 ? launchableIds : pref
+        const picked = preference.filter((id) => launchableIds.includes(id))
+        const cardIds = picked.length > 0 ? picked : launchableIds
+        setCardForm((prev) => {
+          if (!prev) return prev
+          if (
+            cardIds.length === prev.cardIds.length &&
+            cardIds.every((id, i) => id === prev.cardIds[i])
+          ) {
+            return prev
+          }
+          return { ...prev, cardIds }
+        })
+        return pref.length === 0 ? launchableIds : pref
       })
-      .then((res) => !cancelled && setInstallmentPreview(res.data))
-      .catch((err) => {
-        console.error('Erro ao carregar parcelas do mês:', err)
-        if (!cancelled) setInstallmentPreview([])
-      })
-      .finally(() => !cancelled && setPreviewLoading(false))
-    return () => {
-      cancelled = true
-    }
-  }, [previewActive, previewCardKey, previewSharing, yearMonth])
-  const closeCardForm = useCallback(() => setCardForm(null), [])
+    },
+    [],
+  )
+
+  const fetchCardPreview = useCallback(
+    async (mode: 'invoice' | 'installments', sharing: 'own' | 'mine', cardIds: number[]) => {
+      const key = cardIds.join(',')
+      if (!key) {
+        setInvoicePreview([])
+        setInstallmentPreview([])
+        applyCardSelectionForPreview(mode, [], [])
+        return
+      }
+      setCardPreviewLoading(true)
+      try {
+        if (mode === 'invoice') {
+          const res = await axios.get<InvoicePreviewRow[]>('/api/monthly-projections/invoice-preview', {
+            params: { year_month: yearMonth, card_ids: key, sharing },
+          })
+          setInvoicePreview(res.data)
+          setInstallmentPreview([])
+          applyCardSelectionForPreview('invoice', res.data, [])
+        } else {
+          const res = await axios.get<InstallmentPreview[]>('/api/monthly-projections/installments-preview', {
+            params: { year_month: yearMonth, card_ids: key, sharing },
+          })
+          setInstallmentPreview(res.data)
+          setInvoicePreview([])
+          applyCardSelectionForPreview('installments', [], res.data)
+        }
+      } catch (err) {
+        console.error('Erro ao carregar prévia de cartões:', err)
+        setInvoicePreview([])
+        setInstallmentPreview([])
+      } finally {
+        setCardPreviewLoading(false)
+      }
+    },
+    [yearMonth, applyCardSelectionForPreview],
+  )
+  const closeLaunchHub = useCallback(() => setLaunchHubOpen(false), [])
+  const closeManualExpenseForm = useCallback(() => setManualExpenseForm(null), [])
+  const closeIncomeLaunchForm = useCallback(() => setIncomeLaunchForm(null), [])
+  const closeCardForm = useCallback(() => {
+    setCardForm(null)
+    setCardLaunchSelection([])
+  }, [])
+  useEscapeKey(closeLaunchHub, launchHubOpen && !busy)
+  useEscapeKey(closeManualExpenseForm, manualExpenseForm != null && !busy)
+  useEscapeKey(closeIncomeLaunchForm, incomeLaunchForm != null && !busy)
   useEscapeKey(closeCardForm, cardForm != null && !busy)
 
   const [overview, setOverview] = useState<OverviewMonth[]>([])
-  const [chartView, setChartView] = useState<'month' | 'half'>('month')
+  const [chartView, setChartView] = useState<'month' | 'half'>('half')
+  const [chartSectionOpen, setChartSectionOpen] = useState(true)
   const [chartMax, setChartMax] = useState(false)
   const closeChartMax = useCallback(() => setChartMax(false), [])
   useEscapeKey(closeChartMax, chartMax)
@@ -531,15 +824,17 @@ export default function ProjecaoMensalPage() {
   const openNew = (day: number) =>
     setForm({ expected_date: `${yearMonth}-${String(day).padStart(2, '0')}`, description: '', amount: '', kind: 'fixed' })
 
+  const isCardProjection = (e: Expense) => e.source === 'card_invoice' || e.source === 'card_item_installment'
+
   const openEdit = (e: Expense) =>
-    e.source === 'card_invoice'
+    isCardProjection(e)
       ? setDetail(e)
       : e.editable !== false &&
         setForm({ id: e.id, expected_date: e.expected_date, description: e.description, amount: `-${e.amount}`, kind: e.kind })
 
   const [dragOverDay, setDragOverDay] = useState<number | null>(null)
 
-  const canDragExpense = (e: Expense) => e.editable !== false && e.source !== 'card_invoice'
+  const canDragExpense = (e: Expense) => e.editable !== false && !isCardProjection(e)
 
   const moveToDay = async (drag: { id: number; income: boolean }, day: number) => {
     const found: Expense | Income | undefined = drag.income
@@ -567,43 +862,81 @@ export default function ProjecaoMensalPage() {
     setForm({ id: inc.id, expected_date: inc.expected_date, description: inc.description, amount: inc.amount, kind: 'fixed' })
 
   const launchIncome = async () => {
+    if (!incomeLaunchForm) return
+    setSaving(true)
     try {
       await axios.post('/api/monthly-projections/launch-income', {
         year_month: yearMonth,
-        periods: cardForm?.periods ?? 1,
+        periods: incomeLaunchForm.periods,
+        advance_on_day_15: incomeLaunchForm.advanceOnDay15,
       })
       await load()
-      setCardForm(null)
+      setIncomeLaunchForm(null)
     } catch (err) {
       console.error('Erro ao lançar projeção de receitas:', err)
       setError('Não foi possível lançar a projeção de receitas.')
+    } finally {
+      setSaving(false)
     }
   }
 
-  const openCardForm = async () => {
+  const openLaunchHub = () => setLaunchHubOpen(true)
+
+  const openManualExpenseLaunch = () => {
+    setLaunchHubOpen(false)
+    setManualExpenseForm({
+      expenseRows: [{ expected_date: `${yearMonth}-01`, description: '', amount: '', kind: 'fixed' }],
+    })
+  }
+
+  const openIncomeLaunch = () => {
+    setLaunchHubOpen(false)
+    setIncomeLaunchForm({ periods: 1, advanceOnDay15: true })
+  }
+
+  const openCardLaunch = async () => {
+    setLaunchHubOpen(false)
+    setCardLaunchSelection([])
+    const launchMode: CardFormState['launchMode'] = 'invoice'
+    const sharing: CardFormState['sharing'] = 'mine'
     try {
       const res = await axios.get<CardOption[]>('/api/cartoes/', { params: { incluir_inativos: true } })
       const allCredit = res.data.filter((c) => c.type === 'credito')
       const credit = allCredit.filter((c) => c.active !== false)
+      const ids = credit.map((c) => c.id)
       setCardOptions(credit)
-      setCardForm({ cardIds: allCredit.map((c) => c.id), historyMonths: 6, periods: 1, target: 'expense', expenseRows: [], mode: 'auto', method: 'current', sharing: 'mine', items: [] })
+      setCardForm({ cardIds: [], launchMode, sharing })
+      await fetchCardPreview(launchMode, sharing, ids)
     } catch (err) {
       console.error('Erro ao carregar cartões:', err)
       setError('Não foi possível carregar os cartões.')
+      setCardForm(null)
     }
   }
 
-  const updateCardItem = (index: number, patch: Partial<CardItemForm>) =>
-    setCardForm((prev) => prev && { ...prev, items: prev.items.map((it, i) => (i === index ? { ...it, ...patch } : it)) })
+  const toggleCardSelected = (id: number) => {
+    setCardLaunchSelection((pref) => {
+      const has = pref.includes(id)
+      return has ? pref.filter((x) => x !== id) : [...pref, id]
+    })
+    setCardForm((prev) => {
+      if (!prev) return prev
+      const has = prev.cardIds.includes(id)
+      const cardIds = has ? prev.cardIds.filter((x) => x !== id) : [...prev.cardIds, id]
+      return { ...prev, cardIds }
+    })
+  }
 
   const updateExpenseRow = (index: number, patch: Partial<ExpenseRowForm>) =>
-    setCardForm((prev) => prev && { ...prev, expenseRows: prev.expenseRows.map((r, i) => (i === index ? { ...r, ...patch } : r)) })
+    setManualExpenseForm((prev) =>
+      prev && { ...prev, expenseRows: prev.expenseRows.map((r, i) => (i === index ? { ...r, ...patch } : r)) },
+    )
 
   const launchExpenses = async () => {
-    if (!cardForm) return
+    if (!manualExpenseForm) return
     setSaving(true)
     try {
-      for (const r of cardForm.expenseRows) {
+      for (const r of manualExpenseForm.expenseRows) {
         await axios.post('/api/monthly-projections', {
           expected_date: r.expected_date,
           description: r.description.trim(),
@@ -612,7 +945,7 @@ export default function ProjecaoMensalPage() {
         })
       }
       await load()
-      setCardForm(null)
+      setManualExpenseForm(null)
     } catch (err) {
       console.error('Erro ao lançar despesas:', err)
       setError('Não foi possível lançar as despesas.')
@@ -623,18 +956,13 @@ export default function ProjecaoMensalPage() {
 
   const launchCards = async () => {
     if (!cardForm) return
-    const auto = cardForm.mode === 'auto'
     setSaving(true)
     try {
       await axios.post('/api/monthly-projections/launch-cards', {
         year_month: yearMonth,
-        card_ids: auto ? cardForm.cardIds : cardOptions.map((c) => c.id),
-        history_months: cardForm.historyMonths,
-        include_average: auto && cardForm.method !== 'installments',
-        basis: cardForm.method === 'current' ? 'current' : 'average',
-        include_installments: auto && cardForm.method === 'installments',
+        card_ids: cardForm.cardIds,
+        mode: cardForm.launchMode,
         sharing: cardForm.sharing,
-        items: auto ? [] : cardForm.items.map((it) => ({ ...it, amount: Number(it.amount) })),
       })
       await load()
       setCardForm(null)
@@ -776,6 +1104,34 @@ export default function ProjecaoMensalPage() {
 
   const [year, month] = yearMonth.split('-').map(Number)
 
+  const installmentCountByCard = useMemo(() => {
+    const m = new Map<number, number>()
+    for (const p of installmentPreview) {
+      m.set(p.card_id, (m.get(p.card_id) ?? 0) + 1)
+    }
+    return m
+  }, [installmentPreview])
+
+  const launchableCards = useMemo(() => {
+    if (!cardForm) return []
+    if (cardForm.launchMode === 'invoice') {
+      const ids = new Set(invoicePreview.filter((r) => r.has_invoice).map((r) => r.card_id))
+      return cardOptions.filter((c) => ids.has(c.id))
+    }
+    return cardOptions.filter((c) => (installmentCountByCard.get(c.id) ?? 0) > 0)
+  }, [cardForm, cardOptions, invoicePreview, installmentCountByCard])
+
+  const cardLaunchBlockedReason = useMemo(() => {
+    if (!cardForm || cardPreviewLoading) return null
+    if (launchableCards.length === 0) {
+      return cardForm.launchMode === 'invoice'
+        ? 'Nenhum cartão com fatura importada neste ciclo. Importe a fatura ou use Estimativa.'
+        : 'Nenhum cartão com parcelas em aberto neste mês. Use Fatura atual se já importou a fatura.'
+    }
+    if (cardForm.cardIds.length === 0) return 'Selecione ao menos um cartão.'
+    return null
+  }, [cardForm, cardPreviewLoading, launchableCards.length, cardForm?.cardIds.length])
+
   // Totais por metade do mês: 1ª = dias 1–14, 2ª = dias 15 em diante.
   const halfSummary = (second: boolean) => {
     const inHalf = (date: string) => (Number(date.slice(8, 10)) >= 15) === second
@@ -875,7 +1231,7 @@ export default function ProjecaoMensalPage() {
                   <CadastroListPrimaryButton
                     label="Lançar"
                     icon={<CalendarDays size={18} />}
-                    onClick={openCardForm}
+                    onClick={openLaunchHub}
                   />
                 </CadastroListHeaderActions>
               }
@@ -883,29 +1239,6 @@ export default function ProjecaoMensalPage() {
           }
         >
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto scroll-slim">
-            {overviewChart.length > 0 && (
-              <div className="shrink-0 rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-                    Próximos meses (mês atual em diante)
-                  </p>
-                  <div className="flex items-center gap-2">
-                    {chartViewToggle}
-                    <button
-                      type="button"
-                      onClick={() => setChartMax(true)}
-                      title="Maximizar gráfico"
-                      aria-label="Maximizar gráfico"
-                      className="rounded-lg border border-gray-200 p-1.5 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700"
-                    >
-                      <Maximize2 size={14} />
-                    </button>
-                  </div>
-                </div>
-                <div className="h-56">{chartElement}</div>
-              </div>
-            )}
-
             <div className="flex flex-wrap items-center gap-3">
               <button type="button" onClick={() => setYearMonth(shiftMonth(yearMonth, -1))} className="rounded-lg border border-gray-300 p-2 dark:border-gray-600" aria-label="Mês anterior">
                 <ChevronLeft className="h-4 w-4" />
@@ -934,6 +1267,47 @@ export default function ProjecaoMensalPage() {
                 Divisor entre os dias 14 e 15
               </div>
             </div>
+
+            {overviewChart.length > 0 && (
+              <div className="shrink-0 rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+                <div className="flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    aria-expanded={chartSectionOpen}
+                    onClick={() => setChartSectionOpen((open) => !open)}
+                    className="flex min-w-0 flex-1 items-center gap-2 rounded-md py-0.5 text-left hover:bg-gray-50 dark:hover:bg-gray-700/40"
+                  >
+                    <ChevronDown
+                      size={16}
+                      className={`shrink-0 text-gray-500 transition-transform dark:text-gray-400 ${chartSectionOpen ? '' : '-rotate-90'}`}
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold text-gray-700 dark:text-gray-200">
+                        Gráfico — próximos meses
+                      </span>
+                      <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                        Atualiza ao editar projeções; o mês em foco é {MONTH_NAMES[month - 1]} {year}.
+                      </span>
+                    </span>
+                  </button>
+                  {chartSectionOpen ? (
+                    <div className="flex shrink-0 items-center gap-2">
+                      {chartViewToggle}
+                      <button
+                        type="button"
+                        onClick={() => setChartMax(true)}
+                        title="Maximizar gráfico"
+                        aria-label="Maximizar gráfico"
+                        className="rounded-lg border border-gray-200 p-1.5 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700"
+                      >
+                        <Maximize2 size={14} />
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+                {chartSectionOpen ? <div className="mt-2 h-56">{chartElement}</div> : null}
+              </div>
+            )}
 
             <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto_1fr]">
               {halves.map((h, idx) => (
@@ -1093,55 +1467,28 @@ export default function ProjecaoMensalPage() {
             title={detail.description}
             titleAddon={
               <span
-                className={`inline-flex w-[88px] items-center justify-center rounded px-3 py-1 text-xs font-semibold text-white ${
-                  detail.is_actual ? 'bg-green-600' : 'bg-amber-600'
+                className={`inline-flex min-w-[88px] items-center justify-center rounded px-3 py-1 text-xs font-semibold text-white ${
+                  detail.source === 'card_invoice' ? 'bg-green-600' : 'bg-amber-600'
                 }`}
               >
-                {detail.is_actual ? 'Fatura real' : 'Estimativa'}
+                {detail.source === 'card_invoice' ? 'Fatura atual' : 'Estimativa'}
               </span>
             }
-            subtitle={`${detail.is_actual ? 'Valor da fatura' : 'Média dos últimos 6 meses'} • vencimento ${detail.expected_date.split('-').reverse().join('/')}`}
+            subtitle={`${
+              detail.source === 'card_invoice' ? 'Fatura importada do ciclo' : 'Parcelas em aberto no mês'
+            } • vencimento ${detail.expected_date.split('-').reverse().join('/')}`}
             onClose={() => setDetail(null)}
             closeDisabled={busy}
             icon={<CreditCard size={18} />}
           />
           <CadastroModalBody>
-            <CadastroFormSection title="Cartões" icon={<CreditCard size={14} />} bodyClassName="p-0">
-              <ListPageNestedTable
-                alignWithListLeading
-                leadingMode="index-only"
-                colsRest={
-                  <>
-                    <ListTableSpacerCol />
-                    <col />
-                    <col style={{ width: 160 }} />
-                  </>
-                }
-                head={
-                  <tr>
-                    <ListTableIndexHeader />
-                    <ListTableSpacerHeader />
-                    <ListTableStaticHeader label="Cartão" className="px-3 py-2" />
-                    <ListTableStaticHeader label="Valor" className="px-3 py-2 text-right" />
-                  </tr>
-                }
-              >
-                {(detail.breakdown?.length ? detail.breakdown : [{ card_id: 0, card_name: detail.description, card_number: '', amount: detail.amount, my_amount: detail.my_amount }]).map((b, i) => (
-                  <tr key={b.card_id} className={listPageTableRowHoverCls}>
-                    <ListTableIndexCell index={i + 1} />
-                    <ListTableSpacerCell />
-                    <td className="px-3 py-2">{b.card_name}{b.card_number ? ` •${b.card_number}` : ''}
-                      {b.inactive && (
-                        <span className="ml-2 rounded bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-600 dark:text-gray-100">Inativo</span>
-                      )}
-                    </td>
-                    <td className={`px-3 py-2 text-right ${debitCls}`}>{debit(Number(b.amount))}</td>
-                  </tr>
-                ))}
-              </ListPageNestedTable>
-              <p className="border-t border-gray-200 px-3 py-2 text-right text-sm font-semibold text-gray-800 dark:border-gray-700 dark:text-gray-100">
-                Total <span className={debitCls}>{debit(valueOf(detail))}</span>
-              </p>
+            <CadastroFormSection
+              title="Detalhes"
+              icon={<CreditCard size={14} />}
+              hint="Um lançamento por cartão; abaixo, as linhas que compõem o valor."
+              bodyClassName="p-0"
+            >
+              <CardProjectionDetailTable detail={detail} valueOf={valueOf} />
             </CadastroFormSection>
           </CadastroModalBody>
           <CadastroModalFooter
@@ -1345,14 +1692,24 @@ export default function ProjecaoMensalPage() {
                   className={cadastroFieldCls}
                 />
               </div>
-              <label className="inline-flex items-center gap-2">
-                <input type="checkbox" checked={cloneCards} onChange={(e) => setCloneCards(e.target.checked)} />
-                Replicar gastos de cartão de crédito
+              <label className={`${cadastroOptionLabelCls} items-start`}>
+                <input
+                  type="checkbox"
+                  checked={cloneCards}
+                  onChange={(e) => setCloneCards(e.target.checked)}
+                  className={`${cadastroAccentControlCls} mt-0.5 h-4 w-4 rounded border-gray-300`}
+                />
+                <span>
+                  <span className="block font-medium text-gray-900 dark:text-white">Incluir despesas de cartão</span>
+                  <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                    Copia também faturas e itens automáticos de cartão, além de receitas e despesas manuais.
+                  </span>
+                </span>
               </label>
-              <p>
-                Copia todas as receitas e despesas de {MONTH_NAMES[month - 1]} {year} para os próximos{' '}
-                {Math.min(24, Math.max(1, Math.floor(Number(cloneMonths) || 1)))} mês(es). Itens iguais (mesma descrição, mesmo dia do mês e mesma direção: receita ou despesa) que já
-                existirem nos meses de destino são atualizados; os novos são adicionados.
+              <p className="text-xs leading-relaxed text-gray-500 dark:text-gray-400">
+                Copia receitas e despesas de {MONTH_NAMES[month - 1]} {year} para os próximos{' '}
+                {Math.min(24, Math.max(1, Math.floor(Number(cloneMonths) || 1)))} mês(es), mantendo o mesmo dia do mês.
+                Se já existir lançamento igual no destino, o valor é atualizado; caso contrário, um novo item é criado.
               </p>
             </div>
           </CadastroModalBody>
@@ -1371,9 +1728,11 @@ export default function ProjecaoMensalPage() {
             icon={<Wallet size={18} />}
           />
           <CadastroModalBody>
-            <p className="p-4 text-sm text-gray-700 dark:text-gray-300">
-              Valor <span className={`font-semibold ${creditCls}`}>{formatCurrency(Number(autoIncome.amount))}</span>.
-              Projeções automáticas não são editáveis: exclua ou lance a projeção de receitas novamente.
+            <p className="p-4 text-sm leading-relaxed text-gray-700 dark:text-gray-300">
+              Valor projetado:{' '}
+              <span className={`font-semibold ${creditCls}`}>{formatCurrency(Number(autoIncome.amount))}</span>.
+              Gerado pelo lançamento da folha — não dá para alterar data ou valor aqui. Para atualizar, use{' '}
+              <strong className="font-medium">Lançar → Receita da folha</strong> de novo, ou exclua esta linha.
             </p>
           </CadastroModalBody>
           <CadastroModalFooter
@@ -1512,262 +1871,95 @@ export default function ProjecaoMensalPage() {
       )}
 
 
-      {cardForm && (
+      {launchHubOpen && (
+        <CadastroModalShell maxWidth="max-w-lg">
+          <CadastroModalHeader
+            isEdit={false}
+            title="Lançar na projeção"
+            subtitle={`${MONTH_NAMES[month - 1]} ${year} — escolha o tipo`}
+            onClose={closeLaunchHub}
+            closeDisabled={busy}
+            icon={<Plus size={18} />}
+          />
+          <CadastroModalBody>
+            <CadastroFormSection title="O que lançar?" icon={<CalendarDays size={14} />}>
+              <div className="flex flex-col gap-2">
+                <button type="button" className={launchOptionBtnCls} onClick={openManualExpenseLaunch}>
+                  <Plus size={18} className="shrink-0 text-[var(--color-1)]" />
+                  <span className="min-w-0 flex-1 text-left">
+                    <span className="block text-sm font-medium text-gray-900 dark:text-white">Despesas manuais</span>
+                    <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                      Data, descrição e valor. Não altera itens automáticos já lançados.
+                    </span>
+                  </span>
+                  <ChevronRight size={16} className="shrink-0 text-gray-400" />
+                </button>
+                <button type="button" className={launchOptionBtnCls} onClick={() => void openCardLaunch()}>
+                  <CreditCard size={18} className="shrink-0 text-[var(--color-1)]" />
+                  <span className="min-w-0 flex-1 text-left">
+                    <span className="block text-sm font-medium text-gray-900 dark:text-white">Cartão de crédito</span>
+                    <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                      Fatura importada ou estimativa por parcelas. Um lançamento por cartão. Valores avulsos: despesas manuais.
+                    </span>
+                  </span>
+                  <ChevronRight size={16} className="shrink-0 text-gray-400" />
+                </button>
+                <button type="button" className={launchOptionBtnCls} onClick={openIncomeLaunch}>
+                  <Wallet size={18} className="shrink-0 text-[var(--color-1)]" />
+                  <span className="min-w-0 flex-1 text-left">
+                    <span className="block text-sm font-medium text-gray-900 dark:text-white">Receita da folha</span>
+                    <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                      Adiantamento e salário com base nos holerites. Substitui receitas automáticas do mês.
+                    </span>
+                  </span>
+                  <ChevronRight size={16} className="shrink-0 text-gray-400" />
+                </button>
+              </div>
+            </CadastroFormSection>
+          </CadastroModalBody>
+          <CadastroModalFooter onClose={closeLaunchHub} closeDisabled={busy} hideSave closeLabel="Fechar" />
+        </CadastroModalShell>
+      )}
+
+      {manualExpenseForm && (
         <CadastroModalShell maxWidth="max-w-3xl">
           <CadastroModalHeader
             isEdit={false}
-            title="Lançar"
-            subtitle={
-              cardForm.target === 'expense'
-                ? `${MONTH_NAMES[month - 1]} ${year} • lançamentos manuais de despesa`
-                : `${MONTH_NAMES[month - 1]} ${year} • substitui as projeções automáticas já lançadas no mês`
-            }
-            onClose={closeCardForm}
+            title="Despesas manuais"
+            subtitle={`${MONTH_NAMES[month - 1]} ${year}`}
+            onClose={closeManualExpenseForm}
             closeDisabled={busy}
-            icon={cardForm.target === 'income' ? <Wallet size={18} /> : cardForm.target === 'card' ? <CreditCard size={18} /> : <Plus size={18} />}
+            icon={<Plus size={18} />}
           />
           <CadastroModalBody>
-            <CadastroFormSection title="Tipo" icon={<CalendarDays size={14} />}>
-              <div role="radiogroup" className="grid grid-cols-[16rem_16rem_auto] items-center gap-x-4 text-sm text-gray-800 dark:text-gray-100">
-                {(['expense', 'card', 'income'] as const).map((t) => (
-                  <label key={t} className="inline-flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="launch-target"
-                      checked={cardForm.target === t}
-                      onChange={() => setCardForm({ ...cardForm, target: t })}
-                    />
-                    {t === 'expense' ? 'Despesa' : t === 'card' ? 'Cartão de crédito' : 'Receita'}
-                  </label>
-                ))}
-              </div>
-            </CadastroFormSection>
-            {cardForm.target === 'expense' && (
-              <CadastroFormSection title="Despesas (várias de uma vez)" icon={<Plus size={14} />}>
-                <div className="space-y-2">
-                  {cardForm.expenseRows.map((row, i) => (
-                    <div key={i} className="grid grid-cols-[9rem_1.5fr_7rem_6rem_auto] items-center gap-2">
-                      <DateField
-                        value={row.expected_date}
-                        onChange={(value) => updateExpenseRow(i, { expected_date: value })}
-                        className={cadastroFieldCls}
-                      />
-                      <input
-                        type="text"
-                        placeholder="Descrição"
-                        value={row.description}
-                        onChange={(e) => updateExpenseRow(i, { description: e.target.value })}
-                        className={cadastroFieldCls}
-                      />
-                      <MoneyMaskInput
-                        value={row.amount}
-                        onChange={(amount) => updateExpenseRow(i, { amount })}
-                        className={`${cadastroFieldCls} text-right font-semibold ${debitCls}`}
-                      />
-                      <select
-                        value={row.kind}
-                        onChange={(e) => updateExpenseRow(i, { kind: e.target.value as Kind })}
-                        className={cadastroFieldCls}
-                      >
-                        <option value="fixed">Fixo</option>
-                        <option value="variable">Variável</option>
-                      </select>
-                      <button
-                        type="button"
-                        onClick={() => setCardForm({ ...cardForm, expenseRows: cardForm.expenseRows.filter((_, j) => j !== i) })}
-                        className="rounded p-1 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-gray-700"
-                        aria-label="Remover despesa"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setCardForm({
-                        ...cardForm,
-                        expenseRows: [
-                          ...cardForm.expenseRows,
-                          { expected_date: `${yearMonth}-01`, description: '', amount: '', kind: 'fixed' },
-                        ],
-                      })
-                    }
-                    className="inline-flex items-center gap-1 text-sm font-medium text-[var(--color-1)]"
-                  >
-                    <Plus className="h-4 w-4" /> Adicionar despesa
-                  </button>
-                </div>
-              </CadastroFormSection>
-            )}
-            {cardForm.target === 'card' && (
-              <>
-            <CadastroFormSection title="Modo" icon={<CreditCard size={14} />}>
-              <div role="radiogroup" className="grid grid-cols-[16rem_auto] items-center gap-x-4 text-sm text-gray-800 dark:text-gray-100">
-                {(['auto', 'manual'] as const).map((m) => (
-                  <label key={m} className="inline-flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="launch-mode"
-                      checked={cardForm.mode === m}
-                      onChange={() => setCardForm({ ...cardForm, mode: m })}
-                    />
-                    {m === 'auto' ? 'Automático' : 'Manual'}
-                  </label>
-                ))}
-              </div>
-            </CadastroFormSection>
-            {cardForm.mode === 'auto' && (
-            <CadastroFormSection title="Cálculo da projeção" icon={<CreditCard size={14} />}>
-              <CadastroModalFieldsGrid className="mb-3">
-                {cardForm.mode === 'auto' && (
-                  <>
-                    <CadastroModalFieldsRow>
-                    <div className="grid grid-cols-[16rem_12rem_auto] items-center gap-x-4 text-sm text-gray-800 dark:text-gray-100">
-                      <label className="inline-flex items-center gap-2">
-                        <input
-                          type="radio"
-                          name="card-sharing"
-                          checked={cardForm.sharing === 'mine'}
-                          onChange={() => setCardForm({ ...cardForm, sharing: 'mine' })}
-                        />
-                        <span className="flex flex-col">
-                          <span>Minha Parte</span>
-                          <span className="text-xs text-gray-500 dark:text-gray-400">(próprio + compartilhado)</span>
-                        </span>
-                      </label>
-                      <label className="inline-flex items-center gap-2">
-                        <input
-                          type="radio"
-                          name="card-sharing"
-                          checked={cardForm.sharing === 'own'}
-                          onChange={() => setCardForm({ ...cardForm, sharing: 'own' })}
-                        />
-                        <span className="flex flex-col">
-                          <span>Próprio</span>
-                          <span className="text-xs text-gray-500 dark:text-gray-400">(100% meu)</span>
-                        </span>
-                      </label>
-                      <label className="inline-flex items-center gap-2">
-                        <input
-                          type="radio"
-                          name="card-sharing"
-                          checked={cardForm.sharing === 'all'}
-                          onChange={() => setCardForm({ ...cardForm, sharing: 'all' })}
-                        />
-                        <span className="flex flex-col">
-                          <span>Todos</span>
-                          <span className="text-xs text-gray-500 dark:text-gray-400">(valor total)</span>
-                        </span>
-                      </label>
-                    </div>
-                    </CadastroModalFieldsRow>
-                    <CadastroModalFieldsRow>
-                    <div className="grid grid-cols-[16rem_12rem_auto] items-center gap-x-4 text-sm text-gray-800 dark:text-gray-100">
-                      <label className="inline-flex items-center gap-2">
-                        <input
-                          type="radio"
-                          name="card-method"
-                          checked={cardForm.method === 'current'}
-                          onChange={() => setCardForm({ ...cardForm, method: 'current' })}
-                        />
-                        Fatura atual
-                      </label>
-                      <label className="inline-flex items-center gap-2">
-                        <input
-                          type="radio"
-                          name="card-method"
-                          checked={cardForm.method === 'installments'}
-                          onChange={() => setCardForm({ ...cardForm, method: 'installments' })}
-                        />
-                        Saldo parcelado
-                      </label>
-                      <label className="inline-flex items-center gap-2">
-                        <input
-                          type="radio"
-                          name="card-method"
-                          checked={cardForm.method === 'average'}
-                          onChange={() => setCardForm({ ...cardForm, method: 'average' })}
-                        />
-                        Média das faturas
-                      </label>
-                    </div>
-                    </CadastroModalFieldsRow>
-                    <CadastroModalFieldsRow>
-                    <label className="flex w-1/2 items-center gap-2 text-sm text-gray-800 dark:text-gray-100">
-                      Período
-                      <input
-                        type="number"
-                        min={1}
-                        max={24}
-                        value={cardForm.historyMonths}
-                        disabled={cardForm.method !== 'average'}
-                        onChange={(e) => setCardForm({ ...cardForm, historyMonths: Math.min(24, Math.max(1, Number(e.target.value) || 1)) })}
-                        className={`${cadastroFieldCls} w-20 disabled:opacity-50`}
-                      />
-                      (meses)
-                    </label>
-                    </CadastroModalFieldsRow>
-                  </>
-                )}
-              </CadastroModalFieldsGrid>
-            </CadastroFormSection>
-            )}
-            {previewActive && (
-              <CadastroFormSection title={`Parcelas de ${MONTH_NAMES[month - 1]}`} icon={<CreditCard size={14} />}>
-                {previewLoading ? (
-                  <p className="text-sm text-gray-500">Carregando…</p>
-                ) : installmentPreview.length === 0 ? (
-                  <p className="text-sm text-gray-500">Nenhuma parcela em aberto neste mês para os cartões selecionados.</p>
-                ) : (
-                  <>
-                    <ul className="divide-y divide-gray-100 text-sm dark:divide-gray-700">
-                      {installmentPreview.map((p, i) => (
-                        <li key={i} className="flex items-center justify-between gap-3 py-1.5">
-                          <span className="min-w-0 truncate text-gray-800 dark:text-gray-100">
-                            {p.description} ({p.installment}/{p.total_installments})
-                            <span className="ml-2 text-xs text-gray-500">{p.card_name} •{p.card_number}</span>
-                          </span>
-                          <span className={`shrink-0 tabular-nums font-semibold ${debitCls}`}>{formatCurrency(Number(cardForm.sharing === 'all' ? p.amount : p.my_amount))}</span>
-                        </li>
-                      ))}
-                    </ul>
-                    <p className="mt-2 text-right text-sm font-semibold text-gray-800 dark:text-gray-100">
-                      Total: {formatCurrency(installmentPreview.reduce((s, p) => s + Number(cardForm.sharing === 'all' ? p.amount : p.my_amount), 0))}
-                    </p>
-                  </>
-                )}
-              </CadastroFormSection>
-            )}
-            {cardForm.mode === 'manual' && (
-            <CadastroFormSection title="Itens individuais (editáveis)" icon={<Plus size={14} />}>
+            <CadastroFormSection
+              title="Linhas de despesa"
+              icon={<Plus size={14} />}
+              hint="Valores negativos no calendário. Adicione quantas linhas precisar."
+            >
               <div className="space-y-2">
-                {cardForm.items.map((item, i) => (
-                  <div key={i} className="grid grid-cols-[1fr_1.5fr_7rem_6rem_auto] items-center gap-2">
-                    <select
-                      value={item.card_id}
-                      onChange={(e) => updateCardItem(i, { card_id: Number(e.target.value) })}
+                {manualExpenseForm.expenseRows.map((row, i) => (
+                  <div key={i} className="grid grid-cols-[9rem_1.5fr_7rem_6rem_auto] items-center gap-2">
+                    <DateField
+                      value={row.expected_date}
+                      onChange={(value) => updateExpenseRow(i, { expected_date: value })}
                       className={cadastroFieldCls}
-                    >
-                      {cardOptions.map((c) => (
-                        <option key={c.id} value={c.id}>{c.name || 'Sem nome'} •{c.number}</option>
-                      ))}
-                    </select>
+                    />
                     <input
                       type="text"
                       placeholder="Descrição"
-                      value={item.description}
-                      onChange={(e) => updateCardItem(i, { description: e.target.value })}
+                      value={row.description}
+                      onChange={(e) => updateExpenseRow(i, { description: e.target.value })}
                       className={cadastroFieldCls}
                     />
                     <MoneyMaskInput
-                      value={item.amount}
-                      onChange={(amount) => updateCardItem(i, { amount })}
-                      className={`${cadastroFieldCls} text-right font-semibold ${Number(item.amount) > 0 ? creditCls : debitCls}`}
+                      value={row.amount}
+                      onChange={(amount) => updateExpenseRow(i, { amount })}
+                      className={`${cadastroFieldCls} text-right font-semibold ${debitCls}`}
                     />
                     <select
-                      value={item.kind}
-                      onChange={(e) => updateCardItem(i, { kind: e.target.value as Kind })}
+                      value={row.kind}
+                      onChange={(e) => updateExpenseRow(i, { kind: e.target.value as Kind })}
                       className={cadastroFieldCls}
                     >
                       <option value="fixed">Fixo</option>
@@ -1775,9 +1967,13 @@ export default function ProjecaoMensalPage() {
                     </select>
                     <button
                       type="button"
-                      onClick={() => setCardForm({ ...cardForm, items: cardForm.items.filter((_, j) => j !== i) })}
+                      onClick={() =>
+                        setManualExpenseForm((prev) =>
+                          prev && { ...prev, expenseRows: prev.expenseRows.filter((_, j) => j !== i) },
+                        )
+                      }
                       className="rounded p-1 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-gray-700"
-                      aria-label="Remover item"
+                      aria-label="Remover despesa"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -1785,59 +1981,290 @@ export default function ProjecaoMensalPage() {
                 ))}
                 <button
                   type="button"
-                  disabled={cardOptions.length === 0}
                   onClick={() =>
-                    setCardForm({
-                      ...cardForm,
-                      items: [...cardForm.items, { card_id: cardOptions[0].id, description: '', amount: '', kind: 'fixed' }],
-                    })
+                    setManualExpenseForm((prev) =>
+                      prev && {
+                        ...prev,
+                        expenseRows: [
+                          ...prev.expenseRows,
+                          { expected_date: `${yearMonth}-01`, description: '', amount: '', kind: 'fixed' },
+                        ],
+                      },
+                    )
                   }
-                  className="inline-flex items-center gap-1 text-sm font-medium text-[var(--color-1)] disabled:opacity-50"
+                  className="inline-flex items-center gap-1 text-sm font-medium text-[var(--color-1)]"
                 >
-                  <Plus className="h-4 w-4" /> Adicionar item
+                  <Plus className="h-4 w-4" /> Adicionar despesa
                 </button>
               </div>
             </CadastroFormSection>
-            )}
-              </>
-            )}
-            {cardForm.target === 'income' && (
-              <p className="p-4 text-sm text-gray-700 dark:text-gray-300">
-                Refaz as receitas do mês a partir dos holerites (valor real ou média dos últimos 6 meses). Substitui as receitas automáticas já lançadas.
-                <label className="mt-3 flex items-center gap-2">
-                  Períodos (este mês e os seguintes)
-                  <input
-                    type="number"
-                    min={1}
-                    max={24}
-                    value={cardForm.periods}
-                    onChange={(e) => setCardForm({ ...cardForm, periods: Math.min(24, Math.max(1, Number(e.target.value) || 1)) })}
-                    className={`${cadastroFieldCls} w-20`}
-                  />
-                </label>
-                <span className="mt-2 block rounded-lg border border-blue-200 bg-blue-50 p-3 text-blue-900 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-100">
-                  <strong>Nota:</strong> o holerite de final de mês (pago no fim do mês) entra no primeiro dia do mês seguinte,
-                  pois é ele que paga as despesas dos primeiros 15 dias.
-                </span>
-              </p>
-            )}
           </CadastroModalBody>
           <CadastroModalFooter
-            onClose={closeCardForm}
+            onClose={closeManualExpenseForm}
             closeDisabled={busy}
-            onSave={cardForm.target === 'income' ? launchIncome : cardForm.target === 'expense' ? launchExpenses : launchCards}
+            onSave={launchExpenses}
             saving={saving}
             saveLabel="Lançar"
             disabled={
               saving ||
-              (cardForm.target === 'expense' &&
-                (cardForm.expenseRows.length === 0 ||
-                  cardForm.expenseRows.some((r) => !r.expected_date || !r.description.trim() || !(Math.abs(Number(r.amount)) > 0)))) ||
-              (cardForm.target === 'card' && cardForm.mode === 'auto' && cardForm.cardIds.length === 0) ||
-              (cardForm.target === 'card' && cardForm.mode === 'manual' &&
-                (cardForm.items.length === 0 ||
-                  cardForm.items.some((it) => !it.description.trim() || !(Math.abs(Number(it.amount)) > 0))))
+              manualExpenseForm.expenseRows.length === 0 ||
+              manualExpenseForm.expenseRows.some(
+                (r) => !r.expected_date || !r.description.trim() || !(Math.abs(Number(r.amount)) > 0),
+              )
             }
+          />
+        </CadastroModalShell>
+      )}
+
+      {incomeLaunchForm && (
+        <CadastroModalShell maxWidth="max-w-lg">
+          <CadastroModalHeader
+            isEdit={false}
+            title="Receita da folha"
+            subtitle={`${MONTH_NAMES[month - 1]} ${year}`}
+            onClose={closeIncomeLaunchForm}
+            closeDisabled={busy}
+            icon={<Wallet size={18} />}
+          />
+          <CadastroModalBody>
+            <CadastroFormSection
+              title="Configuração"
+              icon={<Wallet size={14} />}
+              hint="Usa holerites ativos da conta: valor líquido do mês ou média dos últimos 6 meses sem holerite."
+            >
+              <div className="space-y-4 text-sm text-gray-700 dark:text-gray-300">
+                <label className={`${cadastroOptionLabelCls} items-start`}>
+                  <input
+                    type="checkbox"
+                    checked={incomeLaunchForm.advanceOnDay15}
+                    onChange={(e) =>
+                      setIncomeLaunchForm((prev) => prev && { ...prev, advanceOnDay15: e.target.checked })
+                    }
+                    className={`${cadastroAccentControlCls} mt-0.5 h-4 w-4 rounded border-gray-300`}
+                  />
+                  <span>
+                    <span className="block font-medium text-gray-900 dark:text-white">Adiantamento sempre no dia 15</span>
+                    <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                      Mesmo quando o holerite veio em outro dia (antecipação por fim de semana ou feriado), a projeção
+                      posiciona o adiantamento no dia 15 do mês.
+                    </span>
+                  </span>
+                </label>
+                <label className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium text-gray-900 dark:text-white">Repetir nos meses seguintes</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={24}
+                    value={incomeLaunchForm.periods}
+                    onChange={(e) =>
+                      setIncomeLaunchForm((prev) =>
+                        prev && {
+                          ...prev,
+                          periods: Math.min(24, Math.max(1, Number(e.target.value) || 1)),
+                        },
+                      )
+                    }
+                    className={`${cadastroFieldCls} w-20`}
+                  />
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    {incomeLaunchForm.periods === 1 ? 'só este mês' : `este mês e mais ${incomeLaunchForm.periods - 1}`}
+                  </span>
+                </label>
+                <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs leading-relaxed text-blue-900 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-100">
+                  <p>
+                    <span className="font-semibold">Salário de fim de mês:</span> quando o pagamento cai no fim do mês
+                    (a partir do dia 25), a projeção coloca a entrada no dia 1 do mês seguinte — alinhado ao fluxo de
+                    pagar despesas dos primeiros 15 dias com esse valor.
+                  </p>
+                  <p className="mt-2">
+                    Ao confirmar, remove as receitas automáticas (folha) já lançadas em cada mês e recria com os dados
+                    atuais.
+                  </p>
+                </div>
+              </div>
+            </CadastroFormSection>
+          </CadastroModalBody>
+          <CadastroModalFooter
+            onClose={closeIncomeLaunchForm}
+            closeDisabled={busy}
+            onSave={launchIncome}
+            saving={saving}
+            saveLabel="Lançar"
+            disabled={saving}
+          />
+        </CadastroModalShell>
+      )}
+
+      {cardForm && (
+        <CadastroModalShell maxWidth="max-w-3xl">
+          <CadastroModalHeader
+            isEdit={false}
+            title="Cartão de crédito"
+            subtitle={`${MONTH_NAMES[month - 1]} ${year}`}
+            onClose={closeCardForm}
+            closeDisabled={busy}
+            icon={<CreditCard size={18} />}
+          />
+          <CadastroModalBody>
+            <CadastroFormSection
+              title="Forma de lançar"
+              icon={<CreditCard size={14} />}
+              hint="Cada cartão vira um lançamento no calendário; ao clicar nele, você vê o detalhamento."
+            >
+              <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
+                {(
+                  [
+                    {
+                      id: 'invoice' as const,
+                      label: 'Fatura atual',
+                      hint: 'Usa a fatura já importada deste ciclo. Se não existir, o lançamento é bloqueado.',
+                    },
+                    {
+                      id: 'installments' as const,
+                      label: 'Estimativa',
+                      hint: 'Soma das parcelas em aberto que vencem neste mês (saldo parcelado).',
+                    },
+                  ] as const
+                ).map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={cardForm.launchMode === m.id}
+                    className={`${launchHubBtnCls(cardForm.launchMode === m.id)} sm:flex-1`}
+                    onClick={() => {
+                      setCardForm({ ...cardForm, launchMode: m.id })
+                      void fetchCardPreview(m.id, cardForm.sharing, cardOptions.map((c) => c.id))
+                    }}
+                  >
+                    <span className="min-w-0 flex-1 text-left">
+                      <span className="block text-sm font-medium text-gray-900 dark:text-white">{m.label}</span>
+                      <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{m.hint}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </CadastroFormSection>
+            <CadastroFormSection
+              title="Valor considerado"
+              icon={<Wallet size={14} />}
+              hint="Minha parte inclui itens compartilhados; Próprio só itens 100% seus."
+            >
+              <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
+                {(
+                  [
+                    { id: 'mine' as const, label: 'Minha parte', hint: 'Próprio + compartilhado com participação sua' },
+                    { id: 'own' as const, label: 'Próprio', hint: 'Apenas itens com 100% de participação sua' },
+                  ] as const
+                ).map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={cardForm.sharing === s.id}
+                    className={`${launchHubBtnCls(cardForm.sharing === s.id)} sm:flex-1`}
+                    onClick={() => {
+                      setCardForm({ ...cardForm, sharing: s.id })
+                      void fetchCardPreview(cardForm.launchMode, s.id, cardOptions.map((c) => c.id))
+                    }}
+                  >
+                    <span className="min-w-0 flex-1 text-left">
+                      <span className="block text-sm font-medium text-gray-900 dark:text-white">{s.label}</span>
+                      <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{s.hint}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </CadastroFormSection>
+            <CadastroFormSection
+              title="Cartões"
+              icon={<CreditCard size={14} />}
+              hint="Marque os cartões a incluir. A prévia mostra o valor que será lançado por cartão."
+            >
+              {cardPreviewLoading ? (
+                <div className="flex flex-col gap-2" aria-busy aria-label="Carregando cartões">
+                  {(launchableCards.length > 0 ? launchableCards : cardOptions).map((c) => (
+                    <div
+                      key={c.id}
+                      className="h-[5.25rem] animate-pulse rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-800/80"
+                    />
+                  ))}
+                </div>
+              ) : cardOptions.length === 0 ? (
+                <p className="text-sm text-gray-500">Nenhum cartão de crédito ativo.</p>
+              ) : launchableCards.length === 0 ? null : (
+                <div className="flex flex-col gap-2">
+                  {launchableCards.map((c) => {
+                    const selected = cardForm.cardIds.includes(c.id)
+                    const inv = invoicePreview.find((r) => r.card_id === c.id)
+                    const parcelas = installmentCountByCard.get(c.id) ?? 0
+                    const amount =
+                      cardForm.launchMode === 'invoice'
+                        ? inv?.my_amount
+                        : installmentPreview
+                            .filter((p) => p.card_id === c.id)
+                            .reduce((s, p) => s + Number(p.my_amount), 0)
+                    return (
+                      <label
+                        key={c.id}
+                        className={`flex cursor-pointer gap-3 rounded-lg border px-3 py-3 transition-colors ${
+                          selected
+                            ? 'border-[var(--color-1)] bg-[var(--color-1)]/5 dark:bg-[var(--color-1)]/10'
+                            : 'border-gray-200 bg-white hover:border-gray-300 dark:border-gray-600 dark:bg-gray-800/80 dark:hover:border-gray-500'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          onChange={() => toggleCardSelected(c.id)}
+                          className={`${cadastroAccentControlCls} mt-1 h-4 w-4 shrink-0`}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                            <CreditCard size={16} className="shrink-0 text-[var(--color-1)]" />
+                            <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                              {c.name || 'Sem nome'} •{c.number}
+                            </span>
+                            {c.active === false ? (
+                              <span className="rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-600 dark:bg-gray-600 dark:text-gray-200">
+                                Inativo
+                              </span>
+                            ) : null}
+                          </span>
+                          <span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">
+                            {cardForm.launchMode === 'invoice'
+                              ? `Fatura importada (${inv?.invoice_year_month ?? '—'})`
+                              : `${parcelas} parcela${parcelas === 1 ? '' : 's'} em aberto neste mês`}
+                          </span>
+                        </span>
+                        <span className="shrink-0 text-right">
+                          <span className="block text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                            {cardForm.launchMode === 'invoice' ? 'Minha parte' : 'Estimativa'}
+                          </span>
+                          <span className={`mt-0.5 block text-base font-semibold tabular-nums ${debitCls}`}>
+                            {amount != null ? debit(Number(amount)) : '—'}
+                          </span>
+                        </span>
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
+              {cardLaunchBlockedReason ? (
+                <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm leading-relaxed text-amber-900 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-100">
+                  {cardLaunchBlockedReason}
+                </p>
+              ) : null}
+            </CadastroFormSection>
+          </CadastroModalBody>
+          <CadastroModalFooter
+            onClose={closeCardForm}
+            closeDisabled={busy}
+            onSave={launchCards}
+            saving={saving}
+            saveLabel="Lançar"
+            disabled={saving || cardLaunchBlockedReason != null}
           />
         </CadastroModalShell>
       )}

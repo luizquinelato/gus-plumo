@@ -70,7 +70,7 @@ def _parse_porto_rows(text: str) -> List[Dict[str, Any]]:
     return rows
 
 
-def _parse_rodobens_rows(text: str) -> List[Dict[str, Any]]:
+def _parse_rodobens_rows_legacy(text: str) -> List[Dict[str, Any]]:
     pattern = re.compile(
         rf"^(?:(\d{{3}})\s+)?{_DATE}\s+{_DATE}\s+(\d{{6}})\s+{_NUM}\s+{_NUM}\s+{_NUM}\s+([SN])\s+{_NUM}\s+{_NUM}\s+{_NUM}"
         rf"\s+(\d{{3}}-\d)\s+(.+?)\s+(\d{{9}})\s+{_NUM}$",
@@ -88,6 +88,15 @@ def _parse_rodobens_rows(text: str) -> List[Dict[str, Any]]:
             "notice_number": g[13], "interest_amount": _expense(g[14]),
         })
     return rows
+
+
+def _parse_rodobens_rows(text: str) -> List[Dict[str, Any]]:
+    rows = _parse_rodobens_rows_legacy(text)
+    return rows if rows else _parse_porto_rows(text)
+
+
+def _rodobens_modern_layout(text: str) -> bool:
+    return bool(re.search(r"Grupo:\s*\d+\s+Cota:\s*\S+\s+Contrato:", text))
 
 
 def _paid_installments(rows: List[Dict[str, Any]]) -> int:
@@ -139,11 +148,70 @@ def _parse_porto(text: str) -> Dict[str, Any]:
     }
 
 
-def _parse_rodobens(text: str) -> Dict[str, Any]:
+def _parse_rodobens_modern(text: str) -> Dict[str, Any]:
+    """Extrato Rodobens com layout novo (cabeçalho Grupo/Cota/Contrato e conta corrente estilo Porto)."""
     rows = _parse_rodobens_rows(text)
-    group, contract = re.search(r"Grupo:\s*Contrato:\s*(\d+)\s+(\d+)", text).groups()
+    header = re.search(r"Grupo:\s*(\d+)\s+Cota:\s*(\S+)\s+Contrato:\s*(\d+)", text)
+    if not header:
+        raise ValueError("Cabeçalho Rodobens não encontrado")
+    group, quota, contract = header.groups()
+    asset = re.search(r"(\d{6})\s+CR[EÉ]DITO DE\s+(.+?)(?:\d{6}|RODOBENS)", text, flags=re.IGNORECASE)
+    asset_desc = asset.group(2).strip() if asset else ""
+    segment = "imovel" if "IMOVEL" in _norm(asset_desc or text[:3000]) else "auto"
+    paid = _paid_installments(rows)
+    assembleia = re.search(rf"{_DATE}\s+(\d+)\s+{_DATE}", text)
+    next_due = _date(assembleia.group(3)) if assembleia else _date(_find(rf"Vencimento:\s*{_DATE}", text))
+    if next_due and assembleia and paid >= int(assembleia.group(2)):
+        next_due = _add_month(next_due)
+    totals = re.search(r"TOTAL\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)\s+100,0000", text)
+    plan_term = _find(r"Prazo do grupo:\s*(\d+)\s*meses", text) or _find(r"Prazo do grupo:\s*(\d+)", text)
+    first = rows[0] if rows else {}
+    return {
+        "company": RODOBENS,
+        "segment": segment,
+        "group_code": group,
+        "quota": quota,
+        "contract_number": contract,
+        "asset_code": asset.group(1) if asset else None,
+        "asset_description": asset_desc or ("Imóvel" if segment == "imovel" else "Automóvel"),
+        "credit_amount": _dec(_find(r"(\d{1,3}(?:\.\d{3})*,\d{2})\d*\s*meses", text)),
+        "plan_term_months": int(plan_term or 0),
+        "paid_installments": paid,
+        "catch_up_installments": int(_find(r"Qtde Furo:\s*(\d+)", text) or 0),
+        "monthly_amount": _expense(_find(r"Valor Contrib\. Mensal:\s*([\d.]+,\d+)", text)),
+        "outstanding_balance": _expense(_find(r"TOTAL\s+[\d.]+,\d{3}\s+TOTAL\s+([\d.]+,\d{3})", text)),
+        "joined_date": _date(_find(rf"Data Ades[aã]o:\s*{_DATE}", text)),
+        "next_due_date": next_due,
+        "last_due_date": _date(
+            _find(rf"(?:último|ultimo) vencimento da cota:\s*{_DATE}", text, flags=re.IGNORECASE)
+        ),
+        "group_end_date": _date(_find(rf"encerramento do grupo:\s*{_DATE}", text)),
+        "next_adjustment_date": _date(_find(rf"Próximo reajuste em:\s*{_DATE}", text)),
+        "admin_fee_pct": first.get("admin_fee_pct"),
+        "reserve_fund_pct": first.get("fr_pct"),
+        "monthly_pct": _dec(_find(r"Diferença:\s*([\d,]+)", text)),
+        "monthly_pct_with_fees": _dec(_find(r"% Mensal c/ Taxas:\s*([\d,]+)", text)),
+        "insurance_pct": _dec(_find(r"% Seguro:\s*([\d,]+)", text)) or _dec(_find(r"\b(\d,\d{6})\b", text)),
+        "paid_pct": _dec(totals.group(1)) if totals else None,
+        "pending_pct": _dec(totals.group(2)) if totals else None,
+        "to_collect_pct": _dec(totals.group(3)) if totals else None,
+        "ideal_paid_pct": None,
+        "ideal_due_pct": _dec(_find(r"Ideal Devido:\s*([\d,]+)", text)),
+        "diff_pct": None,
+        "installments": rows,
+    }
+
+
+def _parse_rodobens_legacy(text: str) -> Dict[str, Any]:
+    rows = _parse_rodobens_rows_legacy(text)
+    header = re.search(r"Grupo:\s*Contrato:\s*(\d+)\s+(\d+)", text)
+    if not header:
+        raise ValueError("Cabeçalho Rodobens legado não encontrado")
+    group, contract = header.groups()
     quota_m = re.search(r"Cota:\s*(\d+)\s+(\d{2})", text)
-    asset = re.search(r"Bem:\s*(\d{6})\s+(.+?)Plano básico:\s*(\d+)\s*meses", text)
+    asset = re.search(r"Bem:\s*(\d{6})\s+(.+?)Plano básico:\s*(\d+)\s*meses", text, flags=re.IGNORECASE)
+    if not quota_m or not asset:
+        raise ValueError("Campos Rodobens legado não encontrados")
     segment = "imovel" if "IMOVEL" in _norm(asset.group(2)) else "auto"
     last = _find(rf"Data do ultimo vencimento:\s*{_DATE}", text)
     pcts = re.search(r"Parcela\s*(\d+,\d{4})%\s*(\d+,\d{4})%\s*(\d+,\d{4})%", text)
@@ -174,6 +242,12 @@ def _parse_rodobens(text: str) -> Dict[str, Any]:
         "ideal_paid_pct": None, "ideal_due_pct": None, "diff_pct": None,
         "installments": rows,
     }
+
+
+def _parse_rodobens(text: str) -> Dict[str, Any]:
+    if _rodobens_modern_layout(text):
+        return _parse_rodobens_modern(text)
+    return _parse_rodobens_legacy(text)
 
 
 def parse_consortium_text(text: str) -> Dict[str, Any]:

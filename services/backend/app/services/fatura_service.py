@@ -20,7 +20,7 @@ from app.utils.sharing_percentage import resolve_ownership_percentage
 from app.converters.fatura_pdf import normalize_invoice_issuer
 from app.database import DATABASE_URL
 from app.utils.import_progress import report_row_progress
-from app.utils.import_rows import mapping_hint, subtag_override
+from app.utils.import_rows import import_tag_subtag_conflict, mapping_hint, subtag_override
 
 logger = logging.getLogger(__name__)
 
@@ -769,13 +769,8 @@ class FaturaService:
                     existing_data = existing_records_data.get(existing_id, {})
                     existing_subtag_id = existing_data.get('subtag_id')
 
-                    # Detecta conflitos de tag/subtag apenas
-                    # Novo subtag_id None (sem mapeamento) sobre registro classificado também é conflito:
-                    # o usuário decide se limpa a classificação manual.
-                    has_tag_conflict = (
-                        existing_subtag_id is not None and
-                        existing_subtag_id != subtag_id
-                    )
+                    # Conflito só se o arquivo propõe outra classificação definida
+                    has_tag_conflict = import_tag_subtag_conflict(existing_subtag_id, subtag_id)
 
                     # DEBUG: Log para investigar conflitos
                     if has_tag_conflict:
@@ -829,17 +824,19 @@ class FaturaService:
                             linhas_atualizadas += 1
                     else:
                         # Sem conflito - atualiza normalmente
-                        records_to_update.append({
+                        update_payload: dict = {
                             'id': existing_id,
-                            'subtag_id': subtag_id,
                             'current_installment': parcela_atual,
                             'total_installments': total_parcelas,
                             **({'issuer': issuer} if issuer else {}),
-                        })
+                        }
+                        if subtag_id is not None:
+                            update_payload['subtag_id'] = subtag_id
+                        records_to_update.append(update_payload)
                         consumed_ids.add(existing_id)
                         linhas_atualizadas += 1
                         changed = (
-                            existing_subtag_id != subtag_id
+                            (subtag_id is not None and existing_subtag_id != subtag_id)
                             or existing_data.get('current_installment') != parcela_atual
                             or existing_data.get('total_installments') != total_parcelas
                         )

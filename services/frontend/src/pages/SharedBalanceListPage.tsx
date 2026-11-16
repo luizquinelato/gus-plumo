@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { DateField } from '../components/date'
 import { dateToLocalString, dateToLocalTimestamp, getTodayLocalDate } from '../utils/dateUtils'
 import axios from 'axios'
@@ -71,6 +71,10 @@ import { exportBalanceClosureToPDF } from '../utils/pdfExport'
 import { exportBalanceClosureToExcel } from '../utils/exportToExcel'
 import { ExportClosureModal } from '../components/ExportClosureModal'
 import ClosureRecalculateModal from '../components/ClosureRecalculateModal'
+import SharedBalanceClosureActionsModal, {
+  type SharedBalanceClosureHubAction,
+  type ClosureSettlementStatus,
+} from '../components/SharedBalanceClosureActionsModal'
 
 interface ToastState {
   show: boolean
@@ -159,6 +163,21 @@ interface BalanceClosure {
   closure_payments: ClosurePayment[]
   credit_loan_id?: number | null
   credit_loan_amount?: number | null
+  settlement_status?: ClosureSettlementStatus | string
+  settlement_loan_id?: number | null
+  settlement_loan?: {
+    id: number
+    description: string
+    status: string
+    remaining_balance: number
+    principal_amount: number
+    total_paid: number
+  } | null
+}
+
+function effectiveClosureSettlementStatus(closure: BalanceClosure): ClosureSettlementStatus {
+  if (closure.settlement_status) return closure.settlement_status as ClosureSettlementStatus
+  return closure.is_settled ? 'settled' : 'pending'
 }
 
 interface BalanceClosureItem {
@@ -475,7 +494,20 @@ const SharedBalanceListPage = () => {
   const [paymentAmountCents, setPaymentAmountCents] = useState('') // dígitos brutos (centavos)
   const [paymentDate, setPaymentDate] = useState('')
   const [paymentNotes, setPaymentNotes] = useState('')
-  const [paymentModalMode, setPaymentModalMode] = useState<'partial' | 'settle'>('partial')
+  const [paymentModalMode, setPaymentModalMode] = useState<'partial' | 'settle' | 'loan'>('partial')
+  const [hubClosure, setHubClosure] = useState<BalanceClosure | null>(null)
+  const [hubNestedScreen, setHubNestedScreen] = useState<
+    null | 'export' | 'notes' | 'settle-loan' | 'payment'
+  >(null)
+  const [editNotesClosure, setEditNotesClosure] = useState<BalanceClosure | null>(null)
+  const [editNotesText, setEditNotesText] = useState('')
+  const [savingClosureNotes, setSavingClosureNotes] = useState(false)
+  const [settleAsLoanClosure, setSettleAsLoanClosure] = useState<BalanceClosure | null>(null)
+  const [settleAsLoanDescription, setSettleAsLoanDescription] = useState('')
+  const [settleAsLoanDate, setSettleAsLoanDate] = useState('')
+  const [isSettlingAsLoan, setIsSettlingAsLoan] = useState(false)
+  const [highlightClosureId, setHighlightClosureId] = useState<number | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false)
   // Estados para modal de edição de pagamento
   const [showEditPaymentModal, setShowEditPaymentModal] = useState(false)
@@ -682,6 +714,17 @@ const SharedBalanceListPage = () => {
     void loadClosures('all', null)
   }
 
+  useEffect(() => {
+    const raw = searchParams.get('closure')
+    if (!raw) return
+    const id = parseInt(raw, 10)
+    if (!Number.isFinite(id)) return
+    setHighlightClosureId(id)
+    const next = new URLSearchParams(searchParams)
+    next.delete('closure')
+    setSearchParams(next, { replace: true })
+  }, [searchParams, setSearchParams])
+
   const hasActiveListFilters =
     Boolean(draftPartnerAccountId) ||
     draftYear !== '' ||
@@ -806,15 +849,15 @@ const SharedBalanceListPage = () => {
         settlement_date: settlementDate,
       })
 
-      setShowPaymentModal(false)
-      setPaymentClosure(null)
-      setPaymentAmountCents('')
+      setToast({ show: true, message: 'Fechamento marcado como quitado!', type: 'success' })
+      if (hubNestedScreen) {
+        dismissClosureHub()
+      } else {
+        closePaymentModal()
+      }
       setShowDetailsModal(false)
       setSelectedClosure(null)
-      setSettlementNotes('')
-      setSettlementDate('')
       setClosureLoanPayments([])
-      setToast({ show: true, message: 'Fechamento marcado como quitado!', type: 'success' })
 
       if (appliedYear != null) void loadClosures(appliedYear)
     } catch (error: any) {
@@ -928,6 +971,15 @@ const SharedBalanceListPage = () => {
   }
 
   const handleReopenClosure = (closure: BalanceClosure) => {
+    const status = effectiveClosureSettlementStatus(closure)
+    if (status === 'settled_via_loan') {
+      setToast({
+        show: true,
+        message: 'Quitado via empréstimo. Reabra o empréstimo vinculado antes de excluir.',
+        type: 'warning',
+      })
+      return
+    }
     if (closure.is_settled) {
       setToast({
         show: true,
@@ -1129,6 +1181,18 @@ const SharedBalanceListPage = () => {
   }
 
   const openPaymentModal = (closure: BalanceClosure) => {
+    const status = effectiveClosureSettlementStatus(closure)
+    if (status !== 'pending') {
+      setToast({
+        show: true,
+        message:
+          status === 'loan_open'
+            ? 'O saldo está no empréstimo vinculado. Quite em Empréstimos.'
+            : 'Fechamento quitado — remova a quitação para registrar pagamentos.',
+        type: 'warning',
+      })
+      return
+    }
     const remaining = paymentClosureRemaining(closure)
     setPaymentClosure(closure)
     setSelectedClosure(closure)
@@ -1137,8 +1201,163 @@ const SharedBalanceListPage = () => {
     setPaymentNotes('')
     setSettlementDate(getTodayLocalDate())
     setSettlementNotes('')
+    const partner = partners.find((p) => p.shared_account_id === closure.shared_account_id)
+    const partnerName = partner ? getAccountDisplayName(partner.shared_account) : 'parceiro'
+    setSettleAsLoanDescription(
+      `Fechamento compartilhado ${String(closure.month).padStart(2, '0')}/${closure.year} — ${partnerName}`,
+    )
+    setSettleAsLoanDate(getTodayLocalDate())
     setPaymentModalMode(remaining > 0.01 ? 'partial' : 'settle')
     setShowPaymentModal(true)
+  }
+
+  const openSettleAsLoanModal = (closure: BalanceClosure) => {
+    const remaining = paymentClosureRemaining(closure)
+    if (effectiveClosureSettlementStatus(closure) !== 'pending' || remaining <= 0.01) {
+      setToast({ show: true, message: 'Sem saldo pendente para transferir ao empréstimo.', type: 'warning' })
+      return
+    }
+    const partner = partners.find((p) => p.shared_account_id === closure.shared_account_id)
+    const partnerName = partner ? getAccountDisplayName(partner.shared_account) : 'parceiro'
+    setSettleAsLoanClosure(closure)
+    setSettleAsLoanDescription(
+      `Fechamento compartilhado ${String(closure.month).padStart(2, '0')}/${closure.year} — ${partnerName}`,
+    )
+    setSettleAsLoanDate(getTodayLocalDate())
+    setSettleAsLoanClosure(closure)
+    setShowPaymentModal(false)
+    setPaymentClosure(null)
+  }
+
+  const handleConfirmSettleAsLoan = async (override?: BalanceClosure) => {
+    const target = override ?? settleAsLoanClosure
+    if (!target) return
+    setIsSettlingAsLoan(true)
+    try {
+      const response = await axios.post(`/api/balance/closures/${target.id}/settle-as-loan`, {
+        description: settleAsLoanDescription.trim() || null,
+        loan_date: settleAsLoanDate || null,
+      })
+      setClosures((prev) => prev.map((c) => (c.id === target.id ? { ...c, ...response.data } : c)))
+      const loanId = response.data?.settlement_loan_id
+      setToast({
+        show: true,
+        message: loanId
+          ? `Fechamento encerrado via empréstimo #${loanId}.`
+          : 'Empréstimo vinculado ao fechamento.',
+        type: 'success',
+      })
+      setSettleAsLoanClosure(null)
+      setHubNestedScreen(null)
+      closePaymentModal()
+    } catch (error: any) {
+      setToast({
+        show: true,
+        message: error.response?.data?.detail || 'Erro ao gerar empréstimo',
+        type: 'error',
+      })
+    } finally {
+      setIsSettlingAsLoan(false)
+    }
+  }
+
+  const dismissClosureHub = () => {
+    setHubClosure(null)
+    setHubNestedScreen(null)
+    setShowExportModal(false)
+    setExportTargetClosure(null)
+    setEditNotesClosure(null)
+    setSettleAsLoanClosure(null)
+    closePaymentModal()
+  }
+
+  const backToClosureHubMenu = () => {
+    const wasPayment = hubNestedScreen === 'payment'
+    setHubNestedScreen(null)
+    setShowExportModal(false)
+    setExportTargetClosure(null)
+    setEditNotesClosure(null)
+    setSettleAsLoanClosure(null)
+    if (wasPayment) {
+      closePaymentModal()
+    }
+  }
+
+  const handleClosureHubAction = (action: SharedBalanceClosureHubAction) => {
+    if (!hubClosure) return
+    const closure = hubClosure
+    switch (action) {
+      case 'view':
+        dismissClosureHub()
+        void handleViewClosureDetails(closure)
+        break
+      case 'edit-notes':
+        setEditNotesClosure(closure)
+        setEditNotesText(closure.notes || '')
+        setHubNestedScreen('notes')
+        break
+      case 'delete':
+        dismissClosureHub()
+        handleReopenClosure(closure)
+        break
+      case 'recalc':
+        dismissClosureHub()
+        setRecalcClosure(closure)
+        break
+      case 'json':
+        dismissClosureHub()
+        setJsonClosureData(closure.closure_data)
+        setShowJsonModal(true)
+        setJsonCopied(false)
+        break
+      case 'export':
+        setExportTargetClosure(closure as any)
+        setShowExportModal(true)
+        setHubNestedScreen('export')
+        break
+      case 'payment':
+        setHubNestedScreen('payment')
+        openPaymentModal(closure)
+        break
+      case 'unsettle':
+        dismissClosureHub()
+        handleUnsettleClosure(closure)
+        break
+      case 'settle-loan':
+        openSettleAsLoanModal(closure)
+        setHubNestedScreen('settle-loan')
+        break
+      case 'view-loan':
+        dismissClosureHub()
+        if (closure.settlement_loan_id) {
+          navigate(`/emprestimos?highlight=${closure.settlement_loan_id}`)
+        }
+        break
+      default:
+        break
+    }
+  }
+
+  const handleSaveClosureNotes = async () => {
+    if (!editNotesClosure) return
+    setSavingClosureNotes(true)
+    try {
+      const response = await axios.patch(`/api/balance/closures/${editNotesClosure.id}/notes`, {
+        notes: editNotesText.trim() || null,
+      })
+      setClosures((prev) => prev.map((c) => (c.id === editNotesClosure.id ? { ...c, ...response.data } : c)))
+      setToast({ show: true, message: 'Notas atualizadas.', type: 'success' })
+      setEditNotesClosure(null)
+      setHubNestedScreen(null)
+    } catch (error: any) {
+      setToast({
+        show: true,
+        message: error.response?.data?.detail || 'Erro ao salvar notas',
+        type: 'error',
+      })
+    } finally {
+      setSavingClosureNotes(false)
+    }
   }
 
   const paymentModalDateFieldWrapCls = `${cadastroFieldCls} mt-0.5 box-border !py-0 flex h-9 items-center`
@@ -1195,8 +1414,15 @@ const SharedBalanceListPage = () => {
       } else {
         setToast({ show: true, message: 'Pagamento registrado com sucesso!', type: 'success' })
       }
-      setShowPaymentModal(false)
-      setPaymentClosure(null)
+      if (hubNestedScreen === 'payment') {
+        setHubClosure((prev) =>
+          prev && paymentClosure && prev.id === paymentClosure.id ? { ...prev, ...response.data } : prev,
+        )
+        backToClosureHubMenu()
+      } else {
+        setShowPaymentModal(false)
+        setPaymentClosure(null)
+      }
       // Expandir a linha para mostrar o histórico
       setExpandedClosureIds(prev => new Set([...prev, paymentClosure.id]))
     } catch (error: any) {
@@ -1561,20 +1787,29 @@ const SharedBalanceListPage = () => {
     }
   }
 
-  // Atalhos de teclado para modais (ESC para fechar/cancelar, Enter/Space para confirmar)
+  // Atalhos de teclado para modais (ESC fecha o fluxo inteiro, Enter/Space em alguns modais)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement
       const isTextarea = target.tagName === 'TEXTAREA'
 
       if (e.key === 'Escape') {
-        // Fechar modais na ordem de prioridade (mais recente primeiro)
+        e.preventDefault()
         if (showJsonModal) {
           setShowJsonModal(false)
           setJsonClosureData(null)
           setJsonCopied(false)
         } else if (showPaymentModal) {
-          closePaymentModal()
+          if (hubNestedScreen) dismissClosureHub()
+          else closePaymentModal()
+        } else if (showExportModal) {
+          if (hubNestedScreen === 'export') dismissClosureHub()
+          else {
+            setShowExportModal(false)
+            setExportTargetClosure(null)
+          }
+        } else if (editNotesClosure || settleAsLoanClosure || hubClosure) {
+          dismissClosureHub()
         } else if (showDetailsModal) {
           setShowDetailsModal(false)
           setSelectedClosure(null)
@@ -1599,11 +1834,28 @@ const SharedBalanceListPage = () => {
       }
     }
 
-    if (showDetailsModal || showJsonModal || showPaymentModal) {
+    if (
+      showDetailsModal ||
+      showJsonModal ||
+      showPaymentModal ||
+      showExportModal ||
+      editNotesClosure ||
+      settleAsLoanClosure ||
+      hubClosure
+    ) {
       window.addEventListener('keydown', handleKeyDown)
       return () => window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [showDetailsModal, showJsonModal, showPaymentModal])
+  }, [
+    showDetailsModal,
+    showJsonModal,
+    showPaymentModal,
+    showExportModal,
+    editNotesClosure,
+    settleAsLoanClosure,
+    hubClosure,
+    hubNestedScreen,
+  ])
 
   const years = Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i)
 
@@ -1856,7 +2108,16 @@ const SharedBalanceListPage = () => {
                           const partialPaymentsCount = (closure.closure_payments || []).length
                           const hasExpandableDetails =
                             partialPaymentsCount > 0 || closureLoanLiquidations.length > 0
-                          const cardShellCls = closure.is_settled ? closureCardSettledCls : closureCardPendingCls
+                          const settlementStatus = effectiveClosureSettlementStatus(closure)
+                          const cardShellCls =
+                            settlementStatus === 'loan_open'
+                              ? `${closureCardPendingCls} ring-1 ring-amber-400/40`
+                              : settlementStatus === 'settled_via_loan'
+                                ? closureCardSettledCls
+                                : closure.is_settled
+                                  ? closureCardSettledCls
+                                  : closureCardPendingCls
+                          const isHighlighted = highlightClosureId === closure.id
                           const selected = selectedClosureIds.has(closure.id)
                           const otherCard = isCounterpart ? mainCard : partnerCard
                           const periodStart = parseClosureDateTime(closure.period_start_date)
@@ -1866,16 +2127,24 @@ const SharedBalanceListPage = () => {
                           const paymentsCount = (closure.closure_payments || []).length
                           const settlementCreditSigned = getSettlementCreditSignedForViewer(closure, !isCounterpart)
                           const settlementCreditTotal = getSettlementCreditTotal(closure)
+                          const loanOpenRemaining = parseFloat(
+                            String(closure.settlement_loan?.remaining_balance ?? 0),
+                          )
                           const remainingBalance = closure.is_settled
                             ? 0
-                            : Math.sign(displayNetBalance || 1) *
-                              Math.abs(parseFloat(String(closure.remaining_balance ?? displayNetBalance)))
+                            : settlementStatus === 'loan_open'
+                              ? Math.sign(displayNetBalance || 1) * loanOpenRemaining
+                              : Math.sign(displayNetBalance || 1) *
+                                Math.abs(parseFloat(String(closure.remaining_balance ?? displayNetBalance)))
                           const displayBalance = closure.is_settled
                             ? (settlementCreditTotal > 0.01 ? settlementCreditSigned : 0)
-                            : totalPaid > 0
+                            : settlementStatus === 'loan_open'
                               ? remainingBalance
-                              : displayNetBalance
-                          const isRemainingView = !closure.is_settled && totalPaid > 0
+                              : totalPaid > 0
+                                ? remainingBalance
+                                : displayNetBalance
+                          const isRemainingView =
+                            !closure.is_settled && (totalPaid > 0 || settlementStatus === 'loan_open')
                           const isCreditSettleView = closure.is_settled && settlementCreditTotal > 0.01
 
                           return (
@@ -1883,7 +2152,7 @@ const SharedBalanceListPage = () => {
                             key={closure.id}
                             className={`${cardShellCls} ${
                               selected ? 'ring-1 ring-[color-mix(in_srgb,var(--color-1)_35%,transparent)]' : ''
-                            }`}
+                            } ${isHighlighted ? 'ring-2 ring-[var(--color-1)]' : ''}`}
                           >
                           <div className="flex items-center justify-between gap-3">
                             <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
@@ -2051,13 +2320,32 @@ const SharedBalanceListPage = () => {
                                 {isCreditSettleView && (
                                   <p className="text-xs text-amber-600 dark:text-amber-400">crédito quitação</p>
                                 )}
-                                {isRemainingView && (
+                                {isRemainingView && settlementStatus === 'loan_open' && (
+                                  <p className="text-xs text-amber-600 dark:text-amber-400">no empréstimo</p>
+                                )}
+                                {isRemainingView && settlementStatus !== 'loan_open' && (
                                   <p className="text-xs text-gray-500 dark:text-gray-400">restante</p>
                                 )}
                               </div>
                               <div className="mx-1 hidden h-10 w-px shrink-0 bg-gray-200 dark:bg-gray-600 sm:block" />
                               <div className="flex items-center self-center">
-                                {closure.is_settled ? (
+                                {settlementStatus === 'settled_via_loan' ? (
+                                  <span
+                                    className="inline-flex min-w-[88px] flex-col items-center justify-center gap-0.5 rounded px-2 py-1 text-xs font-medium text-white bg-green-600"
+                                    title="Quitado via empréstimo"
+                                  >
+                                    <span className="inline-flex items-center gap-1">
+                                      <Landmark size={14} strokeWidth={2.25} aria-hidden />
+                                      Quitado
+                                    </span>
+                                    <span className="text-[10px] font-normal opacity-90">via empréstimo</span>
+                                  </span>
+                                ) : settlementStatus === 'loan_open' ? (
+                                  <span className="inline-flex min-w-[88px] items-center justify-center gap-1.5 rounded px-2 py-1 text-xs font-medium text-white bg-amber-600">
+                                    <Landmark size={14} strokeWidth={2.25} aria-hidden />
+                                    Em aberto
+                                  </span>
+                                ) : closure.is_settled ? (
                                   <span className="inline-flex w-[88px] items-center justify-center gap-1.5 rounded px-3 py-1 text-xs font-medium text-white bg-green-600">
                                     <Lock size={14} strokeWidth={2.25} aria-hidden />
                                     Quitado
@@ -2075,70 +2363,34 @@ const SharedBalanceListPage = () => {
                                   type="button"
                                   onClick={() => handleViewClosureDetails(closure)}
                                   className={cadastroRowIconBtnCls}
-                                  title="Ver detalhes do fechamento"
+                                  title="Visualizar detalhes"
                                 >
                                   <Eye size={15} />
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => setRecalcClosure(closure)}
-                                  className={cadastroRowIconBtnCls}
-                                  title="Recalcular fechamento (comparar com lançamentos atuais)"
-                                >
-                                  <RefreshCw size={15} />
-                                </button>
-                                <button
-                                  type="button"
                                   onClick={() => {
-                                    setJsonClosureData(closure.closure_data)
-                                    setShowJsonModal(true)
-                                    setJsonCopied(false)
+                                    setHubNestedScreen(null)
+                                    setHubClosure(closure)
                                   }}
                                   className={cadastroRowIconBtnCls}
-                                  title="Ver JSON completo"
+                                  title="Editar — pagamentos, recálculo, exportar e mais"
                                 >
-                                  <Braces size={15} />
+                                  <Pencil size={15} />
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setExportTargetClosure(closure as any)
-                                    setShowExportModal(true)
-                                  }}
-                                  className={cadastroRowIconBtnCls}
-                                  title="Exportar fechamento"
-                                >
-                                  <Download size={15} />
-                                </button>
-                                {closure.is_settled ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleUnsettleClosure(closure)}
-                                    className={`${cadastroRowIconBtnCls} text-green-600 dark:text-green-400`}
-                                    title="Quitado — remover quitação"
-                                  >
-                                    <Lock size={15} />
-                                  </button>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    onClick={() => openPaymentModal(closure)}
-                                    className={reportRowActionBtnClass(true)}
-                                    title="Registrar pagamento ou quitar"
-                                  >
-                                    <Plus size={15} />
-                                  </button>
-                                )}
                                 <button
                                   type="button"
                                   onClick={() => handleReopenClosure(closure)}
-                                  className={reportRowActionBtnClass(!closure.is_settled, 'danger')}
+                                  className={reportRowActionBtnClass(
+                                    !closure.is_settled || settlementStatus === 'loan_open',
+                                    'danger',
+                                  )}
                                   title={
-                                    closure.is_settled
+                                    closure.is_settled && settlementStatus !== 'loan_open'
                                       ? 'Excluir fechamento (remova a quitação antes)'
                                       : 'Excluir fechamento'
                                   }
-                                  disabled={closure.is_settled}
+                                  disabled={closure.is_settled && settlementStatus !== 'loan_open'}
                                 >
                                   <Trash2 size={15} />
                                 </button>
@@ -2465,6 +2717,104 @@ const SharedBalanceListPage = () => {
         )}
 
         {/* Modals */}
+        <SharedBalanceClosureActionsModal
+          isOpen={Boolean(hubClosure) && hubNestedScreen === null}
+          onClose={dismissClosureHub}
+          closure={hubClosure}
+          onAction={handleClosureHubAction}
+          menuScope="edit"
+        />
+
+        {editNotesClosure && (
+          <CadastroModalShell
+            maxWidth="max-w-lg"
+            onBackdropClick={hubNestedScreen === 'notes' ? dismissClosureHub : () => setEditNotesClosure(null)}
+            zClass="z-50"
+          >
+            <CadastroModalHeader
+              isEdit
+              title="Notas do fechamento"
+              subtitle={`${String(editNotesClosure.month).padStart(2, '0')}/${editNotesClosure.year}`}
+              onClose={hubNestedScreen === 'notes' ? dismissClosureHub : () => setEditNotesClosure(null)}
+              icon={<MessageSquare size={18} />}
+            />
+            <CadastroModalBody>
+              <label className="block">
+                <CadastroFieldLabel>Observações</CadastroFieldLabel>
+                <textarea
+                  value={editNotesText}
+                  onChange={(e) => setEditNotesText(e.target.value)}
+                  rows={4}
+                  className={`${cadastroFieldCls} mt-1 w-full resize-y`}
+                  placeholder="Notas visíveis na listagem e exportações"
+                />
+              </label>
+            </CadastroModalBody>
+            <CadastroModalFooter
+              onClose={hubNestedScreen === 'notes' ? dismissClosureHub : () => setEditNotesClosure(null)}
+              onBack={hubNestedScreen === 'notes' ? backToClosureHubMenu : undefined}
+              closeLabel="Fechar"
+              onSave={() => void handleSaveClosureNotes()}
+              saving={savingClosureNotes}
+              saveLabel="Salvar"
+              saveIcon={<Check size={15} />}
+            />
+          </CadastroModalShell>
+        )}
+
+        {settleAsLoanClosure && !showPaymentModal && (
+          <CadastroModalShell
+            maxWidth="max-w-lg"
+            onBackdropClick={hubNestedScreen === 'settle-loan' ? dismissClosureHub : () => setSettleAsLoanClosure(null)}
+            zClass="z-50"
+          >
+            <CadastroModalHeader
+              isEdit={false}
+              title="Gerar empréstimo"
+              subtitle={`Saldo ${formatCurrency(paymentClosureRemaining(settleAsLoanClosure))}`}
+              onClose={hubNestedScreen === 'settle-loan' ? dismissClosureHub : () => setSettleAsLoanClosure(null)}
+              icon={<Landmark size={18} />}
+            />
+            <CadastroModalBody>
+              <CadastroModalFieldsGrid>
+                <CadastroModalFieldsRow>
+                  <label className="block w-full">
+                    <CadastroFieldLabel required>Descrição do empréstimo</CadastroFieldLabel>
+                    <input
+                      type="text"
+                      value={settleAsLoanDescription}
+                      onChange={(e) => setSettleAsLoanDescription(e.target.value)}
+                      className={`${cadastroFieldCls} mt-1 w-full`}
+                    />
+                  </label>
+                </CadastroModalFieldsRow>
+                <CadastroModalFieldsRow>
+                  <label className="block w-full">
+                    <CadastroFieldLabel>Data do empréstimo</CadastroFieldLabel>
+                    <div className={paymentModalDateFieldWrapCls}>
+                      <DateField
+                        value={settleAsLoanDate}
+                        onChange={setSettleAsLoanDate}
+                        maxDate={new Date()}
+                        className="min-h-0 w-full border-0 bg-transparent p-0 shadow-none"
+                      />
+                    </div>
+                  </label>
+                </CadastroModalFieldsRow>
+              </CadastroModalFieldsGrid>
+            </CadastroModalBody>
+            <CadastroModalFooter
+              onClose={hubNestedScreen === 'settle-loan' ? dismissClosureHub : () => setSettleAsLoanClosure(null)}
+              onBack={hubNestedScreen === 'settle-loan' ? backToClosureHubMenu : undefined}
+              closeLabel="Fechar"
+              onSave={() => void handleConfirmSettleAsLoan()}
+              saving={isSettlingAsLoan}
+              saveLabel="Confirmar"
+              saveIcon={<Landmark size={15} />}
+            />
+          </CadastroModalShell>
+        )}
+
         <ClosureRecalculateModal
           closure={recalcClosure}
           loggedAccountId={loggedAccountId}
@@ -3010,26 +3360,34 @@ const SharedBalanceListPage = () => {
         {showPaymentModal && paymentClosure && (() => {
           const remaining = paymentClosureRemaining(paymentClosure)
           const canRegisterPayment = remaining > 0.01
-          const mode = canRegisterPayment ? paymentModalMode : 'settle'
+          const mode =
+            paymentModalMode === 'loan' && canRegisterPayment
+              ? 'loan'
+              : canRegisterPayment
+                ? paymentModalMode
+                : 'settle'
           const partialValid =
             Boolean(paymentAmountCents) &&
             parseInt(paymentAmountCents) > 0 &&
             Boolean(paymentDate)
           const settleValid = Boolean(settlementDate)
-          const saving = mode === 'partial' ? isSubmittingPayment : isSettlingClosure
-          const saveDisabled = mode === 'partial' ? !partialValid : !settleValid
+          const loanValid = Boolean(settleAsLoanDescription.trim()) && Boolean(settleAsLoanDate)
+          const saving =
+            mode === 'partial' ? isSubmittingPayment : mode === 'loan' ? isSettlingAsLoan : isSettlingClosure
+          const saveDisabled =
+            mode === 'partial' ? !partialValid : mode === 'loan' ? !loanValid : !settleValid
 
           return (
           <CadastroModalShell
             maxWidth="max-w-2xl"
-            onBackdropClick={closePaymentModal}
+            onBackdropClick={hubNestedScreen === 'payment' ? dismissClosureHub : closePaymentModal}
             zClass="z-50"
           >
             <CadastroModalHeader
               isEdit={false}
               title="Pagamento do fechamento"
               subtitle={`Período ${String(paymentClosure.month).padStart(2, '0')}/${paymentClosure.year}`}
-              onClose={closePaymentModal}
+              onClose={hubNestedScreen === 'payment' ? dismissClosureHub : closePaymentModal}
               icon={<Banknote size={18} />}
             />
             <CadastroModalBody>
@@ -3089,11 +3447,54 @@ const SharedBalanceListPage = () => {
                           />
                           Quitar fechamento
                         </label>
+                        <label
+                          className={`${cadastroOptionLabelCls} ${!canRegisterPayment ? 'cursor-not-allowed opacity-50' : ''}`}
+                        >
+                          <input
+                            type="radio"
+                            name="closure-payment-mode"
+                            checked={mode === 'loan'}
+                            disabled={!canRegisterPayment}
+                            onChange={() => setPaymentModalMode('loan')}
+                            className={cadastroAccentControlCls}
+                          />
+                          Gerar empréstimo
+                        </label>
                       </div>
                     </div>
                   </CadastroModalFieldsRow>
                 </CadastroModalFieldsGrid>
               </CadastroFormSection>
+              {mode === 'loan' && canRegisterPayment && (
+                <CadastroFormSection title="Empréstimo" icon={<Landmark size={14} />} bodyClassName="p-0">
+                  <CadastroModalFieldsGrid>
+                    <CadastroModalFieldsRow>
+                      <label className="block w-full">
+                        <CadastroFieldLabel required>Descrição</CadastroFieldLabel>
+                        <input
+                          type="text"
+                          value={settleAsLoanDescription}
+                          onChange={(e) => setSettleAsLoanDescription(e.target.value)}
+                          className={`${cadastroFieldCls} mt-1 w-full`}
+                        />
+                      </label>
+                    </CadastroModalFieldsRow>
+                    <CadastroModalFieldsRow>
+                      <label className="block w-full">
+                        <CadastroFieldLabel>Data</CadastroFieldLabel>
+                        <div className={paymentModalDateFieldWrapCls}>
+                          <DateField
+                            value={settleAsLoanDate}
+                            onChange={setSettleAsLoanDate}
+                            maxDate={new Date()}
+                            className="min-h-0 w-full border-0 bg-transparent p-0 shadow-none"
+                          />
+                        </div>
+                      </label>
+                    </CadastroModalFieldsRow>
+                  </CadastroModalFieldsGrid>
+                </CadastroFormSection>
+              )}
               {((mode === 'partial' && canRegisterPayment) || mode === 'settle') && (
                 <CadastroFormSection title="Dados" icon={<Banknote size={14} />} bodyClassName="p-0">
                   <CadastroModalFieldsGrid>
@@ -3174,15 +3575,32 @@ const SharedBalanceListPage = () => {
               )}
             </CadastroModalBody>
             <CadastroModalFooter
-              onClose={closePaymentModal}
+              onClose={hubNestedScreen === 'payment' ? dismissClosureHub : closePaymentModal}
+              onBack={hubNestedScreen === 'payment' ? backToClosureHubMenu : undefined}
+              closeLabel="Fechar"
               onSave={() => {
                 if (mode === 'partial') void handleAddPayment()
+                else if (mode === 'loan') void handleConfirmSettleAsLoan(paymentClosure)
                 else void handleSettleClosure()
               }}
               saving={saving}
               disabled={saveDisabled || saving}
-              saveLabel={mode === 'partial' ? 'Registrar pagamento' : 'Quitar fechamento'}
-              saveIcon={mode === 'partial' ? <Check size={15} /> : <CheckCircle size={15} />}
+              saveLabel={
+                mode === 'partial'
+                  ? 'Registrar pagamento'
+                  : mode === 'loan'
+                    ? 'Gerar empréstimo'
+                    : 'Quitar fechamento'
+              }
+              saveIcon={
+                mode === 'loan' ? (
+                  <Landmark size={15} />
+                ) : mode === 'partial' ? (
+                  <Check size={15} />
+                ) : (
+                  <CheckCircle size={15} />
+                )
+              }
               saveTone={mode === 'settle' ? 'success' : 'default'}
             />
           </CadastroModalShell>
@@ -3306,7 +3724,11 @@ const SharedBalanceListPage = () => {
         {/* Modal de exportação de fechamento */}
         <ExportClosureModal
           isOpen={showExportModal}
-          onClose={() => { setShowExportModal(false); setExportTargetClosure(null) }}
+          onClose={hubNestedScreen === 'export' ? dismissClosureHub : () => {
+            setShowExportModal(false)
+            setExportTargetClosure(null)
+          }}
+          onBack={hubNestedScreen === 'export' ? backToClosureHubMenu : undefined}
           onExport={(format, absoluteValues) => {
             if (!exportTargetClosure) return
             const closureData = exportTargetClosure.closure_data as any

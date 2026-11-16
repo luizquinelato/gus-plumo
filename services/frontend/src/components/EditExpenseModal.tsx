@@ -90,6 +90,7 @@ interface Partner {
 interface EditExpenseModalProps {
   isOpen: boolean
   onClose: () => void
+  onBack?: () => void
   expense: {
     id: number
     source: 'bank' | 'card' | 'benefit'
@@ -126,6 +127,7 @@ function parseAmountInput(raw: string): number {
 const EditExpenseModal = ({
   isOpen,
   onClose,
+  onBack,
   expense,
   onSuccess,
   limitedMode = false,
@@ -837,6 +839,8 @@ const EditExpenseModal = ({
           </CadastroModalBody>
           <CadastroModalFooter
             onClose={onClose}
+            onBack={onBack}
+            closeLabel="Fechar"
             onSave={() => {
               const form = document.getElementById('edit-expense-form') as HTMLFormElement | null
               form?.requestSubmit()

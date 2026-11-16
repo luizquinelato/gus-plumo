@@ -23,7 +23,7 @@ from app.services.closed_period_edit_service import (
     ensure_benefit_curadoria_update_allowed,
 )
 from app.utils.import_progress import activate_import_job, deactivate_import_job, report_row_progress
-from app.utils.import_rows import mapping_hint, subtag_override
+from app.utils.import_rows import import_tag_subtag_conflict, mapping_hint, subtag_override
 from app.utils.mapping_helper import MappingHelper
 from app.utils.sharing_percentage import resolve_ownership_percentage
 import psycopg2
@@ -694,10 +694,7 @@ def save_benefit_dataframe(
                     existing_amount = existing_data.get('amount', 0.0)
 
                     # Detecta conflitos de tag/subtag e valor
-                    has_tag_conflict = (
-                        existing_subtag_id is not None and
-                        existing_subtag_id != subtag_id
-                    )
+                    has_tag_conflict = import_tag_subtag_conflict(existing_subtag_id, subtag_id)
                     has_amount_conflict = (
                         existing_amount != 0.0 and
                         abs(float(amount_decimal) - existing_amount) > 0.01  # Tolerância de 1 centavo
@@ -740,18 +737,19 @@ def save_benefit_dataframe(
                         # Sem conflito - atualiza normalmente
                         update_record = {
                             'id': existing_id,
-                            'subtag_id': subtag_id,
                             'expense_sharing_id': expense_sharing_id,
                             'ownership_percentage': ownership_percentage,
                             'amount': amount_decimal  # Atualiza o valor também
                         }
+                        if subtag_id is not None:
+                            update_record['subtag_id'] = subtag_id
                         # Se a descrição foi mapeada, atualiza também
                         if final_description != description:
                             update_record['description'] = final_description
                         records_to_update.append(update_record)
                         registros_atualizados += 1
                         changed = (
-                            existing_subtag_id != subtag_id
+                            (subtag_id is not None and existing_subtag_id != subtag_id)
                             or abs(float(amount_decimal) - existing_amount) > 0.005
                             or final_description != description
                         )

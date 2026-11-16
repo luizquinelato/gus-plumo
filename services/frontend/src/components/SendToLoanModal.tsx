@@ -64,6 +64,7 @@ interface Partner {
 interface SendToLoanModalProps {
   isOpen: boolean
   onClose: () => void
+  onBack?: () => void
   expense: {
     id: number
     source: 'bank' | 'card' | 'benefit'
@@ -74,7 +75,7 @@ interface SendToLoanModalProps {
   onSuccess: (message?: string) => void
 }
 
-export default function SendToLoanModal({ isOpen, onClose, expense, onSuccess }: SendToLoanModalProps) {
+export default function SendToLoanModal({ isOpen, onClose, onBack, expense, onSuccess }: SendToLoanModalProps) {
   const [toast, setToast] = useState<ToastState>({ show: false, message: '', type: 'success' })
   const [isLoading, setIsLoading] = useState(false)
   const [action, setAction] = useState<'new_loan' | 'add_payment'>('new_loan')
@@ -727,6 +728,8 @@ export default function SendToLoanModal({ isOpen, onClose, expense, onSuccess }:
           </CadastroModalBody>
           <CadastroModalFooter
             onClose={onClose}
+            onBack={onBack}
+            closeLabel="Fechar"
             onSave={() => {
               const form = document.getElementById('send-to-loan-form') as HTMLFormElement | null
               form?.requestSubmit()

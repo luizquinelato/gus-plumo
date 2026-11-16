@@ -60,6 +60,21 @@ def rows_to_df(rows: Iterable[dict[str, Any]]) -> pd.DataFrame:
 SUBTAG_OVERRIDE_COLUMN = "subtag_override"
 
 
+def import_tag_subtag_conflict(
+    existing_subtag_id: int | None,
+    new_subtag_id: int | None,
+) -> bool:
+    """
+    Conflito de tag/subtag só quando o arquivo propõe outra classificação definida.
+    Sem mapeamento, sem tag no arquivo ou “sem classificação” (new=None) mantém o que está no banco.
+    """
+    if new_subtag_id is None:
+        return False
+    if existing_subtag_id is None:
+        return False
+    return existing_subtag_id != new_subtag_id
+
+
 def subtag_override(row: Any, valid_ids: Iterable[int]) -> tuple[bool, int | None]:
     """Classificação escolhida no wizard: (tem_override, subtag_id). 0 = sem classificação."""
     raw = row.get(SUBTAG_OVERRIDE_COLUMN) if hasattr(row, "get") else None

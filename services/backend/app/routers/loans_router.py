@@ -13,10 +13,15 @@ from pydantic import BaseModel, Field
 
 from app.database import get_db
 from app.models.unified_models import (
-    Loan, LoanPayment, Account, Bank,
+    Loan, LoanPayment, Account, Bank, BalanceClosure,
     BankStatement, CreditCardInvoice, BenefitCardStatement
 )
 from app.dependencies.auth import require_account
+from app.services.balance_closure_settlement import (
+    detach_closure_from_deleted_settlement_loan,
+    maybe_promote_closure_settled_via_loan,
+    maybe_reopen_closure_from_loan,
+)
 
 router = APIRouter(prefix="/api/loans", tags=["loans"])
 
@@ -129,6 +134,8 @@ class LoanResponse(BaseModel):
     reopened_count: int
     source_table: Optional[str]
     source_id: Optional[int]
+    balance_closure_id: Optional[int] = None
+    balance_closure_period: Optional[str] = None
     account_id: int
     created_at: datetime
 
@@ -315,6 +322,18 @@ def calculate_corrected_balance(loan: Loan, db: Session) -> tuple[Decimal, Decim
     return total_paid, corrected_balance, interest_amount
 
 
+def sync_balance_closure_for_loan(
+    loan: Loan,
+    db: Session,
+    *,
+    user_id: int | None = None,
+) -> None:
+    """Atualiza fechamento vinculado quando o empréstimo liquida ou reabre."""
+    maybe_promote_closure_settled_via_loan(loan, db, user_id=user_id)
+    if loan.status == "open":
+        maybe_reopen_closure_from_loan(loan, db)
+
+
 def build_loan_response(loan: Loan, db: Session, current_account_id: int = None) -> LoanResponse:
     """Constrói response completo de um empréstimo"""
     total_paid, remaining = calculate_loan_totals(loan, db)
@@ -328,6 +347,17 @@ def build_loan_response(loan: Loan, db: Session, current_account_id: int = None)
 
     # Determinar se o usuário logado é o dono do empréstimo
     is_owner = current_account_id == loan.account_id if current_account_id else True
+
+    balance_closure_id = None
+    balance_closure_period = None
+    if loan.source_table == "balance_closures" and loan.source_id:
+        closure = db.query(BalanceClosure).filter(
+            BalanceClosure.id == loan.source_id,
+            BalanceClosure.tenant_id == loan.tenant_id,
+        ).first()
+        if closure:
+            balance_closure_id = closure.id
+            balance_closure_period = f"{closure.month:02d}/{closure.year}"
 
     return LoanResponse(
         id=loan.id,
@@ -349,6 +379,8 @@ def build_loan_response(loan: Loan, db: Session, current_account_id: int = None)
         reopened_count=loan.reopened_count or 0,
         source_table=loan.source_table,
         source_id=loan.source_id,
+        balance_closure_id=balance_closure_id,
+        balance_closure_period=balance_closure_period,
         account_id=loan.account_id,
         created_at=loan.created_at,
         total_paid=total_paid,
@@ -595,6 +627,8 @@ async def delete_loan(
     if not loan:
         raise HTTPException(status_code=404, detail="Empréstimo não encontrado ou sem permissão")
 
+    detach_closure_from_deleted_settlement_loan(loan, db)
+
     # Deletar todas as liquidações associadas
     db.query(LoanPayment).filter(LoanPayment.loan_id == loan_id).delete()
 
@@ -663,6 +697,7 @@ async def add_payment(
         loan.settled_at = datetime.now()  # Usar timezone local (America/Sao_Paulo)
     # Se ainda tem saldo, mantém como 'open'
 
+    sync_balance_closure_for_loan(loan, db, user_id=created_by)
     db.commit()
     db.refresh(loan)
 
@@ -718,6 +753,7 @@ async def settle_loan(
     loan.status = 'settled'
     loan.settled_at = datetime.now()  # Usar timezone local (America/Sao_Paulo)
 
+    sync_balance_closure_for_loan(loan, db, user_id=created_by)
     db.commit()
     db.refresh(loan)
 
@@ -775,6 +811,7 @@ async def reopen_loan(
     loan.last_reopened_at = datetime.now()  # Usar timezone local (America/Sao_Paulo)
     loan.reopened_count = (loan.reopened_count or 0) + 1
 
+    sync_balance_closure_for_loan(loan, db)
     db.commit()
     db.refresh(loan)
 
@@ -847,7 +884,9 @@ async def update_payment(
         loan.settled_at = datetime.now()  # Usar timezone local (America/Sao_Paulo)
     else:
         loan.status = 'open'
+        loan.settled_at = None
 
+    sync_balance_closure_for_loan(loan, db)
     db.commit()
     db.refresh(loan)
 
@@ -912,6 +951,7 @@ async def delete_payment(
             loan.reopened_count = (loan.reopened_count or 0) + 1
             loan.last_reopened_at = datetime.now()  # Usar timezone local (America/Sao_Paulo)
 
+    sync_balance_closure_for_loan(loan, db)
     db.commit()
 
     return None
@@ -1071,6 +1111,7 @@ async def create_from_source(
             loan.settled_at = datetime.now()  # Usar timezone local (America/Sao_Paulo)
         # Se ainda tem saldo, mantém como 'open'
 
+        sync_balance_closure_for_loan(loan, db, user_id=created_by)
         db.commit()
         db.refresh(loan)
 

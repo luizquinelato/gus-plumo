@@ -25,12 +25,6 @@ export const listPageTableChromeBgCls = 'bg-gray-100 dark:bg-gray-800/75'
 export const listPageTableChromeFooterBgCls = 'bg-gray-50 dark:bg-gray-800/50'
 export const listPageTableChromeHeaderCls =
   `${listPageTableChromeBgCls} [&_th]:border-b-2 [&_th]:border-gray-200 dark:[&_th]:border-gray-600 [&_th.list-page-table-checkbox-col]:p-0 [&_th.list-page-table-index-col]:p-0 [&_th.list-page-table-expand-col]:p-0`
-/** Cabeçalho sticky da coluna Ações — mesma cor do chrome do thead (sem linha divisória). */
-export const listPageTableStickyActionsHeaderCls =
-  `sticky right-0 z-10 ${listPageTableChromeBgCls}`
-/** Célula sticky Ações — fundo/hover/seleção em index.css (sticky exige bg próprio no scroll). */
-export const listPageTableStickyActionsCellCls =
-  'list-page-table-sticky-actions sticky right-0 z-10 align-middle'
 /** Thead de relatórios legados (sem ListPageTable) — alinhado ao chrome das listagens. */
 export const reportTableChromeHeaderCls =
   `border-b border-gray-200 dark:border-gray-700 ${listPageTableChromeBgCls}`

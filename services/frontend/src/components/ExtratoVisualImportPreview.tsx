@@ -3,10 +3,12 @@ import {
   ImportPreviewIssuesSection,
   PreviewDataTable,
   PreviewEmptyState,
+  previewAmountCell,
+  previewFieldValueCell,
+  previewPercentCell,
   type ImportPreviewIssue,
 } from './ImportPreviewShared'
 import { formatCurrency, parseLocaleAmount } from '../utils/currency'
-import { formatPercent } from './RawImportPreview'
 
 export interface VisualImportPreviewNullField {
   field: string
@@ -91,6 +93,10 @@ export function formatChangeDisplay(field: string, value: unknown): string {
   return String(value)
 }
 
+export function formatChangeCell(field: string, value: unknown) {
+  return previewFieldValueCell(field, value)
+}
+
 function bySourceAndRow(a: VisualImportPreviewRow, b: VisualImportPreviewRow) {
   return String(a.source).localeCompare(String(b.source)) || a.row - b.row
 }
@@ -116,10 +122,10 @@ function ExtratoCreateTable({ rows }: { rows: VisualImportPreviewRow[] }) {
         source: sourceLabel(row.source),
         date: row.date,
         description: row.description,
-        amount: formatCurrency(row.amount),
+        amount: previewAmountCell(row.amount),
         classification: row.classification_after || row.classification_file || '—',
         sharing: row.sharing_after || row.sharing_file || '—',
-        ownership: formatPercent(row.ownership_after),
+        ownership: previewPercentCell(row.ownership_after),
       }))}
       sortValues={sorted.map((row) => ({
         date: previewDateMs(row.date),
@@ -140,8 +146,8 @@ function ExtratoUpdateTable({ rows }: { rows: VisualImportPreviewRow[] }) {
         date: row.date,
         description: row.description,
         campo: fieldLabel(change.field),
-        de: formatChangeDisplay(change.field, change.before),
-        para: formatChangeDisplay(change.field, change.after),
+        de: formatChangeCell(change.field, change.before),
+        para: formatChangeCell(change.field, change.after),
       })),
     )
     .map((row, index) => ({ index: index + 1, ...row }))

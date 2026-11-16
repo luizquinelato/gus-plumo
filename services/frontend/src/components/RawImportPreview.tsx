@@ -3,8 +3,12 @@ import {
   ImportPreviewIssuesSection,
   PreviewDataTable,
   PreviewEmptyState,
+  previewAmountCell,
+  previewCompoundFieldValueCell,
+  previewFieldValueCell,
+  previewPercentCell,
 } from './ImportPreviewShared'
-import { formatCurrency } from '../utils/currency'
+import { formatCurrency, formatCurrencyWithColor } from '../utils/currency'
 import type { ImportConflict } from '../types/importConflict'
 import type { WizardKind } from '../utils/importWizard'
 
@@ -153,10 +157,10 @@ function CreateTable({ kind, rows }: { kind: WizardKind; rows: RawPreviewCreate[
         year_month: row.year_month || '—',
         description: row.description,
         installments: row.installments || '—',
-        amount: formatCurrency(row.amount),
+        amount: previewAmountCell(row.amount),
         classification: row.classification || '—',
         sharing: row.sharing || '—',
-        ownership: formatPercent(row.ownership),
+        ownership: previewPercentCell(row.ownership),
       }))}
       sortValues={sorted.map((row) => ({
         date: previewDateMs(row.date),
@@ -176,8 +180,8 @@ function UpdateTable({ rows }: { rows: RawPreviewUpdate[] }) {
         date: row.date,
         description: row.description,
         campo: change.field,
-        de: change.before || '—',
-        para: change.after || '—',
+        de: previewFieldValueCell(change.field, change.before || '—'),
+        para: previewFieldValueCell(change.field, change.after || '—'),
       })),
     )
     .map((row, index) => ({ index: index + 1, ...row }))
@@ -248,7 +252,7 @@ function IgnoredTable({ rows }: { rows: RawImportPreviewData['ignored'] }) {
         date: row.date,
         transaction: row.transaction || '—',
         description: row.description,
-        amount: formatCurrency(row.amount ?? 0),
+        amount: previewAmountCell(row.amount ?? 0),
         reason: row.reason || '—',
       }))}
       sortValues={rows.map((row) => ({ date: previewDateMs(row.date), amount: row.amount }))}
@@ -256,8 +260,8 @@ function IgnoredTable({ rows }: { rows: RawImportPreviewData['ignored'] }) {
   )
 }
 
-function money(value: number | null | undefined): string {
-  return value == null ? '—' : formatCurrency(Number(value))
+function money(value: number | null | undefined) {
+  return value == null ? '—' : formatCurrencyWithColor(Number(value))
 }
 
 function PayrollCard({ payroll }: { payroll: RawPayrollPreview }) {

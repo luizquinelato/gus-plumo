@@ -48,6 +48,7 @@ interface SplitPart {
 interface SplitExpenseModalProps {
   isOpen: boolean
   onClose: () => void
+  onBack?: () => void
   expense: {
     id: number
     source: 'bank' | 'card' | 'cards'
@@ -59,7 +60,7 @@ interface SplitExpenseModalProps {
   onSuccess: (result: ExpenseEditSuccessPayload) => void
 }
 
-const SplitExpenseModal = ({ isOpen, onClose, expense, onSuccess }: SplitExpenseModalProps) => {
+const SplitExpenseModal = ({ isOpen, onClose, onBack, expense, onSuccess }: SplitExpenseModalProps) => {
   const [subtags, setSubtags] = useState<Subtag[]>([])
   const [parts, setParts] = useState<SplitPart[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -468,6 +469,8 @@ const SplitExpenseModal = ({ isOpen, onClose, expense, onSuccess }: SplitExpense
           </CadastroModalBody>
           <CadastroModalFooter
             onClose={onClose}
+            onBack={onBack}
+            closeLabel="Fechar"
             onSave={() => {
               const form = document.getElementById('split-expense-form') as HTMLFormElement | null
               form?.requestSubmit()

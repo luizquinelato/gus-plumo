@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react'
+import { formatCurrencyWithColor, parseLocaleAmount } from '../utils/currency'
 import { CadastroListPageEmptyCard, listPageTableRowHoverCls, listPageTableSectionCls } from './CadastroListPageLayout'
 import { AlertCircle, AlertTriangle, ChevronDown, Inbox, Info, X } from 'lucide-react'
 import { ListTableSortableHeader, type ListTableSortDirection } from './ListTableSelectColumns'
@@ -60,6 +61,110 @@ export function ImportModalMessageBanner({
         </button>
       ) : null}
     </div>
+  )
+}
+
+function signedNumberColorClass(n: number): string {
+  if (n < 0) return 'text-red-600 dark:text-red-400'
+  if (n > 0) return 'text-green-600 dark:text-green-400'
+  return 'text-gray-600 dark:text-gray-400'
+}
+
+function parsePreviewNumeric(value: unknown): number | null {
+  if (value == null || value === '') return null
+  if (typeof value === 'number' && !Number.isNaN(value)) return value
+  const fromLocale = parseLocaleAmount(value)
+  if (fromLocale != null) return fromLocale
+  const text = String(value).trim().replace(/%/g, '')
+  if (!text || text === '—') return null
+  const n = Number(text.replace(/\s/g, '').replace(',', '.'))
+  return Number.isNaN(n) ? null : n
+}
+
+export function isPreviewAmountFieldLabel(label: string): boolean {
+  const f = label.trim().toLowerCase()
+  return f === 'valor' || f === 'amount'
+}
+
+export function isPreviewPercentFieldLabel(label: string): boolean {
+  const f = label.trim().toLowerCase()
+  return (
+    f === 'ownership_pct' ||
+    f === 'ownership' ||
+    f === 'minha %' ||
+    f === 'parte (%)' ||
+    f === 'contrib.' ||
+    f === 'contribution' ||
+    f.startsWith('contribuição') ||
+    f.startsWith('parte ') ||
+    f.includes('(%)')
+  )
+}
+
+export function previewAmountCell(value: number | null | undefined): ReactNode {
+  if (value == null || Number.isNaN(value)) return '—'
+  return formatCurrencyWithColor(value)
+}
+
+export function previewPercentCell(value: number | null | undefined): ReactNode {
+  if (value == null || Number.isNaN(Number(value))) return '—'
+  const n = Number(value)
+  return (
+    <span className={signedNumberColorClass(n)}>
+      {`${n.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`}
+    </span>
+  )
+}
+
+export function previewFieldValueCell(fieldLabel: string, value: unknown): ReactNode {
+  if (value == null || value === '') return '—'
+  if (isPreviewAmountFieldLabel(fieldLabel)) {
+    const n = parsePreviewNumeric(value)
+    if (n != null) return formatCurrencyWithColor(n)
+  }
+  if (isPreviewPercentFieldLabel(fieldLabel)) {
+    const n = parsePreviewNumeric(value)
+    if (n != null) return previewPercentCell(n)
+  }
+  return String(value)
+}
+
+/** Célula de coluna dinâmica (cabeçalho = nome do campo na planilha). */
+export function previewTableColumnCell(columnLabel: string, value: unknown): ReactNode {
+  if (value == null || value === '' || value === '—') return '—'
+  return previewFieldValueCell(columnLabel, value)
+}
+
+function looksLikeCurrencyText(text: string): boolean {
+  const t = text.trim()
+  return t.includes('R$') || /^-?[\d.,]+$/.test(t)
+}
+
+/** Valores compostos “A · B” (ex.: conflito tag + valor). */
+export function previewCompoundFieldValueCell(fieldLabel: string, text: string): ReactNode {
+  if (!text || text === '—') return text || '—'
+  const amountField = isPreviewAmountFieldLabel(fieldLabel) || fieldLabel.toLowerCase().includes('valor')
+  const parts = text.split(' · ')
+  if (parts.length === 1) {
+    if (amountField) {
+      const n = parsePreviewNumeric(parts[0])
+      if (n != null && looksLikeCurrencyText(parts[0])) return formatCurrencyWithColor(n)
+    }
+    return text
+  }
+  return (
+    <>
+      {parts.map((part, index) => {
+        const n = parsePreviewNumeric(part)
+        const colored = amountField && n != null && looksLikeCurrencyText(part)
+        return (
+          <span key={`${index}-${part}`}>
+            {index > 0 ? ' · ' : null}
+            {colored ? formatCurrencyWithColor(n) : part}
+          </span>
+        )
+      })}
+    </>
   )
 }
 

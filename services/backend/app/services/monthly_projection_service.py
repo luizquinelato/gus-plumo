@@ -21,7 +21,6 @@ from app.services.installment_service import get_open_installment_purchases
 from app.utils.card_invoice_calendar import (
     effective_closing_day,
     effective_due_day,
-    invoice_billing_window,
 )
 
 logger = logging.getLogger(__name__)
@@ -33,6 +32,7 @@ CARD_ITEM_SOURCE = "card_item_manual"
 CARD_SOURCES = ("card_invoice", CARD_ITEM_SOURCE, INSTALLMENT_SOURCE)
 MAX_INSTALLMENT_MONTHS = 24
 INCOME_KINDS = {"advance": "Adiantamento salarial", "final": "Salário (fim do mês)"}
+ADVANCE_PROJECTION_DAY = 15
 
 
 def _money(value) -> Decimal:
@@ -116,57 +116,8 @@ def actual_invoice_values(db: Session, tenant_id: int, rows: list[MonthlyProject
     return out
 
 
-def _card_averages(
-    db: Session, tenant_id: int, card: Cartao, target_ym: str, today: date, history: int
-) -> tuple[Decimal, Decimal] | None:
-    """(média total, média minha parte) dos últimos `history` meses-fatura já fechados.
-
-    A janela é calendário (os meses fechados imediatamente anteriores ao mês alvo).
-    Meses sem fatura contam como zero; cartões novos dividem apenas pelos meses desde
-    a primeira fatura. None quando não há valor a esperar.
-    """
-    closing_day = effective_closing_day(card)
-    window: list[str] = []
-    ym = target_ym
-    while len(window) < history:
-        ym = prev_year_month(ym)
-        if ym < "2000-01":
-            break
-        if invoice_billing_window(ym, closing_day)[1] <= today:
-            window.append(ym)
-    if not window:
-        return None
-
-    first_ym = (
-        db.query(func.min(CreditCardInvoice.year_month))
-        .filter(CreditCardInvoice.tenant_id == tenant_id, CreditCardInvoice.credit_card_id == card.id)
-        .scalar()
-    )
-    months = [m for m in window if first_ym and m >= first_ym]
-    if not months:
-        return None
-
-    total, mine = (
-        db.query(
-            func.coalesce(func.sum(-CreditCardInvoice.amount), 0),
-            func.coalesce(func.sum(-CreditCardInvoice.amount * CreditCardInvoice.ownership_percentage / 100), 0),
-        )
-        .filter(
-            CreditCardInvoice.tenant_id == tenant_id,
-            CreditCardInvoice.credit_card_id == card.id,
-            CreditCardInvoice.year_month.in_(months),
-        )
-        .one()
-    )
-    total_avg = max(Decimal(total) / len(months), Decimal(0))
-    mine_avg = max(Decimal(mine) / len(months), Decimal(0))
-    if total_avg == 0 and mine_avg == 0:
-        return None
-    return total_avg, mine_avg
-
-
-
 SHARING_MODES = ("own", "mine", "all")
+LAUNCH_SHARING_MODES = ("own", "mine")
 
 
 def _apply_sharing(query, sharing: str):
@@ -176,6 +127,15 @@ def _apply_sharing(query, sharing: str):
     if sharing == "mine":
         return query.filter(CreditCardInvoice.ownership_percentage > 0)
     return query
+
+
+def _sharing_matches(pct: Decimal, sharing: str) -> bool:
+    """own = participação 100%; mine = participação > 0; all = todos."""
+    if sharing == "own":
+        return pct == 100
+    if sharing == "mine":
+        return pct > 0
+    return True
 
 
 def _card_invoice_totals(
@@ -201,34 +161,72 @@ def _card_invoice_totals(
     return max(Decimal(total), Decimal(0)), max(Decimal(mine), Decimal(0))
 
 
-def _projection_source(db: Session, tenant_id: int, cards: list[Cartao], year_month: str, sharing: str) -> str:
-    """Fonte única da "fatura atual" para toda a seleção: 'current', 'previous' ou 'none'.
+def _card_invoice_line_breakdown(
+    db: Session, tenant_id: int, card: Cartao, invoice_ym: str, sharing: str,
+) -> list[dict]:
+    """Linhas da fatura `invoice_ym` do cartão, respeitando o filtro de compartilhamento."""
+    rows = (
+        db.query(CreditCardInvoice)
+        .filter(
+            CreditCardInvoice.tenant_id == tenant_id,
+            CreditCardInvoice.credit_card_id == card.id,
+            CreditCardInvoice.year_month == invoice_ym,
+        )
+        .order_by(CreditCardInvoice.date, CreditCardInvoice.id)
+        .all()
+    )
+    breakdown: list[dict] = []
+    for inv in rows:
+        pct = Decimal(inv.ownership_percentage if inv.ownership_percentage is not None else 100)
+        if not _sharing_matches(pct, sharing):
+            continue
+        amount = abs(_money(inv.amount))
+        mine = _money(amount * pct / 100)
+        line_date = inv.date.isoformat() if inv.date else None
+        breakdown.append({
+            "card_id": card.id,
+            "card_name": card.name,
+            "card_number": card.number,
+            "description": (inv.description or "").strip() or "—",
+            "date": line_date,
+            "amount": str(amount),
+            "my_amount": str(mine),
+        })
+    return breakdown
 
-    Usa a fatura do mês se ao menos um cartão tiver itens nela (os demais ficam sem linha);
-    só se nenhum tiver, olha a fatura do mês anterior; se também não houver, não projeta.
-    """
-    for source, step in (("current", 0), ("previous", 1)):
-        for card in cards:
-            closing, due = _closing_due(card)
-            ym = _invoice_ym(year_month, closing, due)
-            if step:
-                ym = prev_year_month(ym)
-            if _card_invoice_totals(db, tenant_id, card, ym, sharing):
-                return source
-    return "none"
 
-
-def _card_projection_base(
-    db: Session, tenant_id: int, card: Cartao, invoice_ym: str, today: date, history: int,
-    sharing: str, source: str,
-) -> tuple[Decimal, Decimal] | None:
-    """Base da projeção automática do cartão conforme a fonte escolhida para a seleção."""
-    if source == "average":
-        return _card_averages(db, tenant_id, card, invoice_ym, today, history)
-    if source == "none":
-        return None
-    ym = invoice_ym if source == "current" else prev_year_month(invoice_ym)
-    return _card_invoice_totals(db, tenant_id, card, ym, sharing)
+def invoice_preview_for_month(
+    db: Session, tenant_id: int, account_id: int, year_month: str, card_ids: list[int], sharing: str,
+) -> list[dict]:
+    """Prévia da fatura atual de cada cartão para o mês de projeção (sem recorrer ao mês anterior)."""
+    cards = (
+        db.query(Cartao)
+        .options(joinedload(Cartao.invoice_group))
+        .filter(
+            Cartao.tenant_id == tenant_id,
+            Cartao.account_id == account_id,
+            Cartao.type == "credito",
+            Cartao.id.in_(card_ids),
+        )
+        .all()
+    )
+    cards.sort(key=lambda c: (c.name or "", c.number or ""))
+    out: list[dict] = []
+    for card in cards:
+        closing, due = _closing_due(card)
+        inv_ym = _invoice_ym(year_month, closing, due)
+        totals = _card_invoice_totals(db, tenant_id, card, inv_ym, sharing)
+        out.append({
+            "card_id": card.id,
+            "card_name": card.name or "",
+            "card_number": card.number or "",
+            "invoice_year_month": inv_ym,
+            "due_day": due,
+            "has_invoice": totals is not None,
+            "amount": _money(totals[0]) if totals else Decimal(0),
+            "my_amount": _money(totals[1]) if totals else Decimal(0),
+        })
+    return out
 
 
 LATE_FINAL_PAYMENT_DAY = 25
@@ -254,7 +252,14 @@ def _payslip_ym(p: Payslip) -> str | None:
     return None
 
 
-def income_projections(db: Session, tenant_id: int, account_id: int, year_month: str) -> list[dict]:
+def income_projections(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    year_month: str,
+    *,
+    advance_on_day_15: bool = True,
+) -> list[dict]:
     """Entradas de holerite (adiantamento e fim do mês) do mês.
 
     Usa o valor real quando o mês já tem holerite; senão, a média dos últimos 6 meses
@@ -297,6 +302,8 @@ def income_projections(db: Session, tenant_id: int, account_id: int, year_month:
             continue
         if day is None:
             day = 5 if kind == "final" else 20
+        if kind == "advance" and advance_on_day_15:
+            day = ADVANCE_PROJECTION_DAY
         out.append({
             "description": label if actual else f"{label} (estimativa)", "amount": amount,
             "expected_date": _clamped_date(year_month, day),
@@ -320,7 +327,14 @@ def _deactivate(db: Session, tenant_id: int, account_id: int, year_month: str, i
 
 
 def launch_income_projections(
-    db: Session, tenant_id: int, account_id: int, user_id: int, year_month: str, periods: int = 1
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    user_id: int,
+    year_month: str,
+    periods: int = 1,
+    *,
+    advance_on_day_15: bool = True,
 ) -> int:
     """Apaga as receitas geradas (holerite) do mês e as refaz, e o mesmo nos `periods - 1`
     meses seguintes. Retorna a quantidade criada."""
@@ -330,7 +344,9 @@ def launch_income_projections(
         if step:
             ym = next_year_month(ym)
         _deactivate(db, tenant_id, account_id, ym, income=True)
-        for proj in income_projections(db, tenant_id, account_id, ym):
+        for proj in income_projections(
+            db, tenant_id, account_id, ym, advance_on_day_15=advance_on_day_15,
+        ):
             db.add(MonthlyProjection(
                 tenant_id=tenant_id, account_id=account_id, created_by=user_id,
                 year_month=ym, kind="income", source="payroll",
@@ -345,15 +361,6 @@ def launch_income_projections(
 
 def _months_between(start_ym: str, end_ym: str) -> int:
     return (int(end_ym[:4]) * 12 + int(end_ym[5:7])) - (int(start_ym[:4]) * 12 + int(start_ym[5:7]))
-
-
-def _sharing_matches(pct: Decimal, sharing: str) -> bool:
-    """own = participação 100%; mine = participação > 0; all = todos."""
-    if sharing == "own":
-        return pct == 100
-    if sharing == "mine":
-        return pct > 0
-    return True
 
 
 def installments_for_month(
@@ -396,12 +403,14 @@ def installments_for_month(
                 pct = Decimal(r.ownership_percentage if r.ownership_percentage is not None else 100)
                 if not _sharing_matches(pct, sharing):
                     continue
+                line_date = r.date.isoformat() if r.date else None
                 out.append({
                     "card_id": card.id, "card_name": card.name, "card_number": card.number,
                     "description": r.description, "installment": r.current_installment,
                     "total_installments": r.total_installments,
                     "amount": amount, "my_amount": _money(amount * pct / 100),
                     "expected_date": _clamped_date(year_month, due),
+                    "date": line_date,
                 })
             continue
         for p in get_open_installment_purchases(db, tenant_id, account_id, card_id=card.id):
@@ -410,12 +419,14 @@ def installments_for_month(
                 continue
             if not _sharing_matches(Decimal(p.ownership_percentage), sharing):
                 continue
+            line_date = p.purchase_date.isoformat() if p.purchase_date else None
             out.append({
                 "card_id": card.id, "card_name": card.name, "card_number": card.number,
                 "description": p.description, "installment": p.current_installment + offset,
                 "total_installments": p.total_installments,
                 "amount": _money(p.installment_amount), "my_amount": _money(p.my_installment_amount),
                 "expected_date": _clamped_date(year_month, due),
+                "date": line_date,
             })
     out.sort(key=lambda r: (r["card_name"] or "", r["description"]))
     return out
@@ -448,13 +459,36 @@ def _replace_installments(
         ).update({"active": False}, synchronize_session=False)
         if not rows and step:
             break
+        by_card: dict[int, list[dict]] = defaultdict(list)
         for inst in rows:
+            by_card[inst["card_id"]].append(inst)
+        card_by_id = {c.id: c for c in db.query(Cartao).filter(Cartao.id.in_(by_card)).all()}
+        for card_id, insts in by_card.items():
+            card = card_by_id.get(card_id)
+            if not card:
+                continue
+            total = sum((_money(i["amount"]) for i in insts), Decimal(0))
+            mine = sum((_money(i["my_amount"]) for i in insts), Decimal(0))
+            breakdown = [
+                {
+                    "card_id": card_id,
+                    "card_name": card.name,
+                    "card_number": card.number,
+                    "description": f"{i['description']} ({i['installment']}/{i['total_installments']})",
+                    "date": i.get("date") or str(i["expected_date"]),
+                    "amount": str(_money(i["amount"])),
+                    "my_amount": str(_money(i["my_amount"])),
+                }
+                for i in insts
+            ]
             db.add(MonthlyProjection(
                 tenant_id=tenant_id, account_id=account_id, created_by=user_id, year_month=ym,
-                kind="fixed", source=INSTALLMENT_SOURCE, credit_card_id=inst["card_id"],
-                description=f"{inst['description']} ({inst['installment']}/{inst['total_installments']})"[:255],
-                expected_date=inst["expected_date"],
-                amount=inst["my_amount"] if own_only else inst["amount"], my_amount=inst["my_amount"],
+                kind="fixed", source=INSTALLMENT_SOURCE, credit_card_id=card_id,
+                description=f"Parcelas {card.name} •{card.number}"[:255],
+                expected_date=insts[0]["expected_date"],
+                amount=_money(mine if own_only else total),
+                my_amount=_money(mine),
+                breakdown=breakdown,
                 sharing=sharing,
             ))
             created += 1
@@ -462,43 +496,69 @@ def _replace_installments(
 
 
 def launch_card_projections(
-    db: Session, tenant_id: int, account_id: int, user_id: int, year_month: str,
-    card_ids: list[int], history_months: int, include_average: bool, items: list[dict],
-    today: date | None = None, include_installments: bool = False, sharing: str = "all",
-    basis: str = "average",
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    user_id: int,
+    year_month: str,
+    card_ids: list[int],
+    mode: str,
+    sharing: str = "mine",
 ) -> int:
-    """Apaga todas as despesas do mês (qualquer origem, inclusive manuais) e as refaz.
+    """Substitui despesas automáticas do mês por projeção de cartão (um lançamento por cartão).
 
-    - basis (com include_average): "current" usa a fatura atual (ou a do mês anterior, para a
-      seleção toda); "average" usa a média dos últimos `history_months` meses.
-
-    - sharing: "own" (itens 100% meus), "mine" (itens com alguma participação minha) ou "all"
-      (todos). Em "own" e "mine", `amount` das linhas automáticas recebe só a minha parte
-      (`my_amount`); em "all", o total. Fica gravado na linha para recalcular o valor real.
-
-    - include_average: uma linha por cartão (ou grupo de faturas) com a média dos últimos
-      `history_months` meses; não editável.
-    - include_installments: uma linha por parcela em aberto que vence no mês; editável.
-    - items: itens individuais (card_id, description, amount, kind); editáveis.
+    - mode ``invoice``: fatura importada do ciclo atual (sem usar mês anterior).
+    - mode ``installments``: soma das parcelas em aberto do mês (estimativa).
     """
-    if sharing not in SHARING_MODES:
+    if sharing not in LAUNCH_SHARING_MODES:
         raise ValueError("Compartilhamento inválido")
-    own_only = sharing != "all"
-    today = today or date.today()
+    if mode not in ("invoice", "installments"):
+        raise ValueError("Modo de lançamento inválido")
     cards = (
         db.query(Cartao)
         .options(joinedload(Cartao.invoice_group))
         .filter(
-            Cartao.tenant_id == tenant_id, Cartao.account_id == account_id,
-            Cartao.type == "credito", Cartao.id.in_(card_ids),
+            Cartao.tenant_id == tenant_id,
+            Cartao.account_id == account_id,
+            Cartao.type == "credito",
+            Cartao.id.in_(card_ids),
         )
         .all()
     )
     if not cards:
         raise ValueError("Selecione ao menos um cartão")
-    by_id = {c.id: c for c in cards}
-    if any(item["card_id"] not in by_id for item in items):
-        raise ValueError("Item individual com cartão não selecionado")
+
+    if mode == "invoice":
+        missing: list[str] = []
+        pending: list[tuple[Cartao, int, list[dict]]] = []
+        for card in cards:
+            closing, due = _closing_due(card)
+            inv_ym = _invoice_ym(year_month, closing, due)
+            breakdown = _card_invoice_line_breakdown(db, tenant_id, card, inv_ym, sharing)
+            if not breakdown:
+                missing.append(f"{card.name} •{card.number}")
+                continue
+            pending.append((card, due, breakdown))
+        if missing:
+            raise ValueError(
+                "Não há fatura importada para: "
+                + ", ".join(missing)
+                + ". Importe a fatura ou use Estimativa (parcelas em aberto)."
+            )
+        if not pending:
+            raise ValueError("Nenhum cartão selecionado possui fatura importada para este mês.")
+    else:
+        rows = installments_for_month(db, tenant_id, account_id, year_month, card_ids, sharing)
+        by_card: dict[int, list[dict]] = defaultdict(list)
+        for row in rows:
+            by_card[row["card_id"]].append(row)
+        missing = [f"{c.name} •{c.number}" for c in cards if c.id not in by_card]
+        if missing:
+            raise ValueError(
+                "Nenhuma parcela em aberto neste mês para: "
+                + ", ".join(missing)
+                + ". Use Fatura atual se a fatura já foi importada."
+            )
 
     _deactivate(db, tenant_id, account_id, year_month, income=False)
     created = 0
@@ -506,67 +566,31 @@ def launch_card_projections(
     def _add(**kwargs) -> None:
         nonlocal created
         db.add(MonthlyProjection(
-            tenant_id=tenant_id, account_id=account_id, created_by=user_id,
-            year_month=year_month, **kwargs,
+            tenant_id=tenant_id,
+            account_id=account_id,
+            created_by=user_id,
+            year_month=year_month,
+            **kwargs,
         ))
         created += 1
 
-    if include_average:
-        source = "average" if basis == "average" else _projection_source(db, tenant_id, cards, year_month, sharing)
-        grouped: dict[int, list[Cartao]] = defaultdict(list)
-        for card in cards:
-            if card.invoice_group_id:
-                grouped[card.invoice_group_id].append(card)
-                continue
-            closing, due = _closing_due(card)
-            avg = _card_projection_base(
-                db, tenant_id, card, _invoice_ym(year_month, closing, due), today, history_months,
-                sharing, source,
+    if mode == "invoice":
+        for card, due, breakdown in pending:
+            mine = sum((Decimal(b["my_amount"]) for b in breakdown), Decimal(0))
+            _add(
+                kind="variable",
+                source="card_invoice",
+                credit_card_id=card.id,
+                description=f"Fatura {card.name} •{card.number}",
+                expected_date=_clamped_date(year_month, due),
+                amount=_money(mine),
+                my_amount=_money(mine),
+                breakdown=breakdown,
+                sharing=sharing,
             )
-            if avg:
-                _add(
-                    kind="variable", source="card_invoice", credit_card_id=card.id,
-                    description=f"Fatura {card.name} •{card.number}",
-                    expected_date=_clamped_date(year_month, due),
-                    amount=_money(avg[1] if own_only else avg[0]), my_amount=_money(avg[1]),
-                    sharing=sharing,
-                )
-        for group_id, members in grouped.items():
-            group = members[0].invoice_group
-            closing, due = _closing_due(members[0])
-            inv_ym = _invoice_ym(year_month, closing, due)
-            breakdown, total, mine = [], Decimal(0), Decimal(0)
-            for card in members:
-                avg = _card_projection_base(db, tenant_id, card, inv_ym, today, history_months, sharing, source)
-                if avg is None:
-                    continue
-                breakdown.append({
-                    "card_id": card.id, "card_name": card.name, "card_number": card.number,
-                    "amount": str(_money(avg[0])), "my_amount": str(_money(avg[1])),
-                })
-                total += avg[0]
-                mine += avg[1]
-            if breakdown:
-                _add(
-                    kind="variable", source="card_invoice", invoice_group_id=group_id,
-                    description=f"Fatura {group.name}", expected_date=_clamped_date(year_month, due),
-                    amount=_money(mine if own_only else total), my_amount=_money(mine), breakdown=breakdown,
-                    sharing=sharing,
-                )
-
-    if include_installments:
-        created += _replace_installments(
-            db, tenant_id, account_id, user_id, year_month, list(by_id), sharing, include_future=True,
-        )
-
-    for item in items:
-        card = by_id[item["card_id"]]
-        amount = abs(_money(item["amount"]))
-        _add(
-            kind=item["kind"], source=CARD_ITEM_SOURCE, credit_card_id=card.id,
-            description=item["description"].strip(),
-            expected_date=_clamped_date(year_month, _closing_due(card)[1]),
-            amount=amount, my_amount=amount,
+    else:
+        created = _replace_installments(
+            db, tenant_id, account_id, user_id, year_month, card_ids, sharing, include_future=True,
         )
 
     db.commit()

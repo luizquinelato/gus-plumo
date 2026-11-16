@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
 import {
@@ -6,6 +7,7 @@ import {
   CadastroListPageHero,
   CadastroListPageShell,
   CadastroListPageTabs,
+  CadastroListPrimaryButton,
   CadastroListPageFilterCard,
   CadastroListPageSearchField,
   CadastroFilterField,
@@ -38,10 +40,14 @@ import {
 } from '../components/CadastroFormLayout'
 import LoadingSpinner from '../components/LoadingSpinner'
 import Toast from '../components/Toast'
+import ExtratoReportMenu from '../components/ExtratoReportMenu'
+import { CadastroListHeaderActions } from '../components/CadastroExcelMenu'
+import { useExportRunner } from '../hooks/useExportRunner'
+import { exportLoansToExcel, exportLoansToPdf } from '../utils/exportLoansReport'
 import { DateField } from '../components/date'
 import { parseLocalDate } from '../utils/dateUtils'
 import {
-  Wallet, Plus, Edit2, Trash2, ChevronDown, ChevronRight, Filter, Calendar, CheckCircle, Clock,
+  Wallet, Plus, Edit2, Trash2, ChevronDown, ChevronRight, Calendar, CheckCircle, Clock,
   AlertTriangle, Percent, DollarSign, ArrowUp, ArrowDown, Building2, UserX, Link2, Lock, HelpCircle,
   Banknote, Scale, MessageSquare, Check,
 } from 'lucide-react'
@@ -85,6 +91,9 @@ interface Loan {
   reopened_count: number
   source_type: string | null
   source_id: number | null
+  source_table?: string | null
+  balance_closure_id?: number | null
+  balance_closure_period?: string | null
   account_id: number
   total_paid: number
   remaining_balance: number
@@ -309,6 +318,9 @@ function getLoanSettleContext(loan: Loan) {
 
 export default function EmprestimosPage() {
   const { showConfirm, ConfirmComponent } = useConfirm()
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [highlightLoanId, setHighlightLoanId] = useState<number | null>(null)
 
   // Estados principais
   const [loans, setLoans] = useState<Loan[]>([])
@@ -316,14 +328,12 @@ export default function EmprestimosPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [toast, setToast] = useState<ToastState>({ show: false, message: '', type: 'success' })
 
-  // Filtros (rascunho vs aplicado — lista só após Aplicar)
+  // Filtros (rascunho vs aplicado; lista carrega ao abrir a tela e ao Aplicar)
   const [draftFilterType, setDraftFilterType] = useState<'all' | 'lent' | 'borrowed'>('all')
   const [draftFilterPartner, setDraftFilterPartner] = useState<number | null>(null)
   const [appliedFilterType, setAppliedFilterType] = useState<'all' | 'lent' | 'borrowed'>('all')
   const [appliedFilterPartner, setAppliedFilterPartner] = useState<number | null>(null)
-  /** Busca por descrição na lista (só após aplicar filtros) */
   const [searchTerm, setSearchTerm] = useState('')
-  const [filtersApplied, setFiltersApplied] = useState(false)
   const [listTab, setListTab] = useState<'open' | 'settled'>('open')
 
   // Estados de expansão e modais
@@ -416,9 +426,24 @@ export default function EmprestimosPage() {
     setToast({ show: true, message, type })
   }
 
+  const exportRunner = useExportRunner((msg) => showToast(msg, 'error'))
+
   useEffect(() => {
     void loadPartners()
+    void loadLoans()
   }, [])
+
+  useEffect(() => {
+    const raw = searchParams.get('highlight')
+    if (!raw) return
+    const id = parseInt(raw, 10)
+    if (!Number.isFinite(id)) return
+    setHighlightLoanId(id)
+    setExpandedLoans((prev) => new Set(prev).add(id))
+    const next = new URLSearchParams(searchParams)
+    next.delete('highlight')
+    setSearchParams(next, { replace: true })
+  }, [searchParams, setSearchParams])
 
   // Máscara BRL: dígitos brutos → "1.234,56"
   const formatAmountMask = (cents: string): string => {
@@ -481,7 +506,7 @@ export default function EmprestimosPage() {
   }
 
   const refreshLoansIfApplied = () => {
-    if (filtersApplied) void loadLoans()
+    void loadLoans()
   }
 
   const loadPartners = async () => {
@@ -645,10 +670,28 @@ export default function EmprestimosPage() {
     }
   }
 
+  const buildDeleteLoanConfirmMessage = (loan: Loan): string => {
+    const fromClosure =
+      loan.source_table === 'balance_closures' &&
+      (loan.balance_closure_id != null || loan.source_id != null)
+    if (!fromClosure) {
+      return `Tem certeza que deseja excluir o empréstimo "${loan.description}"? Esta ação não pode ser desfeita.`
+    }
+    const period =
+      loan.balance_closure_period ||
+      (loan.source_id != null ? `#${loan.source_id}` : 'vinculado')
+    return (
+      `Tem certeza que deseja excluir o empréstimo "${loan.description}"?\n\n` +
+      `Ele está ligado ao fechamento compartilhado de ${period}. ` +
+      `Ao excluir, o fechamento volta para pendente e o saldo poderá ser acertado de novo no balanço (pagamento ou novo empréstimo).\n\n` +
+      `Esta ação não pode ser desfeita.`
+    )
+  }
+
   const handleDelete = (loan: Loan) => {
     showConfirm(
       'Excluir Empréstimo',
-      `Tem certeza que deseja excluir o empréstimo "${loan.description}"? Esta ação não pode ser desfeita.`,
+      buildDeleteLoanConfirmMessage(loan),
       async () => {
         try {
           await axios.delete(`/api/loans/${loan.id}`)
@@ -799,7 +842,6 @@ export default function EmprestimosPage() {
     setSearchTerm('')
     setAppliedFilterType(draftFilterType)
     setAppliedFilterPartner(draftFilterPartner)
-    setFiltersApplied(true)
     await loadLoans()
   }
 
@@ -808,21 +850,53 @@ export default function EmprestimosPage() {
     setDraftFilterPartner(null)
   }
 
-  const filteredLoans = filtersApplied
-    ? loans.filter((loan) => {
-        const q = searchTerm.trim()
-        if (q && !loan.description.toLowerCase().includes(q.toLowerCase())) {
-          return false
-        }
-        if (appliedFilterType !== 'all' && loan.loan_type !== appliedFilterType) return false
-        if (appliedFilterPartner && loan.counterpart_account_id !== appliedFilterPartner) return false
-        return true
-      })
-    : []
+  const filteredLoans = loans.filter((loan) => {
+    const q = searchTerm.trim()
+    if (q && !loan.description.toLowerCase().includes(q.toLowerCase())) {
+      return false
+    }
+    if (appliedFilterType !== 'all' && loan.loan_type !== appliedFilterType) return false
+    if (appliedFilterPartner && loan.counterpart_account_id !== appliedFilterPartner) return false
+    return true
+  })
 
   const openLoans = filteredLoans.filter((loan) => loan.status !== 'settled')
   const settledLoans = filteredLoans.filter((loan) => loan.status === 'settled')
   const displayLoans = listTab === 'open' ? openLoans : settledLoans
+
+  const exportReady = !isLoading && filteredLoans.length > 0
+
+  const buildExportContext = () => {
+    let filterPartnerLabel = 'Todos'
+    if (appliedFilterPartner != null) {
+      const p = partners.find((x) => x.shared_account_id === appliedFilterPartner)
+      filterPartnerLabel = p ? getAccountDisplayName(p.shared_account) : `Conta #${appliedFilterPartner}`
+    }
+    const filterTypeLabel =
+      appliedFilterType === 'all' ? 'Todos' : appliedFilterType === 'lent' ? 'A receber' : 'A pagar'
+    return {
+      loans: filteredLoans,
+      filterTypeLabel,
+      filterPartnerLabel,
+      searchTerm: searchTerm.trim(),
+    }
+  }
+
+  const handleExportExcel = () => {
+    if (filteredLoans.length === 0) {
+      showToast('Nenhum dado para exportar', 'error')
+      return
+    }
+    void exportRunner.run('Gerando Excel…', () => exportLoansToExcel(buildExportContext()))
+  }
+
+  const handleExportPdf = () => {
+    if (filteredLoans.length === 0) {
+      showToast('Nenhum dado para exportar', 'error')
+      return
+    }
+    void exportRunner.run('Gerando PDF…', () => exportLoansToPdf(buildExportContext()))
+  }
 
   const getStatusIcon = (loan: Loan) => {
     // Status: Apenas Open e Settled
@@ -936,13 +1010,21 @@ export default function EmprestimosPage() {
               title="Empréstimos"
               subtitle="Gerencie empréstimos feitos e recebidos"
               actions={
-                <button
-                  onClick={() => { resetForm(); setShowCreateModal(true) }}
-                  className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
-                  style={{ backgroundColor: 'var(--crud-create)' }}
-                >
-                  <Plus size={18} /> Novo Empréstimo
-                </button>
+                <CadastroListHeaderActions>
+                  <CadastroListPrimaryButton
+                    label="Novo Empréstimo"
+                    icon={<Plus size={18} />}
+                    onClick={() => {
+                      resetForm()
+                      setShowCreateModal(true)
+                    }}
+                  />
+                  <ExtratoReportMenu
+                    disabled={!exportReady}
+                    onExportExcel={handleExportExcel}
+                    onExportPdf={handleExportPdf}
+                  />
+                </CadastroListHeaderActions>
               }
             />
           }
@@ -952,11 +1034,7 @@ export default function EmprestimosPage() {
               onClearFilters={clearFilters}
               onApply={() => void applyFilters()}
               applying={isLoading}
-              resultHint={
-                filtersApplied
-                  ? `${filteredLoans.length} empréstimo${filteredLoans.length === 1 ? '' : 's'}`
-                  : undefined
-              }
+              resultHint={`${filteredLoans.length} empréstimo${filteredLoans.length === 1 ? '' : 's'}`}
             >
               <CadastroFilterField label="Tipo" icon={<ArrowUp size={12} />}>
                 <select
@@ -1006,14 +1084,6 @@ export default function EmprestimosPage() {
             <div className="flex items-center justify-center rounded-xl border border-gray-200 bg-white py-12 shadow-sm dark:border-gray-700 dark:bg-gray-800">
               <LoadingSpinner />
             </div>
-          ) : !filtersApplied ? (
-            <div className="rounded-xl border border-gray-200 bg-white p-12 text-center shadow-sm dark:border-gray-700 dark:bg-gray-800">
-              <Filter size={48} className="mx-auto mb-4 text-gray-300 dark:text-gray-600" />
-              <h3 className="mb-2 text-lg font-semibold text-gray-900 dark:text-white">Selecione os filtros</h3>
-              <p className="text-gray-600 dark:text-gray-400">
-                Escolha o tipo e o parceiro (ou deixe Todos) e clique em Aplicar para carregar os empréstimos.
-              </p>
-            </div>
           ) : loans.length === 0 ? (
             <div className="rounded-xl border border-gray-200 bg-white py-12 text-center shadow-sm dark:border-gray-700 dark:bg-gray-800">
               <Wallet className="mx-auto mb-4 h-12 w-12 text-gray-400" />
@@ -1056,7 +1126,10 @@ export default function EmprestimosPage() {
                 const isLent = effectiveType === 'lent'
 
                 return (
-                <div key={loan.id} className={loanCardOpenCls}>
+                <div
+                  key={loan.id}
+                  className={`${loanCardOpenCls} ${highlightLoanId === loan.id ? 'ring-2 ring-[var(--color-1)]' : ''}`}
+                >
                   {/* Header do empréstimo */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4 flex-1">
@@ -1064,8 +1137,21 @@ export default function EmprestimosPage() {
                         {expandedLoans.has(loan.id) ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
                       </button>
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
                           <span className="font-medium text-gray-900 dark:text-white truncate">{loan.description}</span>
+                          {loan.source_table === 'balance_closures' && loan.balance_closure_id != null && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                navigate(`/fechamentos/compartilhado?closure=${loan.balance_closure_id}`)
+                              }
+                              className="inline-flex shrink-0 items-center gap-1 rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-200 dark:hover:bg-amber-900/60"
+                              title="Abrir fechamento compartilhado de origem"
+                            >
+                              <Scale size={12} />
+                              Fechamento {loan.balance_closure_period || `#${loan.balance_closure_id}`}
+                            </button>
+                          )}
                         </div>
                         <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
                           {/* Badge A Receber / A Pagar */}
@@ -1221,7 +1307,10 @@ export default function EmprestimosPage() {
                     const isLent = effectiveType === 'lent'
 
                     return (
-                    <div key={loan.id} className={loanCardSettledCls}>
+                    <div
+                      key={loan.id}
+                      className={`${loanCardSettledCls} ${highlightLoanId === loan.id ? 'ring-2 ring-[var(--color-1)]' : ''}`}
+                    >
                       {/* Header do empréstimo */}
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4 flex-1">
@@ -1229,8 +1318,21 @@ export default function EmprestimosPage() {
                             {expandedLoans.has(loan.id) ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
                           </button>
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
+                            <div className="flex flex-wrap items-center gap-2 mb-1">
                               <span className="font-medium text-gray-900 dark:text-white truncate">{loan.description}</span>
+                              {loan.source_table === 'balance_closures' && loan.balance_closure_id != null && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    navigate(`/fechamentos/compartilhado?closure=${loan.balance_closure_id}`)
+                                  }
+                                  className="inline-flex shrink-0 items-center gap-1 rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-200 dark:hover:bg-amber-900/60"
+                                  title="Abrir fechamento compartilhado de origem"
+                                >
+                                  <Scale size={12} />
+                                  Fechamento {loan.balance_closure_period || `#${loan.balance_closure_id}`}
+                                </button>
+                              )}
                             </div>
                             <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
                               {/* Badge A Receber / A Pagar */}
@@ -1958,6 +2060,7 @@ export default function EmprestimosPage() {
 
         {/* Confirm Dialog */}
         <ConfirmComponent />
+        {exportRunner.overlay}
     </div>
   )
 }

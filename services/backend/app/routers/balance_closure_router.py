@@ -10,7 +10,7 @@ from sqlalchemy import and_, desc, or_, func
 from typing import List, Literal, Any
 from decimal import Decimal
 from datetime import datetime, timedelta
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app.database import get_db
 from app.models.unified_models import (
@@ -19,6 +19,17 @@ from app.models.unified_models import (
     Tag, Subtag, Cartao, Loan, LoanPayment
 )
 from app.dependencies.auth import get_current_user
+from app.services.balance_closure_settlement import (
+    SETTLEMENT_LOAN_OPEN,
+    SETTLEMENT_PENDING,
+    SETTLEMENT_SETTLED,
+    SETTLEMENT_SETTLED_VIA_LOAN,
+    apply_settlement_status,
+    assert_closure_allows_pix_payments,
+    build_settlement_loan_summary,
+    effective_settlement_status,
+    loan_type_for_closure_debt,
+)
 
 router = APIRouter(prefix="/api/balance/closures", tags=["balance-closures"])
 
@@ -127,6 +138,35 @@ class BalanceClosureResponse(BaseModel):
     # Preenchidos quando um pagamento gera crédito (empréstimo a pagar na mandante)
     credit_loan_id: int | None = None
     credit_loan_amount: Decimal | None = None
+    settlement_status: str = SETTLEMENT_PENDING
+    settlement_loan_id: int | None = None
+    settlement_loan: dict | None = None
+
+    @field_validator('settlement_loan', mode='before')
+    @classmethod
+    def coerce_settlement_loan(cls, v):
+        """Ignora o relacionamento ORM Loan; o resumo é montado em enrich_closure_response."""
+        if v is None or isinstance(v, dict):
+            return v
+        return None
+
+    class Config:
+        from_attributes = True
+
+
+class BalanceClosureSettleAsLoanRequest(BaseModel):
+    """Request para transferir saldo restante para empréstimo vinculado."""
+    description: str | None = None
+    loan_date: str | None = None  # YYYY-MM-DD
+    notes: str | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class BalanceClosureNotesUpdate(BaseModel):
+    """Atualiza notas gerais do fechamento."""
+    notes: str | None = None
 
     class Config:
         from_attributes = True
@@ -443,7 +483,7 @@ def sync_closure_settlement_after_payment_removal(
         and remaining > Decimal('0.01')
         and (auto_settled or total_paid == Decimal('0'))
     ):
-        closure.is_settled = False
+        apply_settlement_status(closure, SETTLEMENT_PENDING)
         closure.settled_at = None
         closure.settled_by = None
         closure.settlement_notes = None
@@ -646,15 +686,38 @@ def sync_auto_settlement_after_overpayment(
 
     if credit_amount > Decimal('0.01') and remaining <= Decimal('0.01'):
         if not closure.is_settled:
-            closure.is_settled = True
+            apply_settlement_status(closure, SETTLEMENT_SETTLED)
             closure.settled_at = datetime.now()
             closure.settled_by = user_id
             closure.settlement_notes = AUTO_SETTLEMENT_NOTES
     elif remaining > Decimal('0.01') and closure.is_settled and auto_settled:
-        closure.is_settled = False
+        apply_settlement_status(closure, SETTLEMENT_PENDING)
         closure.settled_at = None
         closure.settled_by = None
         closure.settlement_notes = None
+
+
+def _attach_settlement_loan_fields(
+    closure: BalanceClosure,
+    base: dict,
+    db: Session,
+    loan: Loan | None = None,
+) -> None:
+    status = effective_settlement_status(closure)
+    base['settlement_status'] = status
+    base['settlement_loan_id'] = closure.settlement_loan_id
+    if closure.settlement_loan_id:
+        if loan is None:
+            loan = db.query(Loan).filter(
+                Loan.id == closure.settlement_loan_id,
+                Loan.tenant_id == closure.tenant_id,
+                Loan.active == True,  # noqa: E712
+            ).first()
+        base['settlement_loan'] = build_settlement_loan_summary(loan, db)
+    else:
+        base['settlement_loan'] = None
+    if status == SETTLEMENT_LOAN_OPEN:
+        base['remaining_balance'] = Decimal('0')
 
 
 def enrich_closure_response(
@@ -677,6 +740,7 @@ def enrich_closure_response(
     ]
     base['credit_loan_id'] = credit_loan_id
     base['credit_loan_amount'] = credit_loan_amount
+    _attach_settlement_loan_fields(closure, base, db)
     return base
 
 
@@ -708,6 +772,12 @@ def enrich_closures_bulk(closures: list, db: Session) -> list[dict]:
     for p in all_payments:
         payments_map.setdefault(p.balance_closure_id, []).append(p)
 
+    loan_ids = [c.settlement_loan_id for c in closures if c.settlement_loan_id]
+    loans_by_id: dict[int, Loan] = {}
+    if loan_ids:
+        for loan in db.query(Loan).filter(Loan.id.in_(loan_ids)).all():
+            loans_by_id[loan.id] = loan
+
     result = []
     for closure in closures:
         total_paid = totals_map.get(closure.id, Decimal('0')) or Decimal('0')
@@ -723,6 +793,8 @@ def enrich_closures_bulk(closures: list, db: Session) -> list[dict]:
         ]
         base['credit_loan_id'] = None
         base['credit_loan_amount'] = None
+        loan = loans_by_id.get(closure.settlement_loan_id) if closure.settlement_loan_id else None
+        _attach_settlement_loan_fields(closure, base, db, loan=loan)
         result.append(base)
 
     return result
@@ -1990,6 +2062,134 @@ async def apply_closure_recalculation(
     return enrich_closure_response(closure, db)
 
 
+@router.patch("/{closure_id}/notes", response_model=BalanceClosureResponse)
+def update_closure_notes(
+    closure_id: int,
+    request: BalanceClosureNotesUpdate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    tenant_id = current_user["tenant_id"]
+    account_id = current_user.get("account_id")
+
+    closure = db.query(BalanceClosure).filter(
+        BalanceClosure.id == closure_id,
+        BalanceClosure.tenant_id == tenant_id,
+        or_(
+            BalanceClosure.account_id == account_id,
+            BalanceClosure.shared_account_id == account_id,
+        ),
+    ).first()
+    if not closure:
+        raise HTTPException(status_code=404, detail="Fechamento não encontrado")
+
+    closure.notes = request.notes
+    db.commit()
+    db.refresh(closure)
+    return enrich_closure_response(closure, db)
+
+
+@router.post("/{closure_id}/settle-as-loan", response_model=BalanceClosureResponse)
+def settle_closure_as_loan(
+    closure_id: int,
+    request: BalanceClosureSettleAsLoanRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Transfere o saldo restante do fechamento para um empréstimo vinculado (sem pagamento PIX no balanço).
+    """
+    tenant_id = current_user["tenant_id"]
+    account_id = current_user.get("account_id")
+    user_id = current_user.get("user_id") or current_user.get("id")
+    if not account_id:
+        raise HTTPException(status_code=400, detail="account_id não encontrado no token")
+
+    closure = db.query(BalanceClosure).filter(
+        BalanceClosure.id == closure_id,
+        BalanceClosure.tenant_id == tenant_id,
+        or_(
+            BalanceClosure.account_id == account_id,
+            BalanceClosure.shared_account_id == account_id,
+        ),
+    ).first()
+    if not closure:
+        raise HTTPException(status_code=404, detail="Fechamento não encontrado")
+
+    status = effective_settlement_status(closure)
+    if status != SETTLEMENT_PENDING:
+        raise HTTPException(
+            status_code=400,
+            detail="Só é possível gerar empréstimo para fechamentos pendentes.",
+        )
+    if closure.settlement_loan_id:
+        raise HTTPException(status_code=400, detail="Fechamento já possui empréstimo vinculado.")
+
+    total_paid, _ = get_closure_payment_totals(closure_id, db)
+    remaining = closure_debt_remaining(closure.net_balance, total_paid)
+    if remaining <= Decimal("0.01"):
+        raise HTTPException(status_code=400, detail="Não há saldo restante para transferir ao empréstimo.")
+
+    partner = db.query(Account).filter(Account.id == closure.shared_account_id).first()
+    partner_label = "parceiro"
+    if partner:
+        partner_label = (partner.description or partner.name or partner_label).strip()
+
+    default_description = (
+        f"Fechamento compartilhado {closure.month:02d}/{closure.year} — {partner_label}"
+    )
+    description = (request.description or default_description).strip()
+    if not description:
+        raise HTTPException(status_code=400, detail="Descrição do empréstimo é obrigatória.")
+
+    if request.loan_date:
+        try:
+            loan_date = datetime.fromisoformat(request.loan_date)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Data inválida. Use formato YYYY-MM-DD")
+    else:
+        loan_date = datetime.now()
+
+    loan = Loan(
+        loan_type=loan_type_for_closure_debt(Decimal(str(closure.net_balance))),
+        principal_amount=remaining,
+        description=description,
+        loan_date=loan_date,
+        interest_enabled=False,
+        counterpart_account_id=closure.shared_account_id,
+        source_table="balance_closures",
+        source_id=closure.id,
+        status="open",
+        account_id=closure.account_id,
+        tenant_id=closure.tenant_id,
+        created_by=user_id,
+        active=True,
+    )
+    db.add(loan)
+    db.flush()
+
+    closure.settlement_loan_id = loan.id
+    apply_settlement_status(closure, SETTLEMENT_LOAN_OPEN)
+    closure.settled_at = None
+    closure.settled_by = None
+    user_note = (request.notes or "").strip()
+    closure.settlement_notes = user_note or f"Dívida transferida para empréstimo #{loan.id}"
+
+    closure_data = dict(closure.closure_data or {})
+    closure_data["settlement_loan"] = {
+        "id": loan.id,
+        "description": description,
+        "principal_amount": float(remaining),
+        "loan_date": loan_date.isoformat(),
+    }
+    closure.closure_data = closure_data
+    flag_modified(closure, "closure_data")
+
+    db.commit()
+    db.refresh(closure)
+    return enrich_closure_response(closure, db)
+
+
 @router.put("/{closure_id}/settle", response_model=BalanceClosureResponse)
 def settle_balance_closure(
     closure_id: int,
@@ -2014,6 +2214,13 @@ def settle_balance_closure(
 
     if closure.is_settled:
         raise HTTPException(status_code=400, detail="Fechamento já está quitado")
+
+    status = effective_settlement_status(closure)
+    if status == SETTLEMENT_LOAN_OPEN:
+        raise HTTPException(
+            status_code=400,
+            detail="Fechamento em aberto via empréstimo. Quite o empréstimo vinculado.",
+        )
 
     account_id = current_user.get("account_id")
 
@@ -2044,8 +2251,7 @@ def settle_balance_closure(
         )
         db.add(payment)
 
-    # Marcar como quitado
-    closure.is_settled = True
+    apply_settlement_status(closure, SETTLEMENT_SETTLED)
     closure.settled_at = settled_at
     closure.settled_by = user_id
     closure.settlement_notes = request.settlement_notes
@@ -2079,8 +2285,19 @@ def unsettle_balance_closure(
     if not closure.is_settled:
         raise HTTPException(status_code=400, detail="Fechamento não está quitado")
 
-    # Remover quitação
-    closure.is_settled = False
+    status = effective_settlement_status(closure)
+    if status == SETTLEMENT_SETTLED_VIA_LOAN:
+        raise HTTPException(
+            status_code=400,
+            detail="Quitação via empréstimo. Reabra o empréstimo vinculado para alterar.",
+        )
+    if status == SETTLEMENT_LOAN_OPEN:
+        raise HTTPException(
+            status_code=400,
+            detail="Fechamento em aberto via empréstimo. Cancele ou quite o empréstimo vinculado.",
+        )
+
+    apply_settlement_status(closure, SETTLEMENT_PENDING)
     closure.settled_at = None
     closure.settled_by = None
     closure.settlement_notes = None
@@ -2121,6 +2338,11 @@ def clear_all_closure_payments(
 
     if not closure:
         raise HTTPException(status_code=404, detail="Fechamento não encontrado")
+
+    try:
+        assert_closure_allows_pix_payments(closure)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     # Valida / obtém empréstimos de crédito da quitação antes de qualquer delete
     credit_loans_to_delete = assert_settlement_credit_loans_can_be_cleared(closure, db)
@@ -2210,8 +2432,10 @@ def add_closure_payment(
     if not closure:
         raise HTTPException(status_code=404, detail="Fechamento não encontrado")
 
-    if closure.is_settled:
-        raise HTTPException(status_code=400, detail="Fechamento já está quitado. Remova a quitação para adicionar pagamentos.")
+    try:
+        assert_closure_allows_pix_payments(closure)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     if request.amount <= 0:
         raise HTTPException(status_code=400, detail="Valor deve ser maior que zero")
@@ -2301,6 +2525,11 @@ def delete_closure_payment(
     if not closure:
         raise HTTPException(status_code=404, detail="Fechamento não encontrado")
 
+    try:
+        assert_closure_allows_pix_payments(closure)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     payment = db.query(BalanceClosurePayment).filter(
         BalanceClosurePayment.id == payment_id,
         BalanceClosurePayment.balance_closure_id == closure_id,
@@ -2366,6 +2595,11 @@ def update_closure_payment(
 
     if not payment:
         raise HTTPException(status_code=404, detail="Pagamento não encontrado")
+
+    try:
+        assert_closure_allows_pix_payments(closure)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     if request.amount <= 0:
         raise HTTPException(status_code=400, detail="Valor deve ser maior que zero")
@@ -2451,12 +2685,40 @@ def delete_balance_closure(
     if not closure:
         raise HTTPException(status_code=404, detail="Fechamento não encontrado")
 
-    # Impedir reabertura de fechamentos já quitados
+    status = effective_settlement_status(closure)
+
+    if status == SETTLEMENT_SETTLED_VIA_LOAN:
+        raise HTTPException(
+            status_code=400,
+            detail="Fechamento quitado via empréstimo. Reabra o empréstimo vinculado antes de excluir.",
+        )
+
     if closure.is_settled:
         raise HTTPException(
             status_code=400,
             detail="Não é possível reabrir um fechamento já quitado. Remova a quitação primeiro."
         )
+
+    if status == SETTLEMENT_LOAN_OPEN and closure.settlement_loan_id:
+        settlement_loan = db.query(Loan).filter(
+            Loan.id == closure.settlement_loan_id,
+            Loan.tenant_id == tenant_id,
+            Loan.active == True,
+        ).first()
+        if settlement_loan:
+            try:
+                soft_delete_credit_loan(settlement_loan, db)
+            except HTTPException as exc:
+                raise HTTPException(
+                    status_code=exc.status_code,
+                    detail=(
+                        "Não é possível excluir: o empréstimo vinculado possui liquidações. "
+                        "Remova-as em Empréstimos ou reabra o empréstimo."
+                    ),
+                ) from exc
+        closure.settlement_loan_id = None
+        apply_settlement_status(closure, SETTLEMENT_PENDING)
+        closure.settlement_notes = None
 
     # ==================== DELETAR LOAN PAYMENTS ASSOCIADOS ====================
     # Buscar pagamentos vinculados a este fechamento pela FK balance_closure_id

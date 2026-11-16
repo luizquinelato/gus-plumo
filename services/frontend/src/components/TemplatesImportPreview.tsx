@@ -3,7 +3,13 @@ import { ChevronDown, ChevronRight, FileText } from 'lucide-react'
 import Badge, { type BadgeTone } from './Badge'
 import { badgeVariantForColumnRole } from '../utils/badgeSurfaces'
 import { findIconComponent } from '../utils/iconMapper'
-import { CollapsiblePreviewSection, ImportPreviewIssuesSection, PreviewDataTable } from './ImportPreviewShared'
+import {
+  CollapsiblePreviewSection,
+  ImportPreviewIssuesSection,
+  PreviewDataTable,
+  previewFieldValueCell,
+  previewTableColumnCell,
+} from './ImportPreviewShared'
 import type {
   CadastroImportPreviewData,
   CadastroImportPreviewRow,
@@ -45,8 +51,8 @@ function ItemCreateTable({ rows }: { rows: CadastroImportPreviewRow[] }) {
     <PreviewDataTable
       columns={[{ key: 'row', label: '#' }, ...fields.map((field) => ({ key: field, label: field }))]}
       rows={sorted.map((row) => {
-        const cells: Record<string, string | number> = { row: row.row }
-        for (const field of fields) cells[field] = row.fields_after?.[field] || '—'
+        const cells: Record<string, string | number | ReturnType<typeof previewTableColumnCell>> = { row: row.row }
+        for (const field of fields) cells[field] = previewTableColumnCell(field, row.fields_after?.[field])
         return cells
       })}
     />
@@ -69,8 +75,8 @@ function ChangesTable({ rows, withItem }: { rows: CadastroImportPreviewRow[]; wi
           row: row.row,
           item: itemName(row),
           campo: change.label || change.field,
-          de: change.before || '—',
-          para: change.after || '—',
+          de: previewFieldValueCell(change.label || change.field, change.before || '—'),
+          para: previewFieldValueCell(change.label || change.field, change.after || '—'),
         })),
       )}
     />

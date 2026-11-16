@@ -7,9 +7,8 @@ import {
   CadastroListPageHero,
   CadastroListPageShell,
   CadastroListPrimaryButton,
+  listPageTableCls,
   listPageTableRowHoverCls,
-  listPageTableStickyActionsCellCls,
-  listPageTableStickyActionsHeaderCls,
   reportRowActionBtnClass,
   reportTableChromeHeaderCls,
 } from '../components/CadastroListPageLayout'
@@ -32,7 +31,7 @@ import type { ExpenseEditSuccessPayload } from '../utils/closureEditImpact'
 import SharedAccountDisplay from '../components/SharedAccountDisplay'
 import { MultiSelectDropdown, SourceMultiSelectDropdown } from '../components/MultiSelectDropdown'
 import { DateField } from '../components/date'
-import { FileText, Edit2, Trash2, Split, ArrowDownCircle, ArrowUpCircle, Search, X, Filter, Calendar, Landmark, Gift, ArrowUpDown, ArrowUp, CheckSquare, Square, MinusSquare, Database, Tag, Tags, Users, TrendingUp, Wallet, PlusCircle, ArrowLeftRight, AlertTriangle, ArrowRight, Link2 } from 'lucide-react'
+import { FileText, Edit2, Trash2, ArrowDownCircle, ArrowUpCircle, Search, X, Filter, Calendar, Landmark, Gift, ArrowUpDown, ArrowUp, CheckSquare, Square, MinusSquare, Database, Tag, Tags, Users, TrendingUp, PlusCircle, ArrowLeftRight, AlertTriangle, ArrowRight } from 'lucide-react'
 import LinkedInvoiceItemsModal, { type LinkedInvoiceSummary } from '../components/LinkedInvoiceItemsModal'
 import { useConfirm } from '../hooks/useConfirm'
 import { dateToLocalString, parseLocalDate } from '../utils/dateUtils'
@@ -43,6 +42,9 @@ import { CadastroListHeaderActions } from '../components/CadastroExcelMenu'
 import type { ImportIssueRow } from '../components/ClosureEditImpactSummaryModal'
 import SendToLoanModal from '../components/SendToLoanModal'
 import ManualTransactionModal from '../components/ManualTransactionModal'
+import ExtratoExpenseActionsModal, {
+  type ExtratoExpenseHubAction,
+} from '../components/ExtratoExpenseActionsModal'
 import Toast from '../components/Toast'
 // import { formatAccountDisplay } from '../utils/accountFormatter'
 import {
@@ -240,6 +242,9 @@ const ExtratoPage = () => {
   const [linkedInvoiceModalOpen, setLinkedInvoiceModalOpen] = useState(false)
   const [linkedInvoiceStatementId, setLinkedInvoiceStatementId] = useState<number | null>(null)
   const [linkedInvoiceSummary, setLinkedInvoiceSummary] = useState<LinkedInvoiceSummary | null>(null)
+  const [isExpenseActionsHubOpen, setIsExpenseActionsHubOpen] = useState(false)
+  const [expenseHubNested, setExpenseHubNested] = useState(false)
+  const [expenseForActionsHub, setExpenseForActionsHub] = useState<ExpenseDetail | null>(null)
 
   // Modal unificado de inversão (individual ou batch)
   const [isInvertModalOpen, setIsInvertModalOpen] = useState(false)
@@ -575,6 +580,65 @@ const ExtratoPage = () => {
   const handleEdit = (expense: ExpenseDetail) => {
     setExpenseToEdit(expense)
     setIsEditModalOpen(true)
+  }
+
+  const handleOpenExpenseActionsHub = (expense: ExpenseDetail) => {
+    setExpenseForActionsHub(expense)
+    setIsExpenseActionsHubOpen(true)
+  }
+
+  const handleCloseExpenseActionsHub = () => {
+    setIsExpenseActionsHubOpen(false)
+    setExpenseForActionsHub(null)
+    setExpenseHubNested(false)
+  }
+
+  const dismissExpenseHubFlow = () => {
+    handleCloseExpenseActionsHub()
+    setIsEditModalOpen(false)
+    setExpenseToEdit(null)
+    setIsSplitModalOpen(false)
+    setExpenseToSplit(null)
+    setIsLoanModalOpen(false)
+    setExpenseToLoan(null)
+    handleCloseInvertModal()
+  }
+
+  const backToExpenseHubMenu = () => {
+    setIsEditModalOpen(false)
+    setExpenseToEdit(null)
+    setIsSplitModalOpen(false)
+    setExpenseToSplit(null)
+    setIsLoanModalOpen(false)
+    setExpenseToLoan(null)
+    handleCloseInvertModal()
+    setIsExpenseActionsHubOpen(true)
+  }
+
+  const handleExpenseHubAction = (action: ExtratoExpenseHubAction) => {
+    const expense = expenseForActionsHub
+    if (!expense) return
+    setExpenseHubNested(true)
+    setIsExpenseActionsHubOpen(false)
+    switch (action) {
+      case 'edit':
+        handleEdit(expense)
+        break
+      case 'split':
+        handleSplit(expense)
+        break
+      case 'loan':
+        handleSendToLoan(expense)
+        break
+      case 'invert':
+        handleOpenInvertModal(expense)
+        break
+      case 'linked-invoice':
+        handleOpenLinkedInvoice(expense)
+        break
+      default:
+        break
+    }
   }
 
   const handleSplit = (expense: ExpenseDetail) => {
@@ -1012,14 +1076,16 @@ const ExtratoPage = () => {
     if (!isInvertModalOpen || invertItems.length === 0) return
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        handleCloseInvertModal()
+        e.preventDefault()
+        if (expenseHubNested) dismissExpenseHubFlow()
+        else handleCloseInvertModal()
       } else if (e.key === 'Enter' && !invertLoading) {
         void handleInvert()
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isInvertModalOpen, invertItems, invertLoading])
+  }, [isInvertModalOpen, invertItems, invertLoading, expenseHubNested, dismissExpenseHubFlow])
 
   // Filtra subtags baseado nas tags selecionadas e adiciona ícone de tipo
   // Só mostra subtags quando pelo menos uma tag está selecionada
@@ -1487,8 +1553,22 @@ const ExtratoPage = () => {
           {/* Tabela de Transações */}
           {!loading && detailedReport && filteredExpenses.length > 0 && (
             <div className={`${selectedItems.size > 0 || showBackToTop ? 'pb-20' : ''}`}>
-              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-                <table className="w-full table-auto">
+              <div className="rounded-lg border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-800">
+                <table className={`${listPageTableCls} table-fixed`}>
+                  <colgroup>
+                    <col style={{ width: '2.25%' }} />
+                    <col style={{ width: '2.25%' }} />
+                    <col style={{ width: '3%' }} />
+                    <col style={{ width: '8%' }} />
+                    <col style={{ width: '26.5%' }} />
+                    <col style={{ width: '7.5%' }} />
+                    <col style={{ width: '8%' }} />
+                    <col style={{ width: '12.5%' }} />
+                    <col style={{ width: '7.25%' }} />
+                    <col style={{ width: '7.25%' }} />
+                    <col style={{ width: '7.25%' }} />
+                    <col style={{ width: '5.5%' }} />
+                  </colgroup>
                   <thead className={reportTableChromeHeaderCls}>
                     <tr>
                       {/* Checkbox Selecionar Todos */}
@@ -1523,7 +1603,7 @@ const ExtratoPage = () => {
                       <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:text-color-primary" onClick={() => handleSort('subtag_name')}>
                         Subtag {sortField === 'subtag_name' && (sortDirection === 'asc' ? '↑' : '↓')}
                       </th>
-                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap min-w-[180px] cursor-pointer hover:text-color-primary" onClick={() => handleSort('shared_partner_name')}>
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:text-color-primary" onClick={() => handleSort('shared_partner_name')}>
                         Compartilhamento {sortField === 'shared_partner_name' && (sortDirection === 'asc' ? '↑' : '↓')}
                       </th>
                       <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap">
@@ -1535,14 +1615,12 @@ const ExtratoPage = () => {
                       <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-color-primary" onClick={() => handleSort('amount')}>
                         Total {sortField === 'amount' && (sortDirection === 'asc' ? '↑' : '↓')}
                       </th>
-                      <th
-                        className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300 whitespace-nowrap min-w-[160px] ${listPageTableStickyActionsHeaderCls}`}
-                      >
+                      <th className="px-2 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">
                         Ações
                       </th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="[&_td]:align-top">
                       {filteredExpenses
                         .slice(
                           itemsPerPage === 0 ? 0 : (currentPage - 1) * itemsPerPage,
@@ -1651,15 +1729,15 @@ const ExtratoPage = () => {
 
                               {/* Descrição */}
                               <td className="px-3 py-4 text-left">
-                                <div className="flex flex-col min-w-0">
-                                  <span className="text-sm text-gray-900 dark:text-white truncate" title={expense.description}>
+                                <div className="flex flex-col min-w-0 break-words">
+                                  <span className="text-sm text-gray-900 dark:text-white">
                                     {expense.description}
                                     {expense.current_installment && expense.total_installments && (
                                       <span className="text-xs text-gray-500 dark:text-gray-400"> • {expense.current_installment}/{expense.total_installments}x</span>
                                     )}
                                   </span>
                                   {expense.card_number && (
-                                    <span className="text-xs mt-0.5 truncate" style={{ color: 'var(--color-4)' }}>
+                                    <span className="text-xs mt-0.5 break-words" style={{ color: 'var(--color-4)' }}>
                                       {expense.card_name && `${expense.card_name} • `}
                                       ****{expense.card_number}
                                     </span>
@@ -1669,24 +1747,25 @@ const ExtratoPage = () => {
 
                               {/* Tag */}
                               <td className="px-3 py-4 text-left">
-                                <span className="text-sm text-gray-900 dark:text-white truncate block" title={expense.tag_name || undefined}>
+                                <span className="text-sm text-gray-900 dark:text-white break-words">
                                   {isDailyBalance ? '—' : (expense.tag_name || '-')}
                                 </span>
                               </td>
 
                               {/* Subtag */}
                               <td className="px-3 py-4 text-left">
-                                <span className="text-sm text-gray-900 dark:text-white truncate block" title={expense.subtag_name || undefined}>
+                                <span className="text-sm text-gray-900 dark:text-white break-words">
                                   {isDailyBalance ? '—' : (expense.subtag_name || '-')}
                                 </span>
                               </td>
 
                               {/* Compartilhamento */}
-                              <td className="px-3 py-4 text-left min-w-[180px]">
+                              <td className="px-3 py-4 text-left">
                                 {isDailyBalance ? (
                                   <span className="text-sm text-gray-500 dark:text-gray-400">—</span>
                                 ) : (
                                 <SharedAccountDisplay
+                                  allowWrap
                                   account={expense.shared_partner_name ? {
                                     id: expense.shared_partner_id || 0,
                                     name: expense.shared_partner_name,
@@ -1750,78 +1829,19 @@ const ExtratoPage = () => {
                               </td>
 
                               {/* Ações */}
-                              <td
-                                className={`${listPageTableStickyActionsCellCls} px-4 py-4 text-left whitespace-nowrap`}
-                              >
+                              <td className="px-2 py-4 text-left align-top whitespace-nowrap">
                                 {isDailyBalance ? (
                                   <span className="text-xs text-gray-500 dark:text-gray-400">Resumo</span>
                                 ) : (
                                 <div className="flex items-center gap-0.5">
-                                  {expense.source === 'bank' && expense.linked_invoice && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleOpenLinkedInvoice(expense)}
-                                      disabled={selectedItems.size > 0}
-                                      className={reportRowActionBtnClass(selectedItems.size === 0)}
-                                      title={selectedItems.size > 0 ? 'Limpe a seleção' : 'Ver itens da fatura vinculada'}
-                                    >
-                                      <Link2 size={18} />
-                                    </button>
-                                  )}
                                   <button
                                     type="button"
-                                    onClick={() => handleEdit(expense)}
+                                    onClick={() => handleOpenExpenseActionsHub(expense)}
                                     disabled={selectedItems.size > 0}
                                     className={reportRowActionBtnClass(selectedItems.size === 0)}
-                                    title={selectedItems.size > 0 ? 'Limpe a seleção para editar' : 'Editar'}
+                                    title={selectedItems.size > 0 ? 'Limpe a seleção' : 'Ações do lançamento'}
                                   >
                                     <Edit2 size={18} />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSplit(expense)}
-                                    disabled={selectedItems.size > 0}
-                                    className={reportRowActionBtnClass(selectedItems.size === 0)}
-                                    title={selectedItems.size > 0 ? 'Limpe a seleção para dividir' : 'Dividir'}
-                                  >
-                                    <Split size={18} />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSendToLoan(expense)}
-                                    disabled={selectedItems.size > 0}
-                                    className={reportRowActionBtnClass(selectedItems.size === 0)}
-                                    title={selectedItems.size > 0 ? 'Limpe a seleção para empréstimo' : 'Enviar para Empréstimo'}
-                                  >
-                                    <Wallet size={18} />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      handleOpenInvertModal(expense)
-                                    }}
-                                    disabled={
-                                      selectedItems.size > 0 ||
-                                      !expense.shared_partner_id ||
-                                      !!expense.migrated_from_account_id
-                                    }
-                                    className={reportRowActionBtnClass(
-                                      selectedItems.size === 0 &&
-                                        !!expense.shared_partner_id &&
-                                        !expense.migrated_from_account_id,
-                                    )}
-                                    title={
-                                      selectedItems.size > 0
-                                        ? 'Limpe a seleção para inverter'
-                                        : expense.migrated_from_account_id
-                                          ? 'Item já foi invertido'
-                                          : !expense.shared_partner_id
-                                            ? 'Item não possui compartilhamento'
-                                            : 'Inverter compartilhamento'
-                                    }
-                                  >
-                                    <ArrowLeftRight size={18} />
                                   </button>
                                   <button
                                     type="button"
@@ -1843,7 +1863,7 @@ const ExtratoPage = () => {
                     {/* Rodapé com Totais e Paginação */}
                     <tfoot>
                       <tr>
-                        <td colSpan={10} className="p-0">
+                        <td colSpan={12} className="p-0">
                           <ListPagination
                             total={filteredExpenses.length}
                             page={currentPage}
@@ -1855,8 +1875,8 @@ const ExtratoPage = () => {
                       </tr>
                     </tfoot>
                   </table>
-                </div>
               </div>
+            </div>
           )}
 
           {/* Empty State - Nenhuma transação encontrada */}
@@ -1917,13 +1937,19 @@ const ExtratoPage = () => {
         </CadastroListPageBody>
       </CadastroListPageShell>
 
+      <ExtratoExpenseActionsModal
+        isOpen={isExpenseActionsHubOpen && !expenseHubNested}
+        onClose={dismissExpenseHubFlow}
+        expense={expenseForActionsHub}
+        selectionActive={selectedItems.size > 0}
+        onAction={handleExpenseHubAction}
+      />
+
       {/* Modal de Split */}
       <SplitExpenseModal
         isOpen={isSplitModalOpen}
-        onClose={() => {
-          setIsSplitModalOpen(false)
-          setExpenseToSplit(null)
-        }}
+        onClose={() => (expenseHubNested ? dismissExpenseHubFlow() : (setIsSplitModalOpen(false), setExpenseToSplit(null)))}
+        onBack={expenseHubNested ? backToExpenseHubMenu : undefined}
         expense={expenseToSplit}
         onSuccess={handleSplitSuccess}
       />
@@ -1931,10 +1957,8 @@ const ExtratoPage = () => {
       {/* Modal de Edição */}
       <EditExpenseModal
         isOpen={isEditModalOpen}
-        onClose={() => {
-          setIsEditModalOpen(false)
-          setExpenseToEdit(null)
-        }}
+        onClose={() => (expenseHubNested ? dismissExpenseHubFlow() : (setIsEditModalOpen(false), setExpenseToEdit(null)))}
+        onBack={expenseHubNested ? backToExpenseHubMenu : undefined}
         expense={expenseToEdit}
         onSuccess={handleExpenseEditSuccess}
       />
@@ -1984,10 +2008,8 @@ const ExtratoPage = () => {
       {/* Modal de Enviar para Empréstimo */}
       <SendToLoanModal
         isOpen={isLoanModalOpen}
-        onClose={() => {
-          setIsLoanModalOpen(false)
-          setExpenseToLoan(null)
-        }}
+        onClose={() => (expenseHubNested ? dismissExpenseHubFlow() : (setIsLoanModalOpen(false), setExpenseToLoan(null)))}
+        onBack={expenseHubNested ? backToExpenseHubMenu : undefined}
         expense={expenseToLoan}
         onSuccess={handleLoanSuccess}
       />
@@ -2015,11 +2037,15 @@ const ExtratoPage = () => {
 
       {/* Modal Unificado de Inversão de Compartilhamento */}
       {isInvertModalOpen && invertItems.length > 0 && (
-        <CadastroModalShell maxWidth="max-w-md" onBackdropClick={handleCloseInvertModal} zClass="z-[60]">
+        <CadastroModalShell
+          maxWidth="max-w-md"
+          onBackdropClick={expenseHubNested ? dismissExpenseHubFlow : handleCloseInvertModal}
+          zClass="z-[60]"
+        >
           <CadastroModalHeader
             isEdit={false}
             title="Inverter Compartilhamento"
-            onClose={handleCloseInvertModal}
+            onClose={expenseHubNested ? dismissExpenseHubFlow : handleCloseInvertModal}
             icon={<ArrowLeftRight size={18} />}
           />
           <CadastroModalBody>
@@ -2067,7 +2093,9 @@ const ExtratoPage = () => {
             </CadastroFormSection>
           </CadastroModalBody>
           <CadastroModalFooter
-            onClose={handleCloseInvertModal}
+            onClose={expenseHubNested ? dismissExpenseHubFlow : handleCloseInvertModal}
+            onBack={expenseHubNested ? backToExpenseHubMenu : undefined}
+            closeLabel="Fechar"
             onSave={() => { void handleInvert() }}
             saveLabel="Confirmar"
             saveTone="success"

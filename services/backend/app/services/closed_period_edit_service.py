@@ -941,6 +941,65 @@ def after_new_transaction_in_closed_period(
     )
 
 
+def ensure_extrato_import_closed_periods_allowed(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    transaction_dates: list[Any],
+    confirm: bool,
+) -> None:
+    """Exige confirmação antes de gravar mutações em meses fechados (datas com insert/update real, não o arquivo inteiro)."""
+    if confirm or not transaction_dates:
+        return
+    closed = closed_periods(db, tenant_id, account_id)
+    if not closed:
+        return
+    for raw in transaction_dates:
+        period = _period_from_date(raw)
+        if period and period in closed:
+            preview = closure_impact_confirmation_prompt("financial")
+            raise AccountPeriodClosedError(
+                preview.get("message", "Confirme o impacto nos fechamentos."),
+                preview,
+            )
+
+
+def after_extrato_bulk_import_in_closed_periods(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    user_id: int,
+    mutation_dates: list[Any],
+    *,
+    note: str = "Importação de extrato",
+) -> dict[str, Any]:
+    """Recalcula fechamentos após gravação em lote de extrato bancário."""
+    if not mutation_dates:
+        return closure_impact_none()
+    closed = closed_periods(db, tenant_id, account_id)
+    if not closed:
+        return closure_impact_none()
+    seed: set[tuple[int, int]] = set()
+    adjustment: set[tuple[int, int]] = set()
+    for raw in mutation_dates:
+        period = _period_from_date(raw)
+        if period and period in closed:
+            seed.add(period)
+            adjustment.update(_cash_adjustment_periods_from_dates(raw))
+    if not seed:
+        return closure_impact_none()
+    periods = _downstream_closed_periods(closed, seed)
+    return apply_cash_closure_recalc(
+        db,
+        tenant_id,
+        account_id,
+        user_id,
+        periods,
+        adjustment_periods=adjustment,
+        note_append=note,
+    )
+
+
 def after_expense_split(
     db: Session,
     tenant_id: int,

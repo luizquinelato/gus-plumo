@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { ArrowDown, ArrowDownCircle, ArrowUp, ArrowUpCircle, Banknote, Calendar, CreditCard, Gift, Landmark, Receipt, Scale } from 'lucide-react'
 import Badge from './Badge'
 import {
@@ -1226,7 +1227,11 @@ export default function SharedClosureItemsModal({
   isPartnerView: boolean
   onClose: () => void
 }) {
+  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<TabKey>('geral')
+  const settlementLoan = closure?.settlement_loan
+  const settlementLoanId = closure?.settlement_loan_id
+  const settlementStatus = closure?.settlement_status
   const headerResult = useMemo(
     () => computeClosureBalanceBySource(closure?.closure_data, isPartnerView).reduce((acc, row) => acc + row.result, 0),
     [closure?.closure_data, isPartnerView],
@@ -1258,6 +1263,40 @@ export default function SharedClosureItemsModal({
           <SharedClosureItemsTabs items={items} activeTab={activeTab} onTabChange={setActiveTab} />
         }
       >
+        {settlementLoanId && (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800/50 dark:bg-amber-900/20">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">
+                  Empréstimo vinculado
+                </p>
+                <p className="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                  #{settlementLoanId}
+                  {settlementLoan?.description ? ` · ${settlementLoan.description}` : ''}
+                </p>
+                {settlementLoan && (
+                  <p className="mt-0.5 text-xs text-gray-600 dark:text-gray-400">
+                    Saldo em aberto:{' '}
+                    <span className="font-semibold tabular-nums">
+                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
+                        settlementLoan.remaining_balance ?? 0,
+                      )}
+                    </span>
+                    {settlementStatus === 'settled_via_loan' ? ' · quitado via empréstimo' : ''}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm font-medium text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:bg-gray-900 dark:text-amber-200 dark:hover:bg-amber-900/40"
+                onClick={() => navigate(`/emprestimos?highlight=${settlementLoanId}`)}
+              >
+                <Landmark size={15} />
+                Ver empréstimo
+              </button>
+            </div>
+          </div>
+        )}
         <SharedClosureItemsView
           closure={closure}
           items={items}

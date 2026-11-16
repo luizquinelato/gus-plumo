@@ -4,6 +4,8 @@ import {
   IssueActionBadge,
   PreviewDataTable,
   PreviewEmptyState,
+  previewFieldValueCell,
+  previewTableColumnCell,
 } from './ImportPreviewShared'
 import MappingImportCorrectionsTable, {
   type MappingImportCorrectionRow,
@@ -101,8 +103,8 @@ export default function MappingVisualImportPreview({
       row: row.row,
       registro: row.label || '—',
       campo: change.label || change.field,
-      de: change.before || '—',
-      para: change.after || '—',
+      de: previewFieldValueCell(change.label || change.field, change.before || '—'),
+      para: previewFieldValueCell(change.label || change.field, change.after || '—'),
     })),
   )
 
@@ -154,7 +156,7 @@ export default function MappingVisualImportPreview({
               classification: cell(row.fields, 'classification'),
               priority: cell(row.fields, 'priority'),
               sharing: cell(row.fields, 'sharing'),
-              contribution: cell(row.fields, 'contribution'),
+              contribution: previewTableColumnCell('Contrib. %', cell(row.fields, 'contribution')),
               sensitive: cell(row.fields, 'sensitive'),
             }))}
           />

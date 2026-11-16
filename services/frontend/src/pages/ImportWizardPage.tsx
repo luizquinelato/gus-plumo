@@ -57,7 +57,11 @@ import ConflictReviewModal from '../components/ConflictReviewModal'
 import { matchBenefitCardIdFromFileName, type BenefitCardForMatch } from '../utils/benefitCardFileMatch'
 import { isPdfFileName, isSupportedImportFileName } from '../utils/fileTypeDetector'
 import type { MappingImportLookup } from '../utils/mappingImportCorrections'
-import { parseAxiosClosureConflict } from '../utils/closureEditImpact'
+import {
+  buildSuccessMessage,
+  extractClosureImpactFromResponse,
+  parseAxiosClosureConflict,
+} from '../utils/closureEditImpact'
 import type { ClosureEditImpact } from '../types/closureEditImpact'
 import type { ConflictResolution, ImportConflict } from '../types/importConflict'
 import {
@@ -1770,6 +1774,7 @@ export default function ImportWizardPage() {
                                   </div>
                                 </td>
                                 <td className="px-3 py-2.5 text-center">
+                                  <div className="w-full min-w-0">
                                   {isExcelKind(file.kind) ? (
                                     <p className="text-xs text-gray-500 dark:text-gray-400">
                                       {countParsedRows(file.parsedOriginal)} linhas
@@ -1807,10 +1812,10 @@ export default function ImportWizardPage() {
                                     />
                                   ) : null}
                                   {file.kind === 'fatura_bruta' ? (
-                                    <div className="flex justify-center gap-1.5">
+                                    <div className="flex w-full gap-1.5">
                                       <select
                                         value={file.year || ''}
-                                        className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900"
+                                        className={`${cadastroFilterFieldCls} min-w-0 flex-1`}
                                         onChange={(event) =>
                                           setFiles((prev) =>
                                             prev.map((item) =>
@@ -1828,7 +1833,7 @@ export default function ImportWizardPage() {
                                       </select>
                                       <select
                                         value={file.month || ''}
-                                        className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900"
+                                        className={`${cadastroFilterFieldCls} min-w-0 flex-1`}
                                         onChange={(event) =>
                                           setFiles((prev) =>
                                             prev.map((item) =>
@@ -1849,7 +1854,7 @@ export default function ImportWizardPage() {
                                   {file.kind === 'beneficio_csv' ? (
                                     <select
                                       value={file.creditCardId || ''}
-                                      className="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900"
+                                      className={cadastroFilterFieldCls}
                                       onChange={(event) =>
                                         setFiles((prev) =>
                                           prev.map((item) =>
@@ -1868,6 +1873,7 @@ export default function ImportWizardPage() {
                                       ))}
                                     </select>
                                   ) : null}
+                                  </div>
                                 </td>
                                 <td className="px-2 py-2.5 text-center">
                                   <button
@@ -2196,22 +2202,8 @@ export default function ImportWizardPage() {
         confirmText="Gravar mesmo assim"
         onClose={() => {
           if (!closureHold) return
-          const file = orderedFiles[closureHold.index]
-          const acc = [
-            ...results,
-            {
-              fileId: file.id,
-              fileName: file.file.name,
-              kind: file.kind,
-              success: false,
-              message: 'Gravação interrompida: o período está fechado.',
-              issues: [],
-              conflicts: [],
-              unmapped: 0,
-            },
-          ]
-          setClosureHold(null)
-          void runFrom(closureHold.index + 1, new Set(), acc)
+          setRunning(false)
+          resetWizard()
         }}
         onConfirm={() => {
           if (!closureHold) return
@@ -2609,34 +2601,52 @@ async function importFile(
   })
 
   if (file.kind === 'extrato_bruto') {
-    const response = await postImportWithProgress<Record<string, unknown>>(
-      '/api/import/extrato/persist',
-      { rows, ignored_rows: processed.ignoredRows },
-      jobId,
-      onProgress,
-    )
-    return finish(rawResult(file, response.data))
+    try {
+      const response = await postImportWithProgress<Record<string, unknown>>(
+        '/api/import/extrato/persist',
+        { rows, ignored_rows: processed.ignoredRows, confirm_closed_closure_impact: confirmClosed },
+        jobId,
+        onProgress,
+      )
+      return finish(rawResult(file, response.data))
+    } catch (error) {
+      const closure = parseAxiosClosureConflict(error)
+      if (closure && !confirmClosed) return { closure }
+      throw error
+    }
   }
 
   if (file.kind === 'fatura_bruta') {
-    const response = await postImportWithProgress<Record<string, unknown>>(
-      '/api/import/cartao/persist',
-      { rows },
-      jobId,
-      onProgress,
-    )
-    return finish(rawResult(file, response.data, true))
+    try {
+      const response = await postImportWithProgress<Record<string, unknown>>(
+        '/api/import/cartao/persist',
+        { rows, confirm_closed_closure_impact: confirmClosed },
+        jobId,
+        onProgress,
+      )
+      return finish(rawResult(file, response.data, true))
+    } catch (error) {
+      const closure = parseAxiosClosureConflict(error)
+      if (closure && !confirmClosed) return { closure }
+      throw error
+    }
   }
 
   if (file.kind === 'beneficio_csv') {
     if (!file.creditCardId) throw new Error('Selecione um cartão de benefícios.')
-    const response = await postImportWithProgress<Record<string, unknown>>(
-      '/api/benefit-card-statements/csv/persist',
-      { credit_card_id: file.creditCardId, rows },
-      jobId,
-      onProgress,
-    )
-    return finish(rawResult(file, response.data))
+    try {
+      const response = await postImportWithProgress<Record<string, unknown>>(
+        '/api/benefit-card-statements/csv/persist',
+        { credit_card_id: file.creditCardId, rows, confirm_closed_closure_impact: confirmClosed },
+        jobId,
+        onProgress,
+      )
+      return finish(rawResult(file, response.data))
+    } catch (error) {
+      const closure = parseAxiosClosureConflict(error)
+      if (closure && !confirmClosed) return { closure }
+      throw error
+    }
   }
 
   throw new Error('Tipo de arquivo sem gravação.')
@@ -2661,12 +2671,13 @@ function rawResult(file: WizardFile, data: Record<string, unknown>, pdf = false)
   const updated = Number(data.linhas_atualizadas ?? data.registros_atualizados ?? data.registros_duplicados ?? 0) || 0
   const unmapped = Number(data.linhas_nao_mapeadas ?? data.unmapped ?? 0) || 0
   const failed = pdf ? false : data.success === false
-  const message =
+  const baseMessage =
     typeof data.message === 'string' && data.message
       ? data.message
       : failed
         ? 'A importação não foi concluída.'
         : `${created} incluído(s), ${updated} atualizado(s).`
+  const message = buildSuccessMessage(baseMessage, extractClosureImpactFromResponse(data))
   return {
     fileId: file.id,
     fileName: file.file.name,

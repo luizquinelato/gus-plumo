@@ -1797,6 +1797,11 @@ const AccountClosuresPage = () => {
   }, [loadOptions])
 
   useEffect(() => {
+    if (filtersLoading || filtersApplied || !filterOptions) return
+    void loadYears([])
+  }, [filtersLoading, filterOptions, filtersApplied, loadYears])
+
+  useEffect(() => {
     const container = scrollContainerRef.current
     if (!container) return
     const handleScroll = () => setShowBackToTop(container.scrollTop > 300)

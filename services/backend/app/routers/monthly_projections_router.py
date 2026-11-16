@@ -121,31 +121,25 @@ class CloneResponse(BaseModel):
 class LaunchIncomeRequest(BaseModel):
     year_month: str
     periods: int = Field(1, ge=1, le=24)
-
-
-class CardItemIn(BaseModel):
-    card_id: int
-    description: str = Field(..., min_length=1, max_length=255)
-    amount: Decimal = Field(..., max_digits=15, decimal_places=2)
-    kind: Literal["fixed", "variable"] = "fixed"
-
-    @field_validator("amount")
-    @classmethod
-    def _amount_not_zero(cls, v: Decimal) -> Decimal:
-        if v == 0:
-            raise ValueError("O valor deve ser diferente de zero")
-        return v
+    advance_on_day_15: bool = True
 
 
 class LaunchCardsRequest(BaseModel):
     year_month: str
     card_ids: List[int] = Field(..., min_length=1)
-    history_months: int = Field(service.DEFAULT_HISTORY_MONTHS, ge=1, le=24)
-    include_average: bool = True
-    include_installments: bool = False
-    sharing: Literal["own", "mine", "all"] = "all"
-    basis: Literal["current", "average"] = "average"
-    items: List[CardItemIn] = []
+    mode: Literal["invoice", "installments"]
+    sharing: Literal["own", "mine"] = "mine"
+
+
+class InvoicePreviewOut(BaseModel):
+    card_id: int
+    card_name: str
+    card_number: str
+    invoice_year_month: str
+    due_day: int
+    has_invoice: bool
+    amount: Decimal
+    my_amount: Decimal
 
 
 class LaunchResponse(BaseModel):
@@ -167,7 +161,7 @@ class InstallmentPreviewOut(BaseModel):
 async def installments_preview(
     year_month: str = Query(..., description="YYYY-MM"),
     card_ids: str = Query(..., description="IDs separados por vírgula"),
-    sharing: str = Query("all", pattern="^(own|mine|all)$"),
+    sharing: str = Query("mine", pattern="^(own|mine)$"),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_account),
 ):
@@ -178,6 +172,23 @@ async def installments_preview(
     except ValueError:
         raise HTTPException(status_code=422, detail="card_ids inválido")
     return service.installments_for_month(db, tenant_id, account_id, year_month, ids, sharing)
+
+
+@router.get("/invoice-preview", response_model=List[InvoicePreviewOut])
+async def invoice_preview(
+    year_month: str = Query(..., description="YYYY-MM"),
+    card_ids: str = Query(..., description="IDs separados por vírgula"),
+    sharing: str = Query("mine", pattern="^(own|mine)$"),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    tenant_id, account_id, _user_id = _scope(current_user)
+    _check_ym(year_month)
+    try:
+        ids = [int(x) for x in card_ids.split(",") if x.strip()]
+    except ValueError:
+        raise HTTPException(status_code=422, detail="card_ids inválido")
+    return service.invoice_preview_for_month(db, tenant_id, account_id, year_month, ids, sharing)
 
 
 def _month_response(db: Session, tenant_id: int, account_id: int, year_month: str) -> MonthResponse:
@@ -419,7 +430,15 @@ async def launch_income(
 ):
     tenant_id, account_id, user_id = _scope(current_user)
     _check_ym(body.year_month)
-    created = service.launch_income_projections(db, tenant_id, account_id, user_id, body.year_month, body.periods)
+    created = service.launch_income_projections(
+        db,
+        tenant_id,
+        account_id,
+        user_id,
+        body.year_month,
+        body.periods,
+        advance_on_day_15=body.advance_on_day_15,
+    )
     return LaunchResponse(created=created)
 
 
@@ -431,16 +450,16 @@ async def launch_cards(
 ):
     tenant_id, account_id, user_id = _scope(current_user)
     _check_ym(body.year_month)
-    if not body.include_average and not body.include_installments and not body.items:
-        raise HTTPException(status_code=422, detail="Informe a média, o saldo parcelado ou ao menos um item individual")
     try:
         created = service.launch_card_projections(
-            db, tenant_id, account_id, user_id, body.year_month,
-            body.card_ids, body.history_months, body.include_average,
-            [i.model_dump() for i in body.items],
-            include_installments=body.include_installments,
+            db,
+            tenant_id,
+            account_id,
+            user_id,
+            body.year_month,
+            body.card_ids,
+            body.mode,
             sharing=body.sharing,
-            basis=body.basis,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

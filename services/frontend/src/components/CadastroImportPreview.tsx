@@ -3,6 +3,8 @@ import {
   ImportPreviewIssuesSection,
   PreviewDataTable,
   PreviewEmptyState,
+  previewFieldValueCell,
+  previewTableColumnCell,
   type ImportPreviewIssue,
 } from './ImportPreviewShared'
 import CartoesImportPreview from './CartoesImportPreview'
@@ -118,10 +120,10 @@ function CreateTable({ rows }: { rows: CadastroImportPreviewRow[] }) {
     <PreviewDataTable
       columns={columns}
       rows={sorted.map((row) => {
-        const cells: Record<string, string | number> = { row: row.row }
+        const cells: Record<string, string | number | ReturnType<typeof previewTableColumnCell>> = { row: row.row }
         for (const column of columns) {
           if (column.key === 'row') continue
-          cells[column.key] = row.fields_after?.[column.key] || '—'
+          cells[column.key] = previewTableColumnCell(column.label, row.fields_after?.[column.key])
         }
         return cells
       })}
@@ -136,8 +138,8 @@ function UpdateTable({ rows }: { rows: CadastroImportPreviewRow[] }) {
       row: row.row,
       registro: row.label || '—',
       campo: change.label || change.field,
-      de: change.before || '—',
-      para: change.after || '—',
+      de: previewFieldValueCell(change.label || change.field, change.before || '—'),
+      para: previewFieldValueCell(change.label || change.field, change.after || '—'),
     })),
   )
   return (

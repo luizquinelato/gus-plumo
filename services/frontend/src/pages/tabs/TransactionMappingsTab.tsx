@@ -2202,24 +2202,6 @@ const TransactionMappingsTab = () => {
                       </span>
                     </label>
                   </CadastroModalFieldsRow>
-                  {applyToExistingRecords ? (
-                    <CadastroModalFieldsRow>
-                      <label className={`${cadastroOptionLabelCls} items-start`}>
-                        <input
-                          type="checkbox"
-                          checked={applyOverwriteSharing}
-                          onChange={(e) => setApplyOverwriteSharing(e.target.checked)}
-                          className={`${cadastroAccentControlCls} mt-0.5 h-4 w-4 rounded border-gray-300`}
-                        />
-                        <span>
-                          <span className="block text-sm font-medium">Sobrescrever compartilhamento</span>
-                          <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
-                            Desmarcado, aplica o parceiro deste mapeamento quando houver um; não remove compartilhamento já gravado se o mapeamento for &quot;Próprio&quot;. Marcado, espelha exatamente este mapeamento (Próprio remove compartilhamento nos lançamentos).
-                          </span>
-                        </span>
-                      </label>
-                    </CadastroModalFieldsRow>
-                  ) : null}
                 </CadastroModalFieldsGrid>
               </CadastroFormSection>
 
@@ -2572,7 +2554,7 @@ const TransactionMappingsTab = () => {
                 </CadastroModalFieldsGrid>
               </CadastroFormSection>
 
-              <CadastroFormSection title="Regras" icon={<Users size={14} />}>
+              <CadastroFormSection title="Compartilhamento" icon={<Users size={14} />}>
                 <CadastroModalFieldsGrid>
                   <CadastroModalFieldsRow cols={2}>
                     <label className="block min-w-0">
@@ -2682,6 +2664,33 @@ const TransactionMappingsTab = () => {
                       />
                     )}
                   </CadastroModalFieldsRow>
+                  {applyToExistingRecords ? (
+                    <CadastroModalFieldsRow>
+                      <label className={`${cadastroOptionLabelCls} items-start`}>
+                        <input
+                          type="checkbox"
+                          checked={applyOverwriteSharing}
+                          onChange={(e) => setApplyOverwriteSharing(e.target.checked)}
+                          className={`${cadastroAccentControlCls} mt-0.5 h-4 w-4 rounded border-gray-300`}
+                        />
+                        <span>
+                          <span className="block text-sm font-medium">Sobrescrever compartilhamento</span>
+                          <span className="mt-0.5 block space-y-1 text-xs text-gray-500 dark:text-gray-400">
+                            <span className="block">
+                              <span className="font-medium text-gray-600 dark:text-gray-300">Desmarcado:</span>{' '}
+                              só muda compartilhamento se este mapeamento tiver parceiro. Se for &quot;Próprio&quot;, os
+                              lançamentos que já têm compartilhamento no banco continuam como estão.
+                            </span>
+                            <span className="block">
+                              <span className="font-medium text-gray-600 dark:text-gray-300">Marcado:</span>{' '}
+                              todos os lançamentos que batem com o critério ficam iguais a este mapeamento — parceiro e
+                              % daqui, ou sem compartilhamento se estiver &quot;Próprio&quot;.
+                            </span>
+                          </span>
+                        </span>
+                      </label>
+                    </CadastroModalFieldsRow>
+                  ) : null}
                   <CadastroModalFieldsRow>
                     <label className={`${cadastroOptionLabelCls} items-start`}>
                       <div className="relative mt-0.5 flex-shrink-0">
