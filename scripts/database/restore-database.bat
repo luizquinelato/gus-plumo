@@ -1,41 +1,29 @@
 @echo off
 setlocal enabledelayedexpansion
 
+for %%I in ("%~f0") do set "DATABASE_SCRIPTS=%%~dpI"
+
 echo ========================================
 echo   Plumo - Database Restore
 echo ========================================
 echo.
 
 REM Navegar para a raiz do projeto
-pushd %~dp0..\..
+pushd %DATABASE_SCRIPTS%..\..
 
-REM Verificar se foi passado --dev ou --prod como parâmetro
 set "TARGET_ENV="
+set "KEYS_FROM="
 set "BACKUP_FILE="
 
 :parse_args
 if "%~1"=="" goto :done_args
-if /i "%~1"=="--dev" (
-    set "TARGET_ENV=dev"
-    shift
-    goto :parse_args
-)
-if /i "%~1"=="dev" (
-    set "TARGET_ENV=dev"
-    shift
-    goto :parse_args
-)
-if /i "%~1"=="--prod" (
-    set "TARGET_ENV=prod"
-    shift
-    goto :parse_args
-)
-if /i "%~1"=="prod" (
-    set "TARGET_ENV=prod"
-    shift
-    goto :parse_args
-)
-REM Se não é flag, assume que é o arquivo de backup
+if /i "%~1"=="--dev" set "TARGET_ENV=dev" & shift & goto :parse_args
+if /i "%~1"=="dev" set "TARGET_ENV=dev" & shift & goto :parse_args
+if /i "%~1"=="--prod" set "TARGET_ENV=prod" & shift & goto :parse_args
+if /i "%~1"=="prod" set "TARGET_ENV=prod" & shift & goto :parse_args
+if /i "%~1"=="--to" set "TARGET_ENV=%~2" & shift & shift & goto :parse_args
+if /i "%~1"=="--from" set "KEYS_FROM=%~2" & shift & shift & goto :parse_args
+if /i "%~1"=="--keys" set "KEYS_FROM=%~2" & shift & shift & goto :parse_args
 set "BACKUP_FILE=%~1"
 shift
 goto :parse_args
@@ -91,6 +79,21 @@ if not defined DB_USER set DB_USER=plumo
 if not defined DB_PASSWORD set DB_PASSWORD=plumo
 if not defined ENVIRONMENT set ENVIRONMENT=prod
 
+if not defined TARGET_ENV set "TARGET_ENV=prod"
+if /i not "!TARGET_ENV!"=="dev" if /i not "!TARGET_ENV!"=="prod" (
+    echo [ERROR] --to deve ser dev ou prod
+    popd & pause & exit /b 1
+)
+if /i "!TARGET_ENV!"=="dev" (
+    set CONTAINER_NAME=plumo-postgres-dev
+    set DB_NAME=plumo_dev
+    set ENVIRONMENT=dev
+) else if /i "!TARGET_ENV!"=="prod" (
+    set CONTAINER_NAME=plumo-postgres
+    set DB_NAME=plumo
+    set ENVIRONMENT=prod
+)
+if defined KEYS_FROM echo [INFO] Apos restore, chaves --from %KEYS_FROM% --to %TARGET_ENV%
 echo [INFO] Target Environment: %ENVIRONMENT%
 echo [INFO] Target Database: %DB_NAME%
 echo [INFO] Target Container: %CONTAINER_NAME%
@@ -157,10 +160,11 @@ if !COUNT!==0 (
 )
 
 echo.
-echo Usage: restore-database.bat [--dev^|--prod] [backup_file]
+echo Usage: restore-database.bat [backup_file] --to dev^|prod [--keys prod^|dev]
 echo.
-echo   --dev   Restore to DEV environment (plumo_dev on port 5433)
-echo   --prod  Restore to PROD environment (plumo on port 5432)
+echo   --to dev   Restore to DEV (plumo_dev / 5433)
+echo   --to prod  Restore to PROD local (plumo / 5432)
+echo   --keys     Ambiente de origem do backup (JWT/ENCRYPTION); default: .meta ou prod
 echo.
 set /p CHOICE="Select backup number to restore (1-!COUNT!) or 0 to cancel: "
 
@@ -189,6 +193,10 @@ REM Obter arquivo selecionado
 call set "SELECTED_BACKUP=%%BACKUP_FILE_!CHOICE!%%"
 
 :do_restore
+
+if not defined KEYS_FROM (
+    for /f "usebackq delims=" %%E in (`python "%DATABASE_SCRIPTS%backup_meta.py" read "!SELECTED_BACKUP!" 2^>nul`) do set "KEYS_FROM=%%E"
+)
 
 echo.
 echo ========================================
@@ -252,6 +260,13 @@ echo:
 REM Limpar arquivo temporário
 docker exec %CONTAINER_NAME% rm /tmp/restore.backup 2>nul
 
+if not defined KEYS_FROM set "KEYS_FROM=prod"
+echo [5/5] Chaves --keys %KEYS_FROM% --^> .env.%TARGET_ENV%...
+python "%DATABASE_SCRIPTS%sync-env-keys.py" --from %KEYS_FROM% --to %TARGET_ENV%
+if errorlevel 1 (
+    echo [WARN] sync-env-keys falhou — verifique .env.%KEYS_FROM%
+)
+
 echo ========================================
 echo   Restore Completed!
 echo ========================================
@@ -260,7 +275,7 @@ echo Database: %DB_NAME%
 echo Restored from: !SELECTED_BACKUP!
 echo:
 echo [INFO] Your application should now use the restored data.
-echo:
+echo.
 popd
 pause
 

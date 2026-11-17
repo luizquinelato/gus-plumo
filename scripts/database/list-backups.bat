@@ -66,8 +66,16 @@ for /f "delims=" %%F in ('dir /b /o-d backups\*.backup 2^>nul') do (
         set /a SIZE_SQL_KB=!SIZE_SQL! / 1024
         set SQL_INFO=+ SQL (!SIZE_SQL_KB! KB^)
     )
+
+    set SOURCE_ENV=
+    for /f "delims=" %%S in ('python scripts\database\backup_meta.py read "backups\%%F" 2^>nul') do set SOURCE_ENV=%%S
+    if defined SOURCE_ENV (
+        set SOURCE_LINE=source: !SOURCE_ENV!
+    ) else (
+        set SOURCE_LINE=
+    )
     
-    echo [!INDEX!] !DATE_PART! !TIME_PART!
+    echo [!INDEX!] !DATE_PART! !TIME_PART! !SOURCE_LINE!
     echo     Custom: !SIZE_BACKUP_KB! KB !SQL_INFO!
     echo     File: %%F
     echo.

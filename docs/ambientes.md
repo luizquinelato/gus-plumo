@@ -162,5 +162,5 @@ run-all-tabs-dev    # app usa plumo_dev na porta 5433
 
 Deploy separado: `docker-compose.online.yml` + `.env.online` no servidor (template `env.online.example`).
 
-Passo a passo completo — criar VPS, gerar `JWT_SECRET_KEY` / `ENCRYPTION_KEY` (Fernet), fase A (migrations) e fase B (restore): **[hospedagem-online.md](hospedagem-online.md)**.
+Passo a passo — VPS, backup `--from`, restore `--to` / `--keys`, `ship-online-env.ps1`: **[hospedagem-online.md](hospedagem-online.md)**. Detalhe dos scripts: **[scripts/database/README.md](../scripts/database/README.md)**.
 

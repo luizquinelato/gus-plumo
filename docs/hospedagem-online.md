@@ -143,17 +143,27 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 - `PUBLIC_HOST`: só hostname, sem `https://` (`37-27-37-103.sslip.io`).
 - **`RUN_MIGRATIONS=1`** na primeira subida (fase A).
 
-#### 3.4 Fase B — depois do restore de produção
+#### 3.4 Backup / restore e chaves (sem sidecar, VPS só `.env.online`)
 
-**Substitua** no `.env.online`:
+- **Backup:** `--from prod|dev` grava dump + arquivo `.meta` (só `SOURCE_ENV` — **pode** ir no Git com a pasta `backups/`).
+- **Restore:** `--to` = destino do banco; `--keys` = ambiente de onde vieram os dados cifrados (normalmente = `SOURCE_ENV` do `.meta`).
+- **No VPS** não há `.env.prod` — um único comando no PC publica chaves:
 
-- `JWT_SECRET_KEY` e `ENCRYPTION_KEY` → **copie exatamente** de `.env.prod` local (mesmo backup de origem).
-- `RUN_MIGRATIONS=0` → não reaplicar migrations após `pg_restore`.
-- `DB_PASSWORD` pode permanecer a do VPS (só o cluster online); os **dados** vêm do restore.
+```powershell
+.\scripts\database\ship-online-env.ps1 -Keys prod
+```
 
-Não commite `.env.online` nem backups (`.backup`/`.sql`) no Git.
+Isso sincroniza a partir de `.env.prod` no PC, valida `.env.online` e faz `scp` (não envia `.env.prod`).
 
-#### 3.5 Checklist do `.env.online`
+| Variável | Fase B |
+|----------|--------|
+| JWT / ENCRYPTION em `.env.online` | Iguais ao **prod** (via `ship-online-env.ps1` no PC) |
+| `DB_PASSWORD` | **Só** a do VPS (nunca copiada de prod) |
+| `RUN_MIGRATIONS` | `0` após restore |
+
+Não commite `.env.prod`, `.env.dev`, `.env.online`. Cuidado: dumps `.backup` têm dados financeiros (repo privado).
+
+#### 3.6 Checklist do `.env.online`
 
 - [ ] `DB_PASSWORD`, `JWT_SECRET_KEY`, `ENCRYPTION_KEY` preenchidos (não placeholders).
 - [ ] `chmod 600 .env.online`
@@ -212,53 +222,54 @@ ss -tlnp | grep -E ':(22|80|443|5432|8000|8001)\b'
 Recomendações:
 
 - Trocar senha do usuário seed após validar a fase A.
-- Não publicar backups no Git.
+- Backups em repo **privado**; `.meta` não contém segredos, o dump sim.
 - Após restore, login com credenciais do ambiente de origem.
 
 ---
 
 ### Fase 6 — Restore de produção (fase B)
 
-#### 6.1 Gerar backup no PC (prod local)
-
-Com Postgres local no Docker (`docker-compose.db.yml`), use os scripts em `scripts/database/` ou, se o container for `plumo-postgres`:
+#### 6.1 No PC: backup + Git + env
 
 ```powershell
 cd c:\Workspace\gus-plumo
-.\scripts\database\backup-database.bat
-# Gera backups\plumo_prod_YYYYMMDD_HH-MM-SS.backup
+.\scripts\database\backup-database.bat --from prod --for-online
+git add backups
+git commit -m "backup prod"
+git push
+.\scripts\database\ship-online-env.ps1 -Keys prod
 ```
 
-#### 6.2 Parar apps no VPS (mantém Postgres)
+Gera `plumo_prod_….backup`, `.sql` e `.meta` (sem segredos).
+
+#### 6.2 No VPS: parar apps (mantém Postgres)
 
 ```bash
 cd /opt/gus-plumo
 docker compose --env-file .env.online -f docker-compose.online.yml stop backend auth web
 ```
 
-#### 6.3 Enviar backup
-
-```powershell
-scp -i $env:USERPROFILE\.ssh\id_ed25519_plumo `
-  c:\Workspace\gus-plumo\backups\SEU_ARQUIVO.backup `
-  root@37.27.37.103:/opt/gus-plumo/backups/
-```
-
-No VPS: `mkdir -p /opt/gus-plumo/backups`
-
-#### 6.4 Restore
+#### 6.3 Pull + restore
 
 ```bash
-cd /opt/gus-plumo
+git pull
 chmod +x scripts/database/restore-online.sh
-./scripts/database/restore-online.sh backups/SEU_ARQUIVO.backup
+./scripts/database/restore-online.sh backups/plumo_prod_SEU_ARQUIVO.backup --to online --keys prod
 ```
 
-#### 6.5 Ajustar `.env.online` e subir
+O script usa `.env.online` (enviado pelo `ship-online-env.ps1`), valida chaves e define `RUN_MIGRATIONS=0`. `--keys` pode ser omitido se existir `.meta`.
 
-1. `JWT_SECRET_KEY` e `ENCRYPTION_KEY` = mesmos de `.env.prod`.
-2. `RUN_MIGRATIONS=0`
-3. `docker compose --env-file .env.online -f docker-compose.online.yml up -d`
+Restore local (ex. prod → dev):
+
+```powershell
+.\scripts\database\restore-database.bat backups\arquivo.backup --to dev --keys prod
+```
+
+#### 6.4 Subir stack
+
+```bash
+docker compose --env-file .env.online -f docker-compose.online.yml up -d
+```
 
 **Avatares / uploads:** o restore **não** copia `services/backend/uploads/`. Se precisar, copie para o volume Docker `plumo_online_uploads` (arquivos sob `avatars/`) via `docker cp` ou rsync documentado no suporte.
 
