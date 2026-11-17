@@ -46,7 +46,7 @@ interface SharedAccountDisplayProps {
 const SharedAccountDisplay = ({
   account,
   ownershipPercentage,
-  compact = false,
+  compact: _compact = false,
   nameClassName = '',
   allowWrap = false,
 }: SharedAccountDisplayProps) => {

@@ -52,7 +52,6 @@ import {
   ListTableSpacerCell,
   ListTableSpacerCol,
   ListTableSpacerHeader,
-  ListTableStaticHeader,
 } from '../components/ListTableSelectColumns'
 import {
   CadastroFieldLabel,
@@ -538,7 +537,7 @@ export default function ProjecaoMensalPage() {
   const [installmentPreview, setInstallmentPreview] = useState<InstallmentPreview[]>([])
   const [cardPreviewLoading, setCardPreviewLoading] = useState(false)
   /** Preferência de seleção entre modos (fatura / estimativa); não encolhe ao trocar de opção. */
-  const [cardLaunchSelection, setCardLaunchSelection] = useState<number[]>([])
+  const [, setCardLaunchSelection] = useState<number[]>([])
 
   const launchableIdsFromInvoice = (rows: InvoicePreviewRow[]) =>
     rows.filter((r) => r.has_invoice).map((r) => r.card_id)

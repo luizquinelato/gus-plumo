@@ -57,7 +57,7 @@ const BatchMoveInvoiceCardModal = ({
     type: 'error',
   })
 
-  useEscapeKey(isOpen, onClose)
+  useEscapeKey(onClose, isOpen)
 
   useEffect(() => {
     if (isOpen) {

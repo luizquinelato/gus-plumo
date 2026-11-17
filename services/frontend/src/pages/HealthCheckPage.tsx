@@ -366,8 +366,7 @@ function ItemSourceIcons({
         <ArrowLeftRight
           size={14}
           className="text-cyan-600 dark:text-cyan-400"
-          aria-label="Item Invertido/Migrado"
-          title="Item invertido de outra conta"
+          aria-label="Item invertido de outra conta"
         />
       ) : null}
       {isManual && !migratedFromAccountId ? (
@@ -1442,14 +1441,7 @@ const HealthCheckPage = () => {
                           }}
                           contentStyle={chartTooltipStyle}
                         />
-                        <Legend
-                          payload={[
-                            { value: 'Entradas', type: 'square', color: colors.success, id: 'entries' },
-                            { value: 'Saídas', type: 'square', color: colors.danger, id: 'exits' },
-                            { value: 'Tendência entradas', type: 'line', color: colors.success, id: 'trend_entries' },
-                            { value: 'Tendência saídas', type: 'line', color: colors.danger, id: 'trend_exits' },
-                          ]}
-                        />
+                        <Legend />
                         <Bar dataKey="entries" name="Entradas" fill={colors.success} radius={[4, 4, 0, 0]}>
                           {series.map((item) => (
                             <Cell
@@ -1688,22 +1680,7 @@ const HealthCheckPage = () => {
                       labelFormatter={(label) => shortMonthLabel(String(label))}
                       contentStyle={chartTooltipStyle}
                     />
-                    <Legend
-                      payload={[
-                        {
-                          value: categoryView.kind === 'entries' ? 'Receitas' : 'Gastos',
-                          type: 'square',
-                          color: categoryView.kind === 'entries' ? colors.success : colors.danger,
-                          id: 'amount',
-                        },
-                        {
-                          value: 'Tendência',
-                          type: 'line',
-                          color: categoryView.kind === 'entries' ? colors.success : colors.danger,
-                          id: 'trend',
-                        },
-                      ]}
-                    />
+                    <Legend />
                     <Bar
                       dataKey="amount"
                       name={categoryView.kind === 'entries' ? 'Receitas' : 'Gastos'}

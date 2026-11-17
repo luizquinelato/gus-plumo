@@ -42,7 +42,6 @@ export default function CadastroImportModal({
   config,
   onClose,
   onSuccess,
-  onError,
 }: CadastroImportModalProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)

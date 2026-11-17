@@ -219,6 +219,7 @@ export default function SharedBalanceClosureActionsModal({
   return (
     <CadastroModalShell maxWidth="max-w-md" onBackdropClick={onClose}>
       <CadastroModalHeader
+        isEdit={menuScope === 'edit'}
         title={menuScope === 'edit' ? 'Editar fechamento' : 'Ações do fechamento'}
         onClose={onClose}
         icon={menuScope === 'edit' ? <Edit2 size={18} /> : <Banknote size={18} />}

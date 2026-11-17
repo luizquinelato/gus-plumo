@@ -156,6 +156,7 @@ docker compose --env-file .env.online -f docker-compose.online.yml up -d
 
 | Sintoma | Ação |
 |---------|------|
+| `plumo-online-postgres` unhealthy na 1ª subida | Postgres 18 exige volume em `/var/lib/postgresql` (não `/var/lib/postgresql/data`). Após `git pull`, se ainda não há dados de prod: `docker compose --env-file .env.online -f docker-compose.online.yml down` → `docker volume rm plumo_online_pgdata` → `up -d --build`. Logs: `docker compose ... logs postgres --tail 80` |
 | Certificado TLS | Confirme `PUBLIC_HOST` e portas 80/443 no firewall |
 | 502 no login | Logs: `docker compose ... logs backend auth` |
 | CORS | `CORS_ORIGINS` deve ser exatamente `PUBLIC_URL` |

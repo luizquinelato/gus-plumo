@@ -294,60 +294,6 @@ const RemainingItemsTable = ({
   return <div className={tableWrapperClass}>{tableContent}</div>
 }
 
-const RemainingTotalBanner = ({ section }: { section: InvoiceDetailsSection }) => {
-  const { nextMonth, future, saldoDevedor } = calcRemainingTotals(section.items, section)
-
-  return (
-    <div className="rounded-xl border border-red-200 dark:border-red-800 overflow-hidden shadow-sm">
-      <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-red-600 to-red-700 text-white">
-        <div className="flex items-center gap-3">
-          <Clock size={20} />
-          <span className="font-bold text-lg">Saldo devedor</span>
-          <span className="text-xs opacity-90">
-            ({section.count} {section.count === 1 ? 'compra' : 'compras'})
-          </span>
-        </div>
-        <span className="text-xl font-bold">
-          -{formatCurrency(saldoDevedor)}
-        </span>
-      </div>
-      <div className="grid grid-cols-2 divide-x divide-red-200 dark:divide-red-800 bg-red-50 dark:bg-red-950/25">
-        <div className="px-6 py-3 flex items-center justify-between">
-          <span className="text-sm font-semibold text-red-800 dark:text-red-300">Próximo mês</span>
-          <span className="text-sm font-bold text-red-700 dark:text-red-400">-{formatCurrency(nextMonth)}</span>
-        </div>
-        <div className="px-6 py-3 flex items-center justify-between">
-          <span className="text-sm font-semibold text-red-900/80 dark:text-red-200">Futuro</span>
-          <span className="text-sm font-bold text-red-700 dark:text-red-400">-{formatCurrency(future)}</span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-const MonthTotalBanner = ({ section }: { section: InvoiceDetailsSection }) => (
-  <div className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-    <div
-      className="flex items-center justify-between px-6 py-4"
-      style={{
-        background: 'linear-gradient(to right, var(--color-1), var(--color-2))',
-        color: 'white',
-      }}
-    >
-      <div className="flex items-center gap-3">
-        <Calendar size={20} />
-        <span className="font-bold text-lg">Total do mês</span>
-        <span className="text-xs opacity-80">
-          ({section.count} {section.count === 1 ? 'transação' : 'transações'})
-        </span>
-      </div>
-      <span className="text-xl font-bold">
-        -{formatCurrency(Math.abs(Number(section.total)))}
-      </span>
-    </div>
-  </div>
-)
-
 const CardBreakdownSection = ({
   section,
   variant,

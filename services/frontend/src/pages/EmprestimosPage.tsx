@@ -408,20 +408,6 @@ export default function EmprestimosPage() {
     }
   }
 
-  const handleAmountBlur = (value: string, setter: (v: string) => void, forceSign?: 'negative' | 'positive') => {
-    const amount = parseFloat(value)
-    if (!isNaN(amount)) {
-      let finalAmount = amount
-      // Garante o sinal correto no blur
-      if (forceSign === 'negative' && finalAmount > 0) {
-        finalAmount = -finalAmount
-      } else if (forceSign === 'positive' && finalAmount < 0) {
-        finalAmount = Math.abs(finalAmount)
-      }
-      setter(finalAmount.toFixed(2))
-    }
-  }
-
   const showToast = (message: string, type: 'success' | 'error' | 'warning') => {
     setToast({ show: true, message, type })
   }
@@ -898,24 +884,6 @@ export default function EmprestimosPage() {
     void exportRunner.run('Gerando PDF…', () => exportLoansToPdf(buildExportContext()))
   }
 
-  const getStatusIcon = (loan: Loan) => {
-    // Status: Apenas Open e Settled
-    const statusConfig: Record<string, { icon: any; cssVar: string; label: string }> = {
-      open: { icon: Clock, cssVar: '--status-info', label: 'Aberto' },
-      settled: { icon: CheckCircle, cssVar: '--status-success', label: 'Quitado' }
-    }
-    const config = statusConfig[loan.status]
-    const Icon = config.icon
-    return (
-      <span
-        className="inline-flex items-center justify-center p-1 rounded-full text-white"
-        style={{ backgroundColor: `var(${config.cssVar})` }}
-        title={config.label}
-      >
-        <Icon size={14} />
-      </span>
-    )
-  }
 
   const renderLoanPaymentHistory = (loan: Loan) => (
     <div className="mt-4 ml-10">
@@ -1191,7 +1159,7 @@ export default function EmprestimosPage() {
 
                         // Calcular valor corrigido com juros (se habilitado)
                         let correctedDisplay = principalDisplay
-                        let interestInfo: { correctedAmount: number; interestAmount: number; periods: number } | null = null
+                        let interestInfo: { correctedAmount: number; interestAmount: number; periods: number; description: string } | null = null
                         if (loan.interest_enabled && loan.interest_rate && loan.interest_type && loan.interest_period) {
                           interestInfo = calculateInterest(
                             loan.principal_amount,

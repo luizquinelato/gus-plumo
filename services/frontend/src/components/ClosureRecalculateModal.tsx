@@ -69,6 +69,13 @@ export type ClosureRecalcPreview = {
   period: { start: string; end: string; partner_account_id: number }
 }
 
+type ClosureAccountCardSnapshot = {
+  total_to_receive?: number | string
+  total_to_pay?: number | string
+  loan_to_receive?: number | string
+  loan_to_pay?: number | string
+}
+
 type ClosureLike = {
   id: number
   month: number
@@ -160,8 +167,9 @@ function RecalcDiffPanelCell({
 
 function viewerClosureNet(closureLike: ClosureLike, isPartnerView: boolean): number {
   const closureData = closureLike.closure_data || {}
-  const viewerCard =
-    (isPartnerView ? closureData.partner_account_card : closureData.main_account_card) || {}
+  const rawCard = isPartnerView ? closureData.partner_account_card : closureData.main_account_card
+  const viewerCard: ClosureAccountCardSnapshot =
+    typeof rawCard === 'object' && rawCard !== null ? (rawCard as ClosureAccountCardSnapshot) : {}
   const toReceive = parseFloat(String(viewerCard.total_to_receive ?? 0))
   const toPay = -Math.abs(parseFloat(String(viewerCard.total_to_pay ?? 0)))
   const loanToReceive = parseFloat(String(viewerCard.loan_to_receive ?? 0))
@@ -536,7 +544,6 @@ export default function ClosureRecalculateModal({
                         {preview.summary.tag_only_count > 0 ? (
                           <Badge
                             variant="filter"
-                            tone="brand2"
                             label={`${preview.summary.tag_only_count} tag/subtag`}
                           />
                         ) : null}

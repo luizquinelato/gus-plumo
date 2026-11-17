@@ -145,10 +145,15 @@ export async function parseExtratoExportWorkbook(file: File): Promise<ParsedExtr
     )
   }
 
+  const sheetName = (sheet: XLSX.WorkSheet | null) =>
+    sheet ? wb.SheetNames.find((n) => wb.Sheets[n] === sheet) ?? null : null
+  const bankSheetName = sheetName(bankSheet)
+  const benefitSheetName = sheetName(benefitSheet)
+
   const skipped_sheets = wb.SheetNames.filter(
     (n) =>
-      n !== bankSheet &&
-      n !== benefitSheet &&
+      n !== bankSheetName &&
+      n !== benefitSheetName &&
       !BANK_SHEET_NAMES.includes(n) &&
       !BENEFIT_SHEET_NAMES.includes(n),
   )

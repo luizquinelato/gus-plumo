@@ -149,7 +149,7 @@ export function exportCartoesToExcel(
     invoice_group_id?: number | null
     invoice_group_name?: string | null
     expense_sharing_id?: number | null
-    expense_sharing?: { id?: number; shared_account?: { name?: string } } | null
+    expense_sharing?: { id?: number; shared_account?: { name?: string | null } | null } | null
     expense_ownership_percentage?: number | null
     revenue_ownership_percentage?: number | null
     active: boolean
@@ -215,7 +215,7 @@ export function exportTemplatesToExcel(
       subtag?: { tag_name?: string | null; name: string; type: string } | null
       ownership_percentage: number
       expense_sharing_id?: number | null
-    expense_sharing?: { id?: number; shared_account?: { name?: string } } | null
+    expense_sharing?: { id?: number; shared_account?: { name?: string | null } | null } | null
       display_order: number
     }>
   }>,

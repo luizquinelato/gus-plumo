@@ -1,4 +1,4 @@
-import { downloadExcelSafe, excelDateStamp } from './excelExportClient'
+import { downloadExcelSafe, excelDateStamp, type ExcelSheetSpec } from './excelExportClient'
 import { downloadPdf, type PdfBlock } from './pdfExportClient'
 
 export interface LoanPaymentForExport {
@@ -132,7 +132,7 @@ export async function exportLoansToExcel(ctx: LoansExportContext): Promise<void>
   const loanRows = loanSheetRows(ctx.loans)
   const paymentRows = paymentSheetRows(ctx.loans)
 
-  const sheets = [
+  const sheets: ExcelSheetSpec[] = [
     {
       name: 'Empréstimos',
       rows: loanRows,

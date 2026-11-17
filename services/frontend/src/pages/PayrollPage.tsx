@@ -87,8 +87,11 @@ interface IncomeReport {
   report_year?: number | null
   calendar_year?: number | null
   payer_name?: string | null
+  payer_cnpj?: string | null
   beneficiary_name?: string | null
+  beneficiary_cpf?: string | null
   nature_description?: string | null
+  nature_code?: string | null
   issued_at?: string | null
   created_at: string
 }

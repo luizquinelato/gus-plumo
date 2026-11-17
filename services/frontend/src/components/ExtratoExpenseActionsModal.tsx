@@ -26,7 +26,7 @@ export interface ExtratoExpenseActionsTarget {
   amount: number
   date: string
   source: string
-  linked_invoice?: { id: number; description?: string | null } | null
+  linked_invoice?: { id?: number; match_id?: number; description?: string | null; display_name?: string | null } | null
   shared_partner_id: number | null
   migrated_from_account_id: number | null
 }
@@ -145,7 +145,7 @@ export default function ExtratoExpenseActionsModal({
 
   return (
     <CadastroModalShell maxWidth="max-w-md" onBackdropClick={onClose}>
-      <CadastroModalHeader title="Ações do lançamento" onClose={onClose} />
+      <CadastroModalHeader isEdit={false} title="Ações do lançamento" onClose={onClose} />
       <CadastroModalBody>
         <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 dark:border-gray-600 dark:bg-gray-900/50">
           <p className="text-sm font-medium text-gray-900 dark:text-white break-words">

@@ -24,7 +24,6 @@ import {
   CadastroModalFooter,
   CadastroModalHeader,
   CadastroModalShell,
-  cadastroAccentControlCls,
   cadastroFieldCls,
   cadastroSectionsStackCls,
 } from '../components/CadastroFormLayout'
@@ -1245,13 +1244,12 @@ const ItemSourceSymbols = ({ item }: { item: AccountPeriodItem }) => {
   const Icon = meta.Icon
   return (
     <div className="flex items-center gap-1">
-      <Icon className="inline" style={{ color: meta.color }} size={20} aria-label={meta.label} title={meta.label} />
+      <Icon className="inline" style={{ color: meta.color }} size={20} aria-label={meta.label} />
       {item.migrated_from_account_id ? (
         <ArrowLeftRight
           size={16}
           className="text-cyan-600 dark:text-cyan-400"
-          aria-label="Item Invertido/Migrado"
-          title="Item invertido de outra conta"
+          aria-label="Item invertido de outra conta"
         />
       ) : null}
       {source === 'bank' && item.is_manual && !item.migrated_from_account_id ? (

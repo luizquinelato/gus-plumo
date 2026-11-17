@@ -1,0 +1,149 @@
+﻿node.exe : npm warn Unknown env config "devdir". This will stop working in the next major version of npm. See `npm 
+help npmrc` for supported config options.
+No linha:1 caractere:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (npm warn Unknow...config options.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+> plumo-frontend@0.1.0 build
+> tsc -b && vite build
+
+src/components/BatchMoveInvoiceCardModal.tsx(60,16): error TS2345: Argument of type 'boolean' is not assignable to parameter of type '() => void'.
+src/components/CadastroImportModal.tsx(45,3): error TS6133: 'onError' is declared but its value is never read.
+src/components/ClosureRecalculateModal.tsx(165,50): error TS2339: Property 'total_to_receive' does not exist on type '{}'.
+src/components/ClosureRecalculateModal.tsx(166,56): error TS2339: Property 'total_to_pay' does not exist on type '{}'.
+src/components/ClosureRecalculateModal.tsx(167,54): error TS2339: Property 'loan_to_receive' does not exist on type '{}'.
+src/components/ClosureRecalculateModal.tsx(168,60): error TS2339: Property 'loan_to_pay' does not exist on type '{}'.
+src/components/ClosureRecalculateModal.tsx(539,29): error TS2322: Type 'string' is not assignable to type 'BadgeTone | undefined'.
+src/components/ExtratoExpenseActionsModal.tsx(148,8): error TS2741: Property 'isEdit' is missing in type '{ title: string; onClose: () => void; }' but required in type '{ isEdit: boolean; closeDisabled?: boolean | undefined; maximized?: boolean | undefined; onToggleMaximize?: (() => void) | undefined; title?: string | undefined; titleAddon?: ReactNode; ... 5 more ...; iconStyle?: CSSProperties | undefined; }'.
+src/components/HomeInvoiceDetailsModal.tsx(297,7): error TS6133: 'RemainingTotalBanner' is declared but its value is never read.
+src/components/HomeInvoiceDetailsModal.tsx(328,7): error TS6133: 'MonthTotalBanner' is declared but its value is never read.
+src/components/RawImportPreview.tsx(7,3): error TS6133: 'previewCompoundFieldValueCell' is declared but its value is never read.
+src/components/SharedAccountDisplay.tsx(49,3): error TS6133: 'compact' is declared but its value is never read.
+src/components/SharedBalanceClosureActionsModal.tsx(221,8): error TS2741: Property 'isEdit' is missing in type '{ title: string; onClose: () => void; icon: Element; }' but required in type '{ isEdit: boolean; closeDisabled?: boolean | undefined; maximized?: boolean | undefined; onToggleMaximize?: (() => void) | undefined; title?: string | undefined; titleAddon?: ReactNode; ... 5 more ...; iconStyle?: CSSProperties | undefined; }'.
+src/components/SharedClosureItemsModal.tsx(759,26): error TS18046: 'groupItems' is of type 'unknown'.
+src/components/SharedClosureItemsModal.tsx(759,62): error TS18046: 'groupItems' is of type 'unknown'.
+src/components/SharedClosureItemsModal.tsx(903,32): error TS18046: 'items' is of type 'unknown'.
+src/components/SharedClosureItemsModal.tsx(903,46): error TS7006: Parameter 'item' implicitly has an 'any' type.
+src/components/SharedClosureItemsModal.tsx(904,32): error TS18046: 'items' is of type 'unknown'.
+src/components/SharedClosureItemsModal.tsx(904,46): error TS7006: Parameter 'item' implicitly has an 'any' type.
+src/pages/AccountClosuresPage.tsx(27,3): error TS6133: 'cadastroAccentControlCls' is declared but its value is never read.
+src/pages/AccountClosuresPage.tsx(1248,96): error TS2322: Type '{ className: string; style: { color: string; }; size: number; "aria-label": string; title: string; }' is not assignable to type 'IntrinsicAttributes & LucideProps'.
+  Property 'title' does not exist on type 'IntrinsicAttributes & LucideProps'.
+src/pages/AccountClosuresPage.tsx(1254,11): error TS2322: Type '{ size: number; className: string; "aria-label": string; title: string; }' is not assignable to type 'IntrinsicAttributes & LucideProps'.
+  Property 'title' does not exist on type 'IntrinsicAttributes & LucideProps'.
+src/pages/EmprestimosPage.tsx(411,9): error TS6133: 'handleAmountBlur' is declared but its value is never read.
+src/pages/EmprestimosPage.tsx(901,9): error TS6133: 'getStatusIcon' is declared but its value is never read.
+src/pages/EmprestimosPage.tsx(1238,87): error TS2339: Property 'description' does not exist on type '{ correctedAmount: number; interestAmount: number; periods: number; }'.
+src/pages/ExpenseTemplatesPage.tsx(430,92): error TS2345: Argument of type 'ExpenseTemplate[]' is not assignable to parameter of type '{ id: number; name: string; description: string | null; icon: string; active: boolean; items: { id: number; description: string; amount: number | null; day_of_month: number | null; subtag?: { ...; } | null | undefined; ownership_percentage: number; expense_sharing_id?: number | ... 1 more ... | undefined; expense_sh...'.
+  Type 'ExpenseTemplate' is not assignable to type '{ id: number; name: string; description: string | null; icon: string; active: boolean; items: { id: number; description: string; amount: number | null; day_of_month: number | null; subtag?: { ...; } | null | undefined; ownership_percentage: number; expense_sharing_id?: number | ... 1 more ... | undefined; expense_sh...'.
+    Types of property 'items' are incompatible.
+      Type 'ExpenseTemplateItem[]' is not assignable to type '{ id: number; description: string; amount: number | null; day_of_month: number | null; subtag?: { tag_name?: string | null | undefined; name: string; type: string; } | null | undefined; ownership_percentage: number; expense_sharing_id?: number | ... 1 more ... | undefined; expense_sharing?: { ...; } | ... 1 more ......'.
+        Type 'ExpenseTemplateItem' is not assignable to type '{ id: number; description: string; amount: number | null; day_of_month: number | null; subtag?: { tag_name?: string | null | undefined; name: string; type: string; } | null | undefined; ownership_percentage: number; expense_sharing_id?: number | ... 1 more ... | undefined; expense_sharing?: { ...; } | ... 1 more ......'.
+          Types of property 'expense_sharing' are incompatible.
+            Type 'ExpenseSharingInfo | null' is not assignable to type '{ id?: number | undefined; shared_account?: { name?: string | undefined; } | undefined; } | null | undefined'.
+              Type 'ExpenseSharingInfo' is not assignable to type '{ id?: number | undefined; shared_account?: { name?: string | undefined; } | undefined; }'.
+                Types of property 'shared_account' are incompatible.
+                  Type 'AccountInfo | null | undefined' is not assignable to type '{ name?: string | undefined; } | undefined'.
+                    Type 'null' is not assignable to type '{ name?: string | undefined; } | undefined'.
+src/pages/ExtratoPage.tsx(1943,9): error TS2322: Type 'ExpenseDetail | null' is not assignable to type 'ExtratoExpenseActionsTarget | null'.
+  Type 'ExpenseDetail' is not assignable to type 'ExtratoExpenseActionsTarget'.
+    Types of property 'linked_invoice' are incompatible.
+      Type 'LinkedInvoiceSummary | null | undefined' is not assignable to type '{ id: number; description?: string | null | undefined; } | null | undefined'.
+        Property 'id' is missing in type 'LinkedInvoiceSummary' but required in type '{ id: number; description?: string | null | undefined; }'.
+src/pages/FaturasPage.tsx(1248,9): error TS6133: 'formatDateTime' is declared but its value is never read.
+src/pages/HealthCheckPage.tsx(370,11): error TS2322: Type '{ size: number; className: string; "aria-label": string; title: string; }' is not assignable to type 'IntrinsicAttributes & LucideProps'.
+  Property 'title' does not exist on type 'IntrinsicAttributes & LucideProps'.
+src/pages/HealthCheckPage.tsx(1446,27): error TS2322: Type '{ payload: { value: string; type: string; color: string; id: string; }[]; }' is not assignable to type 'IntrinsicAttributes & Omit<Props, "ref" | "payload"> & { wrapperStyle?: CSSProperties | undefined; width?: number | undefined; ... 4 more ...; itemSorter?: LegendItemSorter | ... 1 more ... | undefined; }'.
+  Property 'payload' does not exist on type 'IntrinsicAttributes & Omit<Props, "ref" | "payload"> & { wrapperStyle?: CSSProperties | undefined; width?: number | undefined; ... 4 more ...; itemSorter?: LegendItemSorter | ... 1 more ... | undefined; }'.
+src/pages/HealthCheckPage.tsx(1692,23): error TS2322: Type '{ payload: { value: string; type: string; color: string; id: string; }[]; }' is not assignable to type 'IntrinsicAttributes & Omit<Props, "ref" | "payload"> & { wrapperStyle?: CSSProperties | undefined; width?: number | undefined; ... 4 more ...; itemSorter?: LegendItemSorter | ... 1 more ... | undefined; }'.
+  Property 'payload' does not exist on type 'IntrinsicAttributes & Omit<Props, "ref" | "payload"> & { wrapperStyle?: CSSProperties | undefined; width?: number | undefined; ... 4 more ...; itemSorter?: LegendItemSorter | ... 1 more ... | undefined; }'.
+src/pages/PayrollPage.tsx(919,36): error TS2339: Property 'nature_code' does not exist on type 'IncomeReport'.
+src/pages/PayrollPage.tsx(922,91): error TS2339: Property 'nature_code' does not exist on type 'IncomeReport'.
+src/pages/PayrollPage.tsx(1008,132): error TS2339: Property 'payer_cnpj' does not exist on type 'IncomeReportDetail'.
+src/pages/PayrollPage.tsx(1022,131): error TS2339: Property 'beneficiary_cpf' does not exist on type 'IncomeReportDetail'.
+src/pages/PayrollPage.tsx(1029,46): error TS2339: Property 'nature_code' does not exist on type 'IncomeReportDetail'.
+src/pages/PayrollPage.tsx(1034,54): error TS2339: Property 'nature_code' does not exist on type 'IncomeReportDetail'.
+src/pages/ProjecaoMensalPage.tsx(55,3): error TS6133: 'ListTableStaticHeader' is declared but its value is never read.
+src/pages/ProjecaoMensalPage.tsx(541,10): error TS6133: 'cardLaunchSelection' is declared but its value is never read.
+src/pages/ReconciliacaoPage.tsx(62,3): error TS6133: 'X' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(13,3): error TS6133: 'CadastroListPrimaryButton' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(32,1): error TS6133: 'FloatingFooterBar' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(35,1): error TS6133: 'SharedAccountDisplay' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(40,3): error TS6133: 'getSettlementCreditEntries' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(42,3): error TS6133: 'getSettlementCreditSignedForViewer' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(43,3): error TS6133: 'getSettlementCreditTotal' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(48,38): error TS6133: 'TrendingUp' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(48,50): error TS6133: 'TrendingDown' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(48,71): error TS6133: 'CreditCard' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(48,83): error TS6133: 'Receipt' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(48,106): error TS6133: 'Lock' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(48,144): error TS6133: 'Landmark' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(48,154): error TS6133: 'Gift' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(48,248): error TS6133: 'X' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(48,251): error TS6133: 'Download' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(48,269): error TS6133: 'Search' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(1024,10): error TS6133: 'annualHistoryData' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(1044,10): error TS6133: 'closuresLoading' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(1046,10): error TS6133: 'bulkActionLoading' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(1047,10): error TS6133: 'showClosuresBackToTop' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(1078,10): error TS6133: 'expandedClosureIds' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(1101,10): error TS6133: 'monthlyDetailsModal' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(1113,10): error TS6133: 'loansLoading' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(1238,9): error TS6133: 'scrollToTopClosures' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(1455,9): error TS6133: 'formatSignedCurrency' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(1492,9): error TS6133: 'loadAnnualHistory' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(1513,9): error TS6133: 'loadMonthlyDetails' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(1783,9): error TS6133: 'handleViewClosureDetails' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(1830,9): error TS6133: 'handleUnsettleClosure' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(1875,9): error TS6133: 'handleReopenClosure' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(1913,9): error TS6133: 'handleOpenRemoveLoanPaymentsModal' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(1944,9): error TS6133: 'closuresScorecards' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(2036,23): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.
+src/pages/SharedBalanceClosureWizardPage.tsx(2048,9): error TS6133: 'toggleClosureExpansion' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(2060,9): error TS6133: 'openPaymentModal' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(2131,9): error TS6133: 'handleDeletePayment' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(2189,9): error TS6133: 'openEditPayment' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(2242,9): error TS6133: 'toggleClosureSelection' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(2255,9): error TS6133: 'toggleSelectAll' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(2264,9): error TS6133: 'handleBulkReopen' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(2323,9): error TS6133: 'handleBulkUnsettle' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(2372,9): error TS6133: 'handleBulkSettle' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(2470,9): error TS6133: 'formatMonth' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(2561,9): error TS6133: 'years' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(2562,9): error TS6133: 'months' is declared but its value is never read.
+src/pages/SharedBalanceClosureWizardPage.tsx(3293,73): error TS2339: Property 'active' does not exist on type 'ClosurePayment'.
+src/pages/SharedBalanceClosureWizardPage.tsx(3295,77): error TS2339: Property 'active' does not exist on type 'ClosurePayment'.
+src/pages/SharedBalanceClosureWizardPage.tsx(3333,106): error TS2339: Property 'active' does not exist on type 'ClosurePayment'.
+src/pages/SharedBalanceClosureWizardPage.tsx(3334,81): error TS2339: Property 'active' does not exist on type 'ClosurePayment'.
+src/pages/SharedBalanceClosureWizardPage.tsx(3337,80): error TS2339: Property 'active' does not exist on type 'ClosurePayment'.
+src/pages/SharedBalanceClosureWizardPage.tsx(3338,80): error TS2339: Property 'active' does not exist on type 'ClosurePayment'.
+src/pages/SharedBalanceClosureWizardPage.tsx(3340,72): error TS2339: Property 'active' does not exist on type 'ClosurePayment'.
+src/pages/SharedBalanceListPage.tsx(69,173): error TS6133: 'Download' is declared but its value is never read.
+src/pages/SharedBalanceListPage.tsx(69,267): error TS6133: 'Plus' is declared but its value is never read.
+src/pages/SharedBalanceListPage.tsx(69,311): error TS6133: 'RefreshCw' is declared but its value is never read.
+src/pages/tabs/TransactionMappingsTab.tsx(21,3): error TS6133: 'cadastroFilterFieldCls' is declared but its value is never read.
+src/pages/tabs/TransactionMappingsTab.tsx(24,3): error TS6133: 'listPageTableChromeFooterCls' is declared but its value is never read.
+src/pages/tabs/TransactionMappingsTab.tsx(57,10): error TS6133: 'formatAccountDisplay' is declared but its value is never read.
+src/pages/tabs/TransactionMappingsTab.tsx(340,10): error TS6133: 'revealingTableRowId' is declared but its value is never read.
+src/pages/tabs/TransactionMappingsTab.tsx(1288,17): error TS2551: Property 'revenue_contribution_percentage' does not exist on type '{ mapping_ids: number[]; subtag_id?: number | undefined; expense_sharing_id?: number | null | undefined; my_contribution_percentage?: number | null | undefined; update_sharing: boolean; }'. Did you mean 'my_contribution_percentage'?
+src/pages/tabs/TransactionMappingsTab.tsx(1311,24): error TS2345: Argument of type '{ tag_id: number; subtag_id: number; shared_partner_id: number; my_contribution_percentage: number; apply_tag_subtag: true; skip_sharing: true; }' is not assignable to parameter of type 'SetStateAction<{ tag_id: number; subtag_id: number; shared_partner_id: number; my_contribution_percentage: number | null; revenue_contribution_percentage: number | null; apply_tag_subtag: boolean; skip_sharing: boolean; }>'.
+  Property 'revenue_contribution_percentage' is missing in type '{ tag_id: number; subtag_id: number; shared_partner_id: number; my_contribution_percentage: number; apply_tag_subtag: true; skip_sharing: true; }' but required in type '{ tag_id: number; subtag_id: number; shared_partner_id: number; my_contribution_percentage: number | null; revenue_contribution_percentage: number | null; apply_tag_subtag: boolean; skip_sharing: boolean; }'.
+src/pages/tabs/TransactionMappingsTab.tsx(1682,8): error TS2339: Property 'then' does not exist on type 'void | Promise<boolean>'.
+  Property 'then' does not exist on type 'void'.
+src/pages/tabs/TransactionMappingsTab.tsx(1682,20): error TS7006: Parameter 'confirmed' implicitly has an 'any' type.
+src/utils/exportLoansReport.ts(170,7): error TS2322: Type 'Record<string, string | number>[]' is not assignable to type '{ Campo: string; Valor: string; }[] | { '#': number; ID: number; Descrição: string; Direção: string; Status: string; Contraparte: string; 'Data empr\u00E9stimo': string; Vencimento: string; Principal: number; ... 4 more ...; 'Quitado em': string; }[]'.
+  Type 'Record<string, string | number>[]' is not assignable to type '{ Campo: string; Valor: string; }[]'.
+    Type 'Record<string, string | number>' is missing the following properties from type '{ Campo: string; Valor: string; }': Campo, Valor
+src/utils/exportLoansReport.ts(182,9): error TS2322: Type '"money"' is not assignable to type '"text"'.
+src/utils/exportLoansReport.ts(188,56): error TS2345: Argument of type '({ name: string; rows: { '#': number; ID: number; Descrição: string; Direção: string; Status: string; Contraparte: string; 'Data empr\u00E9stimo': string; Vencimento: string; Principal: number; 'Total pago': number; Saldo: number; Juros: string; 'Origem fechamento': string; 'Quitado em': string; }[]; columns: string...' is not assignable to parameter of type 'ExcelSheetSpec[]'.
+  Type '{ name: string; rows: { '#': number; ID: number; Descrição: string; Direção: string; Status: string; Contraparte: string; 'Data empr\u00E9stimo': string; Vencimento: string; Principal: number; 'Total pago': number; Saldo: number; Juros: string; 'Origem fechamento': string; 'Quitado em': string; }[]; columns: string[...' is not assignable to type 'ExcelSheetSpec'.
+    Type '{ name: string; rows: { '#': number; ID: number; Descrição: string; Direção: string; Status: string; Contraparte: string; 'Data empr\u00E9stimo': string; Vencimento: string; Principal: number; 'Total pago': number; Saldo: number; Juros: string; 'Origem fechamento': string; 'Quitado em': string; }[]; columns: string[...' is not assignable to type 'ExcelSheetSpec'.
+      Types of property 'kinds' are incompatible.
+        Type '{ Principal: "money"; 'Total pago': "money"; Saldo: "money"; 'Data empr\u00E9stimo': "date"; Vencimento: "date"; 'Quitado em': "date"; Valor?: undefined; }' is not assignable to type 'Record<string, ExcelColumnKind>'.
+          Property 'Valor' is incompatible with index signature.
+            Type 'undefined' is not assignable to type 'ExcelColumnKind'.
+src/utils/parseExtratoExportWorkbook.ts(150,7): error TS2367: This comparison appears to be unintentional because the types 'string' and 'WorkSheet | null' have no overlap.
+src/utils/parseExtratoExportWorkbook.ts(151,7): error TS2367: This comparison appears to be unintentional because the types 'string' and 'WorkSheet | null' have no overlap.

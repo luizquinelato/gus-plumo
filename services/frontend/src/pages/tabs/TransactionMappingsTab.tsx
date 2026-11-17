@@ -18,10 +18,8 @@ import {
   CadastroListPageHero,
   CadastroListPageLoading,
   CadastroListPageSearchField,
-  cadastroFilterFieldCls,
   cadastroRowIconBtnCls,
   cadastroRowIconDangerCls,
-  listPageTableChromeFooterCls,
   listPageTableRowHoverCls,
   listPageTableTdCls,
 } from '../../components/CadastroListPageLayout'
@@ -54,7 +52,7 @@ import {
 import SharedAccountDisplay from '../../components/SharedAccountDisplay'
 import { MultiSelectDropdown, SourceMultiSelectDropdown } from '../../components/MultiSelectDropdown'
 import { getIconComponent } from '../../utils/iconMapper'
-import { formatAccountDisplay, sharingPartnerLabel, sharingPercentForKind } from '../../utils/accountFormatter'
+import { sharingPartnerLabel, sharingPercentForKind } from '../../utils/accountFormatter'
 import OwnershipPercentField from '../../components/OwnershipPercentField'
 import { maskPercentInput } from '../../utils/percentInput'
 import ClosureEditImpactDialog from '../../components/ClosureEditImpactDialog'
@@ -337,7 +335,7 @@ const TransactionMappingsTab = () => {
   const [isValidatingPassword, setIsValidatingPassword] = useState(false)  // Estado de validação de senha
   const [canEditSensitive, setCanEditSensitive] = useState(false)  // Permite editar após validar senha
   const [passwordModalAction, setPasswordModalAction] = useState<'reveal' | 'save' | 'unsensitive'>('reveal')  // Ação do modal de senha
-  const [revealingTableRowId, setRevealingTableRowId] = useState<number | null>(null)
+  const [, setRevealingTableRowId] = useState<number | null>(null)
   const revealingTableRowIdRef = useRef<number | null>(null)
   /** Evita fechar o modal de edição no mesmo clique que dispensa o modal de senha (stacked modals). */
   const skipMappingModalBackdropCloseRef = useRef(false)
@@ -1270,6 +1268,7 @@ const TransactionMappingsTab = () => {
         subtag_id?: number
         expense_sharing_id?: number | null
         my_contribution_percentage?: number | null
+        revenue_contribution_percentage?: number | null
         update_sharing: boolean
       } = {
         mapping_ids: mappingIds,
@@ -1313,6 +1312,7 @@ const TransactionMappingsTab = () => {
         subtag_id: 0,
         shared_partner_id: 0,
         my_contribution_percentage: 50,
+        revenue_contribution_percentage: null,
         apply_tag_subtag: true,
         skip_sharing: true
       })
@@ -1670,7 +1670,7 @@ const TransactionMappingsTab = () => {
 
   const handleClearTransactionClassifications = () => {
     if (isClearingClassifications) return
-    showConfirm({
+    void showConfirm({
       title: 'Limpar categorias nas transações',
       message:
         'Remove tag/subtag (subtag_id) de todos os lançamentos de extrato, fatura e benefício desta conta.\n\n' +
@@ -1679,7 +1679,7 @@ const TransactionMappingsTab = () => {
       confirmText: 'Limpar categorias',
       cancelText: 'Cancelar',
       type: 'danger',
-    }).then(async (confirmed) => {
+    })?.then(async (confirmed: boolean) => {
       if (!confirmed) return
       setIsClearingClassifications(true)
       try {

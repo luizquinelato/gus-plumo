@@ -753,7 +753,7 @@ function groupItemsByCard(items: any[]) {
     return acc
   }, {} as Record<string, any[]>)
 
-  return Object.entries(grouped)
+  return (Object.entries(grouped) as [string, any[]][])
     .map(([cardKey, groupItems]) => {
       const [cardName] = cardKey.split('|')
       const cardNumber = groupItems[0]?.card_number ? String(groupItems[0].card_number) : ''

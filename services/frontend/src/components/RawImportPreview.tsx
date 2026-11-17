@@ -4,7 +4,6 @@ import {
   PreviewDataTable,
   PreviewEmptyState,
   previewAmountCell,
-  previewCompoundFieldValueCell,
   previewFieldValueCell,
   previewPercentCell,
 } from './ImportPreviewShared'

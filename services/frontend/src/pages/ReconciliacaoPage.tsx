@@ -59,7 +59,6 @@ import {
   Save,
   Trash2,
   Unlink,
-  X,
 } from 'lucide-react'
 
 type ReconcileTab = 'pending' | 'matched' | 'unlinked'
