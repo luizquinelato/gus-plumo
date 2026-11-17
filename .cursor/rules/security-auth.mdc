@@ -34,9 +34,10 @@ Regras **inegociáveis** para backend, frontend e auth.
 ## 4. Gestão de segredos
 
 - Proibido hardcode de secrets, API keys, tokens ou senhas.
-- Backend: variáveis de ambiente (`.env.dev` / `.env.prod` na raiz do monorepo).
-- Frontend: apenas variáveis `VITE_*` via `import.meta.env` (ex.: `VITE_API_URL`).
-- Nunca commitar `.env` com credenciais reais.
+- Backend: variáveis de ambiente (`.env.dev` / `.env.prod` local; `.env.online` no VPS — template `env.online.example`).
+- Frontend: apenas variáveis `VITE_*` via `import.meta.env` (ex.: `VITE_API_URL`; online = origem pública HTTPS, mesma do Caddy).
+- Nunca commitar `.env`, `.env.dev`, `.env.prod` nem `.env.online` com credenciais reais.
+- Online: auth **não** exposto à internet; só `backend` + Caddy públicos; `JWT_SECRET_KEY` / `ENCRYPTION_KEY` alinhados ao restore de prod quando aplicável.
 
 ## 5. Controle de acesso (RBAC)
 
@@ -47,4 +48,5 @@ Regras **inegociáveis** para backend, frontend e auth.
 ## Referências cruzadas
 
 - Migrations e schema: [starting_point.mdc](starting_point.mdc)
-- Estrutura auth/backend: [project-structure.mdc](project-structure.mdc)
+- Estrutura auth/backend e deploy online: [project-structure.mdc](project-structure.mdc)
+- Operação no VPS: `docs/hospedagem-online.md`

@@ -26,6 +26,8 @@ gus-plumo/
 │   └── frontend/             # SPA (src/pages, src/components, ...)
 ├── docker-compose.db.yml     # PostgreSQL PROD (porta 5432)
 ├── docker-compose.db.dev.yml # PostgreSQL DEV (porta 5433)
+├── docker-compose.online.yml # Stack completo no VPS (ver docs/hospedagem-online.md)
+├── env.online.example        # Template de variáveis para o deploy online
 ├── .env.prod / .env.dev      # Templates de ambiente
 ```
 

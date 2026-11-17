@@ -5,7 +5,7 @@ alwaysApply: false
 ---
 # Estrutura do Projeto — Plumo (gus-plumo)
 
-Plataforma de despesas pessoais multi-tenant: **React + TypeScript** (frontend), **FastAPI + Python** (backend e auth), **PostgreSQL 17**.
+Plataforma de despesas pessoais multi-tenant: **React + TypeScript** (frontend), **FastAPI + Python** (backend e auth), **PostgreSQL 18**.
 
 Use este mapa para localizar código existente antes de criar arquivos novos. Prefira estender pastas e padrões já usados em vez de inventar novos locais.
 
@@ -24,10 +24,14 @@ gus-plumo/
 │   ├── auth/               # Microserviço de autenticação (FastAPI)
 │   ├── backend/            # API principal (FastAPI)
 │   └── frontend/           # SPA React (Vite)
-├── docker-compose.db.yml   # PostgreSQL (prod-like)
-├── docker-compose.db.dev.yml
-├── .env.dev / .env.prod    # Variáveis de ambiente (não commitar segredos)
-└── README.md               # Quick start e arquitetura resumida
+├── docker-compose.db.yml       # PostgreSQL local prod-like (porta 5432)
+├── docker-compose.db.dev.yml   # PostgreSQL local dev (porta 5433)
+├── docker-compose.online.yml   # Stack completo no VPS (não altera os db*.yml)
+├── docker-compose.evolution.yml # WhatsApp local (opcional)
+├── deploy/                     # Caddyfile, Dockerfile.web, backend-entrypoint
+├── env.online.example          # Template → .env.online no servidor (gitignore)
+├── .env.dev / .env.prod        # Ambiente local (não commitar segredos)
+└── README.md                   # Quick start e arquitetura resumida
 ```
 
 **Pastas ignoradas / geradas (não documentar como código-fonte):** `node_modules/`, `.venv/`, `__pycache__/`, `dist/`, `build/`, logs em `services/*/logs/`, `modified_*.zip` (gerado por `scripts/zip_modified.py`).
@@ -61,7 +65,8 @@ gus-plumo/
 | `importacao.md` | ETL, parsers, importação de extratos/faturas |
 | `categorizacao.md` | Tags, subtags, mapeamentos |
 | `cores.md` / `cores-universais.md` | Temas e acessibilidade de cores |
-| `ambientes.md` | Dev/prod, Docker, scripts DB |
+| `ambientes.md` | Dev/prod local, Docker DB, scripts |
+| `hospedagem-online.md` | VPS (Hetzner), `docker-compose.online.yml`, fases smoke + restore |
 | `regex-examples.md` | Exemplos de regex para mapeamentos |
 | `powershell-helpers/` | Perfil PowerShell para dev local |
 
@@ -78,6 +83,7 @@ scripts/
 └── database/
     ├── backup-database.bat
     ├── restore-database.bat
+    ├── restore-online.sh      # Restore no Postgres do compose online (VPS)
     └── list-backups.bat
 ```
 
@@ -98,6 +104,7 @@ services/auth/
 │   └── providers/
 │       └── local_provider.py  # Provedor de login local
 ├── dev_server.py
+├── Dockerfile               # Imagem do deploy online (VPS)
 ├── requirements/install.txt
 └── scripts/setup_venv.py
 ```
@@ -112,7 +119,8 @@ services/auth/
 |---------|--------|
 | `app/main.py` | App FastAPI, registro de routers |
 | `app/database.py` | Conexão SQLAlchemy / sessão DB |
-| `dev_server.py` | Servidor de desenvolvimento |
+| `dev_server.py` | Servidor de desenvolvimento (local; online usa `deploy/backend-entrypoint.sh`) |
+| `Dockerfile` | Build da API para `docker-compose.online.yml` |
 
 ### `app/routers/` — endpoints REST
 
@@ -284,7 +292,7 @@ src/
 3. **Multi-tenant:** dados filtrados por `tenant_id` / conta selecionada.
 4. **Cores/tema:** variáveis CSS `--color-*`, `--gradient-*`; ver `docs/cores.md`.
 5. **Modais:** ESC fecha, Enter confirma quando aplicável (`starting_point.mdc`).
-6. **Ambiente:** `.env.dev` / `.env.prod`; frontend usa `VITE_API_URL`.
+6. **Ambiente:** local `.env.dev` / `.env.prod`; online `.env.online` (template `env.online.example`, ver `docs/hospedagem-online.md`). Frontend usa `VITE_API_URL` (no VPS, build com a URL pública).
 
 ---
 

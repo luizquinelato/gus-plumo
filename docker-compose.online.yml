@@ -1,0 +1,116 @@
+# Stack online (VPS). Não altera docker-compose.db*.yml nem evolution.yml.
+# Uso: docker compose --env-file .env.online -f docker-compose.online.yml up -d --build
+
+name: gus-plumo-online
+
+services:
+  postgres:
+    image: postgres:18
+    container_name: plumo-online-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-plumo}
+      POSTGRES_USER: ${DB_USER:-plumo}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?defina DB_PASSWORD no .env.online}
+      TZ: America/Sao_Paulo
+      PGTZ: America/Sao_Paulo
+    volumes:
+      - plumo_online_pgdata:/var/lib/postgresql/data
+    networks:
+      - plumo_online_internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-plumo} -d ${DB_NAME:-plumo}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  auth:
+    build:
+      context: .
+      dockerfile: services/auth/Dockerfile
+    container_name: plumo-online-auth
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: online
+      APP_ENV: online
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${DB_NAME:-plumo}
+      DB_USER: ${DB_USER:-plumo}
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?defina JWT_SECRET_KEY}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_EXPIRY_MINUTES: ${JWT_EXPIRY_MINUTES:-1440}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://37-27-37-103.sslip.io}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TZ: America/Sao_Paulo
+    networks:
+      - plumo_online_internal
+
+  backend:
+    build:
+      context: .
+      dockerfile: services/backend/Dockerfile
+    container_name: plumo-online-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      auth:
+        condition: service_started
+    environment:
+      ENVIRONMENT: online
+      APP_ENV: online
+      DATABASE_URL: postgresql://${DB_USER:-plumo}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-plumo}
+      AUTH_SERVICE_URL: http://auth:8001
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?defina ENCRYPTION_KEY}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://37-27-37-103.sslip.io}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      SQL_ECHO: ${SQL_ECHO:-false}
+      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-1}
+      TZ: America/Sao_Paulo
+      PORT: "8000"
+    volumes:
+      - plumo_online_uploads:/app/services/backend/uploads
+    networks:
+      - plumo_online_internal
+
+  web:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.web
+      args:
+        VITE_API_URL: ${PUBLIC_URL:-https://37-27-37-103.sslip.io}
+    container_name: plumo-online-web
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:-37-27-37-103.sslip.io}
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - plumo_online_internal
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+
+networks:
+  plumo_online_internal:
+    name: plumo-online-network
+
+volumes:
+  plumo_online_pgdata:
+    name: plumo_online_pgdata
+  plumo_online_uploads:
+    name: plumo_online_uploads
+  caddy_data:
+    name: plumo_online_caddy_data
+  caddy_config:
+    name: plumo_online_caddy_config

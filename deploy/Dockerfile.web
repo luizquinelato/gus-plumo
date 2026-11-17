@@ -1,0 +1,18 @@
+# Frontend estático + Caddy (gateway HTTPS)
+FROM node:20-bookworm-slim AS frontend-build
+
+WORKDIR /build
+COPY services/frontend/package.json services/frontend/package-lock.json ./
+RUN npm ci
+
+COPY services/frontend/ .
+ARG VITE_API_URL=https://37-27-37-103.sslip.io
+ENV VITE_API_URL=$VITE_API_URL
+RUN npm run build
+
+FROM caddy:2-alpine
+
+COPY deploy/Caddyfile /etc/caddy/Caddyfile
+COPY --from=frontend-build /build/dist /srv/frontend
+
+EXPOSE 80 443

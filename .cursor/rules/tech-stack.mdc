@@ -68,9 +68,11 @@ FastAPI + `local_provider` + RBAC (`app/core/rbac.py`). Requirements em `service
 
 | Componente | Local |
 |---|---|
-| PostgreSQL | `docker-compose.db.yml`, `docker-compose.db.dev.yml` |
-| Env | `.env.dev`, `.env.prod` na raiz (não commitar segredos) |
-| Backups | `scripts/database/*.bat`, pasta `backups/` |
+| PostgreSQL (local) | `docker-compose.db.yml`, `docker-compose.db.dev.yml` |
+| Deploy online (VPS) | `docker-compose.online.yml`, `deploy/`, `services/*/Dockerfile` — ver `docs/hospedagem-online.md` |
+| Env local | `.env.dev`, `.env.prod` na raiz (não commitar segredos) |
+| Env online | `env.online.example` → `.env.online` no servidor (gitignore) |
+| Backups | `scripts/database/*.bat` (local), `restore-online.sh` (VPS), pasta `backups/` |
 
 ---
 
@@ -80,5 +82,5 @@ FastAPI + `local_provider` + RBAC (`app/core/rbac.py`). Requirements em `service
 Frontend : React 18 + React Router 6 + Vite 5 + TS 5.6 + Tailwind 3 + axios + lucide-react
 Backend  : FastAPI 0.115 + Pydantic v2 + SQLAlchemy 2.0 + psycopg2
 Auth     : FastAPI (serviço separado, porta 8001)
-DB       : PostgreSQL 17 (Docker Compose)
+DB       : PostgreSQL 18 (Docker Compose local + online)
 ```

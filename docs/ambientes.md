@@ -8,6 +8,7 @@ O projeto suporta dois ambientes: **desenvolvimento (dev)** e **produção (prod
 |---------|-----------|
 | `.env.dev` | Configuração de desenvolvimento |
 | `.env.prod` | Configuração de produção |
+| `.env.online` | Deploy no VPS (template: `env.online.example`). Ver [hospedagem-online.md](hospedagem-online.md). **Não** altera dev/prod local. |
 
 Os serviços (backend, auth, frontend) leem o arquivo do ambiente em uso; as portas e a `DATABASE_URL` vêm dele.
 

@@ -1,0 +1,13 @@
+**/.venv/
+**/venv/
+**/node_modules/
+**/__pycache__/
+**/.git/
+.cursor/
+*.md
+!services/backend/scripts/migrations/**
+backups/*.backup
+backups/*.sql
+modified_*.zip
+**/*.log
+services/*/logs/

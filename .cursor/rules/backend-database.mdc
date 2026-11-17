@@ -29,7 +29,7 @@ Regras para `services/backend/`. Migrations: [starting_point.mdc](starting_point
   - **PROD:** `DB_NAME={PROJECT_KEY}`, `DB_USER={PROJECT_KEY}`
   - **DEV:** `DB_NAME={PROJECT_KEY}_dev`
 - Evite sufixos `_db`, `_database`, `_prod` no nome do banco.
-- Detalhes: `docs/banco-de-dados.md`, `docs/ambientes.md`.
+- Detalhes: `docs/banco-de-dados.md`, `docs/ambientes.md`. Restore no VPS: `scripts/database/restore-online.sh` e `docs/hospedagem-online.md`.
 
 ## 4. Migrations
 
