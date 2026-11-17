@@ -17,7 +17,7 @@ Sistema de gerenciamento de despesas pessoais com importação automatizada de e
 
 ### Infraestrutura
 - [**ambientes.md**](ambientes.md) - Configuração de ambientes (dev/prod), scripts de database
-- [**hospedagem-online.md**](hospedagem-online.md) - VPS Hetzner, URL sslip.io, `docker-compose.online.yml`, deploy em duas fases (smoke + restore)
+- [**hospedagem-online.md**](hospedagem-online.md) - **Passo a passo completo** VPS (Hetzner): `.env.online`, gerar `JWT`/`ENCRYPTION_KEY` (Fernet), `docker-compose.online.yml`, fases A (migrations) e B (restore)
 - [**whatsapp-evolution.md**](whatsapp-evolution.md) - Envio de WhatsApp via Evolution API (configuração, QR code, troubleshooting)
 - [**powershell-helpers/README.md**](powershell-helpers/README.md) - Comandos do PowerShell (`dkup-dev`, `run-all-tabs-dev`, ...)
 

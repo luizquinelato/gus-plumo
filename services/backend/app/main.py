@@ -29,11 +29,16 @@ async def lifespan(app: FastAPI):
     logger.info("👋 Gus Expenses Platform encerrando...")
 
 
+_online_env = os.environ.get("APP_ENV", os.environ.get("ENVIRONMENT", "")).lower() == "online"
+
 app = FastAPI(
     title="Plumo API",
     description="Plumo - Finanças leves, vida plena. Assuma a direção. Sinta a leveza.",
     version="0.1.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    docs_url=None if _online_env else "/docs",
+    redoc_url=None if _online_env else "/redoc",
+    openapi_url=None if _online_env else "/openapi.json",
 )
 
 

@@ -23,7 +23,7 @@ if [[ ! -f "$BACKUP_PATH" ]]; then
 fi
 
 if [[ ! -f "$ENV_FILE" ]]; then
-  echo "Crie $ENV_FILE a partir de .env.online.example"
+  echo "Crie $ENV_FILE a partir de env.online.example"
   exit 1
 fi
 

@@ -13,12 +13,17 @@
 		reverse_proxy backend:8000
 	}
 
+	# Online: não expor mapa da API (Swagger/OpenAPI)
 	handle /docs* {
-		reverse_proxy backend:8000
+		respond 404
+	}
+
+	handle /redoc* {
+		respond 404
 	}
 
 	handle /openapi.json {
-		reverse_proxy backend:8000
+		respond 404
 	}
 
 	handle {
