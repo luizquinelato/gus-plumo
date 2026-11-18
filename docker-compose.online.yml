@@ -66,6 +66,11 @@ services:
       ENVIRONMENT: online
       APP_ENV: online
       DATABASE_URL: postgresql://${DB_USER:-plumo}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-plumo}
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${DB_NAME:-plumo}
+      DB_USER: ${DB_USER:-plumo}
+      DB_PASSWORD: ${DB_PASSWORD}
       AUTH_SERVICE_URL: http://auth:8001
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}

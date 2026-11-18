@@ -13,7 +13,7 @@ from decimal import Decimal
 import csv
 import io
 import logging
-from app.database import get_db, DATABASE_URL
+from app.database import get_db, psycopg2_connect
 from app.models.unified_models import BenefitCardStatement, Cartao, TransactionMapping, Subtag, ExpenseSharingSetting, Account
 from app.dependencies.auth import require_account
 from app.services.account_period_closure_service import AccountPeriodClosedError
@@ -467,7 +467,7 @@ def save_benefit_dataframe(
 
         # Usa MappingHelper para suporte a exact/pattern/regex com prioridade correta
         # Prioridade: 0=Alta (exact), 1=Média (pattern), 2=Baixa (regex)
-        psycopg2_conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+        psycopg2_conn = psycopg2_connect(cursor_factory=RealDictCursor)
         mapping_helper = MappingHelper(db_connection=psycopg2_conn, tenant_id=tenant_id, user_id=user_id)
         print(f"   ✅ MappingHelper inicializado")
 

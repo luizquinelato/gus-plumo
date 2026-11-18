@@ -340,10 +340,6 @@ Atalhos **sem** `gus` (`rat-build`, `dkup`, …) continuam válidos.
 
 **Cuidado:** não use `reset` / `reset-full` / `dkdown-v` com dados de produção restaurados; use `gus restore`.
 
-#### Trazer backup do VPS para o PC
-
-No VPS: `gus backup` ou `./scripts/database/backup-online.sh`. Baixe `backups/plumo_online_*` com WinSCP/pscp ou `pull-backup-from-online.ps1` no PC. Restore: `restore-database.bat ... --to prod --keys online` (antes: `sync-env-keys.py --from online --to prod` se necessário).
-
 Fluxo habitual após código novo:
 
 ```bash
@@ -430,6 +426,97 @@ Local: `.env.dev` / `.env.prod`. Online: **`.env.online`** apenas no servidor.
 
 ---
 
+## Backup no VPS → baixar para o PC (PuTTY + WinSCP)
+
+Use este fluxo para **copiar o banco online** para a máquina local (prod/dev), sem depender de enviar dump pelo Git.
+
+### O que é gerado
+
+Cada execução cria três arquivos em `/opt/gus-plumo/backups/`:
+
+| Arquivo | Uso |
+|---------|-----|
+| `plumo_online_YYYY-MM-DD_HH-MM-SS.backup` | Restore (formato custom do `pg_dump`) |
+| `.sql` | Dump texto (opcional, inspeção) |
+| `.meta` | Origem `online`, **sem segredos** — usado no `restore-database.bat` |
+
+Os `.backup` contêm **dados financeiros**; trate como sensível (repo privado, disco criptografado).
+
+### 1. Rodar o backup no VPS (PuTTY)
+
+Conecte com PuTTY (`root`, `37.27.37.103`, chave `.ppk` — ver [PuTTY (opcional)](#putty-opcional)).
+
+```bash
+cd /opt/gus-plumo
+gus dkstatus    # Postgres deve estar Up (plumo-online-postgres)
+gus backup
+```
+
+Equivalente sem o alias:
+
+```bash
+./scripts/database/backup-online.sh
+```
+
+Liste o que foi criado:
+
+```bash
+ls -lh backups/plumo_online_*
+```
+
+**Se falhar** com *Container plumo-online-postgres não está rodando*: `gus dkup` e tente de novo. Confirme `.env.online` com `DB_PASSWORD` correto.
+
+### 2. Baixar para o PC
+
+O PuTTY **não** transfere arquivos. Use **WinSCP**, `scp` ou o script no repositório.
+
+#### WinSCP (recomendado com PuTTY)
+
+1. Na primeira abertura, o WinSCP pode perguntar se deseja **importar sessões do PuTTY** — **Sim** facilita (mesmo host, usuário e `.ppk`).
+2. Protocolo: **SFTP**, host `37.27.37.103`, usuário `root`, porta `22`, mesma **chave privada `.ppk`** (Avançado → SSH → Autenticação).
+3. Remoto: `/opt/gus-plumo/backups/`
+4. Local: `c:\Workspace\gus-plumo\backups\` (ou pasta à sua escolha)
+5. Arraste o trio do timestamp desejado (`.backup` + `.meta`; `.sql` se quiser).
+
+#### PowerShell no PC (script do repo)
+
+```powershell
+cd c:\Workspace\gus-plumo
+.\scripts\database\pull-backup-from-online.ps1
+```
+
+Padrões: `root@37.27.37.103`, chave `~\.ssh\id_ed25519_plumo`, remoto `/opt/gus-plumo/backups`.
+
+#### `scp` manual (opcional)
+
+```powershell
+scp -i $env:USERPROFILE\.ssh\id_ed25519_plumo `
+  root@37.27.37.103:/opt/gus-plumo/backups/plumo_online_2026-11-18_12-00-00.* `
+  c:\Workspace\gus-plumo\backups\
+```
+
+Ajuste o timestamp no nome do arquivo.
+
+### 3. Restaurar no PC (prod ou dev)
+
+Com o Postgres local do ambiente **já rodando**:
+
+```powershell
+cd c:\Workspace\gus-plumo
+python scripts\database\sync-env-keys.py --from online --to prod
+.\scripts\database\restore-database.bat backups\plumo_online_SEU_ARQUIVO.backup --to prod --keys online
+```
+
+Para **dev**, troque `--to prod` por `--to dev` (e o `sync-env-keys` correspondente, se necessário).
+
+Depois suba backend/auth no ambiente escolhido e valide login.
+
+### Sentido inverso (PC → VPS)
+
+Subir dados de **prod local** para o online: [Fase 6](#fase-6--restore-de-produção-fase-b) (`backup-database.bat --from prod --for-online`, `git push`, `restore-online.sh` no VPS).
+
+---
+
 ## Troubleshooting
 
 | Sintoma | Ação |
@@ -446,6 +533,9 @@ Local: `.env.dev` / `.env.prod`. Online: **`.env.online`** apenas no servidor.
 | `git pull`: local changes em `scripts/vps/gus` | Não alterar o arquivo no repo; `git checkout -- scripts/vps/gus`, `git pull`, `sudo install …` se o launcher mudou — ver [Fase 7](#git-pull-o-que-repetir-sempre-e-o-que-não) |
 | PuTTY: *Host does not exist* | **Host Name** com IP duplicado ou texto a mais — use só `37.27.37.103` |
 | PuTTY: `login as:` + senha do root | Chave `.ppk` não na sessão salva ou chave diferente da do VPS — ver [PuTTY (opcional)](#putty-opcional) |
+| `gus backup` falha | Postgres down? `gus dkstatus` / `gus dkup`. Repo em `/opt/gus-plumo`, não em `~` |
+| WinSCP não conecta após importar PuTTY | Mesmo `.ppk` em SSH → Autenticação; host só o IP, sem `root@` |
+| Import extrato: `invalid integer value "…" for connection option "port"` | `DB_PASSWORD` com `/`, `+`, `@` etc. quebra a `DATABASE_URL` interpolada. Após `git pull`: backend recebe `DB_HOST` + `DB_PASSWORD` e monta URL encoded; `gus rat-build` + recriar container `backend`. Alternativa: senha só hex (`openssl rand -hex 24`) |
 
 ---
 

@@ -18,7 +18,7 @@ from app.utils.card_helper import CardHelper
 from app.utils.mapping_helper import MappingHelper
 from app.utils.sharing_percentage import resolve_ownership_percentage
 from app.converters.fatura_pdf import normalize_invoice_issuer
-from app.database import DATABASE_URL
+from app.database import psycopg2_connect
 from app.utils.import_progress import report_row_progress
 from app.utils.import_rows import import_tag_subtag_conflict, mapping_hint, subtag_override
 
@@ -545,7 +545,7 @@ class FaturaService:
         # - exact: comparação direta (O(1) com índice interno)
         # - pattern: busca se pattern está contido na descrição (O(n))
         # - regex: busca com expressão regular (O(n))
-        psycopg2_conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+        psycopg2_conn = psycopg2_connect(cursor_factory=RealDictCursor)
         mapping_helper = MappingHelper(db_connection=psycopg2_conn, tenant_id=tenant_id, user_id=user_id, account_id=account_id)
         logger.info(f"   ✅ MappingHelper inicializado")
 

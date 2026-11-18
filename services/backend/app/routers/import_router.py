@@ -35,7 +35,7 @@ from ..utils.import_rows import df_to_rows, json_safe, rows_to_df
 from ..services.fatura_service import FaturaService
 from ..services.raw_import_preview import build_raw_preview, extrato_other_account_warnings
 from ..etl import ExtratoETL
-from ..database import get_db, DATABASE_URL
+from ..database import get_db, psycopg2_connect
 from ..routers.excel_import_router import save_extrato_records
 from ..dependencies.auth import require_account
 from ..models.unified_models import Account, Cartao
@@ -250,7 +250,7 @@ def _run_extrato_etl(
         # ========================================
 
         # Cria conexão psycopg2 para o MappingHelper
-        psycopg2_conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+        psycopg2_conn = psycopg2_connect(cursor_factory=RealDictCursor)
         mapping_helper = MappingHelper(db_connection=psycopg2_conn, user_id=user_id, tenant_id=tenant_id, account_id=account_id)
 
         # Limpeza, filtro, leitura, transformação e gravação. A barra não fecha na primeira passada.
@@ -719,7 +719,7 @@ def _convert_cartao_pdfs(
         ]
 
         # Cria conexão psycopg2 para o MappingHelper
-        psycopg2_conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+        psycopg2_conn = psycopg2_connect(cursor_factory=RealDictCursor)
         mapping_helper = MappingHelper(db_connection=psycopg2_conn, user_id=user_id, tenant_id=tenant_id, account_id=account_id)
         converter = CartaoConverter(mapping_helper)
         # Páginas do PDF, linhas extraídas e gravação no banco.

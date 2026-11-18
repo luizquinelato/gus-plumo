@@ -15,7 +15,7 @@ import json
 import os
 from typing import Literal, Optional, Dict, Any
 
-from app.database import get_db, DATABASE_URL
+from app.database import get_db, psycopg2_connect
 from app.models.unified_models import BankStatement, CreditCardInvoice, Subtag, Tag, Cartao, TransactionMapping, ExpenseSharingSetting, Account
 from app.dependencies.auth import require_account
 from sqlalchemy import or_
@@ -509,7 +509,7 @@ def save_extrato_records(df: pd.DataFrame, db: Session, tenant_id: int, account_
     print(f"⚡ [OTIMIZADO] Iniciando importação de {len(df)} registros... detect_conflicts={detect_conflicts}, enable_tracing={enable_tracing}")
 
     # Inicializa MappingHelper para suportar exact/pattern/regex
-    psycopg2_conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+    psycopg2_conn = psycopg2_connect(cursor_factory=RealDictCursor)
     mapping_helper = MappingHelper(db_connection=psycopg2_conn, tenant_id=tenant_id, user_id=user_id, account_id=account_id)
 
     # ========================================
