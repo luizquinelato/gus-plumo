@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# CLI Gus no VPS — funciona de qualquer pasta, sem source no .bashrc.
+# Instalação: sudo install -m 755 /opt/gus-plumo/scripts/vps/gus /usr/local/bin/gus
+
+set -euo pipefail
+
+_script="${BASH_SOURCE[0]}"
+while [[ -L "$_script" ]]; do
+  _dir="$(cd "$(dirname "$_script")" && pwd)"
+  _script="$(readlink "$_script")"
+  [[ "$_script" != /* ]] && _script="$_dir/$_script"
+done
+_VPS_DIR="$(cd "$(dirname "$_script")" && pwd)"
+GUS_REPO="${GUS_REPO:-$(cd "$_VPS_DIR/../.." && pwd)}"
+
+RC="$GUS_REPO/scripts/vps/plumo-online-rc.sh"
+if [[ ! -f "$RC" ]]; then
+  echo "[gus] Não encontrei $RC" >&2
+  echo "Defina GUS_REPO=/opt/gus-plumo se o repo estiver noutro caminho." >&2
+  exit 1
+fi
+
+# Subshell evita poluir o shell do usuário; rc define a função gus().
+GUS_CLI_INVOKED=1
+# shellcheck source=plumo-online-rc.sh
+source "$RC"
+gus "$@"

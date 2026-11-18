@@ -276,4 +276,6 @@ plumo-restore() {
 }
 
 export PLUMO_ROOT
-echo "[gus-online] CLI carregado. Comandos: gus --help"
+if [[ -z "${GUS_CLI_INVOKED:-}" ]]; then
+  echo "[gus-online] CLI carregado. Comandos: gus --help"
+fi

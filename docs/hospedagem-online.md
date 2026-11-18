@@ -283,12 +283,15 @@ docker compose --env-file .env.online -f docker-compose.online.yml up -d
 
 Helpers versionados em [`scripts/vps/plumo-online-rc.sh`](../scripts/vps/plumo-online-rc.sh) — **fixos** em `docker-compose.online.yml` + `.env.online` (sem `prod`/`dev`).
 
-Instalação (uma vez no VPS):
+Instalação (uma vez no VPS) — **`gus` em qualquer pasta, sem `source`:**
 
 ```bash
-echo '[[ -f /opt/gus-plumo/scripts/vps/plumo-online-rc.sh ]] && source /opt/gus-plumo/scripts/vps/plumo-online-rc.sh' >> ~/.bashrc
-source ~/.bashrc
+cd /opt/gus-plumo && git pull
+sudo install -m 755 /opt/gus-plumo/scripts/vps/gus /usr/local/bin/gus
+gus --help
 ```
+
+Opcional (atalhos `rat-build` soltos no shell): `source .../plumo-online-rc.sh` no `~/.bashrc`.
 
 Comando principal: **`gus`** (sem args ou `gus --help` lista tudo). Estilo do CLI do PC: `gus rat-build`, `gus dkup`, …
 
