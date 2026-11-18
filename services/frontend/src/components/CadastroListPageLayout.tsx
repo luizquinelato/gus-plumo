@@ -100,13 +100,13 @@ export function CadastroListPageHero({
   actions?: ReactNode
 }) {
   return (
-    <div className="mb-4 flex items-start justify-between gap-4">
-      <div>
-        <h1 className="flex items-center gap-3 text-3xl font-bold text-gray-900 dark:text-white">
+    <div className="mb-4 flex items-start justify-between gap-4 max-md:mb-2">
+      <div className="min-w-0 flex-1">
+        <h1 className="flex items-center gap-3 text-3xl font-bold text-gray-900 dark:text-white max-md:hidden">
           <span className="shrink-0 text-[var(--color-1)]">{icon}</span>
           {title}
         </h1>
-        <p className="mt-2 text-gray-600 dark:text-gray-400">{subtitle}</p>
+        <p className="mt-2 text-gray-600 dark:text-gray-400 max-md:mt-0 max-md:text-sm">{subtitle}</p>
       </div>
       {actions ? (
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">{actions}</div>

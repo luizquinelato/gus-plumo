@@ -188,9 +188,9 @@ const Sidebar = () => {
 
   useEffect(() => {
     if (isMobile && mobileMenuOpen) {
-      setOpenGroups(new Set(['relatorios']))
+      setOpenGroups(activeGroupId ? new Set([activeGroupId]) : new Set())
     }
-  }, [isMobile, mobileMenuOpen])
+  }, [isMobile, mobileMenuOpen, activeGroupId])
 
   useEffect(() => {
     if (collapsed) {

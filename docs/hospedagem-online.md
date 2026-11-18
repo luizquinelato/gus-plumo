@@ -283,13 +283,15 @@ docker compose --env-file .env.online -f docker-compose.online.yml up -d
 
 Helpers versionados em [`scripts/vps/plumo-online-rc.sh`](../scripts/vps/plumo-online-rc.sh) — **fixos** em `docker-compose.online.yml` + `.env.online` (sem `prod`/`dev`).
 
-Instalação (uma vez no VPS) — **`gus` em qualquer pasta, sem `source`:**
+Instalação — **`gus` em qualquer pasta, sem `source`** (primeira vez no VPS **ou** quando [`scripts/vps/gus`](../scripts/vps/gus) mudar no repositório):
 
 ```bash
 cd /opt/gus-plumo && git pull
 sudo install -m 755 /opt/gus-plumo/scripts/vps/gus /usr/local/bin/gus
 gus --help
 ```
+
+O binário em `/usr/local/bin/gus` só é um launcher: a cada execução ele faz `source` de `plumo-online-rc.sh` no repo. Mudanças **só** no `.sh` passam a valer após `git pull`, **sem** reinstalar o launcher.
 
 Opcional (atalhos `rat-build` soltos no shell): `source .../plumo-online-rc.sh` no `~/.bashrc`.
 
@@ -323,6 +325,36 @@ Fluxo habitual após código novo:
 ```bash
 gus cd
 git pull
+gus rat-build
+```
+
+#### `git pull`: o que repetir sempre e o que não
+
+| Ação | Quando |
+|------|--------|
+| `git pull` | Sempre que atualizar código no VPS |
+| `gus rat-build` | Quando mudou app ou imagens Docker (frontend, backend, auth, `Dockerfile`, `docker-compose.online.yml`, Caddy, etc.) |
+| `sudo install -m 755 …/scripts/vps/gus /usr/local/bin/gus` | **Só** na instalação inicial **ou** quando o arquivo **`scripts/vps/gus`** (launcher) mudou no Git |
+| `git checkout -- scripts/vps/gus` | **Só** se o `pull` falhar por alteração **local** nesse arquivo (ver abaixo) |
+
+**Regra prática:** na maioria dos deploys basta `git pull` + `gus rat-build`. Não rode `checkout` nem `install` por hábito.
+
+| O que mudou no `git pull` | O que fazer no VPS |
+|---------------------------|-------------------|
+| Código app, `plumo-online-rc.sh`, compose, Caddy, etc. | `gus rat-build` (launcher não precisa de `install`) |
+| Apenas `scripts/vps/gus` (launcher) | `git pull` + `sudo install …` **uma vez** |
+| Conflito: “local changes would be overwritten” em `scripts/vps/gus` | Descartar cópia suja no repo e puxar de novo (não edite arquivos versionados no servidor) |
+
+**Evitar conflitos no `git pull`:** não edite nem dê `chmod` em arquivos **dentro** de `/opt/gus-plumo` que o Git rastreia. O executável global fica em `/usr/local/bin/gus` (cópia via `install`), fora do working tree.
+
+Se o `pull` bloquear só em `scripts/vps/gus`:
+
+```bash
+cd /opt/gus-plumo
+git checkout -- scripts/vps/gus
+git pull
+# Se o commit novo alterou o launcher:
+sudo install -m 755 /opt/gus-plumo/scripts/vps/gus /usr/local/bin/gus
 gus rat-build
 ```
 
@@ -385,6 +417,7 @@ Local: `.env.dev` / `.env.prod`. Online: **`.env.online`** apenas no servidor.
 | `ENCRYPTION_KEY inválida` | Use Fernet (`Fernet.generate_key()`), não hex aleatório |
 | Restore falhou | Postgres up? `ps`; confirme `DB_USER`/`DB_NAME` no `.env.online` |
 | OpenAPI retorna 200 | `git pull`, rebuild `web` + `backend`; espere 404 |
+| `git pull`: local changes em `scripts/vps/gus` | Não alterar o arquivo no repo; `git checkout -- scripts/vps/gus`, `git pull`, `sudo install …` se o launcher mudou — ver [Fase 7](#git-pull-o-que-repetir-sempre-e-o-que-não) |
 
 ---
 
