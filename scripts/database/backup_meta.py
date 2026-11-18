@@ -20,12 +20,9 @@ def infer_source_env(backup: Path) -> str | None:
             if line.startswith("SOURCE_ENV="):
                 return line.split("=", 1)[1].strip()
     name = backup.name
-    m = re.match(r"^plumo_(prod|dev)_", name, re.I)
+    m = re.match(r"^plumo_(prod|dev|online)_", name, re.I)
     if m:
         return m.group(1).lower()
-    m = re.match(r"^plumo_dev_", name, re.I)
-    if m:
-        return "dev"
     return None
 
 

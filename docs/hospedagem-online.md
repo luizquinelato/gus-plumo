@@ -254,6 +254,8 @@ docker compose --env-file .env.online -f docker-compose.online.yml stop backend 
 ```bash
 git pull
 chmod +x scripts/database/restore-online.sh
+# Com plumo-online-rc.sh no bashrc:
+# plumo-restore backups/plumo_prod_SEU_ARQUIVO.backup
 ./scripts/database/restore-online.sh backups/plumo_prod_SEU_ARQUIVO.backup --to online --keys prod
 ```
 
@@ -277,10 +279,43 @@ docker compose --env-file .env.online -f docker-compose.online.yml up -d
 
 ### Fase 7 — Atualizar código no VPS
 
+#### CLI bash (somente online)
+
+Helpers versionados em [`scripts/vps/plumo-online-rc.sh`](../scripts/vps/plumo-online-rc.sh) — **fixos** em `docker-compose.online.yml` + `.env.online` (sem `prod`/`dev`).
+
+Instalação (uma vez no VPS):
+
 ```bash
-cd /opt/gus-plumo
+echo '[[ -f /opt/gus-plumo/scripts/vps/plumo-online-rc.sh ]] && source /opt/gus-plumo/scripts/vps/plumo-online-rc.sh' >> ~/.bashrc
+source ~/.bashrc
+```
+
+| Comando | Ação |
+|---------|------|
+| `plumo` / `e` | `cd` para o repo |
+| `rat` / `dkup` | `up -d` stack inteira |
+| `rat-build` / `dkup-build` | `up -d --build` após `git pull` |
+| `kill-all` | `stop backend auth web` |
+| `dkdown` / `dkdown-v` | down / down **-v** (volume PG — confirmação) |
+| `dkstatus` / `dklogs` | `ps` / logs |
+| `dbm` / `dbr` / `dbs` | migrations no container backend |
+| `plumo-restore [backup]` | `restore-online.sh` (último em `backups/` se omitido) |
+| `plumo-health` | `curl` `/health` + `ps` |
+| `reset` | rollback 0000 + apply-all + up (mantém volume) |
+| `reset-full` | `down -v` + `RUN_MIGRATIONS=1` + up (fase A) |
+
+**Cuidado:** não use `reset` / `reset-full` / `dkdown-v` com dados de produção restaurados; use `plumo-restore`.
+
+#### Trazer backup do VPS para o PC
+
+No VPS: `./scripts/database/backup-online.sh` ou `plumo-backup`. Baixe `backups/plumo_online_*` com WinSCP/pscp ou `pull-backup-from-online.ps1` no PC. Restore: `restore-database.bat ... --to prod --keys online` (antes: `sync-env-keys.py --from online --to prod` se necessário).
+
+Fluxo habitual após código novo:
+
+```bash
+plumo
 git pull
-docker compose --env-file .env.online -f docker-compose.online.yml up -d --build
+rat-build
 ```
 
 Só mudança de Caddy/frontend:

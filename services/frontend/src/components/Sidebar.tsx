@@ -3,6 +3,9 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useSidebar } from '../contexts/SidebarContext'
+import { useDeviceMode } from '../contexts/DeviceModeContext'
+import MobileTopBar from './MobileTopBar'
+import MobileBottomNav from './MobileBottomNav'
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import axios from 'axios'
@@ -96,7 +99,10 @@ const Sidebar = () => {
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
   const { user, logout, updateUser } = useAuth()
-  const { collapsed, toggleCollapsed } = useSidebar()
+  const { collapsed, toggleCollapsed, mobileMenuOpen, closeMobileMenu } = useSidebar()
+  const { isMobile } = useDeviceMode()
+  const menuCollapsed = isMobile ? false : collapsed
+  const showPortalNav = !isMobile
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false)
   const [selectedAccount, setSelectedAccount] = useState<SelectedAccount | null>(null)
   const [avatarHov, setAvatarHov] = useState(false)
@@ -173,6 +179,12 @@ const Sidebar = () => {
   }, [])
 
   const activeGroupId = useMemo(() => activeNavGroupId(location.pathname), [location.pathname])
+
+  useEffect(() => {
+    if (isMobile) {
+      closeMobileMenu()
+    }
+  }, [location.pathname, isMobile, closeMobileMenu])
 
   useEffect(() => {
     if (collapsed) {
@@ -281,8 +293,24 @@ const Sidebar = () => {
   )
 
   return (
+    <>
+      {isMobile && <MobileTopBar />}
+      {isMobile && <MobileBottomNav />}
+      {isMobile && mobileMenuOpen && (
+        <button
+          type="button"
+          className="fixed inset-0 z-[55] bg-black/50 md:hidden"
+          aria-label="Fechar menu"
+          onClick={closeMobileMenu}
+        />
+      )}
     <aside
-      className={`${collapsed ? 'w-16' : 'w-64'} bg-gray-900 dark:bg-gray-900 text-white flex flex-col border-r border-gray-700 dark:border-gray-700 overflow-visible relative transition-all duration-300 ease-in-out flex-shrink-0`}
+      className={[
+        'bg-gray-900 dark:bg-gray-900 text-white flex flex-col border-r border-gray-700 dark:border-gray-700 overflow-visible transition-all duration-300 ease-in-out flex-shrink-0',
+        isMobile
+          ? `fixed inset-y-0 left-0 z-[60] w-64 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full pointer-events-none'}`
+          : `relative ${menuCollapsed ? 'w-16' : 'w-64'}`,
+      ].join(' ')}
       style={{ boxShadow: '2px 0 16px rgba(0,0,0,0.45)' }}
     >
       {/* Logo/Brand + colapso no header (estilo Vigra) */}
@@ -401,19 +429,21 @@ const Sidebar = () => {
             )
           })}
 
+          {showPortalNav && (
           <SidebarNavGroup
             id="fechamentos"
             icon={Scale}
             label="Fechamentos"
             routes={FECHAMENTOS_ROUTES}
             items={fechamentosSubmenu}
-            collapsed={collapsed}
+            collapsed={menuCollapsed}
             open={openGroups.has('fechamentos')}
             onToggle={() => toggleNavGroup('fechamentos')}
             onClose={() => closeNavGroup('fechamentos')}
           />
+          )}
 
-          {afterFechamentosMenuItems.map((item) => {
+          {showPortalNav && afterFechamentosMenuItems.map((item) => {
             const Icon = item.icon
             const isActive = location.pathname === item.path
             return (
@@ -441,26 +471,30 @@ const Sidebar = () => {
             label="Relatórios"
             routes={['/relatorios']}
             items={relatoriosSubmenu}
-            collapsed={collapsed}
+            collapsed={menuCollapsed}
             open={openGroups.has('relatorios')}
             onToggle={() => toggleNavGroup('relatorios')}
             onClose={() => closeNavGroup('relatorios')}
           />
 
+          {showPortalNav && (
           <SidebarNavGroup
             id="cadastro"
             icon={FolderOpen}
             label="Cadastro"
             routes={CADASTRO_ROUTES}
             items={cadastroSubmenu}
-            collapsed={collapsed}
+            collapsed={menuCollapsed}
             open={openGroups.has('cadastro')}
             onToggle={() => toggleNavGroup('cadastro')}
             onClose={() => closeNavGroup('cadastro')}
           />
+          )}
 
-          <li className={collapsed ? 'mx-2 my-2 border-t border-gray-700' : 'px-3 pb-1 pt-4'}>
-            {!collapsed && (
+          {showPortalNav && (
+          <>
+          <li className={menuCollapsed ? 'mx-2 my-2 border-t border-gray-700' : 'px-3 pb-1 pt-4'}>
+            {!menuCollapsed && (
               <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
                 Importação
               </p>
@@ -487,11 +521,14 @@ const Sidebar = () => {
               </li>
             )
           })}
+          </>
+          )}
         </ul>
       </nav>
 
       {/* Settings Menu — acima do tema, como no Vigra */}
-      <div className={`border-t border-gray-800 pt-2 pb-1 ${collapsed ? 'px-2' : 'px-2'}`}>
+      {showPortalNav && (
+      <div className={`border-t border-gray-800 pt-2 pb-1 ${menuCollapsed ? 'px-2' : 'px-2'}`}>
         <ul>
           {(() => {
             const item = settingsMenuItem
@@ -560,6 +597,7 @@ const Sidebar = () => {
           })()}
         </ul>
       </div>
+      )}
 
       {/* Theme Toggle — abaixo de Configurações */}
       <div className={`border-t border-gray-800 pt-2 pb-2 ${collapsed ? 'px-2' : 'px-3'}`}>
@@ -735,6 +773,7 @@ const Sidebar = () => {
         }}
       />
     </aside>
+    </>
   )
 }
 

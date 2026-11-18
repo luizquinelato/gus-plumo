@@ -6,7 +6,7 @@
 |------|--------|---------|
 | `--from prod\|dev` | Qual banco exportar | — |
 | `--to dev\|prod\|online` | — | Onde restaurar + qual `.env.*` manda o Postgres |
-| `--keys prod\|dev` | — | De qual `.env.*` copiar JWT/ENCRYPTION (origem dos **dados**) |
+| `--keys prod\|dev\|online` | — | De qual `.env.*` copiar JWT/ENCRYPTION (origem dos **dados**) |
 
 Arquivo **`backups/<nome>.meta`** (sem segredos, pode ir no Git): `SOURCE_ENV`, `CREATED_AT`, `DB_NAME`.
 
@@ -49,6 +49,25 @@ docker compose --env-file .env.online -f docker-compose.online.yml up -d
 ```
 
 No VPS só existe `.env.online`: o restore **valida** chaves ou sincroniza se `.env.prod` existir (raro).
+
+## Backup online → PC (trazer da cloud)
+
+**VPS (PuTTY / SSH):**
+
+```bash
+cd /opt/gus-plumo
+./scripts/database/backup-online.sh   # ou: plumo-backup
+```
+
+**PC — download (WinSCP ou PowerShell):**
+
+```powershell
+.\scripts\database\pull-backup-from-online.ps1
+python scripts\database\sync-env-keys.py --from online --to prod
+.\scripts\database\restore-database.bat backups\plumo_online_....backup --to prod --keys online
+```
+
+Não é obrigatório usar Git — SFTP basta.
 
 ## Ferramentas internas
 

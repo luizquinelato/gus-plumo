@@ -19,7 +19,7 @@ export const cadastroFilterApplyLabelSpacerCls =
 export const listPageTableSectionCls =
   'overflow-hidden rounded-lg border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-800'
 export const listPageTableCls =
-  'list-page-table w-full min-w-[520px] border-separate border-spacing-0 text-sm'
+  'list-page-table w-full min-w-0 max-md:min-w-[280px] md:min-w-[520px] border-separate border-spacing-0 text-sm'
 export const listPageTableFixedCls = `${listPageTableCls} table-fixed`
 export const listPageTableChromeBgCls = 'bg-gray-100 dark:bg-gray-800/75'
 export const listPageTableChromeFooterBgCls = 'bg-gray-50 dark:bg-gray-800/50'
@@ -82,7 +82,7 @@ function resolveFilterRowCls(childCount: number, gridClass?: string): string {
 
 export function CadastroListPageShell({ children }: { children: ReactNode }) {
   return (
-    <div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
+    <div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-gray-50 pt-0 dark:bg-gray-900 max-md:pt-12 max-md:pb-[4.5rem]">
       {children}
     </div>
   )

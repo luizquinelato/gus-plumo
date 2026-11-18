@@ -1,5 +1,7 @@
-import { Navigate } from 'react-router-dom'
+import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { useDeviceMode } from '../contexts/DeviceModeContext'
+import { isPathAllowedOnMobile, MOBILE_DEFAULT_ROUTE } from '../utils/mobilePortal'
 
 interface ProtectedRouteProps {
   children: React.ReactNode
@@ -7,6 +9,8 @@ interface ProtectedRouteProps {
 
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { isAuthenticated, isLoading, user } = useAuth()
+  const { isMobile } = useDeviceMode()
+  const location = useLocation()
 
   // Mostrar loading enquanto verifica autenticação
   if (isLoading) {
@@ -37,7 +41,10 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
     return <Navigate to="/select-account" replace />
   }
 
-  // Renderizar conteúdo protegido
+  if (isMobile && !isPathAllowedOnMobile(location.pathname)) {
+    return <Navigate to={MOBILE_DEFAULT_ROUTE} replace />
+  }
+
   return <>{children}</>
 }
 

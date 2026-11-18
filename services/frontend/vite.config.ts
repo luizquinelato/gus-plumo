@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import path from 'path'
 
 // https://vitejs.dev/config/
+// PWA: após `npm i -D vite-plugin-pwa`, ver docs/mobile-portal.md
 export default defineConfig({
   plugins: [react()],
   resolve: {

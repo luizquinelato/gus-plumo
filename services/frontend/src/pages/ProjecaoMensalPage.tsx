@@ -37,6 +37,7 @@ import {
 import { CadastroListHeaderActions } from '../components/CadastroExcelMenu'
 import { DateField } from '../components/date'
 import Sidebar from '../components/Sidebar'
+import PortalOnly from '../components/PortalOnly'
 import {
   CadastroListPageBody,
   CadastroListPageHero,
@@ -1218,6 +1219,7 @@ export default function ProjecaoMensalPage() {
                     ],
                   }}
                 >
+                  <PortalOnly>
                   <button
                     type="button"
                     onClick={() => setWhatsappDate(todayLocal())}
@@ -1232,6 +1234,7 @@ export default function ProjecaoMensalPage() {
                     icon={<CalendarDays size={18} />}
                     onClick={openLaunchHub}
                   />
+                  </PortalOnly>
                 </CadastroListHeaderActions>
               }
             />

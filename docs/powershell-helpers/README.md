@@ -2,6 +2,8 @@
 
 Este diretório contém utilitários PowerShell para otimizar o fluxo de trabalho de desenvolvimento da Plataforma Gus Despesas.
 
+**VPS (produção online):** não use este perfil no servidor. No Ubuntu, carregue [`scripts/vps/plumo-online-rc.sh`](../scripts/vps/plumo-online-rc.sh) no `~/.bashrc` — mesmos nomes curtos (`dkup`, `dbm`, `rat`), mas **só** `docker-compose.online.yml` e `.env.online`. Ver [hospedagem-online.md](../hospedagem-online.md) (Fase 7).
+
 ## 📁 Arquivos
 
 - **`powershell-profile.txt`** - Funções PowerShell completas para copiar no seu `$PROFILE`

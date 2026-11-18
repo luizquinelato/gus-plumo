@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useLocation } from 'react-router-dom'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
+import PortalOnly from '../components/PortalOnly'
 import {
   CadastroListPageBody,
   CadastroListPageHero,
@@ -1117,11 +1118,13 @@ const ExtratoPage = () => {
               subtitle="Extrato bancário e benefícios por data da transação. Faturas de cartão de crédito: menu Faturas."
               actions={
                 <CadastroListHeaderActions>
+                  <PortalOnly>
                   <CadastroListPrimaryButton
                     label="Novo Lançamento"
                     icon={<PlusCircle size={18} />}
                     onClick={() => setIsManualTransactionModalOpen(true)}
                   />
+                  </PortalOnly>
                   <ExtratoReportMenu
                     onExportExcel={() => {
                       if (!exportExpenses || exportExpenses.length === 0) {

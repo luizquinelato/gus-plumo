@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider } from './contexts/AuthContext'
 import { SidebarProvider } from './contexts/SidebarContext'
+import { DeviceModeProvider } from './contexts/DeviceModeContext'
 import { BalanceVisibilityProvider } from './contexts/BalanceVisibilityContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import LoginPage from './pages/LoginPage'
@@ -67,6 +68,7 @@ function GlobalErrorAlert() {
 function App() {
   return (
     <ThemeProvider>
+      <DeviceModeProvider>
       <AuthProvider>
         <SidebarProvider>
         <BalanceVisibilityProvider>
@@ -337,6 +339,7 @@ function App() {
         </BalanceVisibilityProvider>
         </SidebarProvider>
       </AuthProvider>
+      </DeviceModeProvider>
     </ThemeProvider>
   )
 }

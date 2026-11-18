@@ -5,6 +5,9 @@ interface SidebarContextType {
   collapsed: boolean
   toggleCollapsed: () => void
   sidebarLeftClass: 'left-16' | 'left-64'
+  mobileMenuOpen: boolean
+  openMobileMenu: () => void
+  closeMobileMenu: () => void
 }
 
 const SidebarContext = createContext<SidebarContextType | undefined>(undefined)
@@ -21,6 +24,10 @@ const persistCollapsed = (collapsed: boolean) => {
 
 export const SidebarProvider = ({ children }: { children: ReactNode }) => {
   const [collapsed, setCollapsed] = useState(readStoredCollapsed)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  const openMobileMenu = () => setMobileMenuOpen(true)
+  const closeMobileMenu = () => setMobileMenuOpen(false)
 
   useEffect(() => {
     const handleUserSidebarLoaded = (event: CustomEvent) => {
@@ -63,6 +70,9 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
         collapsed,
         toggleCollapsed,
         sidebarLeftClass: collapsed ? 'left-16' : 'left-64',
+        mobileMenuOpen,
+        openMobileMenu,
+        closeMobileMenu,
       }}
     >
       {children}

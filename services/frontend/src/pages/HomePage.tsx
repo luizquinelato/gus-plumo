@@ -10,6 +10,7 @@ import {
   listPageTableSectionCls,
 } from '../components/CadastroListPageLayout'
 import LoadingSpinner from '../components/LoadingSpinner'
+import PortalOnly from '../components/PortalOnly'
 import {
   Upload,
   TrendingUp,
@@ -225,11 +226,13 @@ const HomePage = () => {
               title="Plumo"
               subtitle={`Finanças leves, vida plena. · ${currentMonthLabel}`}
               actions={
-                <CadastroListPrimaryButton
-                  label="Importar"
-                  onClick={() => navigate('/importar')}
-                  icon={<Upload size={18} />}
-                />
+                <PortalOnly>
+                  <CadastroListPrimaryButton
+                    label="Importar"
+                    onClick={() => navigate('/importar')}
+                    icon={<Upload size={18} />}
+                  />
+                </PortalOnly>
               }
             />
           }

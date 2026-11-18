@@ -2,7 +2,7 @@
   "name": "Plumo - Finanças leves, vida plena",
   "short_name": "Plumo",
   "description": "Assuma a direção. Sinta a leveza.",
-  "start_url": "/",
+  "start_url": "/relatorios/extrato",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#3b82f6",
