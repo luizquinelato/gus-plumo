@@ -1,10 +1,11 @@
-import { FileText, CreditCard, Home, Activity, PanelLeftOpen } from 'lucide-react'
+import { Activity, CreditCard, FileText, Home, Menu } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import { useSidebar } from '../contexts/SidebarContext'
 
-const items = [
-  { to: '/', icon: Home, label: 'Home' },
+/** Ordem: Mais (botão) · Extrato · Home (centro) · Faturas · Saúde */
+const navLinks = [
   { to: '/relatorios/extrato', icon: FileText, label: 'Extrato' },
+  { to: '/', icon: Home, label: 'Home' },
   { to: '/relatorios/faturas', icon: CreditCard, label: 'Faturas' },
   { to: '/relatorios/saude', icon: Activity, label: 'Saúde' },
 ] as const
@@ -23,7 +24,11 @@ export default function MobileBottomNav() {
       className="fixed bottom-0 left-0 right-0 z-50 flex border-t border-gray-200 bg-white/95 backdrop-blur dark:border-gray-700 dark:bg-gray-900/95 md:hidden"
       style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
     >
-      {items.map(({ to, icon: Icon, label }) => {
+      <button type="button" onClick={openMobileMenu} className={linkCls(false)} aria-label="Menu do app">
+        <Menu size={20} />
+        Mais
+      </button>
+      {navLinks.map(({ to, icon: Icon, label }) => {
         const active = to === '/' ? location.pathname === '/' : location.pathname.startsWith(to)
         return (
           <Link key={to} to={to} className={linkCls(active)}>
@@ -32,10 +37,6 @@ export default function MobileBottomNav() {
           </Link>
         )
       })}
-      <button type="button" onClick={openMobileMenu} className={linkCls(false)} aria-label="Mais páginas">
-        <PanelLeftOpen size={20} />
-        Mais
-      </button>
     </nav>
   )
 }

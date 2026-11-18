@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Download, FileSpreadsheet, Loader2 } from 'lucide-react'
+import { Download, FileSpreadsheet, Loader2, MoreVertical } from 'lucide-react'
 
 export type CadastroExcelMenuExtraItem = {
   id: string
@@ -16,7 +16,7 @@ export interface CadastroExcelMenuProps {
   onExportExcel?: () => void
   extraItems?: CadastroExcelMenuExtraItem[]
   menuTitle?: string
-  /** Ícone do botão (padrão: download, para não confundir com menu de navegação). */
+  /** Mobile top bar: ⋮ (ações da tela); desktop: ícone de download. */
   compact?: boolean
 }
 
@@ -62,7 +62,7 @@ export default function CadastroExcelMenu({
         title={menuTitle}
         aria-label={menuTitle}
       >
-        <Download size={compact ? 22 : 20} />
+        {compact ? <MoreVertical size={22} /> : <Download size={20} />}
       </button>
       {open ? (
         <div className="absolute right-0 z-50 mt-2 min-w-[220px] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-600 dark:bg-gray-800">

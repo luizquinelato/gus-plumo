@@ -5,6 +5,8 @@
 
 Implementação: `DeviceModeContext`, `PortalOnly` (esconde ações de escrita), navegação inferior, drawer no menu.
 
+Rodapé (esquerda → direita): **Mais** · Extrato · **Home** (centro) · Faturas · Saúde.
+
 ### Instalar no Android (Chrome)
 
 1. Acesse o site em **HTTPS** (ex.: `https://37-27-37-103.sslip.io`).
@@ -13,11 +15,11 @@ Implementação: `DeviceModeContext`, `PortalOnly` (esconde ações de escrita),
 
 Se não aparecer “Instalar app”, use **Adicionar à tela inicial** (PWA leve sem service worker até `vite-plugin-pwa` estar no build).
 
-**Menu hambúrguer (v1):** abre o drawer lateral com **Home** e **Relatórios** (sem Importar/Cadastro). Atalhos inferiores vão direto às telas.
+**Menu hambúrguer (v1):** no rodapé, botão **Mais** (☰) abre o drawer lateral com **Home** e **Relatórios** (sem Importar/Cadastro). Atalhos inferiores vão direto às telas. No topo dos relatórios, **⋮** abre exportar e outras ações da tela (não é o menu de navegação).
 
 PWA completo: `vite-plugin-pwa` no build de produção (opcional).
 
-**Mobile (relatórios):** filtros via `MobileReportFilterBar` + bottom sheet; export (`Download`) no header quando houver; scroll único (`CadastroListPageBody` em `<md`).
+**Mobile (relatórios):** filtros via `MobileReportFilterBar` + bottom sheet; **⋮** no `MobileTopBar` quando houver export/ações; scroll único (`CadastroListPageBody` em `<md`).
 
 - **Extrato:** cards por dia.
 - **Faturas:** navegador mês/ano (estilo Projeção); seções por cartão/grupo; lista mobile; agrupamentos preservados.

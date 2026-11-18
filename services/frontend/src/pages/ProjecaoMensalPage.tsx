@@ -20,6 +20,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronsDown,
   ChevronsRight,
   Copy,
   CreditCard,
@@ -823,6 +824,22 @@ export default function ProjecaoMensalPage() {
     return [...Array(offset).fill(null), ...Array.from({ length: days }, (_, i) => i + 1)] as (number | null)[]
   }, [yearMonth])
 
+  /** Dias 14 e 15 na mesma linha da grade → divisor vertical; senão, divisor horizontal. */
+  const quinzenaDividerVertical = useMemo(() => {
+    const i14 = cells.findIndex((d) => d === 14)
+    const i15 = cells.findIndex((d) => d === 15)
+    if (i14 < 0 || i15 < 0) return true
+    return Math.floor(i14 / 7) === Math.floor(i15 / 7)
+  }, [cells])
+
+  /** Célula no meio da linha do dia 14 (índice de coluna 3) para o marcador na divisão horizontal. */
+  const quinzenaHorizontalMarkerIndex = useMemo(() => {
+    if (quinzenaDividerVertical) return -1
+    const i14 = cells.findIndex((d) => d === 14)
+    if (i14 < 0) return -1
+    return Math.floor(i14 / 7) * 7 + 3
+  }, [cells, quinzenaDividerVertical])
+
   const amountNum = form ? parseFloat(form.amount) : NaN
   const amountColor = amountNum > 0 ? creditCls : amountNum < 0 ? debitCls : 'text-gray-600 dark:text-gray-400'
 
@@ -1414,7 +1431,7 @@ export default function ProjecaoMensalPage() {
                   // e borda direita no dia 14 quando o 15 está na mesma linha.
                   const shadows: string[] = []
                   if (day !== null && day >= 8 && day <= 14) shadows.push('inset 0 -3px 0 0 var(--color-1)')
-                  if (day === 14 && i % 7 < 6) shadows.push('inset -3px 0 0 0 var(--color-1)')
+                  if (day === 14 && quinzenaDividerVertical && i % 7 < 6) shadows.push('inset -3px 0 0 0 var(--color-1)')
                   return (
                     <div
                       key={i}
@@ -1443,12 +1460,18 @@ export default function ProjecaoMensalPage() {
                             : 'bg-white dark:bg-gray-900'
                       }`}
                     >
-                      {day === 15 && (
+                      {i === quinzenaHorizontalMarkerIndex && (
                         <span
                           title="Segunda metade do mês (dia 15 em diante)"
-                          className={`pointer-events-none absolute top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full bg-[var(--color-1)] text-white shadow ${
-                            i % 7 === 0 ? 'left-1' : 'left-0 -translate-x-1/2'
-                          }`}
+                          className="pointer-events-none absolute bottom-0 left-1/2 z-10 flex h-6 w-6 -translate-x-1/2 translate-y-1/2 items-center justify-center rounded-full bg-[var(--color-1)] text-white shadow"
+                        >
+                          <ChevronsDown className="h-4 w-4" />
+                        </span>
+                      )}
+                      {day === 15 && quinzenaDividerVertical && (
+                        <span
+                          title="Segunda metade do mês (dia 15 em diante)"
+                          className="pointer-events-none absolute left-0 top-1/2 z-10 flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-[var(--color-1)] text-white shadow"
                         >
                           <ChevronsRight className="h-4 w-4" />
                         </span>
