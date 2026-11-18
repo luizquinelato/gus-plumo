@@ -2168,8 +2168,21 @@ const FaturasPage = () => {
               className={`${selectedItems.size > 0 || showBackToTop ? 'pb-20' : ''}`}
             >
               <>
+                <div className="mb-4 md:hidden">
+                  <InvoicePeriodNavigator
+                    availableMonths={availableMonths}
+                    activeMonth={activeMonth}
+                    monthCounts={monthCountByYearMonth}
+                    onMonthChange={(ym) => {
+                      setActiveMonth(ym)
+                      if (ym && ym !== 'Sem mês') {
+                        setActiveYear(ym.split('-')[0])
+                      }
+                    }}
+                  />
+                </div>
                 <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div className="min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white px-3 py-3 dark:border-gray-700 dark:bg-gray-800 sm:px-4">
+                  <div className="hidden min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white px-3 py-3 dark:border-gray-700 dark:bg-gray-800 sm:px-4 md:block">
                     <p className="flex flex-wrap items-center gap-x-1 gap-y-1 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                       Total geral (filtro)
                       {shareBadge}
@@ -2180,7 +2193,7 @@ const FaturasPage = () => {
                       {filteredScopeTotals.totalCount === 1 ? 'lançamento' : 'lançamentos'}
                     </p>
                   </div>
-                  <div className="min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white px-3 py-3 dark:border-gray-700 dark:bg-gray-800 sm:px-4">
+                  <div className="hidden min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white px-3 py-3 dark:border-gray-700 dark:bg-gray-800 sm:px-4 md:block">
                     <p className="flex flex-wrap items-center gap-x-1 gap-y-1 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                       Total {activeYear || '—'}
                       {shareBadge}
@@ -2248,7 +2261,7 @@ const FaturasPage = () => {
                   ) : null}
                 </div>
 
-                <div className="mb-4">
+                <div className="mb-4 hidden md:block">
                   <InvoicePeriodNavigator
                     availableMonths={availableMonths}
                     activeMonth={activeMonth}

@@ -26,6 +26,13 @@
 		respond 404
 	}
 
+	# index.html sem cache longo — cada deploy aponta para novo hash em /assets/
+	@index path /index.html /
+	header @index Cache-Control "no-cache, must-revalidate"
+
+	@static_assets path /assets/*
+	header @static_assets Cache-Control "public, max-age=31536000, immutable"
+
 	handle {
 		root * /srv/frontend
 		try_files {path} /index.html

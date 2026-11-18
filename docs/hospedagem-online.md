@@ -437,6 +437,7 @@ Local: `.env.dev` / `.env.prod`. Online: **`.env.online`** apenas no servidor.
 | `plumo-online-postgres` unhealthy | Postgres **18** monta volume em `/var/lib/postgresql`, não em `.../data`. Sem dados de prod: `down` → `docker volume rm plumo_online_pgdata` → `up -d --build`. Logs: `logs postgres --tail 80` |
 | Build `web` falha no `tsc` | Corrigir frontend local (`npm run build`); `git pull` no VPS |
 | Log do Docker: `RUN npx vite build` | **Normal no VPS** se `deploy/Dockerfile.web` foi editado à mão para pular `tsc` (`git diff` mostra `npx vite build` vs `npm run build` no commit). No **repo** o padrão é `npm run build`. Depois de corrigir o frontend local, `git restore deploy/Dockerfile.web` no VPS e `gus rat-build` para voltar a validar tipos no deploy |
+| Mobile “igual” após deploy | Confirme `git log -1` ≥ commit com `InvoicePeriodNavigator`. No celular: abrir Faturas, aplicar filtros, rolar — deve aparecer **← mês →** e **Mais recente** (não faixas de abas ano/mês). Se não: fechar aba / limpar dados do site ou reinstalar atalho; o `Caddyfile` manda `no-cache` no `index.html` após `git pull` + rebuild `web` |
 | 502 / login | `logs backend auth` |
 | CORS | `CORS_ORIGINS` = `PUBLIC_URL` exato (mesma origem HTTPS) |
 | `ENCRYPTION_KEY inválida` | Use Fernet (`Fernet.generate_key()`), não hex aleatório |
