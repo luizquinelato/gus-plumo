@@ -436,6 +436,7 @@ Local: `.env.dev` / `.env.prod`. Online: **`.env.online`** apenas no servidor.
 |---------|------|
 | `plumo-online-postgres` unhealthy | Postgres **18** monta volume em `/var/lib/postgresql`, não em `.../data`. Sem dados de prod: `down` → `docker volume rm plumo_online_pgdata` → `up -d --build`. Logs: `logs postgres --tail 80` |
 | Build `web` falha no `tsc` | Corrigir frontend local (`npm run build`); `git pull` no VPS |
+| Log do Docker: `RUN npx vite build` | **Normal no VPS** se `deploy/Dockerfile.web` foi editado à mão para pular `tsc` (`git diff` mostra `npx vite build` vs `npm run build` no commit). No **repo** o padrão é `npm run build`. Depois de corrigir o frontend local, `git restore deploy/Dockerfile.web` no VPS e `gus rat-build` para voltar a validar tipos no deploy |
 | 502 / login | `logs backend auth` |
 | CORS | `CORS_ORIGINS` = `PUBLIC_URL` exato (mesma origem HTTPS) |
 | `ENCRYPTION_KEY inválida` | Use Fernet (`Fernet.generate_key()`), não hex aleatório |
