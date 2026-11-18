@@ -20,5 +20,5 @@ PWA completo: `vite-plugin-pwa` no build de produção (opcional).
 **Mobile (relatórios):** filtros via `MobileReportFilterBar` + bottom sheet; export (`Download`) no header quando houver; scroll único (`CadastroListPageBody` em `<md`).
 
 - **Extrato:** cards por dia.
-- **Faturas:** mantém abas ano/mês e seções por cartão/grupo; lançamentos em lista (sem tabela); agrupamento preservado.
+- **Faturas:** navegador mês/ano (estilo Projeção); seções por cartão/grupo; lista mobile; agrupamentos preservados.
 - **Saúde:** filtros ano/mês/escopo no sheet; gráficos rolam com a página.

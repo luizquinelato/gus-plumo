@@ -12,6 +12,7 @@ import {
 } from '../components/CadastroListPageLayout'
 import MobileReportFilterBar from '../components/MobileReportFilterBar'
 import FaturasMobileItemList from '../components/FaturasMobileItemList'
+import InvoicePeriodNavigator from '../components/InvoicePeriodNavigator'
 import CadastroExcelMenu from '../components/CadastroExcelMenu'
 import { useDeviceMode } from '../contexts/DeviceModeContext'
 import { useMobileTopBarActions } from '../contexts/MobileTopBarActionsContext'
@@ -178,14 +179,6 @@ function formatYearMonthLabel(yearMonth: string): string {
   const monthIndex = parseInt(month, 10) - 1
   if (!year || monthIndex < 0 || monthIndex > 11) return yearMonth
   return `${MONTH_SHORT[monthIndex]} ${year}`
-}
-
-function formatMonthOnly(yearMonth: string): string {
-  if (yearMonth === 'Sem mês') return yearMonth
-  const [, month] = yearMonth.split('-')
-  const monthIndex = parseInt(month, 10) - 1
-  if (monthIndex < 0 || monthIndex > 11) return yearMonth
-  return MONTH_SHORT[monthIndex]
 }
 
 function getCardSectionKey(cardName: string, cardNumber: string, cardId?: number) {
@@ -935,22 +928,32 @@ const FaturasPage = () => {
       { mine: 0, partner: 0 },
     )
 
+  const scorecardAmountCls = (amount: number) =>
+    `max-w-full text-[clamp(0.65rem,3.2vw,0.875rem)] font-semibold leading-tight tracking-tight ${invoiceNetAmountClass(amount)}`
+
   const renderScorecardParts = (items: InvoiceItem[]) => {
     const parts = sumParts(items)
     const total = parts.mine + parts.partner
+    const cellCls = 'min-w-0 flex-1'
     return (
-      <div className="mt-1 flex items-stretch divide-x divide-gray-200 tabular-nums dark:divide-gray-600">
-        <div className="pr-3">
-          <p className="text-[10px] uppercase text-gray-500 dark:text-gray-400">Minha parte</p>
-          <p className={`text-sm font-semibold ${invoiceNetAmountClass(parts.mine)}`}>{formatCurrency(parts.mine)}</p>
+      <div className="mt-1 grid min-w-0 grid-cols-3 gap-x-1 gap-y-0.5 tabular-nums sm:flex sm:items-stretch sm:divide-x sm:divide-gray-200 sm:dark:divide-gray-600">
+        <div className={`${cellCls} sm:pr-3`}>
+          <p className="truncate text-[10px] uppercase text-gray-500 dark:text-gray-400">Minha parte</p>
+          <p className={scorecardAmountCls(parts.mine)} title={formatCurrency(parts.mine)}>
+            {formatCurrency(parts.mine)}
+          </p>
         </div>
-        <div className="px-3">
-          <p className="text-[10px] uppercase text-gray-500 dark:text-gray-400">Compartilhado</p>
-          <p className={`text-sm font-semibold ${invoiceNetAmountClass(parts.partner)}`}>{formatCurrency(parts.partner)}</p>
+        <div className={`${cellCls} sm:px-3`}>
+          <p className="truncate text-[10px] uppercase text-gray-500 dark:text-gray-400">Compartilhado</p>
+          <p className={scorecardAmountCls(parts.partner)} title={formatCurrency(parts.partner)}>
+            {formatCurrency(parts.partner)}
+          </p>
         </div>
-        <div className="pl-3">
-          <p className="text-[10px] uppercase text-gray-500 dark:text-gray-400">Total</p>
-          <p className={`text-sm font-semibold ${invoiceNetAmountClass(total)}`}>{formatCurrency(total)}</p>
+        <div className={`${cellCls} sm:pl-3`}>
+          <p className="truncate text-[10px] uppercase text-gray-500 dark:text-gray-400">Total</p>
+          <p className={scorecardAmountCls(total)} title={formatCurrency(total)}>
+            {formatCurrency(total)}
+          </p>
         </div>
       </div>
     )
@@ -990,6 +993,24 @@ const FaturasPage = () => {
 
     return { groupedByMonth, sortedYears, groupedByYear }
   }, [filteredItems])
+
+  const availableMonths = useMemo(() => {
+    const out: string[] = []
+    for (const year of invoicePeriodIndex.sortedYears) {
+      for (const ym of invoicePeriodIndex.groupedByYear[year] ?? []) {
+        out.push(ym)
+      }
+    }
+    return out
+  }, [invoicePeriodIndex])
+
+  const monthCountByYearMonth = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const [ym, items] of Object.entries(invoicePeriodIndex.groupedByMonth)) {
+      map[ym] = items.length
+    }
+    return map
+  }, [invoicePeriodIndex])
 
   const monthsOfActiveYear = activeYear
     ? invoicePeriodIndex.groupedByYear[activeYear] || []
@@ -2148,8 +2169,8 @@ const FaturasPage = () => {
             >
               <>
                 <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  <div className="min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white px-3 py-3 dark:border-gray-700 dark:bg-gray-800 sm:px-4">
+                    <p className="flex flex-wrap items-center gap-x-1 gap-y-1 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                       Total geral (filtro)
                       {shareBadge}
                     </p>
@@ -2159,8 +2180,8 @@ const FaturasPage = () => {
                       {filteredScopeTotals.totalCount === 1 ? 'lançamento' : 'lançamentos'}
                     </p>
                   </div>
-                  <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  <div className="min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white px-3 py-3 dark:border-gray-700 dark:bg-gray-800 sm:px-4">
+                    <p className="flex flex-wrap items-center gap-x-1 gap-y-1 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                       Total {activeYear || '—'}
                       {shareBadge}
                     </p>
@@ -2170,8 +2191,8 @@ const FaturasPage = () => {
                       {activeYearTotals.totalCount === 1 ? 'lançamento' : 'lançamentos'}
                     </p>
                   </div>
-                  <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  <div className="min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white px-3 py-3 dark:border-gray-700 dark:bg-gray-800 sm:px-4">
+                    <p className="flex flex-wrap items-center gap-x-1 gap-y-1 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                       {activeMonth ? formatYearMonthLabel(activeMonth) : 'Mês'}
                       {shareBadge}
                     </p>
@@ -2180,11 +2201,10 @@ const FaturasPage = () => {
                       {activeMonthTotals.totalCount}{' '}
                       {activeMonthTotals.totalCount === 1 ? 'lançamento' : 'lançamentos'}
                       {activeMonth && activeMonthTotals.totalCount > 0 ? (
-                        <span className="ml-2">
+                        <span className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] leading-snug sm:ml-2 sm:inline sm:text-xs">
                           <span className="text-red-600 dark:text-red-400">
                             desp. {formatCurrency(Math.abs(activeMonthTotals.totalExpenses))}
                           </span>
-                          <span className="text-gray-400 dark:text-gray-500"> · </span>
                           <span className="text-green-600 dark:text-green-400">
                             rec. {formatCurrency(activeMonthTotals.totalIncome)}
                           </span>
@@ -2228,76 +2248,18 @@ const FaturasPage = () => {
                   ) : null}
                 </div>
 
-                <div className="mb-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm overflow-hidden">
-                  <div className="flex items-center gap-2 border-b border-gray-200 px-4 py-2 dark:border-gray-700">
-                    <Calendar size={16} style={{ color: 'var(--color-1)' }} />
-                    <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">Período da fatura</span>
-                  </div>
-                  <div className="flex overflow-x-auto border-b border-gray-200 dark:border-gray-700 px-2">
-                    {invoicePeriodIndex.sortedYears.map((year) => {
-                      const totalItemsInYear = invoicePeriodIndex.groupedByYear[year].reduce(
-                        (sum, month) => sum + invoicePeriodIndex.groupedByMonth[month].length,
-                        0,
-                      )
-                      const isActive = activeYear === year
-                      return (
-                        <button
-                          key={year}
-                          type="button"
-                          onClick={() => {
-                            setActiveYear(year)
-                            const firstMonth = invoicePeriodIndex.groupedByYear[year]?.[0]
-                            if (firstMonth) setActiveMonth(firstMonth)
-                          }}
-                          className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-all whitespace-nowrap ${
-                            isActive
-                              ? 'border-[var(--color-1)] text-[var(--color-1)]'
-                              : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-300'
-                          }`}
-                        >
-                          {year}
-                          <Badge
-                            variant="tab"
-                            tone="brand1"
-                            className="bg-[var(--color-1)] text-[var(--on-color-1)]"
-                            label={String(totalItemsInYear)}
-                          />
-                        </button>
-                      )
-                    })}
-                  </div>
-                  {monthsOfActiveYear.length > 0 ? (
-                    <div className="flex overflow-x-auto px-2 bg-gray-50/80 dark:bg-gray-800/50">
-                      {monthsOfActiveYear.map((month) => {
-                        const isActive = activeMonth === month
-                        const monthCount = invoicePeriodIndex.groupedByMonth[month].length
-                        return (
-                          <button
-                            key={month}
-                            type="button"
-                            onClick={() => setActiveMonth(month)}
-                            className={`flex flex-1 min-w-[4.5rem] items-center justify-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition-all whitespace-nowrap ${
-                              isActive
-                                ? 'border-[var(--color-2)] text-[var(--color-2)]'
-                                : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-300'
-                            }`}
-                          >
-                            {formatMonthOnly(month)}
-                            <Badge
-                              variant="tab"
-                              tone="brand2"
-                              className={
-                                isActive
-                                  ? 'bg-[var(--color-2)] text-[var(--on-color-2)]'
-                                  : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-                              }
-                              label={String(monthCount)}
-                            />
-                          </button>
-                        )
-                      })}
-                    </div>
-                  ) : null}
+                <div className="mb-4">
+                  <InvoicePeriodNavigator
+                    availableMonths={availableMonths}
+                    activeMonth={activeMonth}
+                    monthCounts={monthCountByYearMonth}
+                    onMonthChange={(ym) => {
+                      setActiveMonth(ym)
+                      if (ym && ym !== 'Sem mês') {
+                        setActiveYear(ym.split('-')[0])
+                      }
+                    }}
+                  />
                 </div>
 
                 {currentItems.length > 0 && (
