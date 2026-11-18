@@ -66,11 +66,35 @@ docker compose --env-file .env.online -f docker-compose.online.yml <comando>
 3. **SSH com chave** (sem login por senha no root).
 4. Anotar o **IPv4** e montar o hostname sslip.io.
 
-Conectar do Windows:
+Conectar do Windows (OpenSSH no terminal):
 
 ```powershell
 ssh -i $env:USERPROFILE\.ssh\id_ed25519_plumo root@37.27.37.103
 ```
+
+#### PuTTY (opcional)
+
+O PuTTY usa chave no formato **`.ppk`**. Use a **mesma** chave privada do PC (`%USERPROFILE%\.ssh\id_ed25519_plumo`) — **não** gere chave nova no PuTTYgen, senão o VPS recusa até você cadastrar a chave pública no Hetzner.
+
+1. **PuTTYgen** → **Conversions → Import key** → selecione `id_ed25519_plumo`.
+2. Confira o comentário (ex.: `plumo-hetzner`) e que o tipo é **ed25519** (ignorar “RSA 2048” na parte de baixo se você importou uma chave existente).
+3. **Save private key** → ex.: `%USERPROFILE%\.ssh\putty-ssh-key.ppk` (passphrase opcional).
+
+**PuTTY (sessão salva, ex. `Plumo online`):**
+
+| Ajuste | Valor |
+|--------|--------|
+| **Session → Host Name** | Só o IPv4: `37.27.37.103` (sem `root@`, sem texto extra — host inválido tipo `37.27.37.103ousó…` gera *Host does not exist*) |
+| **Session → Port** | `22` |
+| **Connection → Data → Auto-login username** | `root` |
+| **Connection → SSH → Auth → Credentials → Private key file** | Caminho do `.ppk` |
+| **Session** | Nome da sessão → **Save** → **Open** |
+
+Prompt **“login as:”** → `root`. Com chave correta **não** pede senha de root (o VPS usa autenticação por chave).
+
+**Se pedir senha do root:** a chave não foi aceita — sessão sem **Save** após apontar o `.ppk`, `.ppk` de outra chave, ou chave pública ausente no servidor. Teste no PowerShell com o comando `ssh -i` acima; se o terminal entrar e o PuTTY não, reimporte `id_ed25519_plumo` no PuTTYgen e atualize o **Private key file**. **Window → Event log** no PuTTY: `Server refused our key` = chave não está em `authorized_keys` / Hetzner.
+
+**WinSCP (arquivos / backups):** mesmo host, usuário `root`, porta `22`, protocolo SFTP, mesma chave `.ppk`.
 
 ### Fase 1 — Preparar o servidor (uma vez)
 
@@ -418,6 +442,8 @@ Local: `.env.dev` / `.env.prod`. Online: **`.env.online`** apenas no servidor.
 | Restore falhou | Postgres up? `ps`; confirme `DB_USER`/`DB_NAME` no `.env.online` |
 | OpenAPI retorna 200 | `git pull`, rebuild `web` + `backend`; espere 404 |
 | `git pull`: local changes em `scripts/vps/gus` | Não alterar o arquivo no repo; `git checkout -- scripts/vps/gus`, `git pull`, `sudo install …` se o launcher mudou — ver [Fase 7](#git-pull-o-que-repetir-sempre-e-o-que-não) |
+| PuTTY: *Host does not exist* | **Host Name** com IP duplicado ou texto a mais — use só `37.27.37.103` |
+| PuTTY: `login as:` + senha do root | Chave `.ppk` não na sessão salva ou chave diferente da do VPS — ver [PuTTY (opcional)](#putty-opcional) |
 
 ---
 
