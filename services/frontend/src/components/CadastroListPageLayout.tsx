@@ -4,6 +4,12 @@ import PageScrollRoot from './PageScrollRoot'
 import Badge from './Badge'
 import { useDeviceMode } from '../contexts/DeviceModeContext'
 
+/** Shell de páginas de relatório no mobile (abaixo do MobileTopBar). */
+export const MOBILE_REPORT_SHELL_CLS =
+  'max-md:h-[100dvh] max-md:flex-col max-md:overflow-hidden'
+export const MOBILE_REPORT_INSET_CLS =
+  'flex min-h-0 min-w-0 flex-1 flex-col max-md:overflow-hidden max-md:pt-[calc(3rem+env(safe-area-inset-top,0px))]'
+
 export const cadastroListHeaderPad = 'px-6 pt-6 pb-3 lg:px-8 lg:pt-8 lg:pb-3'
 export const cadastroListContentPad = 'px-6 lg:px-8'
 export const cadastroListTabsPad =
@@ -482,7 +488,7 @@ export function CadastroListPageBody({
     return (
       <PageScrollRoot
         ref={scrollRef}
-        className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-y-contain scroll-slim bg-gray-50 pb-28 pt-1 dark:bg-gray-900"
+        className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-y-contain scroll-slim bg-gray-50 pb-32 pt-1 dark:bg-gray-900"
       >
         <div className={`shrink-0 ${cadastroListHeaderPad} !px-4 !pb-2 !pt-0`}>{header}</div>
         {tabs ? <div className={`${mobilePad} pb-2`}>{tabs}</div> : null}

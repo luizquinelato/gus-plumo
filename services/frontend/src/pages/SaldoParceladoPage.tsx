@@ -12,12 +12,18 @@ import {
   YAxis,
 } from 'recharts'
 import Sidebar from '../components/Sidebar'
+import MobileReportFilterBar from '../components/MobileReportFilterBar'
+import SaldoParceladoMobileItemList from '../components/SaldoParceladoMobileItemList'
+import { useDeviceMode } from '../contexts/DeviceModeContext'
+import { useMobileTopBarActions } from '../contexts/MobileTopBarActionsContext'
 import {
   CadastroFilterField,
   CadastroListPageBody,
   CadastroListPageEmptyCard,
   CadastroListPageHero,
   CadastroListPageShell,
+  MOBILE_REPORT_INSET_CLS,
+  MOBILE_REPORT_SHELL_CLS,
   cadastroFilterFieldCls,
   listPageTableCls,
   listPageTableChromeFooterBgCls,
@@ -252,6 +258,9 @@ const chartCardCls =
   'rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800'
 
 export default function SaldoParceladoPage() {
+  const { isMobile } = useDeviceMode()
+  const { setActions } = useMobileTopBarActions()
+  const [mobileFilterOpen, setMobileFilterOpen] = useState(false)
   const [cards, setCards] = useState<CardOption[]>([])
   const [tags, setTags] = useState<TagOption[]>([])
   const [subtags, setSubtags] = useState<SubtagOption[]>([])
@@ -538,16 +547,153 @@ export default function SaldoParceladoPage() {
     </div>
   )
 
+  const saldoActiveFilterCount = useMemo(() => {
+    let n = 0
+    if (selectedIssuerIds.length > 0) n += 1
+    if (selectedCardIds.length > 0) n += 1
+    if (selectedTagIds.length > 0) n += 1
+    if (selectedSubtagIds.length > 0) n += 1
+    if (selectedPartnerIds.length > 0) n += 1
+    if (horizon !== '12') n += 1
+    if (share !== 'total') n += 1
+    return n
+  }, [
+    selectedIssuerIds.length,
+    selectedCardIds.length,
+    selectedTagIds.length,
+    selectedSubtagIds.length,
+    selectedPartnerIds.length,
+    horizon,
+    share,
+  ])
+
+  useEffect(() => {
+    if (!isMobile) {
+      setActions(null)
+      return
+    }
+    setActions(
+      <ExtratoReportMenu
+        compact
+        disabled={!exportReady}
+        onExportExcel={() => void handleExportExcel()}
+        onExportPdf={() => void handleExportPdf()}
+      />,
+    )
+    return () => setActions(null)
+  }, [isMobile, setActions, exportReady, report, share, chartMode])
+
+  const saldoFilterFields = (
+    <>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <CadastroFilterField label="Emissor" icon={<Landmark size={12} />}>
+          <MultiSelectDropdown
+            label="Emissor"
+            options={ISSUER_FILTER_OPTIONS.map((option) => ({
+              id: option.id,
+              name: option.name,
+              icon: <Landmark size={14} />,
+              color: 'var(--color-1)',
+            }))}
+            selectedIds={selectedIssuerIds}
+            onChange={setSelectedIssuerIds}
+            placeholder="Selecione..."
+          />
+        </CadastroFilterField>
+
+        <CadastroFilterField label="Cartões" icon={<CreditCard size={12} />}>
+          <MultiSelectDropdown
+            label="Cartões"
+            options={cards.map((c) => ({
+              id: c.id,
+              name: `${c.name} • ${c.number}`,
+              badge: c.active === false ? 'Inativo' : undefined,
+              icon: <CreditCard size={14} />,
+              color: 'var(--color-2)',
+            }))}
+            selectedIds={selectedCardIds}
+            onChange={setSelectedCardIds}
+            loading={optionsLoading}
+            placeholder="Selecione..."
+          />
+        </CadastroFilterField>
+
+        <CadastroFilterField label="Tag" icon={<TagIcon size={12} />}>
+          <MultiSelectDropdown
+            label="Tag"
+            options={tagOptions}
+            selectedIds={selectedTagIds}
+            onChange={(ids) => {
+              setSelectedTagIds(ids)
+              if (!ids.some((id) => id !== -1)) setSelectedSubtagIds([])
+            }}
+            loading={optionsLoading}
+            placeholder="Selecione..."
+          />
+        </CadastroFilterField>
+
+        <CadastroFilterField label="Subtag" icon={<Tags size={12} />}>
+          <MultiSelectDropdown
+            label="Subtag"
+            options={filteredSubtags}
+            selectedIds={selectedSubtagIds}
+            onChange={setSelectedSubtagIds}
+            loading={optionsLoading}
+            placeholder="Selecione..."
+          />
+        </CadastroFilterField>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <CadastroFilterField label="Compartilhamento" icon={<Users size={12} />}>
+          <MultiSelectDropdown
+            label="Compartilhamento"
+            options={partnerOptions}
+            selectedIds={selectedPartnerIds}
+            onChange={setSelectedPartnerIds}
+            loading={optionsLoading}
+            placeholder="Selecione..."
+            icon={<Users size={14} className="text-gray-500" />}
+          />
+        </CadastroFilterField>
+
+        <CadastroFilterField label="Horizonte" icon={<CalendarClock size={12} />}>
+          <select value={horizon} onChange={(e) => setHorizon(e.target.value)} className={cadastroFilterFieldCls}>
+            {HORIZON_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </CadastroFilterField>
+
+        <CadastroFilterField label="Visão" icon={<Users size={12} />}>
+          <select
+            value={share}
+            onChange={(e) => setShare(e.target.value as 'mine' | 'total')}
+            className={cadastroFilterFieldCls}
+          >
+            <option value="mine">Minha parte</option>
+            <option value="total">Valor integral</option>
+          </select>
+        </CadastroFilterField>
+      </div>
+    </>
+  )
+
   const renderChart = (height: number | `${number}%`) => (
     <ResponsiveContainer width="100%" height={height}>
-      <ComposedChart data={chartData} margin={{ top: 16, right: 8, left: 0, bottom: 8 }}>
+      <ComposedChart
+        data={chartData}
+        margin={isMobile ? { top: 12, right: 4, left: -6, bottom: 8 } : { top: 16, right: 8, left: 0, bottom: 8 }}
+      >
         <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-        <XAxis dataKey="label" stroke="#6b7280" fontSize={12} />
+        <XAxis dataKey="label" stroke="#6b7280" fontSize={isMobile ? 10 : 12} angle={isMobile ? -30 : 0} textAnchor={isMobile ? 'end' : 'middle'} height={isMobile ? 46 : 30} />
         <YAxis
           tickFormatter={(value) => formatCurrency(Number(value))}
           stroke="#6b7280"
-          fontSize={11}
-          width={88}
+          fontSize={isMobile ? 9 : 11}
+          width={isMobile ? 50 : 88}
         />
         <Tooltip
           formatter={(value: any, name: any) => {
@@ -557,7 +703,7 @@ export default function SaldoParceladoPage() {
           }}
           contentStyle={chartTooltipStyle}
         />
-        <Legend />
+        <Legend wrapperStyle={isMobile ? { fontSize: 10 } : undefined} />
         {chartMode === 'consolidated' ? (
           <Bar dataKey="total" name="Parcelas do mês" fill={colors.primary} radius={[4, 4, 0, 0]} />
         ) : (
@@ -586,9 +732,12 @@ export default function SaldoParceladoPage() {
   )
 
   return (
-    <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900">
+    <div
+      className={`flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900 ${MOBILE_REPORT_SHELL_CLS}`}
+    >
       <Sidebar />
 
+      <div className={MOBILE_REPORT_INSET_CLS}>
       <CadastroListPageShell>
         <CadastroListPageBody
           header={
@@ -598,140 +747,55 @@ export default function SaldoParceladoPage() {
               subtitle="Quanto ainda falta pagar das compras parceladas, mês a mês"
               actions={
                 <CadastroListHeaderActions>
-                  <ExtratoReportMenu
-                    disabled={!exportReady}
-                    onExportExcel={() => void handleExportExcel()}
-                    onExportPdf={() => void handleExportPdf()}
-                  />
+                  <div className="max-md:hidden">
+                    <ExtratoReportMenu
+                      disabled={!exportReady}
+                      onExportExcel={() => void handleExportExcel()}
+                      onExportPdf={() => void handleExportPdf()}
+                    />
+                  </div>
                 </CadastroListHeaderActions>
               }
             />
           }
           tabs={
-            <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-all hover:border-[var(--color-1)] hover:shadow-md dark:border-gray-700 dark:bg-gray-800">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <h3 className="flex items-center gap-2 text-base font-bold text-gray-800 dark:text-gray-200">
-                  <Filter size={18} className="text-[var(--color-1)]" />
-                  Filtros
-                </h3>
-                <button
-                  type="button"
-                  onClick={clearFilters}
-                  className={`flex items-center gap-1.5 text-sm font-semibold transition-all ${hasActiveFilters ? 'opacity-100 hover:opacity-80' : 'pointer-events-none opacity-0'}`}
-                  style={{ color: 'var(--color-1)' }}
+            <div className="space-y-3">
+              <div className="md:hidden">
+                <MobileReportFilterBar
+                  open={mobileFilterOpen}
+                  onOpenChange={setMobileFilterOpen}
+                  activeCount={saldoActiveFilterCount}
+                  sheetTitle="Filtros do saldo parcelado"
+                  onApply={() => void loadReport()}
+                  onClear={clearFilters}
+                  applyDisabled={loading || optionsLoading}
                 >
-                  <X size={14} />
-                  Limpar filtros
-                </button>
+                  {saldoFilterFields}
+                </MobileReportFilterBar>
               </div>
-
-              {/* Linha 1: Filtros de seleção */}
-              <div className="mb-3 grid grid-cols-2 gap-3 md:grid-cols-4">
-                <CadastroFilterField label="Emissor" icon={<Landmark size={12} />}>
-                  <MultiSelectDropdown
-                    label="Emissor"
-                    options={ISSUER_FILTER_OPTIONS.map((option) => ({
-                      id: option.id,
-                      name: option.name,
-                      icon: <Landmark size={14} />,
-                      color: 'var(--color-1)',
-                    }))}
-                    selectedIds={selectedIssuerIds}
-                    onChange={setSelectedIssuerIds}
-                    placeholder="Selecione..."
-                  />
-                </CadastroFilterField>
-
-                <CadastroFilterField label="Cartões" icon={<CreditCard size={12} />}>
-                  <MultiSelectDropdown
-                    label="Cartões"
-                    options={cards.map((c) => ({
-                      id: c.id,
-                      name: `${c.name} • ${c.number}`,
-                      badge: c.active === false ? 'Inativo' : undefined,
-                      icon: <CreditCard size={14} />,
-                      color: 'var(--color-2)',
-                    }))}
-                    selectedIds={selectedCardIds}
-                    onChange={setSelectedCardIds}
-                    loading={optionsLoading}
-                    placeholder="Selecione..."
-                  />
-                </CadastroFilterField>
-
-                <CadastroFilterField label="Tag" icon={<TagIcon size={12} />}>
-                  <MultiSelectDropdown
-                    label="Tag"
-                    options={tagOptions}
-                    selectedIds={selectedTagIds}
-                    onChange={(ids) => {
-                      setSelectedTagIds(ids)
-                      if (!ids.some((id) => id !== -1)) setSelectedSubtagIds([])
-                    }}
-                    loading={optionsLoading}
-                    placeholder="Selecione..."
-                  />
-                </CadastroFilterField>
-
-                <CadastroFilterField label="Subtag" icon={<Tags size={12} />}>
-                  <MultiSelectDropdown
-                    label="Subtag"
-                    options={filteredSubtags}
-                    selectedIds={selectedSubtagIds}
-                    onChange={setSelectedSubtagIds}
-                    loading={optionsLoading}
-                    placeholder="Selecione..."
-                  />
-                </CadastroFilterField>
-              </div>
-
-              {/* Linha 2: Filtros secundários + Botão Aplicar */}
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-3">
-                <div className="grid flex-1 grid-cols-1 sm:grid-cols-3 gap-3">
-                  <CadastroFilterField label="Compartilhamento" icon={<Users size={12} />}>
-                    <MultiSelectDropdown
-                      label="Compartilhamento"
-                      options={partnerOptions}
-                      selectedIds={selectedPartnerIds}
-                      onChange={setSelectedPartnerIds}
-                      loading={optionsLoading}
-                      placeholder="Selecione..."
-                      icon={<Users size={14} className="text-gray-500" />}
-                    />
-                  </CadastroFilterField>
-
-                  <CadastroFilterField label="Horizonte" icon={<CalendarClock size={12} />}>
-                    <select
-                      value={horizon}
-                      onChange={(e) => setHorizon(e.target.value)}
-                      className={cadastroFilterFieldCls}
-                    >
-                      {HORIZON_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </CadastroFilterField>
-
-                  <CadastroFilterField label="Visão" icon={<Users size={12} />}>
-                    <select
-                      value={share}
-                      onChange={(e) => setShare(e.target.value as 'mine' | 'total')}
-                      className={cadastroFilterFieldCls}
-                    >
-                      <option value="mine">Minha parte</option>
-                      <option value="total">Valor integral</option>
-                    </select>
-                  </CadastroFilterField>
+              <div className="hidden rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-all hover:border-[var(--color-1)] hover:shadow-md dark:border-gray-700 dark:bg-gray-800 md:block">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h3 className="flex items-center gap-2 text-base font-bold text-gray-800 dark:text-gray-200">
+                    <Filter size={18} className="text-[var(--color-1)]" />
+                    Filtros
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className={`flex items-center gap-1.5 text-sm font-semibold transition-all ${hasActiveFilters ? 'opacity-100 hover:opacity-80' : 'pointer-events-none opacity-0'}`}
+                    style={{ color: 'var(--color-1)' }}
+                  >
+                    <X size={14} />
+                    Limpar filtros
+                  </button>
                 </div>
-
-                <div className="flex items-end shrink-0">
+                {saldoFilterFields}
+                <div className="mt-3 flex justify-end">
                   <button
                     type="button"
                     onClick={() => void loadReport()}
                     disabled={loading || optionsLoading}
-                    className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                     style={{ backgroundColor: 'var(--crud-create)', color: 'var(--on-crud-create)' }}
                   >
                     <Filter size={14} />
@@ -877,7 +941,7 @@ export default function SaldoParceladoPage() {
                     </button>
                   </div>
                 </div>
-                {renderChart(320)}
+                {renderChart(isMobile ? 280 : 320)}
               </div>
 
               <div className={listPageTableSectionCls}>
@@ -967,6 +1031,9 @@ export default function SaldoParceladoPage() {
                     Itens da última fatura disponível de cada cartão e suas parcelas futuras
                   </p>
                 </div>
+                {isMobile ? (
+                  <SaldoParceladoMobileItemList items={sortedItems} />
+                ) : (
                 <div className="overflow-x-auto">
                   <table className={listPageTableCls}>
                     <thead className={reportTableChromeHeaderCls}>
@@ -1109,11 +1176,13 @@ export default function SaldoParceladoPage() {
                     </tbody>
                   </table>
                 </div>
+                )}
               </div>
             </div>
           )}
         </CadastroListPageBody>
       </CadastroListPageShell>
+      </div>
       {chartMax && (
         <CadastroModalShell maxWidth="max-w-6xl">
           <CadastroModalHeader

@@ -24,8 +24,7 @@ export default function MobileTopBar() {
 
   return (
     <header
-      className="fixed top-0 left-0 right-0 z-40 flex h-12 items-center gap-2 border-b border-gray-200 bg-white px-3 dark:border-gray-700 dark:bg-gray-900 md:hidden"
-      style={{ paddingTop: 'env(safe-area-inset-top)' }}
+      className="fixed top-0 left-0 right-0 z-40 flex min-h-12 items-center gap-2 border-b border-gray-200 bg-white px-3 pt-[env(safe-area-inset-top,0px)] dark:border-gray-700 dark:bg-gray-900 md:hidden"
     >
       <h1 className="min-w-0 flex-1 truncate text-base font-semibold text-gray-900 dark:text-white">
         {title}

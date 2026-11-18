@@ -19,6 +19,7 @@ import {
 } from 'recharts'
 import Sidebar from '../components/Sidebar'
 import MobileReportFilterBar from '../components/MobileReportFilterBar'
+import { useDeviceMode } from '../contexts/DeviceModeContext'
 import {
   CadastroFilterField,
   CadastroListPageBody,
@@ -27,6 +28,8 @@ import {
   CadastroListPageHero,
   CadastroListPageShell,
   CadastroListPageTabs,
+  MOBILE_REPORT_INSET_CLS,
+  MOBILE_REPORT_SHELL_CLS,
   cadastroFilterFieldCls,
   cadastroRowIconBtnCls,
   listPageTableChromeFooterCls,
@@ -484,8 +487,56 @@ function MonthSplitTable({ months }: { months: MonthClosing[] }) {
           Valores gravados no fechamento. A saúde soma estes totais; acertos posteriores só abatem a parte da conta.
         </p>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+      <ul className="divide-y divide-gray-100 dark:divide-gray-700 md:hidden">
+        {months.map((item) => {
+          const split = splitOf(item)
+          const net = toMoney(Number(item.entries || 0) - Number(item.exits || 0))
+          return (
+            <li key={item.year_month} className="list-none px-3 py-3">
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                {MONTH_FULL[item.month - 1] || item.month} {item.year}
+                {item.is_open ? (
+                  <span className="ml-2 text-[10px] font-semibold uppercase text-[var(--color-warning)]">aberto</span>
+                ) : null}
+              </p>
+              <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">
+                <div className="flex justify-between gap-2">
+                  <dt className="text-gray-500">Entr. conta</dt>
+                  <dd className="font-medium tabular-nums" style={{ color: moneyColor(split.account.entries) }}>
+                    {formatCurrency(split.account.entries)}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt className="text-gray-500">Entr. comp.</dt>
+                  <dd className="font-medium tabular-nums" style={{ color: moneyColor(split.shared.entries) }}>
+                    {formatCurrency(split.shared.entries)}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt className="text-gray-500">Saíd. conta</dt>
+                  <dd className="font-medium tabular-nums" style={{ color: moneyColor(split.account.exits, true) }}>
+                    {formatCurrency(split.account.exits)}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt className="text-gray-500">Saíd. comp.</dt>
+                  <dd className="font-medium tabular-nums" style={{ color: moneyColor(split.shared.exits, true) }}>
+                    {formatCurrency(split.shared.exits)}
+                  </dd>
+                </div>
+              </dl>
+              <p className="mt-2 flex justify-between border-t border-gray-100 pt-2 text-xs dark:border-gray-700">
+                <span className="font-semibold text-gray-600 dark:text-gray-300">Resultado</span>
+                <span className="font-bold tabular-nums" style={{ color: moneyColor(net) }}>
+                  {formatCurrency(net)}
+                </span>
+              </p>
+            </li>
+          )
+        })}
+      </ul>
+      <div className="hidden overflow-x-auto md:block">
+        <table className="w-full min-w-[640px] text-sm">
           <thead className="bg-gray-100 dark:bg-gray-900/50">
             <tr>
               <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Mês</th>
@@ -724,6 +775,7 @@ function CategoryShareTable({
       {group.items.length === 0 ? (
         <p className="py-12 text-center text-sm text-gray-500">Sem lançamentos categorizados neste período.</p>
       ) : (
+        <div className="max-md:-mx-1 max-md:overflow-x-auto">
         <ListPageTable
           colsRest={
             <>
@@ -794,12 +846,14 @@ function CategoryShareTable({
             )
           })}
         </ListPageTable>
+        </div>
       )}
     </div>
   )
 }
 
 const HealthCheckPage = () => {
+  const { isMobile } = useDeviceMode()
   const [draftYear, setDraftYear] = useState('')
   const [draftMonth, setDraftMonth] = useState('')
   const [draftScope, setDraftScope] = useState<HealthScope>('all')
@@ -1161,6 +1215,14 @@ const HealthCheckPage = () => {
     trend_exits: exitTrend[index] ?? 0,
   }))
   const monthTickInterval = series.length <= 16 ? 0 : 'preserveEnd'
+  const chartHeight = isMobile ? 252 : 300
+  const chartYAxisWidth = isMobile ? 50 : 88
+  const chartMargin = isMobile
+    ? { top: 8, right: 4, left: -6, bottom: 40 }
+    : { top: 28, right: 8, left: 0, bottom: 8 }
+  const chartLegendProps = isMobile
+    ? { verticalAlign: 'bottom' as const, wrapperStyle: { fontSize: 10, paddingTop: 8 } }
+    : {}
 
   const openingHint = !selected
     ? 'Sem dados neste período'
@@ -1225,9 +1287,11 @@ const HealthCheckPage = () => {
   )
 
   return (
-    <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900 max-md:h-[100dvh] max-md:flex-col max-md:overflow-hidden">
+    <div
+      className={`flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900 ${MOBILE_REPORT_SHELL_CLS}`}
+    >
       <Sidebar />
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col max-md:overflow-hidden max-md:pt-12">
+      <div className={MOBILE_REPORT_INSET_CLS}>
       <CadastroListPageShell>
         <CadastroListPageBody
           header={
@@ -1271,7 +1335,7 @@ const HealthCheckPage = () => {
             </div>
           }
         >
-          <div className="space-y-6 pb-8">
+          <div className="min-w-0 space-y-6 pb-8">
             {!filtersApplied && !loading && (
               <CadastroListPageEmptyCard
                 icon={<Filter className="h-8 w-8 text-[var(--color-1)]" />}
@@ -1314,7 +1378,7 @@ const HealthCheckPage = () => {
 
             {filtersApplied && !loading && !error && hasSeries && (
               <>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 max-md:gap-2">
                   <div className={scorecardCls}>
                     <div className="flex items-center gap-3">
                       <Landmark className="h-5 w-5 text-[var(--color-1)]" />
@@ -1407,22 +1471,29 @@ const HealthCheckPage = () => {
                 </div>
 
                 <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                  <div className={chartCardCls}>
-                    <h3 className="mb-4 text-base font-semibold text-gray-900 dark:text-white">
+                  <div className={`${chartCardCls} min-w-0 max-md:px-3 max-md:py-3`}>
+                    <h3 className="mb-3 text-base font-semibold text-gray-900 dark:text-white max-md:text-sm">
                       Evolução do fechamento
                     </h3>
-                    <ResponsiveContainer width="100%" height={300}>
-                      <AreaChart data={series} margin={{ top: 28, right: 8, left: 0, bottom: 8 }}>
+                    <ResponsiveContainer width="100%" height={chartHeight}>
+                      <AreaChart data={series} margin={chartMargin}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                         <XAxis
                           dataKey="year_month"
                           stroke="#6b7280"
-                          fontSize={12}
-                          height={openYearMonth ? 42 : 28}
+                          fontSize={isMobile ? 10 : 12}
+                          height={isMobile ? 52 : openYearMonth ? 42 : 28}
+                          angle={isMobile ? -40 : 0}
+                          textAnchor={isMobile ? 'end' : 'middle'}
                           tick={<MonthAxisTick openYearMonth={openYearMonth} />}
                           interval={monthTickInterval}
                         />
-                        <YAxis tickFormatter={(value) => formatCurrency(Number(value))} stroke="#6b7280" fontSize={11} width={88} />
+                        <YAxis
+                          tickFormatter={(value) => formatCurrency(Number(value))}
+                          stroke="#6b7280"
+                          fontSize={isMobile ? 9 : 11}
+                          width={chartYAxisWidth}
+                        />
                         <Tooltip
                           formatter={(value) => formatCurrency(Number(value))}
                           labelFormatter={(label) => {
@@ -1432,7 +1503,7 @@ const HealthCheckPage = () => {
                           }}
                           contentStyle={chartTooltipStyle}
                         />
-                        <Legend />
+                        <Legend {...chartLegendProps} />
                         <Area
                           type="monotone"
                           dataKey="closing_balance"
@@ -1442,7 +1513,7 @@ const HealthCheckPage = () => {
                           fillOpacity={0.18}
                           strokeWidth={2}
                         />
-                        {openYearMonth ? (
+                        {openYearMonth && !isMobile ? (
                           <ReferenceLine x={openYearMonth} stroke="var(--color-warning)" strokeDasharray="4 4">
                             <Label
                               value="Mês corrente em aberto"
@@ -1455,24 +1526,36 @@ const HealthCheckPage = () => {
                         ) : null}
                       </AreaChart>
                     </ResponsiveContainer>
+                    {openYearMonth && isMobile ? (
+                      <p className="mt-2 text-center text-[10px] font-medium text-[var(--color-warning)]">
+                        Mês corrente em aberto no gráfico
+                      </p>
+                    ) : null}
                   </div>
 
-                  <div className={chartCardCls}>
-                    <h3 className="mb-4 text-base font-semibold text-gray-900 dark:text-white">
+                  <div className={`${chartCardCls} min-w-0 max-md:px-3 max-md:py-3`}>
+                    <h3 className="mb-3 text-base font-semibold text-gray-900 dark:text-white max-md:text-sm">
                       Entradas vs saídas
                     </h3>
-                    <ResponsiveContainer width="100%" height={300}>
-                      <ComposedChart data={series} margin={{ top: 28, right: 8, left: 0, bottom: 8 }}>
+                    <ResponsiveContainer width="100%" height={chartHeight}>
+                      <ComposedChart data={series} margin={chartMargin}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                         <XAxis
                           dataKey="year_month"
                           stroke="#6b7280"
-                          fontSize={12}
-                          height={openYearMonth ? 42 : 28}
+                          fontSize={isMobile ? 10 : 12}
+                          height={isMobile ? 52 : openYearMonth ? 42 : 28}
+                          angle={isMobile ? -40 : 0}
+                          textAnchor={isMobile ? 'end' : 'middle'}
                           tick={<MonthAxisTick openYearMonth={openYearMonth} />}
                           interval={monthTickInterval}
                         />
-                        <YAxis tickFormatter={(value) => formatCurrency(Number(value))} stroke="#6b7280" fontSize={11} width={88} />
+                        <YAxis
+                          tickFormatter={(value) => formatCurrency(Number(value))}
+                          stroke="#6b7280"
+                          fontSize={isMobile ? 9 : 11}
+                          width={chartYAxisWidth}
+                        />
                         <Tooltip
                           formatter={(value) => formatCurrency(Number(value))}
                           labelFormatter={(label) => {
@@ -1482,7 +1565,7 @@ const HealthCheckPage = () => {
                           }}
                           contentStyle={chartTooltipStyle}
                         />
-                        <Legend />
+                        <Legend {...chartLegendProps} />
                         <Bar dataKey="entries" name="Entradas" fill={colors.success} radius={[4, 4, 0, 0]}>
                           {series.map((item) => (
                             <Cell
@@ -1521,7 +1604,7 @@ const HealthCheckPage = () => {
                           dot={false}
                           legendType="line"
                         />
-                        {openYearMonth ? (
+                        {openYearMonth && !isMobile ? (
                           <ReferenceLine x={openYearMonth} stroke="var(--color-warning)" strokeDasharray="4 4">
                             <Label
                               value="Mês corrente em aberto"

@@ -6,6 +6,8 @@ import {
   CadastroListPageBody,
   CadastroListPageHero,
   CadastroListPageShell,
+  MOBILE_REPORT_INSET_CLS,
+  MOBILE_REPORT_SHELL_CLS,
   CadastroFilterField,
   cadastroFilterFieldCls,
   reportRowActionBtnClass,
@@ -1004,14 +1006,6 @@ const FaturasPage = () => {
     return out
   }, [invoicePeriodIndex])
 
-  const monthCountByYearMonth = useMemo(() => {
-    const map: Record<string, number> = {}
-    for (const [ym, items] of Object.entries(invoicePeriodIndex.groupedByMonth)) {
-      map[ym] = items.length
-    }
-    return map
-  }, [invoicePeriodIndex])
-
   const monthsOfActiveYear = activeYear
     ? invoicePeriodIndex.groupedByYear[activeYear] || []
     : []
@@ -1367,7 +1361,7 @@ const FaturasPage = () => {
       (a, b) => a.id - b.id,
     )
     const isExpanded = expandedCards.has(sectionKey)
-    const showItemList = isMobile ? true : isExpanded
+    const showItemList = isExpanded
     const showSharingSplit = appliedShareMode !== 'all'
     const issuerCodes = [...new Set(items.map((item) => item.issuer).filter(Boolean))] as Array<
       'btg' | 'mercadopago'
@@ -1401,97 +1395,97 @@ const FaturasPage = () => {
           <button
             type="button"
             onClick={() => toggleCardCollapse(sectionKey)}
-            className="flex min-w-0 flex-1 items-center gap-2.5 px-4 py-2.5 text-left hover:bg-gray-200/80 dark:hover:bg-gray-700 transition-colors"
+            className="flex min-w-0 flex-1 items-stretch text-left hover:bg-gray-200/80 dark:hover:bg-gray-700 transition-colors"
             title={isExpanded ? 'Recolher transações deste cartão' : 'Expandir transações deste cartão'}
             aria-expanded={isExpanded}
           >
-            {!isMobile ? (
-              isExpanded ? (
-                <ChevronDown size={16} className="flex-shrink-0 text-gray-500 dark:text-gray-300" />
+            <div className="flex min-w-0 flex-1 items-center gap-2.5 px-4 py-2.5">
+              {isExpanded ? (
+                <ChevronDown size={16} className="shrink-0 text-gray-500 dark:text-gray-300" />
               ) : (
-                <ChevronRight size={16} className="flex-shrink-0 text-gray-500 dark:text-gray-300" />
-              )
-            ) : null}
-            <span
-              className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg"
-              style={{ backgroundColor: 'color-mix(in srgb, var(--color-1) 16%, transparent)' }}
-            >
-              <CreditCard size={15} style={{ color: 'var(--color-1)' }} />
-            </span>
-            <div className="flex items-center gap-2 min-w-0 flex-wrap">
-              <span className="font-bold text-sm text-gray-900 dark:text-white truncate">{cardName}</span>
-              {cardNumber && (
-                <span className="text-xs font-semibold text-gray-500 dark:text-gray-300 flex-shrink-0 tabular-nums">
-                  •••• {cardNumber.slice(-4)}
-                </span>
+                <ChevronRight size={16} className="shrink-0 text-gray-500 dark:text-gray-300" />
               )}
-              {chip && (
-                <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0 ${chip.className}`}>
-                  {chip.text}
-                </span>
-              )}
-              <Badge variant="count" tone="brand3" label={String(items.length)} />
-              {paymentCycle?.status === 'matched' && paymentCycle.match?.date && (
-                <span
-                  className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0 bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300"
-                  title={`Pagamento vinculado em ${formatDate(paymentCycle.match.date.includes('T') ? paymentCycle.match.date : `${paymentCycle.match.date}T12:00:00`)}`}
-                >
-                  <Link2 size={10} />
-                  {formatDate(
-                    paymentCycle.match.date.includes('T')
-                      ? paymentCycle.match.date
-                      : `${paymentCycle.match.date}T12:00:00`,
-                  )}
-                </span>
-              )}
+              <span
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+                style={{ backgroundColor: 'color-mix(in srgb, var(--color-1) 16%, transparent)' }}
+              >
+                <CreditCard size={15} style={{ color: 'var(--color-1)' }} />
+              </span>
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <span className="truncate text-sm font-bold text-gray-900 dark:text-white">{cardName}</span>
+                {cardNumber && (
+                  <span className="shrink-0 text-xs font-semibold tabular-nums text-gray-500 dark:text-gray-300">
+                    •••• {cardNumber.slice(-4)}
+                  </span>
+                )}
+                {chip && (
+                  <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold ${chip.className}`}>
+                    {chip.text}
+                  </span>
+                )}
+                <Badge variant="count" tone="brand3" label={String(items.length)} />
+                {paymentCycle?.status === 'matched' && paymentCycle.match?.date && (
+                  <span
+                    className="inline-flex shrink-0 items-center gap-1 rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-800 dark:bg-green-900/40 dark:text-green-300"
+                    title={`Pagamento vinculado em ${formatDate(paymentCycle.match.date.includes('T') ? paymentCycle.match.date : `${paymentCycle.match.date}T12:00:00`)}`}
+                  >
+                    <Link2 size={10} />
+                    {formatDate(
+                      paymentCycle.match.date.includes('T')
+                        ? paymentCycle.match.date
+                        : `${paymentCycle.match.date}T12:00:00`,
+                    )}
+                  </span>
+                )}
+              </div>
             </div>
-          </button>
-          <div className="flex shrink-0 items-center gap-2 border-l border-gray-200 px-3 dark:border-gray-600">
-            {shareBadge ? (
-              <>
-                {shareBadge}
-                <div className="self-stretch border-l border-gray-200 dark:border-gray-600" aria-hidden="true" />
-              </>
-            ) : null}
-            <div className="hidden items-stretch divide-x divide-gray-200 text-right tabular-nums dark:divide-gray-600 md:flex">
-              <div className="px-3">
-                <p className="text-[10px] uppercase text-gray-500 dark:text-gray-400">Minha parte</p>
-                <p className={`text-sm font-semibold ${invoiceNetAmountClass(cardParts.mine)}`}>
-                  {formatCurrency(cardParts.mine)}
-                </p>
+            <div className="flex shrink-0 items-center gap-2 border-l border-gray-200 px-3 dark:border-gray-600">
+              {shareBadge ? (
+                <>
+                  {shareBadge}
+                  <div className="self-stretch border-l border-gray-200 dark:border-gray-600" aria-hidden="true" />
+                </>
+              ) : null}
+              <div className="hidden items-stretch divide-x divide-gray-200 text-right tabular-nums dark:divide-gray-600 md:flex">
+                <div className="px-3">
+                  <p className="text-[10px] uppercase text-gray-500 dark:text-gray-400">Minha parte</p>
+                  <p className={`text-sm font-semibold ${invoiceNetAmountClass(cardParts.mine)}`}>
+                    {formatCurrency(cardParts.mine)}
+                  </p>
+                </div>
+                <div className="px-3">
+                  <p className="text-[10px] uppercase text-gray-500 dark:text-gray-400">Compartilhado</p>
+                  <p className={`text-sm font-semibold ${invoiceNetAmountClass(cardParts.partner)}`}>
+                    {formatCurrency(cardParts.partner)}
+                  </p>
+                </div>
+                <div className="pl-3">
+                  <p className="text-[10px] uppercase text-gray-500 dark:text-gray-400">Total</p>
+                  <p className={`text-base font-bold ${invoiceNetAmountClass(cardTotal)}`}>
+                    {formatCurrency(cardTotal)}
+                  </p>
+                </div>
               </div>
-              <div className="px-3">
-                <p className="text-[10px] uppercase text-gray-500 dark:text-gray-400">Compartilhado</p>
-                <p className={`text-sm font-semibold ${invoiceNetAmountClass(cardParts.partner)}`}>
-                  {formatCurrency(cardParts.partner)}
-                </p>
-              </div>
-              <div className="pl-3">
+              <div className="flex flex-col items-end justify-center px-1 md:hidden">
                 <p className="text-[10px] uppercase text-gray-500 dark:text-gray-400">Total</p>
-                <p className={`text-base font-bold ${invoiceNetAmountClass(cardTotal)}`}>
+                <p className={`text-base font-bold tabular-nums ${invoiceNetAmountClass(cardTotal)}`}>
                   {formatCurrency(cardTotal)}
                 </p>
               </div>
             </div>
-            <div className="flex flex-col items-end justify-center px-2 md:hidden">
-              <p className="text-[10px] uppercase text-gray-500 dark:text-gray-400">Total</p>
-              <p className={`text-base font-bold tabular-nums ${invoiceNetAmountClass(cardTotal)}`}>
-                {formatCurrency(cardTotal)}
-              </p>
-            </div>
-            {canManualAdjust && !isMobile ? (
-              <button
-                type="button"
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={openManualAdjust}
-                className={reportRowActionBtnClass(true)}
-                title="Adicionar lançamento manual nesta fatura"
-                aria-label="Adicionar lançamento"
-              >
-                <Plus size={18} />
-              </button>
-            ) : null}
-          </div>
+          </button>
+          {canManualAdjust && !isMobile ? (
+            <button
+              type="button"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={openManualAdjust}
+              className={`shrink-0 self-stretch border-l border-gray-200 dark:border-gray-600 ${reportRowActionBtnClass(true)}`}
+              title="Adicionar lançamento manual nesta fatura"
+              aria-label="Adicionar lançamento"
+            >
+              <Plus size={18} />
+            </button>
+          ) : null}
         </div>
 
         {showItemList && isMobile && (
@@ -1681,10 +1675,12 @@ const FaturasPage = () => {
   }
 
   return (
-    <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900 max-md:h-[100dvh] max-md:flex-col max-md:overflow-hidden">
+    <div
+      className={`flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900 ${MOBILE_REPORT_SHELL_CLS}`}
+    >
       <Sidebar />
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col max-md:overflow-hidden max-md:pt-12">
+      <div className={MOBILE_REPORT_INSET_CLS}>
       <CadastroListPageShell>
         <CadastroListPageBody
           scrollRef={scrollContainerRef}
@@ -2172,7 +2168,6 @@ const FaturasPage = () => {
                   <InvoicePeriodNavigator
                     availableMonths={availableMonths}
                     activeMonth={activeMonth}
-                    monthCounts={monthCountByYearMonth}
                     onMonthChange={(ym) => {
                       setActiveMonth(ym)
                       if (ym && ym !== 'Sem mês') {
@@ -2265,7 +2260,6 @@ const FaturasPage = () => {
                   <InvoicePeriodNavigator
                     availableMonths={availableMonths}
                     activeMonth={activeMonth}
-                    monthCounts={monthCountByYearMonth}
                     onMonthChange={(ym) => {
                       setActiveMonth(ym)
                       if (ym && ym !== 'Sem mês') {

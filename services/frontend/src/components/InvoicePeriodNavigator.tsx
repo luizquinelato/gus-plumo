@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useEscapeKey } from '../hooks/useEscapeKey'
-import Badge from './Badge'
 
 const MONTH_NAMES = [
   'Janeiro',
@@ -18,12 +17,12 @@ const MONTH_NAMES = [
   'Dezembro',
 ] as const
 
-function monthLabel(yearMonth: string): string {
-  if (yearMonth === 'Sem mês') return yearMonth
+function monthYearHeadline(yearMonth: string): { title: string; year: string } {
+  if (yearMonth === 'Sem mês') return { title: yearMonth, year: '' }
   const [y, m] = yearMonth.split('-')
   const mi = parseInt(m, 10) - 1
-  if (!y || mi < 0 || mi > 11) return yearMonth
-  return `${MONTH_NAMES[mi]} ${y}`
+  if (!y || mi < 0 || mi > 11) return { title: yearMonth, year: '' }
+  return { title: MONTH_NAMES[mi], year: y }
 }
 
 type Props = {
@@ -31,14 +30,12 @@ type Props = {
   availableMonths: string[]
   activeMonth: string
   onMonthChange: (yearMonth: string) => void
-  monthCounts?: Record<string, number>
 }
 
 export default function InvoicePeriodNavigator({
   availableMonths,
   activeMonth,
   onMonthChange,
-  monthCounts,
 }: Props) {
   const [picker, setPicker] = useState<{ year: number; view: 'month' | 'year' } | null>(null)
   const closePicker = useCallback(() => setPicker(null), [])
@@ -87,7 +84,7 @@ export default function InvoicePeriodNavigator({
     )
   }
 
-  const countLabel = monthCounts && activeMonth ? monthCounts[activeMonth] : undefined
+  const headline = activeMonth ? monthYearHeadline(activeMonth) : null
 
   return (
     <>
@@ -113,14 +110,20 @@ export default function InvoicePeriodNavigator({
               setPicker({ year: y, view: 'month' })
             }}
             title="Escolher mês e ano"
-            className="flex min-w-0 flex-1 items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-center hover:bg-gray-100 dark:hover:bg-gray-700/60"
+            className="flex min-w-0 flex-1 items-center justify-center rounded-lg px-2 py-1.5 text-center hover:bg-gray-100 dark:hover:bg-gray-700/60"
           >
-            <span className="truncate text-base font-semibold text-gray-900 dark:text-white sm:text-lg">
-              {activeMonth ? monthLabel(activeMonth) : 'Selecione…'}
-            </span>
-            {countLabel != null ? (
-              <Badge variant="count" tone="brand2" label={String(countLabel)} className="shrink-0" />
-            ) : null}
+            {headline ? (
+              <span className="flex flex-col items-center gap-0.5 leading-tight">
+                <span className="text-base font-semibold text-gray-900 dark:text-white sm:text-lg">{headline.title}</span>
+                {headline.year ? (
+                  <span className="text-sm font-semibold tabular-nums text-[var(--color-1)] dark:text-[var(--color-2)]">
+                    {headline.year}
+                  </span>
+                ) : null}
+              </span>
+            ) : (
+              <span className="text-base font-semibold text-gray-500 dark:text-gray-400">Selecione…</span>
+            )}
           </button>
           <button
             type="button"

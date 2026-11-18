@@ -7,6 +7,8 @@ import {
   CadastroListPageBody,
   CadastroListPageHero,
   CadastroListPageShell,
+  MOBILE_REPORT_INSET_CLS,
+  MOBILE_REPORT_SHELL_CLS,
   CadastroListPrimaryButton,
   CadastroFilterField,
   cadastroFilterFieldCls,
@@ -1180,10 +1182,12 @@ const ExtratoPage = () => {
     cardsLoading || partnersLoading || tagsLoading || subtagsLoading
 
   return (
-    <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900 max-md:h-[100dvh] max-md:flex-col max-md:overflow-hidden">
+    <div
+      className={`flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900 ${MOBILE_REPORT_SHELL_CLS}`}
+    >
       <Sidebar />
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col max-md:overflow-hidden max-md:pt-12">
+      <div className={MOBILE_REPORT_INSET_CLS}>
       <CadastroListPageShell>
         <CadastroListPageBody
           scrollRef={scrollContainerRef}

@@ -45,7 +45,10 @@ import {
   CadastroListPrimaryButton,
   listPageTableRowHoverCls,
   listPageTableThCls,
+  MOBILE_REPORT_INSET_CLS,
+  MOBILE_REPORT_SHELL_CLS,
 } from '../components/CadastroListPageLayout'
+import { useDeviceMode } from '../contexts/DeviceModeContext'
 import { ListPageNestedTable } from '../components/ListPageTable'
 import {
   ListTableIndexCell,
@@ -512,6 +515,7 @@ function CardProjectionDetailTable({
 }
 
 export default function ProjecaoMensalPage() {
+  const { isMobile } = useDeviceMode()
   const { showConfirm, ConfirmComponent } = useConfirm()
   const [yearMonth, setYearMonth] = useState(currentYearMonth())
   const [data, setData] = useState<MonthData | null>(null)
@@ -1170,12 +1174,15 @@ export default function ProjecaoMensalPage() {
 
   const chartElement = (
     <ResponsiveContainer width="100%" height="100%">
-      <ComposedChart data={overviewChart} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+      <ComposedChart
+        data={overviewChart}
+        margin={isMobile ? { top: 8, right: 4, left: -4, bottom: 0 } : { top: 8, right: 8, left: 8, bottom: 0 }}
+      >
         <CartesianGrid strokeDasharray="3 3" stroke="#9ca3af55" />
-        <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-        <YAxis tick={{ fontSize: 12 }} width={70} tickFormatter={(v: number) => formatCurrency(v)} />
+        <XAxis dataKey="label" tick={{ fontSize: isMobile ? 10 : 12 }} angle={isMobile ? -35 : 0} textAnchor={isMobile ? 'end' : 'middle'} height={isMobile ? 48 : 30} />
+        <YAxis tick={{ fontSize: isMobile ? 9 : 12 }} width={isMobile ? 52 : 70} tickFormatter={(v: number) => formatCurrency(v)} />
         <Tooltip formatter={(v) => formatCurrency(Number(v))} />
-        <Legend />
+        <Legend wrapperStyle={isMobile ? { fontSize: 10 } : undefined} />
         <ReferenceLine y={0} stroke="#6b7280" />
         {chartView === 'month' ? (
           [
@@ -1197,11 +1204,14 @@ export default function ProjecaoMensalPage() {
 
 
   return (
-    <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900">
+    <div
+      className={`flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900 ${MOBILE_REPORT_SHELL_CLS}`}
+    >
       <Sidebar />
+      <div className={MOBILE_REPORT_INSET_CLS}>
       <CadastroListPageShell>
         <CadastroListPageBody
-          scroll={false}
+          scroll={!isMobile}
           header={
             <CadastroListPageHero
               icon={<CalendarDays className="w-8 h-8" />}
@@ -1240,8 +1250,10 @@ export default function ProjecaoMensalPage() {
             />
           }
         >
-          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto scroll-slim">
-            <div className="flex flex-wrap items-center gap-3">
+          <div className={`flex min-h-0 flex-1 flex-col gap-4 ${isMobile ? 'min-w-0' : 'overflow-y-auto scroll-slim'}`}>
+            <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800 max-md:mx-0">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+              <div className="flex items-center gap-2">
               <button type="button" onClick={() => setYearMonth(shiftMonth(yearMonth, -1))} className="rounded-lg border border-gray-300 p-2 dark:border-gray-600" aria-label="Mês anterior">
                 <ChevronLeft className="h-4 w-4" />
               </button>
@@ -1249,25 +1261,31 @@ export default function ProjecaoMensalPage() {
                 type="button"
                 onClick={() => setPicker({ year, view: 'month' })}
                 title="Escolher mês e ano"
-                className="min-w-[10rem] rounded-lg px-2 py-1 text-center text-lg font-semibold text-gray-900 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"
+                className="flex min-w-0 flex-1 flex-col items-center rounded-lg px-2 py-1 text-center hover:bg-gray-100 dark:hover:bg-gray-700/60 sm:min-w-[10rem] sm:flex-none"
               >
-                {MONTH_NAMES[month - 1]} {year}
+                <span className="text-base font-semibold text-gray-900 dark:text-white sm:text-lg">{MONTH_NAMES[month - 1]}</span>
+                <span className="text-sm font-semibold tabular-nums text-[var(--color-1)]">{year}</span>
               </button>
               <button type="button" onClick={() => setYearMonth(shiftMonth(yearMonth, 1))} className="rounded-lg border border-gray-300 p-2 dark:border-gray-600" aria-label="Próximo mês">
                 <ChevronRight className="h-4 w-4" />
               </button>
+              </div>
               <button
                 type="button"
                 onClick={() => setYearMonth(currentYearMonth())}
                 disabled={yearMonth === currentYearMonth()}
-                className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-200"
+                className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-200 sm:w-auto"
               >
                 Mês atual
               </button>
-              <div className="ml-auto inline-flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
+              <div className="hidden items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300 sm:ml-auto sm:inline-flex">
                 <span className="h-[3px] w-5 rounded-full bg-[var(--color-1)]" />
                 Divisor entre os dias 14 e 15
               </div>
+            </div>
+            <p className="mt-2 text-[11px] text-gray-500 dark:text-gray-400 sm:hidden">
+              Quinzenas: dias 1–14 e 15 até o fim do mês
+            </p>
             </div>
 
             {overviewChart.length > 0 && (
@@ -1307,7 +1325,7 @@ export default function ProjecaoMensalPage() {
                     </div>
                   ) : null}
                 </div>
-                {chartSectionOpen ? <div className="mt-2 h-56">{chartElement}</div> : null}
+                {chartSectionOpen ? <div className={`mt-2 ${isMobile ? 'h-64' : 'h-56'}`}>{chartElement}</div> : null}
               </div>
             )}
 
@@ -1461,6 +1479,7 @@ export default function ProjecaoMensalPage() {
           </div>
         </CadastroListPageBody>
       </CadastroListPageShell>
+      </div>
 
       {detail && (
         <CadastroModalShell maxWidth="max-w-2xl">

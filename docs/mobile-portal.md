@@ -21,4 +21,6 @@ PWA completo: `vite-plugin-pwa` no build de produção (opcional).
 
 - **Extrato:** cards por dia.
 - **Faturas:** navegador mês/ano (estilo Projeção); seções por cartão/grupo; lista mobile; agrupamentos preservados.
-- **Saúde:** filtros ano/mês/escopo no sheet; gráficos rolam com a página.
+- **Saúde:** filtros no sheet; gráficos com eixos legíveis no mobile; tabela mês a mês em cards.
+- **Projeção mensal:** shell mobile + navegador mês/ano; gráfico e quinzenas rolam com a página (somente leitura no mobile).
+- **Saldo parcelado:** filtros no sheet; export no header; gráfico ajustado; compras em lista de cards.
