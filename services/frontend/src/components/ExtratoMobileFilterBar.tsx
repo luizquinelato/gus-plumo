@@ -8,17 +8,19 @@ type Props = {
   onOpenChange: (open: boolean) => void
   activeCount: number
   summary?: string
+  sheetTitle?: string
   onApply: () => void
   onClear: () => void
   applyDisabled?: boolean
   children: ReactNode
 }
 
-export default function ExtratoMobileFilterBar({
+export default function MobileReportFilterBar({
   open,
   onOpenChange,
   activeCount,
   summary,
+  sheetTitle = 'Filtros',
   onApply,
   onClear,
   applyDisabled,
@@ -56,7 +58,7 @@ export default function ExtratoMobileFilterBar({
       ) : null}
       <MobileFilterSheet
         open={open}
-        title="Filtros do extrato"
+        title={sheetTitle}
         onClose={() => onOpenChange(false)}
         onClear={onClear}
         hasActiveFilters={activeCount > 0}

@@ -18,6 +18,7 @@ import {
   YAxis,
 } from 'recharts'
 import Sidebar from '../components/Sidebar'
+import MobileReportFilterBar from '../components/MobileReportFilterBar'
 import {
   CadastroFilterField,
   CadastroListPageBody,
@@ -824,6 +825,7 @@ const HealthCheckPage = () => {
   const [categoryError, setCategoryError] = useState<string | null>(null)
   const [categoryDetails, setCategoryDetails] = useState<FlowDetailsResponse | null>(null)
   const [cardView, setCardView] = useState<CardViewData | null>(null)
+  const [mobileFilterOpen, setMobileFilterOpen] = useState(false)
 
   const yearFilter = appliedYear === 'all' ? null : appliedYear
   const monthFilter = appliedMonth === 'all' || appliedMonth == null ? null : appliedMonth
@@ -1085,6 +1087,67 @@ const HealthCheckPage = () => {
     (appliedYear !== null && appliedYear !== 'all') ||
     (appliedMonth !== null && appliedMonth !== 'all') ||
     appliedScope !== 'all'
+
+  const healthActiveFilterCount = useMemo(() => {
+    let count = 0
+    if (draftYear !== '') count++
+    if (draftMonth !== '') count++
+    if (draftScope !== 'all') count++
+    return count
+  }, [draftYear, draftMonth, draftScope])
+
+  const healthFilterFields = (
+    <>
+      <CadastroFilterField label="Ano" icon={<Calendar size={12} />}>
+        <select
+          value={draftYear}
+          onChange={(event) => {
+            const value = event.target.value
+            setDraftYear(value)
+            if (value === '') setDraftMonth('')
+          }}
+          className={cadastroFilterFieldCls}
+          disabled={filtersLoading || loading}
+        >
+          <option value="">Todos</option>
+          {yearOptions.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      </CadastroFilterField>
+      <CadastroFilterField label="Mês" icon={<Calendar size={12} />}>
+        <select
+          value={draftYear === '' ? '' : draftMonth}
+          onChange={(event) => setDraftMonth(event.target.value)}
+          className={cadastroFilterFieldCls}
+          disabled={filtersLoading || loading || draftYear === ''}
+        >
+          <option value="">Todos</option>
+          {MONTH_FULL.map((label, index) => (
+            <option key={label} value={index + 1}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </CadastroFilterField>
+      <CadastroFilterField label="Escopo" icon={<Users size={12} />}>
+        <select
+          value={draftScope}
+          onChange={(event) => setDraftScope(event.target.value as HealthScope)}
+          className={cadastroFilterFieldCls}
+          disabled={filtersLoading || loading}
+        >
+          {SCOPE_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </CadastroFilterField>
+    </>
+  )
   const openMonth = health.months.find((item) => item.is_open) ?? null
   const openYearMonth = openMonth?.year_month ?? null
 
@@ -1162,8 +1225,9 @@ const HealthCheckPage = () => {
   )
 
   return (
-    <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900">
+    <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900 max-md:h-[100dvh] max-md:flex-col max-md:overflow-hidden">
       <Sidebar />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col max-md:overflow-hidden max-md:pt-12">
       <CadastroListPageShell>
         <CadastroListPageBody
           header={
@@ -1178,56 +1242,33 @@ const HealthCheckPage = () => {
             />
           }
           tabs={
-            <CadastroListPageFilterCard
-              hasActiveFilters={hasActiveFilters}
-              onClearFilters={clearFilters}
-              onApply={applyFilters}
-              applying={loading || filtersLoading}
-              resultHint={filtersApplied ? resultTitle : undefined}
-            >
-              <CadastroFilterField label="Ano" icon={<Calendar size={12} />}>
-                <select
-                  value={draftYear}
-                  onChange={(event) => {
-                    const value = event.target.value
-                    setDraftYear(value)
-                    if (value === '') setDraftMonth('')
-                  }}
-                  className={cadastroFilterFieldCls}
-                  disabled={filtersLoading || loading}
+            <div className="space-y-3">
+              <div className="md:hidden">
+                <MobileReportFilterBar
+                  open={mobileFilterOpen}
+                  onOpenChange={setMobileFilterOpen}
+                  activeCount={healthActiveFilterCount}
+                  summary={filtersApplied ? resultTitle : undefined}
+                  sheetTitle="Filtros da saúde financeira"
+                  onApply={applyFilters}
+                  onClear={clearFilters}
+                  applyDisabled={loading || filtersLoading}
                 >
-                  <option value="">Todos</option>
-                  {yearOptions.map((option) => (
-                    <option key={option} value={option}>{option}</option>
-                  ))}
-                </select>
-              </CadastroFilterField>
-              <CadastroFilterField label="Mês" icon={<Calendar size={12} />}>
-                <select
-                  value={draftYear === '' ? '' : draftMonth}
-                  onChange={(event) => setDraftMonth(event.target.value)}
-                  className={cadastroFilterFieldCls}
-                  disabled={filtersLoading || loading || draftYear === ''}
+                  {healthFilterFields}
+                </MobileReportFilterBar>
+              </div>
+              <div className="hidden md:block">
+                <CadastroListPageFilterCard
+                  hasActiveFilters={hasActiveFilters}
+                  onClearFilters={clearFilters}
+                  onApply={applyFilters}
+                  applying={loading || filtersLoading}
+                  resultHint={filtersApplied ? resultTitle : undefined}
                 >
-                  <option value="">Todos</option>
-                  {MONTH_FULL.map((label, index) => (
-                    <option key={label} value={index + 1}>{label}</option>
-                  ))}
-                </select>
-              </CadastroFilterField>
-              <CadastroFilterField label="Escopo" icon={<Users size={12} />}>
-                <select
-                  value={draftScope}
-                  onChange={(event) => setDraftScope(event.target.value as HealthScope)}
-                  className={cadastroFilterFieldCls}
-                  disabled={filtersLoading || loading}
-                >
-                  {SCOPE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              </CadastroFilterField>
-            </CadastroListPageFilterCard>
+                  {healthFilterFields}
+                </CadastroListPageFilterCard>
+              </div>
+            </div>
           }
         >
           <div className="space-y-6 pb-8">
@@ -1537,6 +1578,7 @@ const HealthCheckPage = () => {
           </div>
         </CadastroListPageBody>
       </CadastroListPageShell>
+      </div>
 
       {flowKind && (
         <CadastroModalShell maxWidth="max-w-6xl">

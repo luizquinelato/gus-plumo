@@ -6,8 +6,15 @@ import {
   CadastroListPageBody,
   CadastroListPageHero,
   CadastroListPageShell,
+  CadastroFilterField,
+  cadastroFilterFieldCls,
   reportRowActionBtnClass,
 } from '../components/CadastroListPageLayout'
+import MobileReportFilterBar from '../components/MobileReportFilterBar'
+import FaturasMobileItemList from '../components/FaturasMobileItemList'
+import CadastroExcelMenu from '../components/CadastroExcelMenu'
+import { useDeviceMode } from '../contexts/DeviceModeContext'
+import { useMobileTopBarActions } from '../contexts/MobileTopBarActionsContext'
 import FloatingFooterBar from '../components/FloatingFooterBar'
 import Badge from '../components/Badge'
 import LoadingSpinner from '../components/LoadingSpinner'
@@ -382,6 +389,9 @@ const FaturasPage = () => {
   // Estado para botão Back to Top
   const [showBackToTop, setShowBackToTop] = useState(false)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const [mobileFilterOpen, setMobileFilterOpen] = useState(false)
+  const { isMobile } = useDeviceMode()
+  const { setActions } = useMobileTopBarActions()
   const scrollContentRef = useRef<HTMLDivElement>(null)
 
   // Ref para subtags originais
@@ -751,6 +761,41 @@ const FaturasPage = () => {
     selectedIssuerIds.length > 0 || selectedTransactionType !== 'all' ||
     searchTerm !== '' || searchAmount !== ''
 
+  const faturasActiveFilterCount = useMemo(() => {
+    let count = 0
+    if (selectedYears.length > 0) count++
+    if (selectedMonths.length > 0) count++
+    if (selectedIssuerIds.length > 0) count++
+    if (selectedCardIds.length > 0) count++
+    if (selectedTransactionType !== 'all') count++
+    if (selectedTagIds.length > 0) count++
+    if (selectedSubtagIds.length > 0) count++
+    if (selectedPartnerIds.length > 0) count++
+    return count
+  }, [
+    selectedYears,
+    selectedMonths,
+    selectedIssuerIds,
+    selectedCardIds,
+    selectedTransactionType,
+    selectedTagIds,
+    selectedSubtagIds,
+    selectedPartnerIds,
+  ])
+
+  const faturasFilterSummary = useMemo(() => {
+    const parts: string[] = []
+    if (selectedYears.length > 0) parts.push(`Ano: ${selectedYears.join(', ')}`)
+    if (selectedMonths.length > 0) {
+      const labels = selectedMonths.map(
+        (m) => monthOptions.find((o) => o.value === m)?.label ?? m,
+      )
+      parts.push(`Mês: ${labels.join(', ')}`)
+    }
+    if (selectedCardIds.length > 0) parts.push(`${selectedCardIds.length} cartão(ões)`)
+    return parts.length > 0 ? parts.join(' · ') : undefined
+  }, [selectedYears, selectedMonths, selectedCardIds, monthOptions])
+
   const handleEdit = (item: InvoiceItem) => {
     setItemToEdit(item)
     setIsEditModalOpen(true)
@@ -796,6 +841,43 @@ const FaturasPage = () => {
       return matchesText && matchesAmount
     })
   }, [invoiceData, searchTerm, searchAmount, creditCardIds, appliedTransactionType])
+
+  useEffect(() => {
+    if (!isMobile) {
+      setActions(null)
+      return
+    }
+    const openExportExcel = () => {
+      if (!filteredItems.length) {
+        handleShowToast('Nenhum dado para exportar', 'error')
+        return
+      }
+      setExportModalFormat('excel')
+    }
+    const openExportPdf = () => {
+      if (!filteredItems.length) {
+        handleShowToast('Nenhum dado para exportar', 'error')
+        return
+      }
+      setExportModalFormat('pdf')
+    }
+    setActions(
+      <CadastroExcelMenu
+        compact
+        menuTitle="Exportar"
+        onExportExcel={openExportExcel}
+        extraItems={[
+          {
+            id: 'pdf',
+            label: 'Exportar PDF',
+            icon: <FileText size={16} />,
+            onClick: openExportPdf,
+          },
+        ]}
+      />,
+    )
+    return () => setActions(null)
+  }, [isMobile, setActions, filteredItems.length])
 
   const currentItems = useMemo(() => {
     if (!activeMonth) return []
@@ -1264,6 +1346,8 @@ const FaturasPage = () => {
       (a, b) => a.id - b.id,
     )
     const isExpanded = expandedCards.has(sectionKey)
+    const showItemList = isMobile ? true : isExpanded
+    const showSharingSplit = appliedShareMode !== 'all'
     const issuerCodes = [...new Set(items.map((item) => item.issuer).filter(Boolean))] as Array<
       'btg' | 'mercadopago'
     >
@@ -1300,11 +1384,13 @@ const FaturasPage = () => {
             title={isExpanded ? 'Recolher transações deste cartão' : 'Expandir transações deste cartão'}
             aria-expanded={isExpanded}
           >
-            {isExpanded ? (
-              <ChevronDown size={16} className="flex-shrink-0 text-gray-500 dark:text-gray-300" />
-            ) : (
-              <ChevronRight size={16} className="flex-shrink-0 text-gray-500 dark:text-gray-300" />
-            )}
+            {!isMobile ? (
+              isExpanded ? (
+                <ChevronDown size={16} className="flex-shrink-0 text-gray-500 dark:text-gray-300" />
+              ) : (
+                <ChevronRight size={16} className="flex-shrink-0 text-gray-500 dark:text-gray-300" />
+              )
+            ) : null}
             <span
               className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg"
               style={{ backgroundColor: 'color-mix(in srgb, var(--color-1) 16%, transparent)' }}
@@ -1346,7 +1432,7 @@ const FaturasPage = () => {
                 <div className="self-stretch border-l border-gray-200 dark:border-gray-600" aria-hidden="true" />
               </>
             ) : null}
-            <div className="flex items-stretch divide-x divide-gray-200 text-right tabular-nums dark:divide-gray-600">
+            <div className="hidden items-stretch divide-x divide-gray-200 text-right tabular-nums dark:divide-gray-600 md:flex">
               <div className="px-3">
                 <p className="text-[10px] uppercase text-gray-500 dark:text-gray-400">Minha parte</p>
                 <p className={`text-sm font-semibold ${invoiceNetAmountClass(cardParts.mine)}`}>
@@ -1366,7 +1452,13 @@ const FaturasPage = () => {
                 </p>
               </div>
             </div>
-            {canManualAdjust ? (
+            <div className="flex flex-col items-end justify-center px-2 md:hidden">
+              <p className="text-[10px] uppercase text-gray-500 dark:text-gray-400">Total</p>
+              <p className={`text-base font-bold tabular-nums ${invoiceNetAmountClass(cardTotal)}`}>
+                {formatCurrency(cardTotal)}
+              </p>
+            </div>
+            {canManualAdjust && !isMobile ? (
               <button
                 type="button"
                 onMouseDown={(e) => e.stopPropagation()}
@@ -1381,7 +1473,22 @@ const FaturasPage = () => {
           </div>
         </div>
 
-        {isExpanded && (
+        {showItemList && isMobile && (
+          <FaturasMobileItemList
+            items={sortedItems}
+            formatCurrency={formatCurrency}
+            formatDate={formatDate}
+            showSharingSplit={showSharingSplit}
+            mineAmount={(item) =>
+              itemBasisParts(item as InvoiceItem, appliedShareMode, appliedPartnerIds).mine
+            }
+            partnerAmount={(item) =>
+              itemBasisParts(item as InvoiceItem, appliedShareMode, appliedPartnerIds).partner
+            }
+          />
+        )}
+
+        {showItemList && !isMobile && (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50 dark:bg-gray-800/80 border-b border-gray-200 dark:border-gray-700">
@@ -1553,9 +1660,10 @@ const FaturasPage = () => {
   }
 
   return (
-    <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900">
+    <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900 max-md:h-[100dvh] max-md:flex-col max-md:overflow-hidden">
       <Sidebar />
 
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col max-md:overflow-hidden max-md:pt-12">
       <CadastroListPageShell>
         <CadastroListPageBody
           scrollRef={scrollContainerRef}
@@ -1598,8 +1706,129 @@ const FaturasPage = () => {
           }
           tabs={
             <div className="space-y-4">
+            <div className="md:hidden">
+              <MobileReportFilterBar
+                open={mobileFilterOpen}
+                onOpenChange={setMobileFilterOpen}
+                activeCount={faturasActiveFilterCount}
+                summary={faturasFilterSummary}
+                sheetTitle="Filtros de faturas"
+                onApply={() => loadInvoiceData()}
+                onClear={clearFilters}
+                applyDisabled={filtersLoading}
+              >
+                <CadastroFilterField label="Ano" icon={<Calendar size={14} />}>
+                  <SourceMultiSelectDropdown
+                    label="Ano"
+                    options={yearOptions.map((year) => ({
+                      id: year,
+                      name: year,
+                      icon: <Calendar size={14} />,
+                      color: 'var(--color-1)',
+                    }))}
+                    selectedIds={selectedYears}
+                    onChange={setSelectedYears}
+                    placeholder="Todos"
+                  />
+                </CadastroFilterField>
+                <CadastroFilterField label="Mês" icon={<Calendar size={14} />}>
+                  <SourceMultiSelectDropdown
+                    label="Mês"
+                    options={monthOptions.map((m) => ({
+                      id: m.value,
+                      name: m.label,
+                      icon: <Calendar size={14} />,
+                      color: 'var(--color-1)',
+                    }))}
+                    selectedIds={selectedMonths}
+                    onChange={setSelectedMonths}
+                    placeholder="Todos"
+                  />
+                </CadastroFilterField>
+                <CadastroFilterField label="Emissor" icon={<Landmark size={14} />}>
+                  <MultiSelectDropdown
+                    label="Emissor"
+                    options={ISSUER_FILTER_OPTIONS.map((option) => ({
+                      id: option.id,
+                      name: option.name,
+                      icon: <Landmark size={14} />,
+                      color: 'var(--color-1)',
+                    }))}
+                    selectedIds={selectedIssuerIds}
+                    onChange={setSelectedIssuerIds}
+                    placeholder="Todos"
+                  />
+                </CadastroFilterField>
+                <CadastroFilterField label="Cartões" icon={<CreditCard size={14} />}>
+                  <MultiSelectDropdown
+                    label="Cartões"
+                    options={cards.map((c) => ({
+                      id: c.id,
+                      name: `${c.name} • ${c.number}`,
+                      badge: c.active === false ? 'Inativo' : undefined,
+                      icon: <CreditCard size={14} />,
+                      color: 'var(--color-2)',
+                    }))}
+                    selectedIds={selectedCardIds}
+                    onChange={setSelectedCardIds}
+                    loading={cardsLoading}
+                    placeholder="Todos"
+                  />
+                </CadastroFilterField>
+                <CadastroFilterField label="Tipo" icon={<ArrowUpDown size={14} />}>
+                  <select
+                    value={selectedTransactionType}
+                    onChange={(e) =>
+                      setSelectedTransactionType(e.target.value as 'all' | 'despesa' | 'receita')
+                    }
+                    className={cadastroFilterFieldCls}
+                  >
+                    <option value="all">Todos</option>
+                    <option value="despesa">Despesas</option>
+                    <option value="receita">Receitas</option>
+                  </select>
+                </CadastroFilterField>
+                <CadastroFilterField label="Tag" icon={<Tag size={14} />}>
+                  <MultiSelectDropdown
+                    label="Tag"
+                    options={tagOptions}
+                    selectedIds={selectedTagIds}
+                    onChange={(ids) => {
+                      setSelectedTagIds(ids)
+                      if (!ids.some((id) => id !== -1)) {
+                        setSelectedSubtagIds([])
+                      }
+                    }}
+                    loading={tagsLoading}
+                    placeholder="Selecione..."
+                  />
+                </CadastroFilterField>
+                <CadastroFilterField label="Subtag" icon={<Tags size={14} />}>
+                  <MultiSelectDropdown
+                    label="Subtag"
+                    options={filteredSubtags}
+                    selectedIds={selectedSubtagIds}
+                    onChange={setSelectedSubtagIds}
+                    loading={subtagsLoading}
+                    placeholder="Selecione..."
+                  />
+                </CadastroFilterField>
+                <CadastroFilterField label="Compartilhamento" icon={<Users size={14} />}>
+                  <MultiSelectDropdown
+                    label="Compartilhamento"
+                    options={partnerOptions}
+                    selectedIds={selectedPartnerIds}
+                    onChange={setSelectedPartnerIds}
+                    loading={partnersLoading}
+                    placeholder="Selecione..."
+                    icon={<Users size={14} className="text-gray-500" />}
+                  />
+                </CadastroFilterField>
+              </MobileReportFilterBar>
+            </div>
+
             {/* Filtros - Layout Compacto */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 transition-all hover:border-color-primary hover:shadow-md">
+            <div className="hidden bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 transition-all hover:border-color-primary hover:shadow-md md:block">
             {/* Header: Título + Link Limpar Filtros */}
             <div className="flex items-center justify-between mb-3">
               {/* Título */}
@@ -1965,7 +2194,7 @@ const FaturasPage = () => {
                   </div>
                 </div>
 
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3 px-1">
+                <div className="mb-4 hidden flex-wrap items-center justify-between gap-3 px-1 md:flex">
                   <div className="flex min-w-0 items-center gap-3">
                     <button
                       type="button"
@@ -2072,7 +2301,7 @@ const FaturasPage = () => {
                 </div>
 
                 {currentItems.length > 0 && (
-                  <div className="flex items-center justify-between gap-3 mb-4 px-1">
+                  <div className="mb-4 hidden items-center justify-between gap-3 px-1 md:flex">
                     <div className="flex items-center gap-3">
                       <button
                         onClick={() => {
@@ -2154,6 +2383,7 @@ const FaturasPage = () => {
           )}
         </CadastroListPageBody>
       </CadastroListPageShell>
+      </div>
 
       {/* Barra Flutuante de Ações em Lote */}
       {selectedItems.size > 0 && (

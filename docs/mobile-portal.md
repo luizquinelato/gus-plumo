@@ -17,4 +17,8 @@ Se não aparecer “Instalar app”, use **Adicionar à tela inicial** (PWA leve
 
 PWA completo: `vite-plugin-pwa` no build de produção (opcional).
 
-**Extrato (mobile):** transações em cards por dia; exportar no header (`Download`); drawer **Mais** (`PanelLeftOpen`); filtros em bottom sheet; só top bar e bottom nav fixos — conteúdo rola numa única área. Próximo: Faturas e demais relatórios.
+**Mobile (relatórios):** filtros via `MobileReportFilterBar` + bottom sheet; export (`Download`) no header quando houver; scroll único (`CadastroListPageBody` em `<md`).
+
+- **Extrato:** cards por dia.
+- **Faturas:** mantém abas ano/mês e seções por cartão/grupo; lançamentos em lista (sem tabela); agrupamento preservado.
+- **Saúde:** filtros ano/mês/escopo no sheet; gráficos rolam com a página.

@@ -24,7 +24,7 @@ import {
 } from '../components/CadastroFormLayout'
 import FloatingFooterBar from '../components/FloatingFooterBar'
 import ExtratoMobileTransactionList from '../components/ExtratoMobileTransactionList'
-import ExtratoMobileFilterBar from '../components/ExtratoMobileFilterBar'
+import MobileReportFilterBar from '../components/MobileReportFilterBar'
 import { useDeviceMode } from '../contexts/DeviceModeContext'
 import { useMobileTopBarActions } from '../contexts/MobileTopBarActionsContext'
 import ListPagination from '../components/ListPagination'
@@ -1225,11 +1225,12 @@ const ExtratoPage = () => {
           tabs={
             <div className="space-y-4">
           <div className="md:hidden">
-            <ExtratoMobileFilterBar
+            <MobileReportFilterBar
               open={mobileFilterOpen}
               onOpenChange={setMobileFilterOpen}
               activeCount={extratoActiveFilterCount}
               summary={filterPeriodSummary}
+              sheetTitle="Filtros do extrato"
               onApply={handleApplyFilters}
               onClear={clearFilters}
               applyDisabled={filtersApplyDisabled}
@@ -1395,7 +1396,7 @@ const ExtratoPage = () => {
                 />
                 <span className="font-medium text-gray-800 dark:text-gray-100">Incluir saldo diário</span>
               </label>
-            </ExtratoMobileFilterBar>
+            </MobileReportFilterBar>
           </div>
 
           <div className="hidden bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 mb-6 p-4 transition-all hover:border-color-primary hover:shadow-md md:block">
