@@ -5,6 +5,16 @@
 
 Implementação: `DeviceModeContext`, `PortalOnly` (esconde ações de escrita), navegação inferior, drawer no menu.
 
-PWA: `vite-plugin-pwa` no build de produção; “Adicionar à tela inicial” no Android/iOS.
+### Instalar no Android (Chrome)
+
+1. Acesse o site em **HTTPS** (ex.: `https://37-27-37-103.sslip.io`).
+2. Menu **⋮** (três pontos) → **Instalar app** ou **Adicionar à tela inicial**.
+3. Confirme — o ícone abre em tela cheia (`standalone`).
+
+Se não aparecer “Instalar app”, use **Adicionar à tela inicial** (PWA leve sem service worker até `vite-plugin-pwa` estar no build).
+
+**Menu hambúrguer (v1):** abre o drawer lateral com **Home** e **Relatórios** (sem Importar/Cadastro). Atalhos inferiores vão direto às telas.
+
+PWA completo: `vite-plugin-pwa` no build de produção (opcional).
 
 Próximas melhorias: layout card por relatório, mais rotas de leitura.

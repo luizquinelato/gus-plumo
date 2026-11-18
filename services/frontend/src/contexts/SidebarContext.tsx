@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react'
 import axios from 'axios'
 
 interface SidebarContextType {
@@ -26,8 +26,8 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
   const [collapsed, setCollapsed] = useState(readStoredCollapsed)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
-  const openMobileMenu = () => setMobileMenuOpen(true)
-  const closeMobileMenu = () => setMobileMenuOpen(false)
+  const openMobileMenu = useCallback(() => setMobileMenuOpen(true), [])
+  const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), [])
 
   useEffect(() => {
     const handleUserSidebarLoaded = (event: CustomEvent) => {
@@ -64,17 +64,20 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
     })
   }
 
+  const value = useMemo(
+    () => ({
+      collapsed,
+      toggleCollapsed,
+      sidebarLeftClass: (collapsed ? 'left-16' : 'left-64') as 'left-16' | 'left-64',
+      mobileMenuOpen,
+      openMobileMenu,
+      closeMobileMenu,
+    }),
+    [collapsed, mobileMenuOpen, openMobileMenu, closeMobileMenu],
+  )
+
   return (
-    <SidebarContext.Provider
-      value={{
-        collapsed,
-        toggleCollapsed,
-        sidebarLeftClass: collapsed ? 'left-16' : 'left-64',
-        mobileMenuOpen,
-        openMobileMenu,
-        closeMobileMenu,
-      }}
-    >
+    <SidebarContext.Provider value={value}>
       {children}
     </SidebarContext.Provider>
   )
