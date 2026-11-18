@@ -38,6 +38,7 @@ import { CadastroListHeaderActions } from '../components/CadastroExcelMenu'
 import { DateField } from '../components/date'
 import Sidebar from '../components/Sidebar'
 import PortalOnly from '../components/PortalOnly'
+import ProjecaoMensalMobileCalendar from '../components/ProjecaoMensalMobileCalendar'
 import {
   CadastroListPageBody,
   CadastroListPageHero,
@@ -1384,10 +1385,24 @@ export default function ProjecaoMensalPage() {
             {error && <p className="text-sm text-red-600">{error}</p>}
             {loading ? (
               <LoadingSpinner />
+            ) : isMobile ? (
+              <ProjecaoMensalMobileCalendar
+                yearMonth={yearMonth}
+                byDay={byDay}
+                incomeByDay={incomeByDay}
+                formatCurrency={formatCurrency}
+                debit={debit}
+                debitCls={debitCls}
+                creditCls={creditCls}
+                valueOf={(e) => Number(e.amount)}
+                onIncome={(inc) => (inc.editable ? openEditIncome(inc as Income) : setAutoIncome(inc as Income))}
+                onExpense={(e) => openEdit(e as Expense)}
+              />
             ) : (
+              <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
               <div
-                className="grid flex-[1_0_auto] grid-cols-7 gap-px overflow-hidden rounded-lg border border-gray-200 bg-gray-200 dark:border-gray-700 dark:bg-gray-700"
-                style={{ gridTemplateRows: `auto repeat(${Math.ceil(cells.length / 7)}, minmax(96px, 1fr))` }}
+                className="grid min-w-[42rem] grid-cols-7 gap-px overflow-hidden bg-gray-200 dark:bg-gray-700"
+                style={{ gridTemplateRows: `auto repeat(${Math.ceil(cells.length / 7)}, minmax(88px, auto))` }}
               >
                 {WEEKDAYS.map((d) => (
                   <div key={d} className="bg-gray-100 p-2 text-center text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">{d}</div>
@@ -1420,7 +1435,7 @@ export default function ProjecaoMensalPage() {
                             }
                           : undefined
                       }
-                      className={`group relative min-h-[96px] p-1.5 ${
+                      className={`group relative min-h-[88px] p-1.5 ${
                         day === null
                           ? 'bg-gray-50 dark:bg-gray-950'
                           : dragOverDay === day
@@ -1474,6 +1489,7 @@ export default function ProjecaoMensalPage() {
                     </div>
                   )
                 })}
+              </div>
               </div>
             )}
           </div>
@@ -1533,10 +1549,10 @@ export default function ProjecaoMensalPage() {
 
       {picker && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 p-4 sm:items-center"
           onMouseDown={(e) => e.target === e.currentTarget && closePicker()}
         >
-          <div className="w-72 rounded-xl border border-gray-200 bg-white p-3 shadow-xl dark:border-gray-700 dark:bg-gray-800">
+          <div className="w-full max-w-sm rounded-xl border border-gray-200 bg-white p-4 shadow-xl dark:border-gray-700 dark:bg-gray-800 sm:max-w-xs">
             <div className="mb-3 flex items-center justify-between gap-2">
               <button
                 type="button"
@@ -1563,7 +1579,7 @@ export default function ProjecaoMensalPage() {
                 <ChevronRight className="h-4 w-4" />
               </button>
             </div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
               {picker.view === 'month'
                 ? MONTH_NAMES.map((name, i) => {
                     const selected = picker.year === year && i + 1 === month
@@ -1572,7 +1588,7 @@ export default function ProjecaoMensalPage() {
                         key={name}
                         type="button"
                         onClick={() => pickMonth(i + 1)}
-                        className={`rounded-lg px-2 py-2 text-sm ${selected ? 'bg-[var(--color-primary)] text-white' : 'text-gray-800 hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-gray-700'}`}
+                        className={`rounded-lg px-2 py-2.5 text-sm font-medium ${selected ? 'bg-[var(--color-primary)] text-white' : 'text-gray-800 hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-gray-700'}`}
                       >
                         {name.slice(0, 3)}
                       </button>
