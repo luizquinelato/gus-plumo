@@ -31,6 +31,7 @@ export type ExtratoExpenseRow = {
   account_number: string | null
   year_month: string | null
   migrated_from_account_id: number | null
+  is_manual?: boolean
   /** Última linha de saldo cumulativo daquele mês civil (no conjunto gerado). */
   daily_month_end?: boolean
 }

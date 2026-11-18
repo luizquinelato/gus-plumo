@@ -21,6 +21,7 @@ import {
   CadastroModalShell,
 } from '../components/CadastroFormLayout'
 import FloatingFooterBar from '../components/FloatingFooterBar'
+import ExtratoMobileTransactionList from '../components/ExtratoMobileTransactionList'
 import ListPagination from '../components/ListPagination'
 import LoadingSpinner from '../components/LoadingSpinner'
 import SplitExpenseModal from '../components/SplitExpenseModal'
@@ -824,6 +825,12 @@ const ExtratoPage = () => {
     }
   }, [searchedExpenses, appliedPeriodStartKey])
 
+  const paginatedExpenses = useMemo(() => {
+    const start = itemsPerPage === 0 ? 0 : (currentPage - 1) * itemsPerPage
+    const end = itemsPerPage === 0 ? filteredExpenses.length : currentPage * itemsPerPage
+    return filteredExpenses.slice(start, end)
+  }, [filteredExpenses, currentPage, itemsPerPage])
+
   const exportExpenses = useMemo(
     () => searchedExpenses.filter((row) => !isExtratoDailyBalanceRow(row)),
     [searchedExpenses],
@@ -1555,8 +1562,22 @@ const ExtratoPage = () => {
 
           {/* Tabela de Transações */}
           {!loading && detailedReport && filteredExpenses.length > 0 && (
-            <div className={`${selectedItems.size > 0 || showBackToTop ? 'pb-20' : ''}`}>
-              <div className="rounded-lg border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-800">
+            <div className={`${selectedItems.size > 0 || showBackToTop ? 'pb-20 max-md:pb-24' : ''}`}>
+              <div className="md:hidden">
+                <ExtratoMobileTransactionList
+                  expenses={filteredExpenses}
+                  formatCurrency={formatCurrency}
+                  formatDateTime={formatDateTime}
+                  dailyPartnerCumulative={dailyPartnerCumulative}
+                  page={currentPage}
+                  perPage={itemsPerPage}
+                  total={filteredExpenses.length}
+                  onPageChange={setCurrentPage}
+                  onPerPageChange={setItemsPerPage}
+                />
+              </div>
+
+              <div className="hidden rounded-lg border border-gray-300 bg-white md:block dark:border-gray-600 dark:bg-gray-800">
                 <table className={`${listPageTableCls} table-fixed`}>
                   <colgroup>
                     <col style={{ width: '2.25%' }} />
@@ -1624,12 +1645,7 @@ const ExtratoPage = () => {
                     </tr>
                   </thead>
                   <tbody className="[&_td]:align-top">
-                      {filteredExpenses
-                        .slice(
-                          itemsPerPage === 0 ? 0 : (currentPage - 1) * itemsPerPage,
-                          itemsPerPage === 0 ? filteredExpenses.length : currentPage * itemsPerPage
-                        )
-                        .map((expense, index) => {
+                      {paginatedExpenses.map((expense, index) => {
                           const isDailyBalance = isExtratoDailyBalanceRow(expense)
                           const lineNumber = itemsPerPage === 0
                             ? index + 1
