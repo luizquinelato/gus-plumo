@@ -73,6 +73,71 @@ _plumo_set_run_migrations() {
   fi
 }
 
+_gus_help() {
+  cat <<'EOF'
+Gus CLI — stack online (.env.online)
+
+Uso: gus <comando> [args]     |     gus --help
+
+  cd                 ir para /opt/gus-plumo
+  rat                compose up -d
+  rat-build          up -d --build (após git pull)
+  dkup | dkdown | dkdown-v | dkstatus | dklogs
+  kill-all | kill-all-hard
+  dbm | dbs | dbr | dbr-to <N>
+  reset | reset-full
+  backup             pg_dump online
+  restore [arquivo]  restore-online.sh
+  health             curl /health + ps
+
+Atalhos ainda funcionam soltos: rat-build, dkup, dbm, ...
+EOF
+}
+
+gus() {
+  if [[ $# -eq 0 ]] || [[ "$1" == "--help" ]] || [[ "$1" == "-h" ]] || [[ "$1" == "help" ]]; then
+    _gus_help
+    return 0
+  fi
+
+  local cmd="$1"
+  shift
+
+  case "$cmd" in
+    cd)
+      _plumo_cd && pwd
+      ;;
+    rat) rat "$@" ;;
+    rat-build) rat-build "$@" ;;
+    dkup) dkup "$@" ;;
+    dkup-build) dkup-build "$@" ;;
+    dkdown) dkdown "$@" ;;
+    dkdown-v) dkdown-v "$@" ;;
+    dkstatus) dkstatus "$@" ;;
+    dklogs) dklogs "$@" ;;
+    kill-all) kill-all "$@" ;;
+    kill-all-hard) kill-all-hard "$@" ;;
+    dbm) dbm "$@" ;;
+    dbs) dbs "$@" ;;
+    dbr) dbr "$@" ;;
+    dbr-to) dbr-to "$@" ;;
+    reset) reset "$@" ;;
+    reset-full) reset-full "$@" ;;
+    backup) plumo-backup "$@" ;;
+    restore) plumo-restore "$@" ;;
+    health) plumo-health "$@" ;;
+    *)
+      if [[ $(type -t "$cmd" 2>/dev/null) == function ]]; then
+        "$cmd" "$@"
+        return $?
+      fi
+      echo "[gus] Comando desconhecido: $cmd (gus --help)" >&2
+      return 1
+      ;;
+  esac
+}
+
+# Compat: cd rápido (como expenses no PC)
 plumo() {
   _plumo_cd && pwd
 }
@@ -83,6 +148,10 @@ plumo-online() {
 
 e() {
   plumo
+}
+
+plumo-help() {
+  gus --help
 }
 
 dkup() {
@@ -207,4 +276,4 @@ plumo-restore() {
 }
 
 export PLUMO_ROOT
-echo "[plumo-online] helpers carregados ($PLUMO_COMPOSE_FILE + $PLUMO_ENV_FILE)"
+echo "[gus-online] CLI carregado. Comandos: gus --help"

@@ -290,32 +290,37 @@ echo '[[ -f /opt/gus-plumo/scripts/vps/plumo-online-rc.sh ]] && source /opt/gus-
 source ~/.bashrc
 ```
 
+Comando principal: **`gus`** (sem args ou `gus --help` lista tudo). Estilo do CLI do PC: `gus rat-build`, `gus dkup`, …
+
 | Comando | Ação |
 |---------|------|
-| `plumo` / `e` | `cd` para o repo |
-| `rat` / `dkup` | `up -d` stack inteira |
-| `rat-build` / `dkup-build` | `up -d --build` após `git pull` |
-| `kill-all` | `stop backend auth web` |
-| `dkdown` / `dkdown-v` | down / down **-v** (volume PG — confirmação) |
-| `dkstatus` / `dklogs` | `ps` / logs |
-| `dbm` / `dbr` / `dbs` | migrations no container backend |
-| `plumo-restore [backup]` | `restore-online.sh` (último em `backups/` se omitido) |
-| `plumo-health` | `curl` `/health` + `ps` |
-| `reset` | rollback 0000 + apply-all + up (mantém volume) |
-| `reset-full` | `down -v` + `RUN_MIGRATIONS=1` + up (fase A) |
+| `gus` / `gus --help` | Ajuda |
+| `gus cd` / `plumo` / `e` | `cd` para o repo |
+| `gus rat` / `gus dkup` | `up -d` stack inteira |
+| `gus rat-build` | `up -d --build` após `git pull` |
+| `gus kill-all` | `stop backend auth web` |
+| `gus dkdown` / `gus dkdown-v` | down / down **-v** (confirmação) |
+| `gus dkstatus` / `gus dklogs` | `ps` / logs |
+| `gus dbm` / `gus dbr` / `gus dbs` | migrations |
+| `gus restore [backup]` | `restore-online.sh` |
+| `gus backup` | dump Postgres online |
+| `gus health` | `curl` `/health` + `ps` |
+| `gus reset` / `gus reset-full` | perigosos — ver ajuda |
 
-**Cuidado:** não use `reset` / `reset-full` / `dkdown-v` com dados de produção restaurados; use `plumo-restore`.
+Atalhos **sem** `gus` (`rat-build`, `dkup`, …) continuam válidos.
+
+**Cuidado:** não use `reset` / `reset-full` / `dkdown-v` com dados de produção restaurados; use `gus restore`.
 
 #### Trazer backup do VPS para o PC
 
-No VPS: `./scripts/database/backup-online.sh` ou `plumo-backup`. Baixe `backups/plumo_online_*` com WinSCP/pscp ou `pull-backup-from-online.ps1` no PC. Restore: `restore-database.bat ... --to prod --keys online` (antes: `sync-env-keys.py --from online --to prod` se necessário).
+No VPS: `gus backup` ou `./scripts/database/backup-online.sh`. Baixe `backups/plumo_online_*` com WinSCP/pscp ou `pull-backup-from-online.ps1` no PC. Restore: `restore-database.bat ... --to prod --keys online` (antes: `sync-env-keys.py --from online --to prod` se necessário).
 
 Fluxo habitual após código novo:
 
 ```bash
-plumo
+gus cd
 git pull
-rat-build
+gus rat-build
 ```
 
 Só mudança de Caddy/frontend:
