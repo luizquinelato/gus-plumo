@@ -11,7 +11,16 @@ while [[ -L "$_script" ]]; do
   [[ "$_script" != /* ]] && _script="$_dir/$_script"
 done
 _VPS_DIR="$(cd "$(dirname "$_script")" && pwd)"
-GUS_REPO="${GUS_REPO:-$(cd "$_VPS_DIR/../.." && pwd)}"
+_candidate="$(cd "$_VPS_DIR/../.." && pwd)"
+_rc_candidate="$_candidate/scripts/vps/plumo-online-rc.sh"
+
+if [[ -f "$_rc_candidate" ]]; then
+  GUS_REPO="$_candidate"
+elif [[ -n "${GUS_REPO:-}" ]] && [[ -f "$GUS_REPO/scripts/vps/plumo-online-rc.sh" ]]; then
+  :
+else
+  GUS_REPO="${GUS_REPO:-/opt/gus-plumo}"
+fi
 
 RC="$GUS_REPO/scripts/vps/plumo-online-rc.sh"
 if [[ ! -f "$RC" ]]; then
