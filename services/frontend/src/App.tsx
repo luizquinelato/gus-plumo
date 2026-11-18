@@ -4,6 +4,7 @@ import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider } from './contexts/AuthContext'
 import { SidebarProvider } from './contexts/SidebarContext'
 import { DeviceModeProvider } from './contexts/DeviceModeContext'
+import { MobileTopBarActionsProvider } from './contexts/MobileTopBarActionsContext'
 import { BalanceVisibilityProvider } from './contexts/BalanceVisibilityContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import LoginPage from './pages/LoginPage'
@@ -70,6 +71,7 @@ function App() {
     <ThemeProvider>
       <DeviceModeProvider>
       <AuthProvider>
+        <MobileTopBarActionsProvider>
         <SidebarProvider>
         <BalanceVisibilityProvider>
         <ColorApplicationWrapper>
@@ -338,6 +340,7 @@ function App() {
         </ColorApplicationWrapper>
         </BalanceVisibilityProvider>
         </SidebarProvider>
+        </MobileTopBarActionsProvider>
       </AuthProvider>
       </DeviceModeProvider>
     </ThemeProvider>

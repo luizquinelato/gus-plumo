@@ -8,6 +8,8 @@ import {
   CadastroListPageHero,
   CadastroListPageShell,
   CadastroListPrimaryButton,
+  CadastroFilterField,
+  cadastroFilterFieldCls,
   listPageTableCls,
   listPageTableRowHoverCls,
   reportRowActionBtnClass,
@@ -22,6 +24,9 @@ import {
 } from '../components/CadastroFormLayout'
 import FloatingFooterBar from '../components/FloatingFooterBar'
 import ExtratoMobileTransactionList from '../components/ExtratoMobileTransactionList'
+import ExtratoMobileFilterBar from '../components/ExtratoMobileFilterBar'
+import { useDeviceMode } from '../contexts/DeviceModeContext'
+import { useMobileTopBarActions } from '../contexts/MobileTopBarActionsContext'
 import ListPagination from '../components/ListPagination'
 import LoadingSpinner from '../components/LoadingSpinner'
 import SplitExpenseModal from '../components/SplitExpenseModal'
@@ -268,6 +273,9 @@ const ExtratoPage = () => {
   // Estado para botão Back to Top
   const [showBackToTop, setShowBackToTop] = useState(false)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const [mobileFilterOpen, setMobileFilterOpen] = useState(false)
+  const { isMobile } = useDeviceMode()
+  const { setActions } = useMobileTopBarActions()
 
   // Estados de UI
   // (showFilters removido - filtros agora sempre visíveis)
@@ -1110,10 +1118,72 @@ const ExtratoPage = () => {
       }))
     : [] // Não mostra subtags se nenhuma tag está selecionada
 
+  const extratoActiveFilterCount = useMemo(() => {
+    let count = 0
+    if (selectedCardIds.length > 0) count++
+    if (selectedPartnerIds.length > 0) count++
+    if (selectedTagIds.length > 0) count++
+    if (selectedSubtagIds.length > 0) count++
+    if (selectedSources.length > 0) count++
+    if (selectedOrigins.length > 0) count++
+    if (selectedTransactionType !== 'all') count++
+    if (startDate !== null) count++
+    if (endDate !== null) count++
+    if (includeDailyBalance) count++
+    return count
+  }, [
+    selectedCardIds,
+    selectedPartnerIds,
+    selectedTagIds,
+    selectedSubtagIds,
+    selectedSources,
+    selectedOrigins,
+    selectedTransactionType,
+    startDate,
+    endDate,
+    includeDailyBalance,
+  ])
+
+  const filterPeriodSummary = useMemo(() => {
+    if (!startDate && !endDate) return undefined
+    const a = startDate ? startDate.toLocaleDateString('pt-BR') : '…'
+    const b = endDate ? endDate.toLocaleDateString('pt-BR') : '…'
+    return `Período: ${a} – ${b}`
+  }, [startDate, endDate])
+
+  useEffect(() => {
+    if (!isMobile) {
+      setActions(null)
+      return
+    }
+    const openExportExcel = () => {
+      if (!exportExpenses || exportExpenses.length === 0) {
+        handleShowToast('Nenhum dado para exportar', 'error')
+        return
+      }
+      setExportModalFormat('excel')
+    }
+    const openExportPdf = () => {
+      if (!exportExpenses || exportExpenses.length === 0) {
+        handleShowToast('Nenhum dado para exportar', 'error')
+        return
+      }
+      setExportModalFormat('pdf')
+    }
+    setActions(
+      <ExtratoReportMenu compact onExportExcel={openExportExcel} onExportPdf={openExportPdf} />,
+    )
+    return () => setActions(null)
+  }, [isMobile, setActions, exportExpenses])
+
+  const filtersApplyDisabled =
+    cardsLoading || partnersLoading || tagsLoading || subtagsLoading
+
   return (
-    <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900">
+    <div className="flex h-screen min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900 max-md:h-[100dvh] max-md:flex-col max-md:overflow-hidden">
       <Sidebar />
 
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col max-md:overflow-hidden max-md:pt-12">
       <CadastroListPageShell>
         <CadastroListPageBody
           scrollRef={scrollContainerRef}
@@ -1154,7 +1224,181 @@ const ExtratoPage = () => {
           }
           tabs={
             <div className="space-y-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 mb-6 p-4 transition-all hover:border-color-primary hover:shadow-md">
+          <div className="md:hidden">
+            <ExtratoMobileFilterBar
+              open={mobileFilterOpen}
+              onOpenChange={setMobileFilterOpen}
+              activeCount={extratoActiveFilterCount}
+              summary={filterPeriodSummary}
+              onApply={handleApplyFilters}
+              onClear={clearFilters}
+              applyDisabled={filtersApplyDisabled}
+            >
+              <CadastroFilterField label="Fonte" icon={<Database size={14} />}>
+                <SourceMultiSelectDropdown
+                  label="Fonte"
+                  options={SOURCE_OPTIONS}
+                  selectedIds={selectedSources}
+                  onChange={setSelectedSources}
+                  placeholder="Todas"
+                />
+              </CadastroFilterField>
+              <CadastroFilterField label="Origem" icon={<ArrowRight size={14} />}>
+                <SourceMultiSelectDropdown
+                  label="Origem"
+                  options={ORIGIN_OPTIONS}
+                  selectedIds={selectedOrigins}
+                  onChange={setSelectedOrigins}
+                  placeholder="Todas"
+                />
+              </CadastroFilterField>
+              <CadastroFilterField label="Cartão de benefício" icon={<Gift size={14} />}>
+                <MultiSelectDropdown
+                  label="Cartão de benefício"
+                  options={cards.map((c) => ({
+                    id: c.id,
+                    name: `${c.name || 'Sem nome'} • ${c.number}`,
+                    icon: <Gift size={14} />,
+                    color: 'var(--color-3)',
+                  }))}
+                  selectedIds={selectedCardIds}
+                  onChange={setSelectedCardIds}
+                  loading={cardsLoading}
+                  placeholder="Selecione..."
+                />
+              </CadastroFilterField>
+              <CadastroFilterField label="Tipo" icon={<ArrowUpDown size={14} />}>
+                <select
+                  value={selectedTransactionType}
+                  onChange={(e) =>
+                    setSelectedTransactionType(e.target.value as 'all' | 'despesa' | 'receita')
+                  }
+                  className={cadastroFilterFieldCls}
+                >
+                  <option value="all">Todos</option>
+                  <option value="despesa">Despesas</option>
+                  <option value="receita">Receitas</option>
+                </select>
+              </CadastroFilterField>
+              <CadastroFilterField label="Tag" icon={<Tag size={14} />}>
+                <MultiSelectDropdown
+                  label="Tag"
+                  options={[{ id: -1, name: '(Vazio)', count: undefined }, ...tags]}
+                  selectedIds={selectedTagIds}
+                  onChange={(newTagIds) => {
+                    setSelectedTagIds(newTagIds)
+                    const realTagIds = newTagIds.filter((id) => id !== -1)
+                    if (realTagIds.length === 0) {
+                      setSelectedSubtagIds([])
+                    } else {
+                      const validSubtagIds = subtags
+                        .filter((st) => realTagIds.includes(st.tag_id))
+                        .map((st) => st.id)
+                      setSelectedSubtagIds((prev) => prev.filter((id) => validSubtagIds.includes(id)))
+                    }
+                  }}
+                  loading={tagsLoading}
+                  placeholder="Selecione..."
+                />
+              </CadastroFilterField>
+              <CadastroFilterField label="Subtag" icon={<Tags size={14} />}>
+                <MultiSelectDropdown
+                  label="Subtag"
+                  options={filteredSubtags}
+                  selectedIds={selectedSubtagIds}
+                  onChange={setSelectedSubtagIds}
+                  loading={subtagsLoading}
+                  placeholder={selectedTagIds.length === 0 ? 'Selecione uma tag' : 'Selecione...'}
+                  groupByKey={selectedTagIds.length > 1}
+                  disabled={selectedTagIds.length === 0}
+                />
+              </CadastroFilterField>
+              <CadastroFilterField label="Compartilhamento" icon={<Users size={14} />}>
+                <MultiSelectDropdown
+                  label="Compartilhamento"
+                  options={[
+                    { id: -2, name: 'Minha Parte (próprio + compartilhado)' },
+                    { id: -1, name: 'Próprio (100% meu)' },
+                    ...partners
+                      .map((p) => ({
+                        id: p.id,
+                        name:
+                          p.shared_account?.name ||
+                          p.shared_account?.description ||
+                          `Conta #${p.shared_account_id}`,
+                      }))
+                      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')),
+                  ]}
+                  selectedIds={selectedPartnerIds}
+                  onChange={setSelectedPartnerIds}
+                  loading={partnersLoading}
+                  placeholder="Selecione..."
+                  icon={<Users size={14} className="text-gray-500" />}
+                />
+              </CadastroFilterField>
+              <div className="grid grid-cols-2 gap-3">
+                <CadastroFilterField label="Início" icon={<Calendar size={14} />}>
+                  <DateField
+                    value={startDate ? dateToLocalString(startDate) : ''}
+                    onChange={(value) => {
+                      if (!value) {
+                        setStartDate(null)
+                        return
+                      }
+                      const parsed = parseLocalDate(value)
+                      if (parsed) {
+                        setStartDate(
+                          new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate(), 0, 0, 0, 0),
+                        )
+                      }
+                    }}
+                    maxDate={endDate ? parseLocalDate(dateToLocalString(endDate)) ?? undefined : undefined}
+                    className={cadastroFilterFieldCls}
+                  />
+                </CadastroFilterField>
+                <CadastroFilterField label="Fim" icon={<Calendar size={14} />}>
+                  <DateField
+                    value={endDate ? dateToLocalString(endDate) : ''}
+                    onChange={(value) => {
+                      if (!value) {
+                        setEndDate(null)
+                        return
+                      }
+                      const parsed = parseLocalDate(value)
+                      if (parsed) {
+                        setEndDate(
+                          new Date(
+                            parsed.getFullYear(),
+                            parsed.getMonth(),
+                            parsed.getDate(),
+                            23,
+                            59,
+                            59,
+                            999,
+                          ),
+                        )
+                      }
+                    }}
+                    minDate={
+                      startDate ? parseLocalDate(dateToLocalString(startDate)) ?? undefined : undefined
+                    }
+                    className={cadastroFilterFieldCls}
+                  />
+                </CadastroFilterField>
+              </div>
+              <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-3 text-sm dark:border-gray-600 dark:bg-gray-800/60">
+                <input
+                  type="checkbox"
+                  checked={includeDailyBalance}
+                  onChange={(event) => setIncludeDailyBalance(event.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 text-[var(--color-1)] focus:ring-[var(--color-1)]"
+                />
+                <span className="font-medium text-gray-800 dark:text-gray-100">Incluir saldo diário</span>
+              </label>
+            </ExtratoMobileFilterBar>
+          </div>
+
+          <div className="hidden bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 mb-6 p-4 transition-all hover:border-color-primary hover:shadow-md md:block">
             {/* Header: Título + Link Limpar Filtros */}
             {(() => {
               const hasActiveFilters =
@@ -1955,6 +2199,7 @@ const ExtratoPage = () => {
           )}
         </CadastroListPageBody>
       </CadastroListPageShell>
+      </div>
 
       <ExtratoExpenseActionsModal
         isOpen={isExpenseActionsHubOpen && !expenseHubNested}
@@ -2129,7 +2374,7 @@ const ExtratoPage = () => {
 
       {/* Barra Flutuante de Ações em Lote - Fixed no rodapé, respeita o sidebar */}
       {selectedItems.size > 0 && (
-        <FloatingFooterBar>
+        <FloatingFooterBar className="max-md:hidden">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <span className="font-medium text-color-primary">

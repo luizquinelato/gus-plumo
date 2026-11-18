@@ -1,4 +1,4 @@
-import { FileText, CreditCard, Home, Activity, Menu } from 'lucide-react'
+import { FileText, CreditCard, Home, Activity, PanelLeftOpen } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import { useSidebar } from '../contexts/SidebarContext'
 
@@ -32,9 +32,9 @@ export default function MobileBottomNav() {
           </Link>
         )
       })}
-      <button type="button" onClick={openMobileMenu} className={linkCls(false)} aria-label="Menu">
-        <Menu size={20} />
-        Menu
+      <button type="button" onClick={openMobileMenu} className={linkCls(false)} aria-label="Mais páginas">
+        <PanelLeftOpen size={20} />
+        Mais
       </button>
     </nav>
   )

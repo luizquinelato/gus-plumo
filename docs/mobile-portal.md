@@ -17,4 +17,4 @@ Se não aparecer “Instalar app”, use **Adicionar à tela inicial** (PWA leve
 
 PWA completo: `vite-plugin-pwa` no build de produção (opcional).
 
-**Extrato (mobile):** transações em lista de cards por dia (estilo app bancário); tabela continua no portal (`md+`). Próximas melhorias: cards em Faturas e demais relatórios.
+**Extrato (mobile):** transações em cards por dia; exportar no header (`Download`); drawer **Mais** (`PanelLeftOpen`); filtros em bottom sheet; só top bar e bottom nav fixos — conteúdo rola numa única área. Próximo: Faturas e demais relatórios.

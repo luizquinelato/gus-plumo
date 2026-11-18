@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Menu, FileSpreadsheet, Loader2 } from 'lucide-react'
+import { Download, FileSpreadsheet, Loader2 } from 'lucide-react'
 
 export type CadastroExcelMenuExtraItem = {
   id: string
@@ -16,6 +16,8 @@ export interface CadastroExcelMenuProps {
   onExportExcel?: () => void
   extraItems?: CadastroExcelMenuExtraItem[]
   menuTitle?: string
+  /** Ícone do botão (padrão: download, para não confundir com menu de navegação). */
+  compact?: boolean
 }
 
 export default function CadastroExcelMenu({
@@ -24,6 +26,7 @@ export default function CadastroExcelMenu({
   onExportExcel,
   extraItems = [],
   menuTitle = 'Exportar',
+  compact = false,
 }: CadastroExcelMenuProps) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -51,11 +54,15 @@ export default function CadastroExcelMenu({
         type="button"
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm transition hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
+        className={
+          compact
+            ? 'inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-200 dark:hover:bg-gray-800'
+            : 'inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm transition hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200'
+        }
         title={menuTitle}
         aria-label={menuTitle}
       >
-        <Menu size={20} />
+        <Download size={compact ? 22 : 20} />
       </button>
       {open ? (
         <div className="absolute right-0 z-50 mt-2 min-w-[220px] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-600 dark:bg-gray-800">

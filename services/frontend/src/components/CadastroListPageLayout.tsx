@@ -2,6 +2,7 @@ import { Children, isValidElement, type ReactNode, type Ref } from 'react'
 import { Filter, Plus, Search, X } from 'lucide-react'
 import PageScrollRoot from './PageScrollRoot'
 import Badge from './Badge'
+import { useDeviceMode } from '../contexts/DeviceModeContext'
 
 export const cadastroListHeaderPad = 'px-6 pt-6 pb-3 lg:px-8 lg:pt-8 lg:pb-3'
 export const cadastroListContentPad = 'px-6 lg:px-8'
@@ -81,8 +82,14 @@ function resolveFilterRowCls(childCount: number, gridClass?: string): string {
 }
 
 export function CadastroListPageShell({ children }: { children: ReactNode }) {
+  const { isMobile } = useDeviceMode()
+  if (isMobile) {
+    return (
+      <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">{children}</div>
+    )
+  }
   return (
-    <div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-gray-50 pt-0 dark:bg-gray-900 max-md:pt-12 max-md:pb-[4.5rem]">
+    <div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-gray-50 pt-0 dark:bg-gray-900">
       {children}
     </div>
   )
@@ -109,7 +116,7 @@ export function CadastroListPageHero({
         <p className="mt-2 text-gray-600 dark:text-gray-400 max-md:mt-0 max-md:text-sm">{subtitle}</p>
       </div>
       {actions ? (
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">{actions}</div>
+        <div className="flex max-md:hidden shrink-0 flex-wrap items-center justify-end gap-2">{actions}</div>
       ) : null}
     </div>
   )
@@ -458,6 +465,7 @@ export function CadastroListPageBody({
   /** Quando true, abas/filtros ficam travados abaixo do título. Default: só o título fica travado. */
   pinTabs?: boolean
 }) {
+  const { isMobile } = useDeviceMode()
   const pinChrome = Boolean(tabs) && pinTabs
   const bodyPad = tabs ? `${cadastroListContentPad} pt-3` : `${cadastroListContentPad} pt-4`
   const scrollX = contentOverflow === 'auto' ? 'overflow-x-auto' : 'overflow-x-hidden'
@@ -468,6 +476,20 @@ export function CadastroListPageBody({
       <div className="mb-4">{tabs}</div>
     )
   ) : null
+
+  if (isMobile) {
+    const mobilePad = `${cadastroListContentPad} px-4`
+    return (
+      <PageScrollRoot
+        ref={scrollRef}
+        className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-y-contain scroll-slim bg-gray-50 pb-28 pt-1 dark:bg-gray-900"
+      >
+        <div className={`shrink-0 ${cadastroListHeaderPad} !px-4 !pb-2 !pt-0`}>{header}</div>
+        {tabs ? <div className={`${mobilePad} pb-2`}>{tabs}</div> : null}
+        <div className={`${mobilePad} pb-4`}>{children}</div>
+      </PageScrollRoot>
+    )
+  }
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
