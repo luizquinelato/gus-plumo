@@ -38,6 +38,7 @@ interface ExtratoExpenseActionsModalProps {
   /** Seleção em lote ativa — desabilita ações que exigem linha única. */
   selectionActive?: boolean
   onAction: (action: ExtratoExpenseHubAction) => void
+  onDelete?: () => void
 }
 
 function formatCurrency(value: number) {
@@ -77,6 +78,7 @@ export default function ExtratoExpenseActionsModal({
   expense,
   selectionActive = false,
   onAction,
+  onDelete,
 }: ExtratoExpenseActionsModalProps) {
   useEscapeKey(onClose, isOpen)
 
@@ -180,7 +182,22 @@ export default function ExtratoExpenseActionsModal({
           ))}
         </div>
       </CadastroModalBody>
-      <CadastroModalFooter onClose={onClose} closeLabel="Fechar" hideSave />
+      <CadastroModalFooter
+        onClose={onClose}
+        closeLabel="Fechar"
+        hideSave
+        leading={
+          onDelete ? (
+            <button
+              type="button"
+              className="text-sm font-medium text-red-600 dark:text-red-400"
+              onClick={onDelete}
+            >
+              Excluir
+            </button>
+          ) : undefined
+        }
+      />
     </CadastroModalShell>
   )
 }

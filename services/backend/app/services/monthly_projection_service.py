@@ -5,8 +5,10 @@ from __future__ import annotations
 import calendar
 import logging
 from collections import defaultdict
-from datetime import date, datetime
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
+from typing import Literal
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
@@ -18,6 +20,7 @@ from app.models.unified_models import (
     CreditCardInvoice,
     MonthlyProjection,
 )
+from app.services.extrato_daily_balance_service import compute_opening_balance_calendar
 from app.services.installment_service import get_open_installment_purchases
 from app.utils.card_invoice_calendar import (
     effective_closing_day,
@@ -28,10 +31,16 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_HISTORY_MONTHS = 6
 BANK_STATEMENT_SOURCE = "bank_statement"
-AUTOMATIC_SOURCES = ("card_invoice", "payroll", BANK_STATEMENT_SOURCE)
+OPENING_BALANCE_DESCRIPTION = "Saldo mês anterior"
+SECOND_HALF_STMT_FROM_DAY = 16
+FINAL_PAYROLL_EXTRATO_FROM_DAY_PREV_MONTH = 21
+FINAL_ON_DAY1_EXTRATO_UNTIL_DAY = 10
+ADVANCE_PAYROLL_EXTRATO_FROM_DAY = 11
+PayrollReconcileChoice = Literal["keep", "clear"]
 INSTALLMENT_SOURCE = "card_item_installment"
 CARD_ITEM_SOURCE = "card_item_manual"
 CARD_SOURCES = ("card_invoice", CARD_ITEM_SOURCE, INSTALLMENT_SOURCE)
+AUTOMATIC_SOURCES = ("card_invoice", "payroll", BANK_STATEMENT_SOURCE)
 MAX_INSTALLMENT_MONTHS = 24
 INCOME_KINDS = {"advance": "Adiantamento salarial", "final": "Salário (fim do mês)"}
 ADVANCE_PROJECTION_DAY = 15
@@ -254,6 +263,40 @@ def _payslip_ym(p: Payslip) -> str | None:
     return None
 
 
+FINAL_COMPETENCE_PAYSLIP_KINDS = ("final", "regular")
+
+
+def _final_competence_payslips(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    projection_year_month: str,
+) -> list[Payslip]:
+    """Holerite de fim de mês pela competência (mês anterior ao calendário projetado)."""
+    prev = prev_year_month(projection_year_month)
+    y, m = int(prev[:4]), int(prev[5:7])
+    return (
+        db.query(Payslip)
+        .filter(
+            Payslip.tenant_id == tenant_id,
+            Payslip.account_id == account_id,
+            Payslip.active.is_(True),
+            Payslip.year == y,
+            Payslip.month == m,
+            Payslip.payslip_kind.in_(FINAL_COMPETENCE_PAYSLIP_KINDS),
+            Payslip.net_amount.isnot(None),
+        )
+        .all()
+    )
+
+
+def _final_projection_day_from_payslips(slips: list[Payslip]) -> int:
+    dated = [p for p in slips if p.payment_date]
+    if dated:
+        return max(_payslip_day(p) for p in dated)
+    return 1
+
+
 def income_projections(
     db: Session,
     tenant_id: int,
@@ -264,8 +307,9 @@ def income_projections(
 ) -> list[dict]:
     """Entradas de holerite (adiantamento e fim do mês) do mês.
 
-    Usa o valor real quando o mês já tem holerite; senão, a média dos últimos 6 meses
-    com holerite desse tipo (estimativa), no dia de pagamento mais recente.
+    Fim do mês no calendário M: prioriza holerite com competência M-1 (``year``/``month``),
+    independente da data de pagamento no extrato. Sem holerite, média dos últimos 6 meses
+    (estimativa). Adiantamento segue a data de pagamento no calendário M.
     """
     window = []
     ym = year_month
@@ -283,6 +327,18 @@ def income_projections(
 
     out: list[dict] = []
     for kind, label in INCOME_KINDS.items():
+        if kind == "final":
+            competence = _final_competence_payslips(db, tenant_id, account_id, year_month)
+            if competence:
+                amount = sum((_money(p.net_amount) for p in competence), Decimal(0))
+                if amount > 0:
+                    day = _final_projection_day_from_payslips(competence)
+                    out.append({
+                        "description": label,
+                        "amount": amount,
+                        "expected_date": _clamped_date(year_month, day),
+                    })
+                continue
         of_kind = [(p, _payslip_ym(p)) for p in payslips if p.payslip_kind == kind]
         current = [p for p, y in of_kind if y == year_month]
         if current:
@@ -614,38 +670,393 @@ def _statement_day(value) -> date:
     return value
 
 
+def _is_final_payroll_projection_label(description: str) -> bool:
+    """Rótulo de holerite 'fim do mês' projetado no dia 1 (com ou sem estimativa)."""
+    desc = (description or "").strip()
+    base = INCOME_KINDS["final"]
+    return desc == base or desc.startswith(f"{base} ")
+
+
+def _is_advance_payroll_projection_label(description: str) -> bool:
+    desc = (description or "").strip()
+    base = INCOME_KINDS["advance"]
+    return desc == base or desc.startswith(f"{base} ")
+
+
+def _as_of_for_projection_month(year_month: str, as_of: date | None) -> date:
+    """Data da atualização, limitada ao último dia do mês projetado."""
+    _, end_exclusive = _month_bounds(year_month)
+    last_day = end_exclusive - timedelta(days=1)
+    today = as_of or date.today()
+    return min(today, last_day)
+
+
+def _statement_launch_from_day(year_month: str, as_of_day: date) -> int:
+    """1ª quinzena do mês de referência → dia 1; a partir do dia 16 → só 2ª quinzena."""
+    return 1 if as_of_day.day < SECOND_HALF_STMT_FROM_DAY else SECOND_HALF_STMT_FROM_DAY
+
+
+def _needs_stmt_import_from_day_one(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    year_month: str,
+    before_date: date,
+) -> bool:
+    """2ª quinzena automática: sobe mês desde o dia 1 se ainda não há Conta na 1ª quinzena."""
+    early = (
+        db.query(MonthlyProjection)
+        .filter(
+            MonthlyProjection.tenant_id == tenant_id,
+            MonthlyProjection.account_id == account_id,
+            MonthlyProjection.year_month == year_month,
+            MonthlyProjection.source == BANK_STATEMENT_SOURCE,
+            MonthlyProjection.expected_date < before_date,
+        )
+        .all()
+    )
+    if not early:
+        return True
+    non_opening = [
+        r for r in early
+        if (r.description or "").strip() != OPENING_BALANCE_DESCRIPTION
+    ]
+    return not non_opening
+
+
+def _payroll_search_window_final_on_day1(year_month: str, as_of: date) -> tuple[date, date]:
+    """Fim do mês (projetado no dia 1): dia 21 do mês anterior → min(hoje, dia 10 do mês)."""
+    start, _ = _month_bounds(year_month)
+    prev = prev_year_month(year_month)
+    py, pm = int(prev[:4]), int(prev[5:7])
+    range_start = date(py, pm, FINAL_PAYROLL_EXTRATO_FROM_DAY_PREV_MONTH)
+    cap_day = date(start.year, start.month, FINAL_ON_DAY1_EXTRATO_UNTIL_DAY)
+    range_end = min(as_of, cap_day)
+    return range_start, range_end
+
+
+def _payroll_search_window_advance(year_month: str, as_of: date) -> tuple[date, date]:
+    """Adiantamento (e folha final fora do dia 1 na 2ª quinzena): dia 11 do mês → hoje."""
+    start, _ = _month_bounds(year_month)
+    return date(start.year, start.month, ADVANCE_PAYROLL_EXTRATO_FROM_DAY), as_of
+
+
+def _day1_final_payroll_rows(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    year_month: str,
+    month_start: date,
+) -> list[MonthlyProjection]:
+    rows = db.query(MonthlyProjection).filter(
+        MonthlyProjection.tenant_id == tenant_id,
+        MonthlyProjection.account_id == account_id,
+        MonthlyProjection.year_month == year_month,
+        MonthlyProjection.expected_date == month_start,
+        MonthlyProjection.kind == "income",
+        MonthlyProjection.source == "payroll",
+        MonthlyProjection.is_automatic.is_(True),
+    ).all()
+    return [r for r in rows if _is_final_payroll_projection_label(r.description or "")]
+
+
+def _advance_payroll_rows(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    year_month: str,
+) -> list[MonthlyProjection]:
+    rows = db.query(MonthlyProjection).filter(
+        MonthlyProjection.tenant_id == tenant_id,
+        MonthlyProjection.account_id == account_id,
+        MonthlyProjection.year_month == year_month,
+        MonthlyProjection.kind == "income",
+        MonthlyProjection.source == "payroll",
+        MonthlyProjection.is_automatic.is_(True),
+    ).all()
+    return [r for r in rows if _is_advance_payroll_projection_label(r.description or "")]
+
+
+@dataclass(frozen=True)
+class PayrollConfirmationItem:
+    description: str
+    amount: Decimal
+    expected_day: int
+    matched_in_extrato: bool
+
+
+@dataclass
+class StatementLaunchResult:
+    created: int
+    payroll_confirmation: list[PayrollConfirmationItem] | None = None
+
+
+def _second_half_final_payroll_rows(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    year_month: str,
+    from_day: int,
+) -> list[MonthlyProjection]:
+    start, _ = _month_bounds(year_month)
+    y, m = start.year, start.month
+    last_dom = calendar.monthrange(y, m)[1]
+    clamped = max(1, min(from_day, last_dom))
+    second_start = date(y, m, clamped)
+    rows = db.query(MonthlyProjection).filter(
+        MonthlyProjection.tenant_id == tenant_id,
+        MonthlyProjection.account_id == account_id,
+        MonthlyProjection.year_month == year_month,
+        MonthlyProjection.kind == "income",
+        MonthlyProjection.source == "payroll",
+        MonthlyProjection.is_automatic.is_(True),
+        MonthlyProjection.expected_date >= second_start,
+    ).all()
+    return [r for r in rows if _is_final_payroll_projection_label(r.description or "")]
+
+
+def _payroll_match_targets(
+    proj: MonthlyProjection,
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+) -> set[Decimal]:
+    targets = {_money(proj.amount), _money(proj.my_amount)}
+    if not _is_final_payroll_projection_label(proj.description or ""):
+        return targets
+    month_start, _ = _month_bounds(proj.year_month)
+    if proj.expected_date != month_start:
+        return targets
+    for slip in _final_competence_payslips(db, tenant_id, account_id, proj.year_month):
+        targets.add(_money(slip.net_amount))
+    return targets
+
+
+def _bank_statement_credit_amounts(row: BankStatement) -> list[Decimal]:
+    """Valores de crédito comparáveis ao holerite (cheio e parte ``ownership``)."""
+    raw = _money(row.amount)
+    if raw == 0:
+        return []
+    credit = raw if raw > 0 else -raw
+    pct = Decimal(str(row.ownership_percentage if row.ownership_percentage is not None else 100))
+    mine = _money(credit * pct / Decimal(100))
+    if mine == credit:
+        return [credit]
+    return [credit, mine]
+
+
+def _extrato_has_payroll_match_in_window(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    range_start: date,
+    range_end_inclusive: date,
+    proj: MonthlyProjection,
+) -> bool:
+    if range_start > range_end_inclusive:
+        return False
+    targets = _payroll_match_targets(proj, db, tenant_id, account_id)
+    stmt_day = func.date(BankStatement.date)
+    rows = (
+        db.query(BankStatement)
+        .filter(
+            BankStatement.tenant_id == tenant_id,
+            BankStatement.account_id == account_id,
+            stmt_day >= range_start,
+            stmt_day <= range_end_inclusive,
+        )
+        .all()
+    )
+    for row in rows:
+        for candidate in _bank_statement_credit_amounts(row):
+            if candidate in targets:
+                return True
+    return False
+
+
+def _resolve_payroll_removals(
+    payroll_rows: list[MonthlyProjection],
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    range_start: date,
+    range_end_inclusive: date,
+    payroll_reconcile: PayrollReconcileChoice | None,
+) -> tuple[list[MonthlyProjection], list[PayrollConfirmationItem] | None]:
+    if not payroll_rows:
+        return [], None
+
+    to_remove: list[MonthlyProjection] = []
+    need_confirm: list[PayrollConfirmationItem] = []
+    for proj in payroll_rows:
+        if payroll_reconcile == "clear":
+            to_remove.append(proj)
+            continue
+        if payroll_reconcile == "keep":
+            continue
+        matched = _extrato_has_payroll_match_in_window(
+            db, tenant_id, account_id, range_start, range_end_inclusive, proj,
+        )
+        if matched:
+            to_remove.append(proj)
+            continue
+        need_confirm.append(PayrollConfirmationItem(
+            description=(proj.description or "").strip(),
+            amount=_money(proj.amount),
+            expected_day=proj.expected_date.day,
+            matched_in_extrato=False,
+        ))
+
+    if need_confirm:
+        return to_remove, need_confirm
+    return to_remove, None
+
+
 def launch_statement_projections(
     db: Session,
     tenant_id: int,
     account_id: int,
     user_id: int,
     year_month: str,
-) -> int:
-    """Apaga os lançamentos de extrato do mês e recria um item por linha de bank_statements.
+    *,
+    from_day: int | None = None,
+    payroll_reconcile: PayrollReconcileChoice | None = None,
+    as_of: date | None = None,
+) -> StatementLaunchResult:
+    """Apaga os lançamentos de extrato e recria a partir de bank_statements até ``as_of`` (hoje).
 
-    Não mexe em manuais, fatura, parcelas nem folha. Valor zero é ignorado.
-    Positivo vira receita; negativo vira despesa variável com valor absoluto.
+    Se ``from_day`` for omitido, usa a data de atualização: antes do dia 16 → mês desde o dia 1
+    (saldo + folha do início); dia 16+ → só da 2ª quinzena, com reconciliação da folha.
     """
     start, end = _month_bounds(year_month)
-    db.query(MonthlyProjection).filter(
+    y, m = start.year, start.month
+    last_dom = calendar.monthrange(y, m)[1]
+    as_of_day = _as_of_for_projection_month(year_month, as_of)
+    resolved_from = from_day if from_day is not None else _statement_launch_from_day(year_month, as_of_day)
+    stmt_from_day = max(1, min(resolved_from, last_dom))
+    stmt_from = date(y, m, stmt_from_day)
+    if from_day is None and stmt_from_day > 1 and _needs_stmt_import_from_day_one(
+        db, tenant_id, account_id, year_month, stmt_from,
+    ):
+        logger.info(
+            "Extrato %s conta %s: 1ª quinzena sem Conta — importando desde o dia 1 até %s",
+            year_month,
+            account_id,
+            as_of_day.isoformat(),
+        )
+        stmt_from_day = 1
+        stmt_from = start
+    full_month = stmt_from_day <= 1
+    import_end_exclusive = min(end, as_of_day + timedelta(days=1))
+
+    payroll_remove: list[MonthlyProjection] = []
+
+    def _payroll_reconcile_step(
+        rows: list[MonthlyProjection],
+        range_start: date,
+        range_end_inclusive: date,
+    ) -> StatementLaunchResult | None:
+        if not rows or range_start > range_end_inclusive:
+            return None
+        removed, payroll_confirm = _resolve_payroll_removals(
+            rows, db, tenant_id, account_id, range_start, range_end_inclusive, payroll_reconcile,
+        )
+        if payroll_confirm:
+            for proj in removed:
+                db.delete(proj)
+            db.commit()
+            return StatementLaunchResult(created=0, payroll_confirmation=payroll_confirm)
+        payroll_remove.extend(removed)
+        return None
+
+    final_d1_win = _payroll_search_window_final_on_day1(year_month, as_of_day)
+    early = _payroll_reconcile_step(
+        _day1_final_payroll_rows(db, tenant_id, account_id, year_month, start),
+        final_d1_win[0],
+        final_d1_win[1],
+    )
+    if early:
+        return early
+
+    adv_win = _payroll_search_window_advance(year_month, as_of_day)
+    early = _payroll_reconcile_step(
+        _advance_payroll_rows(db, tenant_id, account_id, year_month),
+        adv_win[0],
+        adv_win[1],
+    )
+    if early:
+        return early
+
+    if not full_month:
+        early = _payroll_reconcile_step(
+            _second_half_final_payroll_rows(db, tenant_id, account_id, year_month, stmt_from_day),
+            adv_win[0],
+            adv_win[1],
+        )
+        if early:
+            return early
+
+    stmt_delete = db.query(MonthlyProjection).filter(
         MonthlyProjection.tenant_id == tenant_id,
         MonthlyProjection.account_id == account_id,
         MonthlyProjection.year_month == year_month,
         MonthlyProjection.source == BANK_STATEMENT_SOURCE,
-    ).delete(synchronize_session=False)
+    )
+    if full_month:
+        stmt_delete.delete(synchronize_session=False)
+    else:
+        stmt_delete.filter(MonthlyProjection.expected_date >= stmt_from).delete(synchronize_session=False)
 
+    for proj in payroll_remove:
+        db.delete(proj)
+
+    opening = Decimal(0)
+    if full_month:
+        opening_raw = compute_opening_balance_calendar(
+            db,
+            tenant_id,
+            ["bank"],
+            start,
+            account_ids=[account_id],
+            tag_ids=None,
+            subtag_ids=None,
+            partner_id_list=None,
+            include_empty_tag=False,
+            include_empty_sharing=False,
+            origin_list=None,
+            card_ids=None,
+        )
+        opening = _money(Decimal(str(opening_raw)))
+
+    stmt_calendar_day = func.date(BankStatement.date)
     rows = (
         db.query(BankStatement)
         .filter(
             BankStatement.tenant_id == tenant_id,
             BankStatement.account_id == account_id,
-            BankStatement.date >= start,
-            BankStatement.date < end,
+            stmt_calendar_day >= stmt_from,
+            stmt_calendar_day < import_end_exclusive,
         )
         .order_by(BankStatement.date, BankStatement.id)
         .all()
     )
     created = 0
+    if full_month and opening != 0:
+        db.add(MonthlyProjection(
+            tenant_id=tenant_id,
+            account_id=account_id,
+            created_by=user_id,
+            year_month=year_month,
+            kind="income" if opening > 0 else "variable",
+            source=BANK_STATEMENT_SOURCE,
+            is_automatic=True,
+            description=OPENING_BALANCE_DESCRIPTION,
+            expected_date=start,
+            amount=abs(opening),
+            my_amount=abs(opening),
+        ))
+        created += 1
+
     for row in rows:
         amount = _money(row.amount)
         if amount == 0:
@@ -660,6 +1071,8 @@ def launch_statement_projections(
             kind="income" if income else "variable",
             source=BANK_STATEMENT_SOURCE,
             is_automatic=True,
+            source_table="bank_statements",
+            source_id=row.id,
             description=description,
             expected_date=_statement_day(row.date),
             amount=abs(amount),
@@ -668,9 +1081,13 @@ def launch_statement_projections(
         created += 1
     db.commit()
     logger.info(
-        "Projeção de extrato lançada: %s (%s, conta %s)", created, year_month, account_id,
+        "Projeção de extrato lançada: %s (%s, conta %s, from_day=%s)",
+        created,
+        year_month,
+        account_id,
+        stmt_from_day,
     )
-    return created
+    return StatementLaunchResult(created=created)
 
 
 def clone_to_next_month(

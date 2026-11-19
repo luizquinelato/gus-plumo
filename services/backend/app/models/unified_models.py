@@ -810,6 +810,8 @@ class MonthlyProjection(Base, AccountBaseEntity):
     invoice_group_id = Column(Integer, ForeignKey('credit_card_invoice_groups.id', ondelete='SET NULL'), nullable=True, name="invoice_group_id")
     breakdown = Column(JSONB, nullable=True, name="breakdown")
     sharing = Column(String(10), nullable=True, name="sharing")
+    source_table = Column(String(50), nullable=True, name="source_table")
+    source_id = Column(Integer, nullable=True, name="source_id")
     active = Column(Boolean, nullable=False, default=True, name="active")
 
 

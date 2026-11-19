@@ -1,7 +1,7 @@
 import type { DragEvent } from 'react'
 import { ArrowDownLeft, ArrowUpRight } from 'lucide-react'
 import { listPageTableSectionCls } from './CadastroListPageLayout'
-import { ProjectionOriginBadge, type ProjectionSource } from './ProjectionOriginBadge'
+import { ProjectionOriginBadge, projectionOriginAccentColor, type ProjectionSource } from './ProjectionOriginBadge'
 import ProjectionItemDeleteButton from './ProjectionItemDeleteButton'
 
 type Tone = 'income' | 'fixed' | 'variable'
@@ -36,6 +36,7 @@ export default function ProjectionLaunchCard({
 }: Props) {
   const income = tone === 'income'
   const accentVar = income ? 'var(--color-success)' : 'var(--color-danger)'
+  const originColor = projectionOriginAccentColor(source)
   const flowLabel = income ? 'Entrada' : 'Saída'
   const flowHint =
     tone === 'fixed' ? 'Despesa fixa' : tone === 'variable' ? 'Despesa variável' : undefined
@@ -61,7 +62,7 @@ export default function ProjectionLaunchCard({
       >
         <div
           className={`flex items-start border-b border-l-4 border-gray-200 dark:border-gray-600 ${headerPad} pr-7`}
-          style={{ borderLeftColor: accentVar }}
+          style={{ borderLeftColor: originColor }}
         >
           <div
             className={`flex shrink-0 items-center justify-center ring-1 ring-[color-mix(in_srgb,var(--color-1)_20%,transparent)] ${iconBox}`}
@@ -88,7 +89,7 @@ export default function ProjectionLaunchCard({
         </div>
         <div
           className={`flex flex-col justify-center border-l-4 border-gray-200 bg-white dark:border-gray-600 dark:bg-gray-800 ${bodyPad} ${compact ? '' : 'min-h-[5.5rem]'}`}
-          style={{ borderLeftColor: accentVar }}
+          style={{ borderLeftColor: originColor }}
         >
           <div className="mb-1.5 flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
             {income ? (
@@ -102,24 +103,28 @@ export default function ProjectionLaunchCard({
               {flowLabel}
             </span>
           </div>
-          <div className="flex items-center justify-between gap-2">
-            <div
-              className={`min-w-0 shrink font-bold tabular-nums ${
-                compact ? 'text-sm max-md:text-base' : 'text-xl sm:text-2xl'
-              }`}
-              style={{ color: accentVar }}
-            >
-              {amount}
-            </div>
+          <div
+            className={`min-w-0 font-bold tabular-nums ${
+              compact ? 'text-sm max-md:text-base' : 'text-xl sm:text-2xl'
+            }`}
+            style={{ color: accentVar }}
+          >
+            {amount}
+          </div>
+          <div
+            className={`mt-1 flex min-h-[1.125rem] items-end justify-end gap-2 ${
+              flowHint ? 'justify-between' : ''
+            }`}
+          >
+            {flowHint ? (
+              <p className={`min-w-0 text-gray-500 dark:text-gray-400 ${compact ? 'text-[10px]' : 'text-xs'}`}>
+                {flowHint}
+              </p>
+            ) : null}
             <div className="shrink-0">
               <ProjectionOriginBadge source={source} />
             </div>
           </div>
-          {flowHint ? (
-            <p className={`mt-1 text-gray-500 dark:text-gray-400 ${compact ? 'text-[10px]' : 'text-xs'}`}>
-              {flowHint}
-            </p>
-          ) : null}
         </div>
       </button>
       <ProjectionItemDeleteButton label={description} disabled={deleting} onDelete={onDelete} />

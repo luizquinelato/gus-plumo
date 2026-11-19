@@ -40,6 +40,19 @@ def _is_editable(source: str) -> bool:
     return source not in service.AUTOMATIC_SOURCES
 
 
+def _projection_link_flags(row: MonthlyProjection) -> tuple[bool, bool]:
+    """(is_actual, extrato_actions) para itens de extrato na projeção."""
+    from app.services.monthly_projection_service import OPENING_BALANCE_DESCRIPTION
+
+    if row.source != service.BANK_STATEMENT_SOURCE:
+        return False, False
+    if row.source_table == "bank_statements" and row.source_id is not None:
+        return True, True
+    if (row.description or "").strip() == OPENING_BALANCE_DESCRIPTION:
+        return True, False
+    return False, False
+
+
 class ProjectionIn(BaseModel):
     expected_date: date
     description: str = Field(..., min_length=1, max_length=255)
@@ -78,6 +91,9 @@ class ProjectionOut(BaseModel):
     breakdown: Optional[List[dict[str, Any]]] = None
     editable: bool = True
     is_actual: bool = False
+    source_table: Optional[str] = None
+    source_id: Optional[int] = None
+    extrato_actions: bool = False
 
     class Config:
         from_attributes = True
@@ -100,6 +116,10 @@ class IncomeOut(BaseModel):
     expected_date: date
     source: str
     is_automatic: bool = False
+    is_actual: bool = False
+    source_table: Optional[str] = None
+    source_id: Optional[int] = None
+    extrato_actions: bool = False
 
 
 class MonthResponse(BaseModel):
@@ -145,8 +165,16 @@ class InvoicePreviewOut(BaseModel):
     my_amount: Decimal
 
 
+class PayrollConfirmationItemOut(BaseModel):
+    description: str
+    amount: Decimal
+    expected_day: int
+    matched_in_extrato: bool
+
+
 class LaunchResponse(BaseModel):
     created: int
+    payroll_confirmation: list[PayrollConfirmationItemOut] | None = None
 
 
 class InstallmentPreviewOut(BaseModel):
@@ -223,6 +251,9 @@ def _month_response(db: Session, tenant_id: int, account_id: int, year_month: st
     for r in rows:
         out = ProjectionOut.model_validate(r)
         out.editable = _is_editable(r.source)
+        is_actual, extrato_actions = _projection_link_flags(r)
+        out.is_actual = is_actual
+        out.extrato_actions = extrato_actions
         if out.breakdown:
             out.breakdown = [{**b, "inactive": b.get("card_id") in inactive_ids} for b in out.breakdown]
         items.append(out)
@@ -236,14 +267,24 @@ def _month_response(db: Session, tenant_id: int, account_id: int, year_month: st
         my_fixed=_sum("fixed", "my_amount"), my_variable=_sum("variable", "my_amount"),
         my_total=sum((i.my_amount for i in items), zero),
     )
-    income = [
-        IncomeOut(
-            id=r.id, editable=_is_editable(r.source), description=r.description,
-            amount=r.amount, expected_date=r.expected_date,
-            source=r.source, is_automatic=bool(r.is_automatic),
+    income = []
+    for r in income_rows:
+        is_actual, extrato_actions = _projection_link_flags(r)
+        income.append(
+            IncomeOut(
+                id=r.id,
+                editable=_is_editable(r.source),
+                description=r.description,
+                amount=r.amount,
+                expected_date=r.expected_date,
+                source=r.source,
+                is_automatic=bool(r.is_automatic),
+                is_actual=is_actual,
+                source_table=r.source_table,
+                source_id=r.source_id,
+                extrato_actions=extrato_actions,
+            )
         )
-        for r in income_rows
-    ]
     return MonthResponse(
         year_month=year_month, items=items, totals=totals,
         income=income, income_total=sum((i.amount for i in income), zero),
@@ -476,6 +517,9 @@ async def launch_cards(
 
 class LaunchStatementsRequest(BaseModel):
     year_month: str
+    from_day: int | None = None
+    payroll_reconcile: Literal["keep", "clear"] | None = None
+    as_of: date | None = None
 
 
 @router.post("/launch-statements", response_model=LaunchResponse)
@@ -486,7 +530,25 @@ async def launch_statements(
 ):
     tenant_id, account_id, user_id = _scope(current_user)
     _check_ym(body.year_month)
-    created = service.launch_statement_projections(
-        db, tenant_id, account_id, user_id, body.year_month,
+    result = service.launch_statement_projections(
+        db,
+        tenant_id,
+        account_id,
+        user_id,
+        body.year_month,
+        from_day=body.from_day,
+        payroll_reconcile=body.payroll_reconcile,
+        as_of=body.as_of,
     )
-    return LaunchResponse(created=created)
+    payroll_confirmation = None
+    if result.payroll_confirmation:
+        payroll_confirmation = [
+            PayrollConfirmationItemOut(
+                description=item.description,
+                amount=item.amount,
+                expected_day=item.expected_day,
+                matched_in_extrato=item.matched_in_extrato,
+            )
+            for item in result.payroll_confirmation
+        ]
+    return LaunchResponse(created=result.created, payroll_confirmation=payroll_confirmation)

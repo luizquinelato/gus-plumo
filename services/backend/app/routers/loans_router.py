@@ -997,28 +997,11 @@ async def create_from_source(
     tenant_id = current_user.get("tenant_id")
     created_by = current_user.get("user_id") or current_user.get("id")
 
-    # Buscar item fonte baseado no nome real da tabela
-    source_item = None
-    if data.source_table == 'bank_statements':
-        source_item = db.query(BankStatement).filter(
-            BankStatement.id == data.source_id,
-            BankStatement.account_id == account_id
-        ).first()
-    elif data.source_table == 'credit_card_invoices':
-        source_item = db.query(CreditCardInvoice).filter(
-            CreditCardInvoice.id == data.source_id,
-            CreditCardInvoice.account_id == account_id
-        ).first()
-    elif data.source_table == 'benefit_card_statements':
-        source_item = db.query(BenefitCardStatement).filter(
-            BenefitCardStatement.id == data.source_id,
-            BenefitCardStatement.account_id == account_id
-        ).first()
-    else:
-        raise HTTPException(status_code=400, detail="source_table inválido. Use: 'bank_statements', 'credit_card_invoices' ou 'benefit_card_statements'")
+    from app.services.source_item_service import load_source_item
 
-    if not source_item:
-        raise HTTPException(status_code=404, detail="Item fonte não encontrado")
+    source_item = load_source_item(
+        db, int(tenant_id), int(account_id), data.source_table, data.source_id,
+    )
 
     # Extrair dados do item fonte
     amount = abs(source_item.amount)

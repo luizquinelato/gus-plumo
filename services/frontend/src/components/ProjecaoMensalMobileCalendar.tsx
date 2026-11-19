@@ -2,6 +2,7 @@ import { ChevronsRight } from 'lucide-react'
 import { listPageTableSectionCls } from './CadastroListPageLayout'
 import type { ProjectionSource } from './ProjectionOriginBadge'
 import ProjectionLaunchCard from './ProjectionLaunchCard'
+import type { CalendarViewMode } from '../utils/projectionCalendarRange'
 
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'] as const
 
@@ -23,6 +24,8 @@ type ExpenseRow = {
 
 type Props = {
   yearMonth: string
+  calendarView?: CalendarViewMode
+  visibleDays?: number[]
   byDay: Map<number, ExpenseRow[]>
   incomeByDay: Map<number, IncomeRow[]>
   formatCurrency: (n: number) => string
@@ -38,6 +41,8 @@ type Props = {
 
 export default function ProjecaoMensalMobileCalendar({
   yearMonth,
+  calendarView = 'month',
+  visibleDays,
   byDay,
   incomeByDay,
   formatCurrency,
@@ -52,10 +57,16 @@ export default function ProjecaoMensalMobileCalendar({
 }: Props) {
   const [y, m] = yearMonth.split('-').map(Number)
   const daysInMonth = new Date(y, m, 0).getDate()
+  const days =
+    visibleDays ??
+    (calendarView === 'month'
+      ? Array.from({ length: daysInMonth }, (_, i) => i + 1)
+      : [])
+  const showQuinzenaChrome = calendarView === 'month'
 
   return (
     <div className="space-y-2">
-      {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
+      {days.map((day) => {
         const incomes = incomeByDay.get(day) ?? []
         const expenses = byDay.get(day) ?? []
         const expenseTotal = expenses.reduce((s, e) => s + valueOf(e), 0)
@@ -66,10 +77,10 @@ export default function ProjecaoMensalMobileCalendar({
           <section
             key={day}
             className={`${listPageTableSectionCls} flex flex-col overflow-hidden ${
-              day === 15 ? 'ring-2 ring-[var(--color-1)]/35' : ''
+              showQuinzenaChrome && day === 15 ? 'ring-2 ring-[var(--color-1)]/35' : ''
             }`}
           >
-            {day === 15 ? (
+            {showQuinzenaChrome && day === 15 ? (
               <div className="flex items-center gap-2 border-b border-[var(--color-1)]/30 bg-[color-mix(in_srgb,var(--color-1)_10%,transparent)] px-3 py-1.5 text-[11px] font-semibold text-[var(--color-1)]">
                 <ChevronsRight size={14} />
                 2ª quinzena (dia 15 em diante)

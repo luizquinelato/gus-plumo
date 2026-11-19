@@ -2579,6 +2579,10 @@ async def update_bank_statement(
         note=f"Retificação extrato #{statement_id}",
     )
 
+    from app.services.monthly_projection_sync import sync_from_bank_statement
+
+    sync_from_bank_statement(db, statement)
+
     db.commit()
     db.refresh(statement)
 
@@ -2724,6 +2728,10 @@ async def delete_bank_statement(
         raise HTTPException(status_code=404, detail="Extrato não encontrado")
 
     _guard_closed_account_period(db, tenant_id, statement.account_id, statement.date)
+
+    from app.services.monthly_projection_sync import delete_projections_for_source
+
+    delete_projections_for_source(db, tenant_id, "bank_statements", statement_id)
 
     db.delete(statement)
     db.commit()
