@@ -7,7 +7,6 @@ from pathlib import Path
 from fastapi import Header, HTTPException, status
 from typing import Optional
 import httpx
-import jwt
 import logging
 from dotenv import load_dotenv
 
@@ -22,8 +21,6 @@ if env_path.exists():
 logger = logging.getLogger(__name__)
 
 AUTH_SERVICE_URL = os.environ.get("AUTH_SERVICE_URL", "http://localhost:8001")
-JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "gus-expenses-secret-key-change-in-production")
-JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 
 
 async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
@@ -47,40 +44,28 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    token = authorization.replace("Bearer ", "")
+    token_parts = token.split(".")
+    if len(token_parts) != 3:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Token malformado (partes: {len(token_parts)})",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     try:
-        # Decode token locally to get payload
-        token = authorization.replace("Bearer ", "")
-
-        # Verificar se o token tem o formato correto (3 partes separadas por ponto)
-        token_parts = token.split('.')
-
-        if len(token_parts) != 3:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"Token malformado (partes: {len(token_parts)})",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
-
-        # Verify token with auth service
+        # Fonte única: auth service (evita 401 se JWT_SECRET_KEY local ≠ auth)
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{AUTH_SERVICE_URL}/api/auth/verify",
                 headers={"Authorization": authorization},
-                timeout=10.0
+                timeout=10.0,
             )
 
             if response.status_code == 200:
                 data = response.json()
-
                 if data.get("valid") and data.get("user"):
-                    # Add account_id from token payload if present
-                    user_data = data["user"]
-                    if "account_id" in payload:
-                        user_data["account_id"] = payload["account_id"]
-
-                    return user_data
+                    return data["user"]
 
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -88,18 +73,6 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Sessão expirada. Faça login novamente.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except jwt.InvalidTokenError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token inválido ou expirado",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
     except httpx.RequestError as e:
         logger.error(f"Erro de conexão com auth service: {e}")
         raise HTTPException(

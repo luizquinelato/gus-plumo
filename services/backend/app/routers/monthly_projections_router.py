@@ -40,15 +40,40 @@ def _is_editable(source: str) -> bool:
     return source not in service.AUTOMATIC_SOURCES
 
 
+def _income_amount_editable(row: MonthlyProjection) -> bool:
+    """Estimativa de folha (origem dedicada ou legado manual automático)."""
+    if row.source == service.PAYROLL_ESTIMATE_SOURCE:
+        return True
+    if row.kind != "income" or not row.is_automatic or row.source != "manual":
+        return False
+    desc = (row.description or "").strip()
+    for label in service.INCOME_KINDS.values():
+        if (
+            desc == label
+            or desc.startswith(f"{label} ")
+            or desc == f"{label} (estimativa)"
+            or desc.startswith(f"{label} (estimativa)")
+        ):
+            return True
+    return False
+
+
 def _projection_link_flags(row: MonthlyProjection) -> tuple[bool, bool]:
     """(is_actual, extrato_actions) para itens de extrato na projeção."""
-    from app.services.monthly_projection_service import OPENING_BALANCE_DESCRIPTION
+    from app.services.monthly_projection_service import (
+        OPENING_BALANCE_DESCRIPTION,
+        OPENING_PAYROLL_SALARY_DESCRIPTION,
+    )
 
-    if row.source != service.BANK_STATEMENT_SOURCE:
-        return False, False
     if row.source_table == "bank_statements" and row.source_id is not None:
-        return True, True
-    if (row.description or "").strip() == OPENING_BALANCE_DESCRIPTION:
+        if row.source in (service.BANK_STATEMENT_SOURCE, "payroll"):
+            return True, True
+    if row.source == service.BANK_STATEMENT_SOURCE:
+        if (row.description or "").strip() == OPENING_BALANCE_DESCRIPTION:
+            return True, False
+    if row.source == "payroll" and (row.description or "").strip() == OPENING_PAYROLL_SALARY_DESCRIPTION:
+        if row.source_id is not None:
+            return True, True
         return True, False
     return False, False
 
@@ -111,6 +136,7 @@ class MonthTotals(BaseModel):
 class IncomeOut(BaseModel):
     id: int
     editable: bool
+    amount_editable: bool = False
     description: str
     amount: Decimal
     expected_date: date
@@ -141,10 +167,39 @@ class CloneResponse(BaseModel):
     copied: int
 
 
+class LaunchIncomeReplaceSlotIn(BaseModel):
+    year_month: str
+    payroll_kind: Literal["advance", "final"]
+
+
 class LaunchIncomeRequest(BaseModel):
     year_month: str
     periods: int = Field(1, ge=1, le=24)
     advance_on_day_15: bool = True
+    replace_slots: list[LaunchIncomeReplaceSlotIn] | None = None
+
+
+class LaunchIncomeSlotPreviewOut(BaseModel):
+    year_month: str
+    payroll_kind: Literal["advance", "final"]
+    label: str
+    existing_amount: Decimal | None = None
+    existing_date: date | None = None
+    existing_source: str | None = None
+    existing_description: str | None = None
+    existing_linked_extrato: bool = False
+    proposed_amount: Decimal | None = None
+    proposed_date: date | None = None
+    proposed_source: str | None = None
+    proposed_description: str | None = None
+    amount_diverges: bool = False
+    date_diverges: bool = False
+    source_diverges: bool = False
+    will_remove_without_replacement: bool = False
+
+
+class LaunchIncomePreviewResponse(BaseModel):
+    items: list[LaunchIncomeSlotPreviewOut]
 
 
 class LaunchCardsRequest(BaseModel):
@@ -165,11 +220,25 @@ class InvoicePreviewOut(BaseModel):
     my_amount: Decimal
 
 
+class PayrollExtratoCreditOut(BaseModel):
+    statement_id: int
+    credit_date: date
+    description: str
+    amount: Decimal
+    my_amount: Decimal
+
+
 class PayrollConfirmationItemOut(BaseModel):
     description: str
     amount: Decimal
     expected_day: int
     matched_in_extrato: bool
+    confirmation_kind: Literal["missing_extrato", "extrato_no_payslip"] = "missing_extrato"
+    projection_id: int | None = None
+    statement_id: int | None = None
+    search_from: date | None = None
+    search_to: date | None = None
+    period_incomes: list[PayrollExtratoCreditOut] = []
 
 
 class LaunchResponse(BaseModel):
@@ -274,6 +343,7 @@ def _month_response(db: Session, tenant_id: int, account_id: int, year_month: st
             IncomeOut(
                 id=r.id,
                 editable=_is_editable(r.source),
+                amount_editable=_income_amount_editable(r),
                 description=r.description,
                 amount=r.amount,
                 expected_date=r.expected_date,
@@ -320,13 +390,18 @@ MAX_OVERVIEW_MONTHS = 24
 
 @router.get("/overview", response_model=List[OverviewMonth])
 async def get_overview(
+    start_year_month: Optional[str] = Query(
+        None,
+        description="Primeiro mês da série (YYYY-MM). Padrão: mês civil atual.",
+    ),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_account),
 ):
-    """Entradas, gastos e resultado do mês atual até o último mês com projeção lançada."""
+    """Entradas, gastos e resultado a partir do mês inicial até o último mês com projeção lançada."""
     tenant_id, account_id, _user_id = _scope(current_user)
     today = date.today()
     current = f"{today.year}-{today.month:02d}"
+    start = _check_ym(start_year_month) if start_year_month else current
     last = (
         db.query(func.max(MonthlyProjection.year_month))
         .filter(
@@ -336,7 +411,7 @@ async def get_overview(
         )
         .scalar()
     )
-    months = [current]
+    months = [start]
     while last and months[-1] < last and len(months) < MAX_OVERVIEW_MONTHS:
         months.append(service.next_year_month(months[-1]))
     out = []
@@ -424,6 +499,15 @@ async def update_item(
 ):
     tenant_id, account_id, _user_id = _scope(current_user)
     item = _get_item(db, tenant_id, account_id, item_id)
+    if _income_amount_editable(item):
+        if body.amount <= 0:
+            raise HTTPException(status_code=422, detail="O valor da estimativa deve ser positivo")
+        item.amount = item.my_amount = abs(body.amount)
+        db.commit()
+        db.refresh(item)
+        out = ProjectionOut.model_validate(item)
+        out.editable = _is_editable(item.source)
+        return out
     if not _is_editable(item.source):
         raise HTTPException(status_code=400, detail="Itens automáticos não são editáveis; lance a projeção novamente")
     body.apply_to(item)
@@ -471,6 +555,47 @@ async def clone_month(
     return CloneResponse(target_year_month=target, copied=copied)
 
 
+@router.post("/launch-income/preview", response_model=LaunchIncomePreviewResponse)
+async def launch_income_preview(
+    body: LaunchIncomeRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    tenant_id, account_id, _user_id = _scope(current_user)
+    _check_ym(body.year_month)
+    rows = service.preview_launch_income_projections(
+        db,
+        tenant_id,
+        account_id,
+        body.year_month,
+        body.periods,
+        advance_on_day_15=body.advance_on_day_15,
+    )
+    return LaunchIncomePreviewResponse(
+        items=[
+            LaunchIncomeSlotPreviewOut(
+                year_month=r.year_month,
+                payroll_kind=r.payroll_kind,
+                label=r.label,
+                existing_amount=r.existing_amount,
+                existing_date=r.existing_date,
+                existing_source=r.existing_source,
+                existing_description=r.existing_description,
+                existing_linked_extrato=r.existing_linked_extrato,
+                proposed_amount=r.proposed_amount,
+                proposed_date=r.proposed_date,
+                proposed_source=r.proposed_source,
+                proposed_description=r.proposed_description,
+                amount_diverges=r.amount_diverges,
+                date_diverges=r.date_diverges,
+                source_diverges=r.source_diverges,
+                will_remove_without_replacement=r.will_remove_without_replacement,
+            )
+            for r in rows
+        ],
+    )
+
+
 @router.post("/launch-income", response_model=LaunchResponse)
 async def launch_income(
     body: LaunchIncomeRequest,
@@ -479,6 +604,12 @@ async def launch_income(
 ):
     tenant_id, account_id, user_id = _scope(current_user)
     _check_ym(body.year_month)
+    replace_slots = None
+    if body.replace_slots:
+        replace_slots = [
+            service.LaunchIncomeReplaceSlot(year_month=s.year_month, payroll_kind=s.payroll_kind)
+            for s in body.replace_slots
+        ]
     created = service.launch_income_projections(
         db,
         tenant_id,
@@ -487,6 +618,7 @@ async def launch_income(
         body.year_month,
         body.periods,
         advance_on_day_15=body.advance_on_day_15,
+        replace_slots=replace_slots,
     )
     return LaunchResponse(created=created)
 
@@ -518,7 +650,9 @@ async def launch_cards(
 class LaunchStatementsRequest(BaseModel):
     year_month: str
     from_day: int | None = None
-    payroll_reconcile: Literal["keep", "clear"] | None = None
+    payroll_resolve: dict[int, Literal["keep", "clear"]] | None = None
+    payroll_link: dict[int, int] | None = None
+    payroll_promote: dict[int, bool] | None = None
     as_of: date | None = None
 
 
@@ -537,7 +671,9 @@ async def launch_statements(
         user_id,
         body.year_month,
         from_day=body.from_day,
-        payroll_reconcile=body.payroll_reconcile,
+        payroll_resolve=body.payroll_resolve,
+        payroll_link=body.payroll_link,
+        payroll_promote=body.payroll_promote,
         as_of=body.as_of,
     )
     payroll_confirmation = None
@@ -548,6 +684,21 @@ async def launch_statements(
                 amount=item.amount,
                 expected_day=item.expected_day,
                 matched_in_extrato=item.matched_in_extrato,
+                confirmation_kind=item.confirmation_kind,
+                projection_id=item.projection_id,
+                statement_id=item.statement_id,
+                search_from=item.search_from,
+                search_to=item.search_to,
+                period_incomes=[
+                    PayrollExtratoCreditOut(
+                        statement_id=h.statement_id,
+                        credit_date=h.credit_date,
+                        description=h.description,
+                        amount=h.amount,
+                        my_amount=h.my_amount,
+                    )
+                    for h in item.period_incomes
+                ],
             )
             for item in result.payroll_confirmation
         ]

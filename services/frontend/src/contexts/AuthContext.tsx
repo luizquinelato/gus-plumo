@@ -122,6 +122,31 @@ export function AuthProvider({ children }: AuthProviderProps) {
     validateToken()
   }, [])
 
+  useEffect(() => {
+    const interceptor = axios.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        if (!axios.isAxiosError(error) || error.response?.status !== 401) {
+          return Promise.reject(error)
+        }
+        const url = error.config?.url ?? ''
+        if (url.includes('/api/auth/login') || url.includes('/api/auth/verify')) {
+          return Promise.reject(error)
+        }
+        localStorage.removeItem('gus_expenses_token')
+        delete axios.defaults.headers.common['Authorization']
+        setUser(null)
+        if (window.location.pathname !== '/login') {
+          window.location.assign('/login')
+        }
+        return Promise.reject(error)
+      },
+    )
+    return () => {
+      axios.interceptors.response.eject(interceptor)
+    }
+  }, [])
+
   const login = async (email: string, password: string): Promise<boolean> => {
     setIsLoading(true)
 

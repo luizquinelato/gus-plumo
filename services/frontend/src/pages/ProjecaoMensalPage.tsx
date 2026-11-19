@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import axios from 'axios'
 import {
   Bar,
@@ -47,6 +47,7 @@ import { useMobileTopBarActions } from '../contexts/MobileTopBarActionsContext'
 import ProjecaoMensalMobileCalendar from '../components/ProjecaoMensalMobileCalendar'
 import {
   ProjectionOriginBadge,
+  incomeProjectionBadgeSource,
   ProjectionOriginLegend,
   defaultProjectionOriginVisibility,
   isProjectionOriginVisible,
@@ -64,11 +65,21 @@ import {
   dailyChartPoints,
   periodTotals,
   rangeTitle,
-  shiftAnchor,
+  canShiftAnchorInMonth,
+  periodNavTitle,
+  shiftAnchorInMonth,
   visibleDaysForMode,
 } from '../utils/projectionCalendarRange'
 
 const OPENING_BALANCE_LABEL = 'Saldo mês anterior'
+
+function payrollLinkedExtrato(line: {
+  source: ProjectionSource
+  source_table?: string | null
+  source_id?: number | null
+}) {
+  return line.source === 'payroll' && line.source_table === 'bank_statements' && line.source_id != null
+}
 import {
   CadastroListPageBody,
   CadastroListPageHero,
@@ -103,6 +114,8 @@ import {
   CadastroModalShell,
 } from '../components/CadastroFormLayout'
 import { useConfirm } from '../hooks/useConfirm'
+import { useLaunchIncomeReplaceChoice } from '../hooks/useLaunchIncomeReplaceChoice'
+import { usePayrollMissingExtratoChoice } from '../hooks/usePayrollMissingExtratoChoice'
 import { useEscapeKey } from '../hooks/useEscapeKey'
 import { useExportRunner } from '../hooks/useExportRunner'
 import { downloadExcel, excelDateStamp, type ExcelRow } from '../utils/excelExportClient'
@@ -153,6 +166,7 @@ interface Totals {
 interface Income {
   id: number
   editable: boolean
+  amount_editable?: boolean
   description: string
   amount: string
   expected_date: string
@@ -165,6 +179,7 @@ interface Income {
 
 interface AutoLine extends Income {
   income: boolean
+  amountEditable?: boolean
 }
 
 interface CardOption {
@@ -256,6 +271,13 @@ interface FormState {
 }
 
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
+function payrollEstimateAmountEditable(line: {
+  source: ProjectionSource
+  amount_editable?: boolean
+}): boolean {
+  return line.source === 'payroll_estimate' || Boolean(line.amount_editable)
+}
+
 const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
@@ -284,6 +306,7 @@ const SOURCE_LABELS: Record<Expense['source'], string> = {
   card_item_manual: 'Item de cartão',
   card_item_installment: 'Parcela de cartão',
   payroll: 'Folha',
+  payroll_estimate: 'Estimativa folha',
   bank_statement: 'Extrato',
 }
 
@@ -306,9 +329,9 @@ function maskMoneyDisplay(value: string): string {
   return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-/** Texto digitado -> decimal com ponto. Dígitos viram centavos; "-" em qualquer posição deixa negativo. */
-function parseMoneyInput(raw: string): string {
-  const negative = raw.includes('-')
+/** Texto digitado -> decimal com ponto. Dígitos viram centavos; "-" em qualquer posição deixa negativo (salvo positiveOnly). */
+function parseMoneyInput(raw: string, positiveOnly = false): string {
+  const negative = !positiveOnly && raw.includes('-')
   const digits = raw.replace(/\D/g, '')
   const cents = parseInt(digits || '0', 10)
   if (!cents) return negative ? '-' : ''
@@ -320,18 +343,21 @@ function MoneyMaskInput({
   value,
   onChange,
   className,
+  positiveOnly = false,
 }: {
   value: string
   onChange: (value: string) => void
   className?: string
+  /** Receita estimada: máscara BRL sem sinal negativo. */
+  positiveOnly?: boolean
 }) {
   return (
     <input
       type="text"
       inputMode="decimal"
       placeholder="0,00"
-      value={maskMoneyDisplay(value)}
-      onChange={(e) => onChange(parseMoneyInput(e.target.value))}
+      value={maskMoneyDisplay(positiveOnly ? value.replace(/^-/, '') : value)}
+      onChange={(e) => onChange(parseMoneyInput(e.target.value, positiveOnly))}
       className={className}
     />
   )
@@ -563,7 +589,13 @@ export default function ProjecaoMensalPage() {
   const { isMobile } = useDeviceMode()
   const { setActions } = useMobileTopBarActions()
   const { showConfirm, ConfirmComponent } = useConfirm()
+  const { ask: askPayrollMissingExtrato, DialogComponent: PayrollMissingExtratoDialog } =
+    usePayrollMissingExtratoChoice()
+  const { ask: askLaunchIncomeReplace, DialogComponent: LaunchIncomeReplaceDialog } =
+    useLaunchIncomeReplaceChoice()
   const [yearMonth, setYearMonth] = useState(currentYearMonth())
+  const yearMonthRef = useRef(yearMonth)
+  yearMonthRef.current = yearMonth
   const [calendarView, setCalendarView] = useState<CalendarViewMode>('month')
   const [anchorDay, setAnchorDay] = useState(() => new Date().getDate())
   const [originVisible, setOriginVisible] = useState(defaultProjectionOriginVisibility)
@@ -582,8 +614,16 @@ export default function ProjecaoMensalPage() {
   const closeForm = useCallback(() => setForm(null), [])
   useEscapeKey(closeForm, form != null && detail == null && !busy)
   const [autoIncome, setAutoIncome] = useState<AutoLine | null>(null)
-  const closeAutoIncome = useCallback(() => setAutoIncome(null), [])
+  const [autoIncomeAmountEdit, setAutoIncomeAmountEdit] = useState('')
+  const closeAutoIncome = useCallback(() => {
+    setAutoIncome(null)
+    setAutoIncomeAmountEdit('')
+  }, [])
   useEscapeKey(closeAutoIncome, autoIncome != null && !busy)
+  useEffect(() => {
+    if (!autoIncome || !(autoIncome.amountEditable || payrollEstimateAmountEditable(autoIncome))) return
+    setAutoIncomeAmountEdit(parseMoneyInput(String(autoIncome.amount).replace(/^-/, ''), true))
+  }, [autoIncome?.id, autoIncome?.amount, autoIncome?.amountEditable, autoIncome?.source])
   const [extratoHubOpen, setExtratoHubOpen] = useState(false)
   const [extratoExpense, setExtratoExpense] = useState<ExtratoFlowExpense | null>(null)
   const closeExtratoHub = useCallback(() => {
@@ -689,25 +729,32 @@ export default function ProjecaoMensalPage() {
   useEscapeKey(closeCardForm, cardForm != null && !busy)
 
   const [overview, setOverview] = useState<OverviewMonth[]>([])
+  const [overviewAnchorYm, setOverviewAnchorYm] = useState<string | null>(null)
   const [chartView, setChartView] = useState<'month' | 'half'>('half')
   const [chartSectionOpen, setChartSectionOpen] = useState(true)
   const [chartMax, setChartMax] = useState(false)
   const closeChartMax = useCallback(() => setChartMax(false), [])
   useEscapeKey(closeChartMax, chartMax)
-  const loadOverview = useCallback(async () => {
+  const loadOverview = useCallback(async (anchorYm: string) => {
     try {
-      const res = await axios.get<OverviewMonth[]>('/api/monthly-projections/overview')
+      const res = await axios.get<OverviewMonth[]>('/api/monthly-projections/overview', {
+        params: { start_year_month: anchorYm },
+      })
+      if (anchorYm !== yearMonthRef.current) return
       setOverview(res.data)
+      setOverviewAnchorYm(anchorYm)
     } catch (err) {
       console.error('Erro ao carregar visão dos próximos meses:', err)
     }
   }, [])
 
+  const overviewForMonth = overviewAnchorYm === yearMonth ? overview : []
+
   const overviewChart = useMemo(
     () => {
       // Regressão linear (mínimos quadrados) sobre o resultado mensal.
-      const n = overview.length
-      const ys = overview.map((m) => Number(m.result))
+      const n = overviewForMonth.length
+      const ys = overviewForMonth.map((m) => Number(m.result))
       const meanX = (n - 1) / 2
       const meanY = n ? ys.reduce((a, b) => a + b, 0) / n : 0
       let num = 0
@@ -717,7 +764,7 @@ export default function ProjecaoMensalPage() {
         den += (i - meanX) ** 2
       })
       const slope = den ? num / den : 0
-      return overview.map((m, i) => {
+      return overviewForMonth.map((m, i) => {
         const [y, mo] = m.year_month.split('-').map(Number)
         return {
           label: `${MONTH_NAMES[mo - 1].slice(0, 3)}/${String(y).slice(2)}`,
@@ -731,21 +778,24 @@ export default function ProjecaoMensalPage() {
         }
       })
     },
-    [overview],
+    [overviewForMonth],
   )
 
   // Recarrega sem spinner: o calendário continua visível (usado após excluir, mover, editar etc.)
   const load = useCallback(async () => {
+    const requestedYm = yearMonth
     setError(null)
-    void loadOverview()
+    void loadOverview(requestedYm)
     try {
-      const res = await axios.get<MonthData>('/api/monthly-projections', { params: { year_month: yearMonth } })
+      const res = await axios.get<MonthData>('/api/monthly-projections', { params: { year_month: requestedYm } })
+      if (requestedYm !== yearMonthRef.current) return
       setData(res.data)
     } catch (err) {
+      if (requestedYm !== yearMonthRef.current) return
       console.error('Erro ao carregar gastos esperados:', err)
       setError('Não foi possível carregar os gastos esperados.')
     } finally {
-      setLoading(false)
+      if (requestedYm === yearMonthRef.current) setLoading(false)
     }
   }, [yearMonth, loadOverview])
 
@@ -1044,6 +1094,11 @@ export default function ProjecaoMensalPage() {
       openAutomatic({ ...line, editable: false })
       return
     }
+    if (payrollEstimateAmountEditable(line)) {
+      setAutoIncomeAmountEdit(parseMoneyInput(String(line.amount).replace(/^-/, ''), true))
+      openAutomatic({ ...line, editable: false, amountEditable: true })
+      return
+    }
     if (line.source === 'bank_statement' || line.source === 'payroll') {
       openAutomatic({ ...line, editable: false })
       return
@@ -1102,18 +1157,44 @@ export default function ProjecaoMensalPage() {
     }
   }
 
-  const openEditIncome = (inc: Income) =>
-    inc.editable &&
-    setForm({ id: inc.id, expected_date: inc.expected_date, description: inc.description, amount: inc.amount, kind: 'fixed' })
+  const openEditIncome = (inc: Income) => {
+    if (payrollEstimateAmountEditable(inc)) {
+      openBankStatementLine({ ...inc, income: true })
+      return
+    }
+    if (inc.editable) {
+      setForm({
+        id: inc.id,
+        expected_date: inc.expected_date,
+        description: inc.description,
+        amount: inc.amount,
+        kind: 'fixed',
+      })
+    }
+  }
 
   const launchIncome = async () => {
     if (!incomeLaunchForm) return
     setSaving(true)
     try {
-      await axios.post('/api/monthly-projections/launch-income', {
+      const payload = {
         year_month: yearMonth,
         periods: incomeLaunchForm.periods,
         advance_on_day_15: incomeLaunchForm.advanceOnDay15,
+      }
+      const previewRes = await axios.post<{ items: LaunchIncomeSlotPreviewRow[] }>(
+        '/api/monthly-projections/launch-income/preview',
+        payload,
+      )
+      let replaceSlots: { year_month: string; payroll_kind: 'advance' | 'final' }[] | undefined
+      if (previewRes.data.items.length > 0) {
+        const slots = await askLaunchIncomeReplace(previewRes.data.items)
+        if (!slots) return
+        replaceSlots = slots
+      }
+      await axios.post('/api/monthly-projections/launch-income', {
+        ...payload,
+        replace_slots: replaceSlots ?? null,
       })
       await load()
       setIncomeLaunchForm(null)
@@ -1222,6 +1303,30 @@ export default function ProjecaoMensalPage() {
     }
   }
 
+  const savePayrollEstimateAmount = async () => {
+    if (!autoIncome || !(autoIncome.amountEditable || payrollEstimateAmountEditable(autoIncome))) return
+    const amount = Number(autoIncomeAmountEdit)
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setError('Informe um valor positivo para a estimativa.')
+      return
+    }
+    setSaving(true)
+    try {
+      await axios.put(`/api/monthly-projections/${autoIncome.id}`, {
+        expected_date: autoIncome.expected_date,
+        description: autoIncome.description,
+        amount,
+        kind: 'fixed',
+      })
+      await load()
+      closeAutoIncome()
+    } catch (err) {
+      setError(apiErrorDetail(err, 'Não foi possível salvar o valor da estimativa.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const save = async () => {
     if (!form) return
     setSaving(true)
@@ -1244,6 +1349,14 @@ export default function ProjecaoMensalPage() {
     }
   }
 
+  const apiErrorDetail = (err: unknown, fallback: string) => {
+    if (axios.isAxiosError(err)) {
+      const detail = err.response?.data?.detail
+      return typeof detail === 'string' ? detail : fallback
+    }
+    return fallback
+  }
+
   const remove = async () => {
     if (!form?.id) return
     setDeleting(true)
@@ -1251,9 +1364,12 @@ export default function ProjecaoMensalPage() {
       await axios.delete(`/api/monthly-projections/${form.id}`)
       await load()
       setForm(null)
+      setToast({ message: 'Lançamento excluído.', type: 'success' })
     } catch (err) {
       console.error('Erro ao excluir gasto esperado:', err)
-      setError('Não foi possível excluir o gasto.')
+      const message = apiErrorDetail(err, 'Não foi possível excluir o gasto.')
+      setError(message)
+      setToast({ message, type: 'error' })
     } finally {
       setDeleting(false)
     }
@@ -1266,9 +1382,12 @@ export default function ProjecaoMensalPage() {
       await load()
       setDetail(null)
       setAutoIncome(null)
+      setToast({ message: 'Lançamento excluído.', type: 'success' })
     } catch (err) {
       console.error('Erro ao excluir projeção automática:', err)
-      setError('Não foi possível excluir a projeção.')
+      const message = apiErrorDetail(err, 'Não foi possível excluir o lançamento.')
+      setError(message)
+      setToast({ message, type: 'error' })
     } finally {
       setDeleting(false)
     }
@@ -1331,22 +1450,118 @@ export default function ProjecaoMensalPage() {
     }
   }
 
+  type PayrollExtratoCreditRow = {
+    statement_id: number
+    credit_date: string
+    description: string
+    amount: string
+    my_amount: string
+  }
+
+  type PayrollConfirmationRow = {
+    description: string
+    amount: string
+    expected_day: number
+    matched_in_extrato: boolean
+    confirmation_kind?: 'missing_extrato' | 'extrato_no_payslip'
+    projection_id?: number | null
+    statement_id?: number | null
+    search_from?: string | null
+    search_to?: string | null
+    period_incomes?: PayrollExtratoCreditRow[]
+  }
+
+  const confirmEmphasis = 'font-semibold text-gray-900 dark:text-white'
+  const confirmMoneyCls = `font-semibold tabular-nums ${creditCls}`
+  const confirmMuted = 'text-gray-600 dark:text-gray-400'
+  const confirmCardCls =
+    'rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 dark:border-gray-600 dark:bg-gray-800/60'
+
+  type LaunchIncomeSlotPreviewRow = {
+    year_month: string
+    payroll_kind: 'advance' | 'final'
+    label: string
+    existing_amount?: string | number | null
+    existing_date?: string | null
+    existing_source?: string | null
+    existing_linked_extrato?: boolean
+    proposed_amount?: string | number | null
+    proposed_date?: string | null
+    proposed_source?: string | null
+    amount_diverges: boolean
+    date_diverges: boolean
+    source_diverges: boolean
+    will_remove_without_replacement: boolean
+  }
+
+  const buildLaunchStatementsIntroMessage = (label: string): ReactNode => (
+    <div className="space-y-3">
+      <p>
+        Vamos atualizar a projeção de <span className={confirmEmphasis}>{label}</span> com o extrato importado{' '}
+        <span className={confirmMuted}>(do dia 1 até hoje)</span>.
+      </p>
+      <div>
+        <p className={confirmEmphasis}>O que muda</p>
+        <ul className="mt-1.5 list-disc space-y-1.5 pl-5">
+          <li>
+            <span className={confirmEmphasis}>Conta</span> — recria os lançamentos dessa origem, incluindo o{' '}
+            <span className={confirmEmphasis}>saldo do mês anterior</span>.
+          </li>
+          <li>
+            <span className={confirmEmphasis}>Folha</span> — estimativas viram folha real se o holerite já estiver
+            cadastrado.
+          </li>
+          <li>
+            <span className={confirmEmphasis}>Folha + Conta</span> — valor igual no extrato ajusta descrição, valor e
+            vínculo <span className="italic">sem duplicar</span> no calendário.
+          </li>
+          <li>
+            Sem holerite — se o extrato bater com a folha, perguntamos <span className={confirmEmphasis}>um item por vez</span>.
+          </li>
+        </ul>
+      </div>
+      <div>
+        <p className={confirmEmphasis}>O que não muda</p>
+        <p className="mt-1 pl-0.5">Lançamentos manuais e itens de cartão/fatura permanecem como estão.</p>
+      </div>
+      <p className={confirmEmphasis}>Deseja atualizar agora?</p>
+    </div>
+  )
+
+  const buildExtratoNoPayslipConfirmMessage = (item: PayrollConfirmationRow): ReactNode => (
+    <div className="space-y-3">
+      <p>
+        Encontramos no extrato um crédito com o <span className={confirmEmphasis}>mesmo valor</span> de:
+      </p>
+      <div className={confirmCardCls}>
+        <p className={confirmEmphasis}>{item.description}</p>
+        <p className="mt-1">
+          <span className={confirmMoneyCls}>{formatCurrency(Number(item.amount))}</span>
+          <span className={confirmMuted}> · dia {item.expected_day}</span>
+        </p>
+      </div>
+      <p>
+        Ainda <span className={confirmEmphasis}>não há holerite</span> cadastrado para este lançamento. Considerar como
+        folha e vincular ao extrato?
+      </p>
+    </div>
+  )
+
   type LaunchStatementsResponse = {
     created: number
-    payroll_confirmation?: {
-      description: string
-      amount: string
-      expected_day: number
-      matched_in_extrato: boolean
-    }[]
+    payroll_confirmation?: PayrollConfirmationRow[]
   }
 
   const postLaunchStatements = async (
-    payrollReconcile?: 'keep' | 'clear',
+    payrollResolve?: Record<number, 'keep' | 'clear'>,
+    payrollPromote?: Record<number, boolean>,
+    payrollLink?: Record<number, number>,
   ): Promise<LaunchStatementsResponse> => {
     const res = await axios.post<LaunchStatementsResponse>('/api/monthly-projections/launch-statements', {
       year_month: yearMonth,
-      payroll_reconcile: payrollReconcile ?? null,
+      payroll_resolve: payrollResolve && Object.keys(payrollResolve).length > 0 ? payrollResolve : null,
+      payroll_link: payrollLink && Object.keys(payrollLink).length > 0 ? payrollLink : null,
+      payroll_promote: payrollPromote && Object.keys(payrollPromote).length > 0 ? payrollPromote : null,
     })
     return res.data
   }
@@ -1355,29 +1570,66 @@ export default function ProjecaoMensalPage() {
     setLaunchHubOpen(false)
     setSaving(true)
     try {
-      let payrollReconcile: 'keep' | 'clear' | undefined
-      for (let attempt = 0; attempt < 2; attempt++) {
-        const res = await postLaunchStatements(payrollReconcile)
+      const payrollResolve: Record<number, 'keep' | 'clear'> = {}
+      const payrollLink: Record<number, number> = {}
+      const payrollPromote: Record<number, boolean> = {}
+      for (let attempt = 0; attempt < 16; attempt++) {
+        const res = await postLaunchStatements(payrollResolve, payrollPromote, payrollLink)
         if (res.payroll_confirmation?.length) {
-          const lines = res.payroll_confirmation
-            .map(
-              (p) =>
-                `${p.description} — ${formatCurrency(Number(p.amount))} (dia ${p.expected_day})`,
-            )
-            .join('\n')
-          const clearPayroll = await showConfirm({
-            title: 'Folha não encontrada no extrato',
-            message: `Não há no extrato uma entrada com o valor exato deste(s) lançamento(s) de folha:\n\n${lines}\n\nRemover a projeção da folha ou manter?`,
-            confirmText: 'Limpar folha',
-            cancelText: 'Manter folha',
-            type: 'warning',
-          })
-          payrollReconcile = clearPayroll ? 'clear' : 'keep'
-          continue
+          const pendingPromote = res.payroll_confirmation.filter(
+            (p) =>
+              p.confirmation_kind === 'extrato_no_payslip'
+              && p.projection_id != null
+              && payrollPromote[p.projection_id] === undefined,
+          )
+          if (pendingPromote.length > 0) {
+            const item = pendingPromote[0]
+            const considerPayroll = await showConfirm({
+              title: 'Valor no extrato, sem holerite',
+              message: buildExtratoNoPayslipConfirmMessage(item),
+              confirmText: 'Sim, como folha',
+              cancelText: 'Não, manter estimativa',
+              type: 'warning',
+              saveTone: 'create',
+            })
+            payrollPromote[item.projection_id!] = considerPayroll
+            continue
+          }
+          const pendingMissing = res.payroll_confirmation.filter(
+            (p) =>
+              (p.confirmation_kind == null || p.confirmation_kind === 'missing_extrato')
+              && p.projection_id != null
+              && payrollResolve[p.projection_id] === undefined
+              && payrollLink[p.projection_id] === undefined,
+          )
+          if (pendingMissing.length > 0) {
+            const item = pendingMissing[0]
+            const choice = await askPayrollMissingExtrato({
+              description: item.description,
+              amount: item.amount,
+              expected_day: item.expected_day,
+              search_from: item.search_from,
+              search_to: item.search_to,
+              period_incomes: item.period_incomes,
+            })
+            if (!choice) {
+              setSaving(false)
+              return
+            }
+            const pid = item.projection_id!
+            if (choice.kind === 'link') {
+              payrollLink[pid] = choice.statementId
+            } else {
+              payrollResolve[pid] = 'keep'
+            }
+            continue
+          }
         }
-        await load()
-        setToast({ message: `Extrato atualizado: ${res.created} lançamento(s).`, type: 'success' })
-        return
+        if (!res.payroll_confirmation?.length) {
+          await load()
+          setToast({ message: `Extrato atualizado: ${res.created} lançamento(s).`, type: 'success' })
+          return
+        }
       }
       setError('Não foi possível concluir a atualização com o extrato.')
     } catch (err) {
@@ -1392,10 +1644,11 @@ export default function ProjecaoMensalPage() {
     const label = `${MONTH_NAMES[Number(yearMonth.slice(5, 7)) - 1]} ${yearMonth.slice(0, 4)}`
     const confirmed = await showConfirm({
       title: 'Atualizar com extrato',
-      message: `Recriar os lançamentos da conta em ${label} com base no extrato importado? Substitui origem Conta. A folha com valor igual no extrato some sozinha; se não achar, pergunta. Lançamentos manuais não são alterados nem removidos (mesmo com descrição parecida). Cartão não muda.`,
+      message: buildLaunchStatementsIntroMessage(label),
       confirmText: 'Atualizar',
       cancelText: 'Cancelar',
       type: 'warning',
+      saveTone: 'create',
     })
     if (!confirmed) return
     await runLaunchStatements()
@@ -1415,6 +1668,7 @@ export default function ProjecaoMensalPage() {
       confirmText: 'Excluir',
       cancelText: 'Cancelar',
       type: 'danger',
+      saveTone: 'danger',
     })
     if (!confirmed) return
     try {
@@ -1507,38 +1761,40 @@ export default function ProjecaoMensalPage() {
         { title: 'Dia 15 ao fim', ...halfSummary(true) },
       ]
     }
-    return [periodTotals(calendarView, yearMonth, anchorDay, data?.income ?? [], data?.items ?? [])]
+    const month = data?.year_month === yearMonth ? data : null
+    return [periodTotals(calendarView, yearMonth, anchorDay, month?.income ?? [], month?.items ?? [])]
   }, [calendarView, yearMonth, anchorDay, data])
 
+  const chartMonthData = data?.year_month === yearMonth ? data : null
+
   const periodChartData = useMemo(
-    () => dailyChartPoints(yearMonth, visibleDays, data?.income ?? [], data?.items ?? []),
-    [yearMonth, visibleDays, data],
+    () => dailyChartPoints(yearMonth, visibleDays, chartMonthData?.income ?? [], chartMonthData?.items ?? []),
+    [yearMonth, visibleDays, chartMonthData],
   )
 
-  const goCalendarPrev = () => {
-    if (calendarView === 'month') setYearMonth(shiftMonth(yearMonth, -1))
-    else {
-      const next = shiftAnchor(calendarView, yearMonth, anchorDay, -1)
-      setYearMonth(next.yearMonth)
-      setAnchorDay(next.anchorDay)
-    }
+  const goMonthPrev = () => setYearMonth(shiftMonth(yearMonth, -1))
+  const goMonthNext = () => setYearMonth(shiftMonth(yearMonth, 1))
+
+  const periodMode = calendarView !== 'month' ? calendarView : null
+  const canPeriodPrev = periodMode ? canShiftAnchorInMonth(periodMode, yearMonth, anchorDay, -1) : false
+  const canPeriodNext = periodMode ? canShiftAnchorInMonth(periodMode, yearMonth, anchorDay, 1) : false
+
+  const goPeriodPrev = () => {
+    if (!periodMode) return
+    const next = shiftAnchorInMonth(periodMode, yearMonth, anchorDay, -1)
+    setAnchorDay(next.anchorDay)
   }
 
-  const goCalendarNext = () => {
-    if (calendarView === 'month') setYearMonth(shiftMonth(yearMonth, 1))
-    else {
-      const next = shiftAnchor(calendarView, yearMonth, anchorDay, 1)
-      setYearMonth(next.yearMonth)
-      setAnchorDay(next.anchorDay)
-    }
+  const goPeriodNext = () => {
+    if (!periodMode) return
+    const next = shiftAnchorInMonth(periodMode, yearMonth, anchorDay, 1)
+    setAnchorDay(next.anchorDay)
   }
 
   const goCurrentMonth = () => {
     setYearMonth(currentYearMonth())
     setAnchorDay(new Date().getDate())
   }
-
-  const monthNavLabel = calendarView === 'month' ? 'Mês' : 'Período'
 
   const calendarViewToggle = (
     <div className="flex w-full rounded-lg border border-gray-200 bg-gray-100 p-0.5 dark:border-gray-700 dark:bg-gray-800 sm:inline-flex sm:w-auto">
@@ -1586,9 +1842,14 @@ export default function ProjecaoMensalPage() {
   const activeChartData = chartUsesOverview ? overviewChart : periodChartData
   const chartHasData = activeChartData.length > 0
 
+  const chartSeriesKey = chartUsesOverview
+    ? `overview-${yearMonth}`
+    : `period-${yearMonth}-${calendarView}-${anchorDay}`
+
   const chartElement = (
     <ResponsiveContainer width="100%" height="100%">
       <ComposedChart
+        key={chartSeriesKey}
         data={activeChartData}
         margin={isMobile ? { top: 8, right: 4, left: -4, bottom: 0 } : { top: 8, right: 8, left: 8, bottom: 0 }}
       >
@@ -1675,14 +1936,14 @@ export default function ProjecaoMensalPage() {
         >
           <div className={`flex min-h-0 flex-1 flex-col gap-4 ${isMobile ? 'min-w-0' : 'overflow-y-auto scroll-slim'}`}>
             <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800 max-md:mx-0">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={goCalendarPrev}
+                    onClick={goMonthPrev}
                     className="rounded-lg border border-gray-300 p-2 dark:border-gray-600"
-                    aria-label={calendarView === 'month' ? 'Mês anterior' : `${monthNavLabel} anterior`}
+                    aria-label="Mês anterior"
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </button>
@@ -1692,22 +1953,14 @@ export default function ProjecaoMensalPage() {
                     title="Escolher mês e ano"
                     className="flex min-w-0 flex-1 flex-col items-center rounded-lg px-2 py-1 text-center hover:bg-gray-100 dark:hover:bg-gray-700/60 sm:min-w-[10rem] sm:flex-none"
                   >
-                    {calendarView === 'month' ? (
-                      <>
-                        <span className="text-base font-semibold text-gray-900 dark:text-white sm:text-lg">{MONTH_NAMES[month - 1]}</span>
-                        <span className="text-sm font-semibold tabular-nums text-[var(--color-1)]">{year}</span>
-                      </>
-                    ) : (
-                      <span className="text-base font-semibold text-gray-900 dark:text-white sm:text-lg">
-                        {rangeTitle(calendarView, yearMonth, anchorDay, MONTH_NAMES)}
-                      </span>
-                    )}
+                    <span className="text-base font-semibold text-gray-900 dark:text-white sm:text-lg">{MONTH_NAMES[month - 1]}</span>
+                    <span className="text-sm font-semibold tabular-nums text-[var(--color-1)]">{year}</span>
                   </button>
                   <button
                     type="button"
-                    onClick={goCalendarNext}
+                    onClick={goMonthNext}
                     className="rounded-lg border border-gray-300 p-2 dark:border-gray-600"
-                    aria-label={calendarView === 'month' ? 'Próximo mês' : `Próximo ${monthNavLabel.toLowerCase()}`}
+                    aria-label="Próximo mês"
                   >
                     <ChevronRight className="h-4 w-4" />
                   </button>
@@ -1725,7 +1978,39 @@ export default function ProjecaoMensalPage() {
                   Mês atual
                 </button>
               </div>
-              <div className="flex w-full justify-stretch sm:w-auto sm:shrink-0 sm:justify-end">{calendarViewToggle}</div>
+              <div className="flex w-full min-w-0 flex-row flex-wrap items-center justify-stretch gap-2 sm:w-auto sm:justify-end sm:gap-3">
+                {periodMode ? (
+                  <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:flex-initial sm:gap-2">
+                    <button
+                      type="button"
+                      onClick={goPeriodPrev}
+                      disabled={!canPeriodPrev}
+                      className="shrink-0 rounded-lg border border-gray-300 p-2 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-600"
+                      aria-label={`${CALENDAR_VIEW_LABELS[periodMode]} anterior`}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                    <div className="flex min-w-0 flex-1 flex-col items-center px-1 py-0.5 text-center sm:min-w-[7.5rem] sm:flex-none">
+                      <span className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 sm:text-xs">
+                        {CALENDAR_VIEW_LABELS[periodMode]}
+                      </span>
+                      <span className="truncate text-sm font-semibold text-gray-900 dark:text-white">
+                        {periodNavTitle(periodMode, yearMonth, anchorDay)}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={goPeriodNext}
+                      disabled={!canPeriodNext}
+                      className="shrink-0 rounded-lg border border-gray-300 p-2 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-600"
+                      aria-label={`Próxim${periodMode === 'day' ? 'o dia' : periodMode === 'week' ? 'a semana' : 'a quinzena'}`}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : null}
+                <div className="flex w-full shrink-0 sm:w-auto">{calendarViewToggle}</div>
+              </div>
             </div>
             </div>
 
@@ -1872,7 +2157,7 @@ export default function ProjecaoMensalPage() {
                 creditCls={creditCls}
                 valueOf={(e) => Number(e.amount)}
                 onIncome={(inc) =>
-                  inc.source === 'bank_statement' || !inc.editable
+                  inc.source === 'bank_statement' || payrollEstimateAmountEditable(inc) || !inc.editable
                     ? openBankStatementLine({ ...(inc as Income), income: true })
                     : openEditIncome(inc as Income)
                 }
@@ -1967,16 +2252,23 @@ export default function ProjecaoMensalPage() {
                               <ProjectionLaunchCard
                                 key={inc.id}
                                 compact
-                                source={inc.source}
+                                source={incomeProjectionBadgeSource(inc.source, inc.amount_editable)}
+                                linkedExtrato={payrollLinkedExtrato(inc)}
                                 description={inc.description}
                                 amount={formatCurrency(Number(inc.amount))}
                                 tone="income"
                                 draggable={inc.editable}
                                 deleting={deleting}
-                                title={inc.editable ? 'Receita lançada' : 'Projeção automática: clique para excluir ou lance novamente para atualizar'}
+                                title={
+                                  payrollEstimateAmountEditable(inc)
+                                    ? 'Estimativa de folha: clique para ajustar o valor'
+                                    : inc.editable
+                                      ? 'Receita lançada'
+                                      : 'Projeção automática: clique para excluir ou lance novamente para atualizar'
+                                }
                                 onDragStart={(ev) => ev.dataTransfer.setData('text/plain', JSON.stringify({ id: inc.id, income: true }))}
                                 onOpen={() =>
-                                  inc.source === 'bank_statement' || !inc.editable
+                                  inc.source === 'bank_statement' || payrollEstimateAmountEditable(inc) || !inc.editable
                                     ? openBankStatementLine({ ...inc, income: true })
                                     : openEditIncome(inc)
                                 }
@@ -2186,6 +2478,7 @@ export default function ProjecaoMensalPage() {
             onSave={confirmExport}
             saving={false}
             saveLabel="Exportar"
+            saveTone="create"
             disabled={exportOpt.mode === 'range' && !exportRangeValid(exportOpt)}
           />
         </CadastroModalShell>
@@ -2214,6 +2507,7 @@ export default function ProjecaoMensalPage() {
             onSave={sendWhatsapp}
             saving={saving}
             saveLabel="Enviar"
+            saveTone="create"
             disabled={saving || !whatsappDate}
             closeDisabled={busy}
           />
@@ -2275,57 +2569,107 @@ export default function ProjecaoMensalPage() {
               </p>
             </div>
           </CadastroModalBody>
-          <CadastroModalFooter onClose={closeClone} onSave={cloneNext} saving={saving} saveLabel="Clonar" disabled={saving} closeDisabled={busy} />
+          <CadastroModalFooter
+            onClose={closeClone}
+            onSave={cloneNext}
+            saving={saving}
+            saveLabel="Clonar"
+            saveTone="create"
+            disabled={saving}
+            closeDisabled={busy}
+          />
         </CadastroModalShell>
       )}
 
       {autoIncome && (
         <CadastroModalShell maxWidth="max-w-md">
           <CadastroModalHeader
-            isEdit={false}
+            isEdit={payrollEstimateAmountEditable(autoIncome)}
             title={autoIncome.description}
-            titleAddon={<ProjectionOriginBadge source={autoIncome.source} />}
+            titleAddon={
+              <ProjectionOriginBadge
+                source={incomeProjectionBadgeSource(
+                  autoIncome.source,
+                  payrollEstimateAmountEditable(autoIncome),
+                )}
+              />
+            }
             subtitle={
-              autoIncome.source === 'bank_statement' && autoIncome.description.trim() === OPENING_BALANCE_LABEL
-                ? `Saldo calculado • ${autoIncome.expected_date.split('-').reverse().join('/')}`
-                : `Projeção automática • ${autoIncome.expected_date.split('-').reverse().join('/')}`
+              payrollEstimateAmountEditable(autoIncome)
+                ? `Estimativa de folha • ${autoIncome.expected_date.split('-').reverse().join('/')}`
+                : autoIncome.source === 'bank_statement' && autoIncome.description.trim() === OPENING_BALANCE_LABEL
+                  ? `Saldo calculado • ${autoIncome.expected_date.split('-').reverse().join('/')}`
+                  : `Projeção automática • ${autoIncome.expected_date.split('-').reverse().join('/')}`
             }
             onClose={closeAutoIncome}
             closeDisabled={busy}
             icon={autoIncome.source === 'bank_statement' ? <Landmark size={18} /> : <Wallet size={18} />}
           />
           <CadastroModalBody>
-            <p className="p-4 text-sm leading-relaxed text-gray-700 dark:text-gray-300">
-              {autoIncome.source === 'bank_statement' && autoIncome.description.trim() === OPENING_BALANCE_LABEL
-                ? 'Saldo no extrato: '
-                : 'Valor projetado: '}
-              <span className={`font-semibold ${autoIncome.income ? creditCls : debitCls}`}>
-                {autoIncome.income ? formatCurrency(Number(autoIncome.amount)) : debit(Number(autoIncome.amount))}
-              </span>
-              .{' '}
-              {autoIncome.source === 'bank_statement' && autoIncome.description.trim() === OPENING_BALANCE_LABEL ? (
-                <>
-                  Valor calculado para o dia 1 (não é um lançamento individual no extrato). Atualize com{' '}
-                  <strong className="font-medium">Ações → Atualizar com extrato</strong> se o saldo mudar.
-                </>
-              ) : autoIncome.source === 'bank_statement' ? (
-                <>
-                  Sem vínculo com o extrato — use <strong className="font-medium">Atualizar com extrato</strong> para
-                  sincronizar.
-                </>
-              ) : (
-                <>
-                  Gerado pelo lançamento da folha — não dá para alterar data ou valor aqui. Para atualizar, use{' '}
-                  <strong className="font-medium">Ações → Receita da folha</strong> de novo, ou exclua esta linha.
-                </>
-              )}
-            </p>
+            {(autoIncome.amountEditable || payrollEstimateAmountEditable(autoIncome)) ? (
+              <div className="space-y-3 p-4">
+                <p className="text-sm leading-relaxed text-gray-700 dark:text-gray-300">
+                  Ajuste só o valor da estimativa. Data e descrição vêm do lançamento automático da folha; com holerite
+                  cadastrado, use <strong className="font-medium">Atualizar com extrato</strong> ou{' '}
+                  <strong className="font-medium">Receita da folha</strong> para substituir pela folha real.
+                </p>
+                <label className="block">
+                  <CadastroFieldLabel required>Valor estimado</CadastroFieldLabel>
+                  <div className="relative mt-0.5">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm font-semibold text-gray-500 dark:text-gray-400">
+                      R$
+                    </span>
+                    <MoneyMaskInput
+                      positiveOnly
+                      value={autoIncomeAmountEdit}
+                      onChange={setAutoIncomeAmountEdit}
+                      className={`${cadastroFieldCls} pl-10 font-semibold tabular-nums ${creditCls}`}
+                    />
+                  </div>
+                </label>
+              </div>
+            ) : (
+              <p className="p-4 text-sm leading-relaxed text-gray-700 dark:text-gray-300">
+                {autoIncome.source === 'bank_statement' && autoIncome.description.trim() === OPENING_BALANCE_LABEL
+                  ? 'Saldo no extrato: '
+                  : 'Valor projetado: '}
+                <span className={`font-semibold ${autoIncome.income ? creditCls : debitCls}`}>
+                  {autoIncome.income ? formatCurrency(Number(autoIncome.amount)) : debit(Number(autoIncome.amount))}
+                </span>
+                .{' '}
+                {autoIncome.source === 'bank_statement' && autoIncome.description.trim() === OPENING_BALANCE_LABEL ? (
+                  <>
+                    Valor calculado para o dia 1 (não é um lançamento individual no extrato). Atualize com{' '}
+                    <strong className="font-medium">Ações → Atualizar com extrato</strong> se o saldo mudar.
+                  </>
+                ) : autoIncome.source === 'bank_statement' ? (
+                  <>
+                    Sem vínculo com o extrato — use <strong className="font-medium">Atualizar com extrato</strong> para
+                    sincronizar.
+                  </>
+                ) : (
+                  <>
+                    Gerado pelo lançamento da folha — não dá para alterar data ou valor aqui. Para atualizar, use{' '}
+                    <strong className="font-medium">Ações → Receita da folha</strong> de novo, ou exclua esta linha.
+                  </>
+                )}
+              </p>
+            )}
           </CadastroModalBody>
           <CadastroModalFooter
             onClose={closeAutoIncome}
             closeDisabled={busy}
             closeLabel="Fechar"
-            hideSave
+            hideSave={!(autoIncome.amountEditable || payrollEstimateAmountEditable(autoIncome))}
+            onSave={
+              autoIncome.amountEditable || payrollEstimateAmountEditable(autoIncome)
+                ? () => void savePayrollEstimateAmount()
+                : undefined
+            }
+            saveLabel="Salvar valor"
+            saveTone="create"
+            saving={saving}
+            disabled={busy || !autoIncomeAmountEdit || Number(autoIncomeAmountEdit) <= 0}
             leading={
               <button
                 type="button"
@@ -2426,6 +2770,7 @@ export default function ProjecaoMensalPage() {
             closeDisabled={busy}
             onSave={save}
             saving={saving}
+            saveTone="create"
             disabled={saving || !form.description.trim() || !amountNum || isNaN(amountNum)}
             leading={
               form.id ? (
@@ -2683,6 +3028,7 @@ export default function ProjecaoMensalPage() {
             onSave={launchExpenses}
             saving={saving}
             saveLabel="Lançar"
+            saveTone="create"
             disabled={
               saving ||
               manualExpenseForm.expenseRows.length === 0 ||
@@ -2711,21 +3057,21 @@ export default function ProjecaoMensalPage() {
               hint="Usa holerites ativos da conta: valor líquido do mês ou média dos últimos 6 meses sem holerite."
             >
               <div className="space-y-4 text-sm text-gray-700 dark:text-gray-300">
-                <label className={`${cadastroOptionLabelCls} items-start`}>
-                  <input
-                    type="checkbox"
-                    checked={incomeLaunchForm.advanceOnDay15}
-                    onChange={(e) =>
-                      setIncomeLaunchForm((prev) => prev && { ...prev, advanceOnDay15: e.target.checked })
-                    }
-                    className={`${cadastroAccentControlCls} mt-0.5 h-4 w-4 rounded border-gray-300`}
-                  />
-                  <span>
-                    <span className="block font-medium text-gray-900 dark:text-white">Adiantamento sempre no dia 15</span>
-                    <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
-                      Mesmo quando o holerite veio em outro dia (antecipação por fim de semana ou feriado), a projeção
-                      posiciona o adiantamento no dia 15 do mês.
-                    </span>
+                <label className="block cursor-pointer">
+                  <span className="flex items-center gap-2.5">
+                    <input
+                      type="checkbox"
+                      checked={incomeLaunchForm.advanceOnDay15}
+                      onChange={(e) =>
+                        setIncomeLaunchForm((prev) => prev && { ...prev, advanceOnDay15: e.target.checked })
+                      }
+                      className={`${cadastroAccentControlCls} h-4 w-4 shrink-0 rounded border-gray-300`}
+                    />
+                    <span className="font-medium text-gray-900 dark:text-white">Adiantamento sempre no dia 15</span>
+                  </span>
+                  <span className="mt-0.5 block pl-[26px] text-xs leading-snug text-gray-500 dark:text-gray-400">
+                    Mesmo quando o holerite veio em outro dia (antecipação por fim de semana ou feriado), a projeção
+                    posiciona o adiantamento no dia 15 do mês.
                   </span>
                 </label>
                 <label className="flex flex-wrap items-center gap-2">
@@ -2769,6 +3115,7 @@ export default function ProjecaoMensalPage() {
             onSave={launchIncome}
             saving={saving}
             saveLabel="Lançar"
+            saveTone="create"
             disabled={saving}
           />
         </CadastroModalShell>
@@ -2942,12 +3289,15 @@ export default function ProjecaoMensalPage() {
             onSave={launchCards}
             saving={saving}
             saveLabel="Lançar"
+            saveTone="create"
             disabled={saving || cardLaunchBlockedReason != null}
           />
         </CadastroModalShell>
       )}
 
       <ConfirmComponent />
+      <PayrollMissingExtratoDialog />
+      <LaunchIncomeReplaceDialog />
       {exportRunner.overlay}
     </div>
   )

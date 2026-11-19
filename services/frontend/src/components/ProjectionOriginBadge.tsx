@@ -14,6 +14,7 @@ export type ProjectionSource =
   | 'card_item_manual'
   | 'card_item_installment'
   | 'payroll'
+  | 'payroll_estimate'
   | 'bank_statement'
 
 export const PROJECTION_ORIGIN_KEYS = [
@@ -22,6 +23,7 @@ export const PROJECTION_ORIGIN_KEYS = [
   'card_invoice',
   'card_item_installment',
   'payroll',
+  'payroll_estimate',
 ] as const satisfies readonly ProjectionOriginPaletteKey[]
 
 export type ProjectionOriginKey = (typeof PROJECTION_ORIGIN_KEYS)[number]
@@ -34,6 +36,7 @@ const ORIGIN_LABEL: Record<ProjectionOriginKey, string> = {
   card_invoice: 'Cartão',
   card_item_installment: 'Estimativa',
   payroll: 'Folha',
+  payroll_estimate: 'Estimativa folha',
 }
 
 const ORIGIN_ICON: Record<ProjectionOriginKey, LucideIcon> = {
@@ -42,6 +45,7 @@ const ORIGIN_ICON: Record<ProjectionOriginKey, LucideIcon> = {
   card_invoice: CreditCard,
   card_item_installment: LineChart,
   payroll: Briefcase,
+  payroll_estimate: Briefcase,
 }
 
 function ProjectionOriginIcon({ originKey }: { originKey: ProjectionOriginKey }) {
@@ -54,12 +58,24 @@ export function projectionOriginAccentColor(source: ProjectionSource): string {
   return projectionOriginPaletteColor(projectionOriginKey(source))
 }
 
+/** Badge no calendário: estimativa de folha (origem dedicada ou legado editável). */
+export function incomeProjectionBadgeSource(
+  source: ProjectionSource,
+  amountEditable?: boolean,
+): ProjectionSource {
+  if (source === 'payroll_estimate') return 'payroll_estimate'
+  if (source === 'payroll') return 'payroll'
+  if (amountEditable) return 'payroll_estimate'
+  return source
+}
+
 export function projectionOriginKey(source: ProjectionSource): ProjectionOriginKey {
   if (
     source === 'bank_statement'
     || source === 'card_invoice'
     || source === 'card_item_installment'
     || source === 'payroll'
+    || source === 'payroll_estimate'
   ) {
     return source
   }
@@ -78,6 +94,25 @@ export function ProjectionOriginBadge({ source }: { source: ProjectionSource }) 
       label={ORIGIN_LABEL[key]}
     />
   )
+}
+
+/** Folha confirmada no extrato: badges Folha + Conta. */
+export function ProjectionOriginBadges({
+  source,
+  linkedExtrato,
+}: {
+  source: ProjectionSource
+  linkedExtrato?: boolean
+}) {
+  if (linkedExtrato && source === 'payroll') {
+    return (
+      <span className="inline-flex flex-wrap items-center justify-end gap-1">
+        <ProjectionOriginBadge source="payroll" />
+        <ProjectionOriginBadge source="bank_statement" />
+      </span>
+    )
+  }
+  return <ProjectionOriginBadge source={source} />
 }
 
 export function defaultProjectionOriginVisibility(): Record<ProjectionOriginKey, boolean> {

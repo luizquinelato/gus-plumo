@@ -124,6 +124,80 @@ export function shiftAnchor(
   return { yearMonth: nextYm, anchorDay: clampDay(nextYm, d) }
 }
 
+/** Avança dia / semana / quinzena só dentro do `yearMonth` atual (sem mudar de mês). */
+export function canShiftAnchorInMonth(
+  mode: Exclude<CalendarViewMode, 'month'>,
+  yearMonth: string,
+  anchorDay: number,
+  delta: -1 | 1,
+): boolean {
+  const last = daysInMonth(yearMonth)
+  const d = clampDay(yearMonth, anchorDay)
+
+  if (mode === 'day') {
+    const next = d + delta
+    return next >= 1 && next <= last
+  }
+
+  if (mode === 'half') {
+    const hi = halfIndexForDay(d)
+    if (delta === -1) return hi === 1
+    return hi === 0
+  }
+
+  const week = visibleDaysForMode('week', yearMonth, d)
+  const start = week[0]
+  const nextStart = start + delta * 7
+  return nextStart >= 1 && nextStart <= last
+}
+
+export function shiftAnchorInMonth(
+  mode: Exclude<CalendarViewMode, 'month'>,
+  yearMonth: string,
+  anchorDay: number,
+  delta: -1 | 1,
+): { yearMonth: string; anchorDay: number } {
+  const d = clampDay(yearMonth, anchorDay)
+  if (!canShiftAnchorInMonth(mode, yearMonth, d, delta)) {
+    return { yearMonth, anchorDay: d }
+  }
+
+  if (mode === 'day') {
+    return { yearMonth, anchorDay: d + delta }
+  }
+
+  if (mode === 'half') {
+    return { yearMonth, anchorDay: halfIndexForDay(d) === 1 ? 14 : 15 }
+  }
+
+  const week = visibleDaysForMode('week', yearMonth, d)
+  const start = week[0] + delta * 7
+  return { yearMonth, anchorDay: clampDay(yearMonth, start) }
+}
+
+/** Título curto do período (sem repetir mês — usado na 2ª barra de navegação). */
+export function periodNavTitle(
+  mode: Exclude<CalendarViewMode, 'month'>,
+  yearMonth: string,
+  anchorDay: number,
+): string {
+  const d = clampDay(yearMonth, anchorDay)
+
+  if (mode === 'day') {
+    return `Dia ${d}`
+  }
+
+  if (mode === 'half') {
+    return halfIndexForDay(d) === 0 ? '1ª quinzena' : '2ª quinzena'
+  }
+
+  const days = visibleDaysForMode('week', yearMonth, d)
+  const a = days[0]
+  const b = days[days.length - 1]
+  if (a === b) return `Dia ${a}`
+  return `Dias ${a} a ${b}`
+}
+
 export function rangeTitle(
   mode: CalendarViewMode,
   yearMonth: string,

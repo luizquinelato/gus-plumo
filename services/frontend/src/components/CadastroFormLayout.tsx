@@ -595,6 +595,7 @@ export function CadastroModalFooter({
   closeLabel = 'Cancelar',
   backLabel = 'Voltar',
   hideSave = false,
+  hideClose = false,
   leading,
   secondaryActions,
   saveIcon,
@@ -612,10 +613,12 @@ export function CadastroModalFooter({
   closeLabel?: string
   backLabel?: string
   hideSave?: boolean
+  /** Oculta o botão de cancelar/fechar (ex.: só uma ação primária). */
+  hideClose?: boolean
   leading?: ReactNode
   secondaryActions?: ReactNode
   saveIcon?: ReactNode
-  saveTone?: 'default' | 'success' | 'danger'
+  saveTone?: 'default' | 'success' | 'danger' | 'update' | 'create'
 }) {
   const blocked = saving || disabled
   const hasLeading = leading != null && leading !== false
@@ -624,7 +627,11 @@ export function CadastroModalFooter({
       ? { background: 'var(--color-success)', color: 'var(--on-color-success)' }
       : saveTone === 'danger'
         ? { background: 'var(--color-delete)', color: 'var(--on-color-delete)' }
-        : { background: 'var(--color-save)', color: 'var(--on-color-save)' }
+        : saveTone === 'update'
+          ? { background: 'var(--color-update)', color: 'var(--on-color-update)' }
+          : saveTone === 'create'
+            ? { background: 'var(--color-create)', color: 'var(--on-color-create)' }
+            : { background: 'var(--color-save)', color: 'var(--on-color-save)' }
   return (
     <div
       className={`flex shrink-0 flex-wrap items-center gap-2 border-t border-gray-200 px-6 py-3 dark:border-gray-700 ${
@@ -635,25 +642,27 @@ export function CadastroModalFooter({
         <div className="flex min-w-0 flex-wrap items-center gap-2">{leading}</div>
       ) : null}
       <div className={`flex min-w-0 flex-wrap items-center justify-end gap-2 ${hasLeading ? 'ml-auto' : 'w-full'}`}>
-        {onBack ? (
-          <button
-            type="button"
-            onClick={onBack}
-            disabled={closeDisabled}
-            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700"
-          >
-            {backLabel}
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={closeDisabled}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-            style={{ backgroundColor: 'var(--color-cancel)' }}
-          >
-            {closeLabel}
-          </button>
+        {!hideClose && (
+          onBack ? (
+            <button
+              type="button"
+              onClick={onBack}
+              disabled={closeDisabled}
+              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700"
+            >
+              {backLabel}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={closeDisabled}
+              className="rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+              style={{ backgroundColor: 'var(--color-cancel)' }}
+            >
+              {closeLabel}
+            </button>
+          )
         )}
         {secondaryActions}
         {!hideSave && onSave ? (

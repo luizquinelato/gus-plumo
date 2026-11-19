@@ -1,6 +1,6 @@
 import { ChevronsRight } from 'lucide-react'
 import { listPageTableSectionCls } from './CadastroListPageLayout'
-import type { ProjectionSource } from './ProjectionOriginBadge'
+import { incomeProjectionBadgeSource, type ProjectionSource } from './ProjectionOriginBadge'
 import ProjectionLaunchCard from './ProjectionLaunchCard'
 import type { CalendarViewMode } from '../utils/projectionCalendarRange'
 
@@ -11,7 +11,11 @@ type IncomeRow = {
   description: string
   amount: string
   editable: boolean
+  amount_editable?: boolean
   source: ProjectionSource
+  expected_date?: string
+  source_table?: string | null
+  source_id?: number | null
 }
 
 type ExpenseRow = {
@@ -106,15 +110,22 @@ export default function ProjecaoMensalMobileCalendar({
                     <li key={`i-${inc.id}`}>
                       <ProjectionLaunchCard
                         compact
-                        source={inc.source}
+                        source={incomeProjectionBadgeSource(inc.source, inc.amount_editable)}
+                        linkedExtrato={
+                          inc.source === 'payroll'
+                          && inc.source_table === 'bank_statements'
+                          && inc.source_id != null
+                        }
                         description={inc.description}
                         amount={formatCurrency(Number(inc.amount))}
                         tone="income"
                         deleting={deleting}
                         title={
-                          inc.editable
-                            ? 'Receita lançada'
-                            : 'Projeção automática: toque para excluir ou lance novamente para atualizar'
+                          inc.amount_editable || inc.source === 'payroll_estimate'
+                            ? 'Estimativa de folha: toque para ajustar o valor'
+                            : inc.editable
+                              ? 'Receita lançada'
+                              : 'Projeção automática: toque para excluir ou lance novamente para atualizar'
                         }
                         onOpen={() => onIncome(inc)}
                         onDelete={() => onDelete(inc.id)}

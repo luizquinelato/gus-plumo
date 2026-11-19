@@ -9,6 +9,7 @@ export const PROJECTION_ORIGIN_PALETTE = {
   card_invoice: { bg: '#7c3aed', fg: '#ffffff' },
   card_item_installment: { bg: '#ea580c', fg: '#ffffff' },
   payroll: { bg: '#db2777', fg: '#ffffff' },
+  payroll_estimate: { bg: '#f472b6', fg: '#ffffff' },
 } as const satisfies Record<string, { bg: string; fg: string }>
 
 export type ProjectionOriginPaletteKey = keyof typeof PROJECTION_ORIGIN_PALETTE

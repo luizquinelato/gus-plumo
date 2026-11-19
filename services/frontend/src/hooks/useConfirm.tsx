@@ -1,21 +1,23 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, type ReactNode } from 'react'
 import ConfirmDialog from '../components/ConfirmDialog'
 
 interface ConfirmState {
   isOpen: boolean
   title: string
-  message: string
+  message: string | ReactNode
   confirmText: string
   cancelText: string
   type?: 'danger' | 'warning' | 'info'
+  saveTone?: 'default' | 'success' | 'danger' | 'update' | 'create'
 }
 
 interface ConfirmOptions {
   title: string
-  message: string
+  message: string | ReactNode
   confirmText?: string
   cancelText?: string
   type?: 'danger' | 'warning' | 'info'
+  saveTone?: 'default' | 'success' | 'danger' | 'update' | 'create'
 }
 
 export const useConfirm = () => {
@@ -49,7 +51,8 @@ export const useConfirm = () => {
         message: options.message,
         confirmText: options.confirmText || 'Confirmar',
         cancelText: options.cancelText || 'Cancelar',
-        type: options.type
+        type: options.type,
+        saveTone: options.saveTone,
       })
       callbackRef.current = null
       return new Promise<boolean>((resolve) => {
@@ -104,6 +107,7 @@ export const useConfirm = () => {
       confirmText={confirmState.confirmText}
       cancelText={confirmState.cancelText}
       type={confirmState.type}
+      saveTone={confirmState.saveTone}
     />
   )
 

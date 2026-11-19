@@ -1,5 +1,5 @@
 import { AlertTriangle, Info } from 'lucide-react'
-import { useEffect } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import {
   CadastroModalBody,
   CadastroModalFooter,
@@ -12,10 +12,11 @@ interface ConfirmDialogProps {
   onClose: () => void
   onConfirm: () => void
   title: string
-  message: string
+  message: string | ReactNode
   confirmText?: string
   cancelText?: string
   type?: 'danger' | 'warning' | 'info'
+  saveTone?: 'default' | 'success' | 'danger' | 'update' | 'create'
   zClass?: string
 }
 
@@ -28,6 +29,7 @@ const ConfirmDialog = ({
   confirmText = 'Confirmar',
   cancelText = 'Cancelar',
   type = 'warning',
+  saveTone: saveToneProp,
   zClass = 'z-[110]',
 }: ConfirmDialogProps) => {
   const handleConfirm = () => {
@@ -71,14 +73,20 @@ const ConfirmDialog = ({
         iconStyle={iconStyle}
       />
       <CadastroModalBody>
-        <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line">{message}</p>
+        {typeof message === 'string' ? (
+          <p className="whitespace-pre-line text-sm leading-relaxed text-gray-700 dark:text-gray-300">{message}</p>
+        ) : (
+          <div className="text-sm leading-relaxed text-gray-700 dark:text-gray-300">{message}</div>
+        )}
       </CadastroModalBody>
       <CadastroModalFooter
         onClose={onClose}
         onSave={handleConfirm}
         closeLabel={cancelText}
         saveLabel={confirmText}
-        saveTone={type === 'danger' ? 'danger' : type === 'info' ? 'default' : 'success'}
+        saveTone={
+          saveToneProp ?? (type === 'danger' ? 'danger' : type === 'info' ? 'default' : 'default')
+        }
       />
     </CadastroModalShell>
   )
