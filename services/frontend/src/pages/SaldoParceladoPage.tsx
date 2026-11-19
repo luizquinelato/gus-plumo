@@ -575,7 +575,7 @@ export default function SaldoParceladoPage() {
     setActions(
       <ExtratoReportMenu
         compact
-        disabled={!exportReady}
+        exportDisabled={!exportReady}
         onExportExcel={() => void handleExportExcel()}
         onExportPdf={() => void handleExportPdf()}
       />,
@@ -749,7 +749,7 @@ export default function SaldoParceladoPage() {
                 <CadastroListHeaderActions>
                   <div className="max-md:hidden">
                     <ExtratoReportMenu
-                      disabled={!exportReady}
+                      exportDisabled={!exportReady}
                       onExportExcel={() => void handleExportExcel()}
                       onExportPdf={() => void handleExportPdf()}
                     />

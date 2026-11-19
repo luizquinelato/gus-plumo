@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Download, FileSpreadsheet, Loader2, MoreVertical } from 'lucide-react'
+import { FileSpreadsheet, Loader2, MoreVertical } from 'lucide-react'
 
 export type CadastroExcelMenuExtraItem = {
   id: string
@@ -16,7 +16,7 @@ export interface CadastroExcelMenuProps {
   onExportExcel?: () => void
   extraItems?: CadastroExcelMenuExtraItem[]
   menuTitle?: string
-  /** Mobile top bar: ⋮ (ações da tela); desktop: ícone de download. */
+  /** Top bar mobile: botão menor, sem borda (⋮ em todos os tamanhos). */
   compact?: boolean
 }
 
@@ -25,11 +25,16 @@ export default function CadastroExcelMenu({
   exportDisabled = false,
   onExportExcel,
   extraItems = [],
-  menuTitle = 'Exportar',
+  menuTitle = 'Mais opções',
   compact = false,
 }: CadastroExcelMenuProps) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const inactive = disabled || exportDisabled
+
+  useEffect(() => {
+    if (inactive) setOpen(false)
+  }, [inactive])
 
   useEffect(() => {
     if (!open) return
@@ -52,8 +57,11 @@ export default function CadastroExcelMenu({
     <div className="relative" ref={ref}>
       <button
         type="button"
-        disabled={disabled}
-        onClick={() => setOpen((v) => !v)}
+        disabled={inactive}
+        onClick={() => {
+          if (inactive) return
+          setOpen((v) => !v)
+        }}
         className={
           compact
             ? 'inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-200 dark:hover:bg-gray-800'
@@ -62,7 +70,7 @@ export default function CadastroExcelMenu({
         title={menuTitle}
         aria-label={menuTitle}
       >
-        {compact ? <MoreVertical size={22} /> : <Download size={20} />}
+        <MoreVertical size={compact ? 22 : 20} />
       </button>
       {open ? (
         <div className="absolute right-0 z-50 mt-2 min-w-[220px] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-600 dark:bg-gray-800">
@@ -70,7 +78,7 @@ export default function CadastroExcelMenu({
             <button
               type="button"
               className={itemCls}
-              disabled={exportDisabled}
+              disabled={inactive}
               onClick={() => closeAnd(onExportExcel)}
             >
               <FileSpreadsheet size={16} />
@@ -82,7 +90,7 @@ export default function CadastroExcelMenu({
               key={item.id}
               type="button"
               className={itemCls}
-              disabled={item.disabled}
+              disabled={inactive || item.disabled}
               onClick={() => closeAnd(item.onClick)}
             >
               {item.loading ? <Loader2 size={16} className="animate-spin" /> : item.icon}

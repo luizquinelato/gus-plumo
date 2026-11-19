@@ -3,6 +3,7 @@ import CadastroExcelMenu from './CadastroExcelMenu'
 
 interface ExtratoReportMenuProps {
   disabled?: boolean
+  exportDisabled?: boolean
   compact?: boolean
   onExportExcel: () => void
   onExportPdf: () => void
@@ -10,6 +11,7 @@ interface ExtratoReportMenuProps {
 
 export default function ExtratoReportMenu({
   disabled = false,
+  exportDisabled = false,
   compact = false,
   onExportExcel,
   onExportPdf,
@@ -17,6 +19,7 @@ export default function ExtratoReportMenu({
   return (
     <CadastroExcelMenu
       disabled={disabled}
+      exportDisabled={exportDisabled}
       compact={compact}
       menuTitle="Exportar"
       onExportExcel={onExportExcel}

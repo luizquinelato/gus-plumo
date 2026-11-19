@@ -72,6 +72,7 @@ class ProjectionOut(BaseModel):
     my_amount: Decimal
     kind: str
     source: str
+    is_automatic: bool = False
     credit_card_id: Optional[int] = None
     invoice_group_id: Optional[int] = None
     breakdown: Optional[List[dict[str, Any]]] = None
@@ -97,6 +98,8 @@ class IncomeOut(BaseModel):
     description: str
     amount: Decimal
     expected_date: date
+    source: str
+    is_automatic: bool = False
 
 
 class MonthResponse(BaseModel):
@@ -237,6 +240,7 @@ def _month_response(db: Session, tenant_id: int, account_id: int, year_month: st
         IncomeOut(
             id=r.id, editable=_is_editable(r.source), description=r.description,
             amount=r.amount, expected_date=r.expected_date,
+            source=r.source, is_automatic=bool(r.is_automatic),
         )
         for r in income_rows
     ]
@@ -359,7 +363,10 @@ async def create_item(
     current_user: dict = Depends(require_account),
 ):
     tenant_id, account_id, user_id = _scope(current_user)
-    item = MonthlyProjection(tenant_id=tenant_id, account_id=account_id, created_by=user_id, source="manual")
+    item = MonthlyProjection(
+        tenant_id=tenant_id, account_id=account_id, created_by=user_id,
+        source="manual", is_automatic=False,
+    )
     body.apply_to(item)
     db.add(item)
     db.commit()
@@ -391,20 +398,21 @@ async def delete_item(
     current_user: dict = Depends(require_account),
 ):
     tenant_id, account_id, _user_id = _scope(current_user)
-    _get_item(db, tenant_id, account_id, item_id).active = False
+    db.delete(_get_item(db, tenant_id, account_id, item_id))
     db.commit()
 
 
 @router.delete("", status_code=204)
 async def clear_month(
     year_month: str = Query(..., description="YYYY-MM"),
+    scope: Literal["manual", "account", "card", "all"] = Query("all"),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_account),
 ):
-    """Limpar mês: exclui definitivamente todos os itens do mês."""
+    """Limpar mês: exclui definitivamente os itens do escopo (manual, conta, cartão ou tudo)."""
     tenant_id, account_id, _user_id = _scope(current_user)
     _check_ym(year_month)
-    service.clear_month(db, tenant_id, account_id, year_month)
+    service.clear_month(db, tenant_id, account_id, year_month, scope)
 
 
 @router.post("/clone", response_model=CloneResponse)
@@ -463,4 +471,22 @@ async def launch_cards(
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return LaunchResponse(created=created)
+
+
+class LaunchStatementsRequest(BaseModel):
+    year_month: str
+
+
+@router.post("/launch-statements", response_model=LaunchResponse)
+async def launch_statements(
+    body: LaunchStatementsRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_account),
+):
+    tenant_id, account_id, user_id = _scope(current_user)
+    _check_ym(body.year_month)
+    created = service.launch_statement_projections(
+        db, tenant_id, account_id, user_id, body.year_month,
+    )
     return LaunchResponse(created=created)

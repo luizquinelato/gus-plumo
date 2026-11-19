@@ -19,7 +19,7 @@ Se não aparecer “Instalar app”, use **Adicionar à tela inicial** (PWA leve
 
 PWA completo: `vite-plugin-pwa` no build de produção (opcional).
 
-**Mobile (relatórios):** filtros via `MobileReportFilterBar` + bottom sheet; **⋮** no `MobileTopBar` quando houver export/ações; scroll único (`CadastroListPageBody` em `<md`).
+**Mobile (relatórios):** filtros via `MobileReportFilterBar` + bottom sheet; **⋮** no `MobileTopBar` ou no hero (mesmo ícone do portal) para export/ações — **desabilitado** até Aplicar e haver dados exportáveis; scroll único (`CadastroListPageBody` em `<md`).
 
 - **Extrato:** cards por dia.
 - **Faturas:** navegador mês/ano (estilo Projeção); seções por cartão/grupo; lista mobile; agrupamentos preservados.

@@ -846,6 +846,8 @@ const ExtratoPage = () => {
     [searchedExpenses],
   )
 
+  const reportMenuReady = Boolean(detailedReport && exportExpenses.length > 0)
+
   // Linhas de saldo diário para a exportação (independe do filtro aplicado; o modal decide se entram).
   const exportDailyBalanceRows = useMemo(() => {
     const openingBefore =
@@ -1173,10 +1175,15 @@ const ExtratoPage = () => {
       setExportModalFormat('pdf')
     }
     setActions(
-      <ExtratoReportMenu compact onExportExcel={openExportExcel} onExportPdf={openExportPdf} />,
+      <ExtratoReportMenu
+        compact
+        exportDisabled={!reportMenuReady}
+        onExportExcel={openExportExcel}
+        onExportPdf={openExportPdf}
+      />,
     )
     return () => setActions(null)
-  }, [isMobile, setActions, exportExpenses])
+  }, [isMobile, setActions, exportExpenses, reportMenuReady])
 
   const filtersApplyDisabled =
     cardsLoading || partnersLoading || tagsLoading || subtagsLoading
@@ -1207,6 +1214,7 @@ const ExtratoPage = () => {
                   />
                   </PortalOnly>
                   <ExtratoReportMenu
+                    exportDisabled={!reportMenuReady}
                     onExportExcel={() => {
                       if (!exportExpenses || exportExpenses.length === 0) {
                         handleShowToast('Nenhum dado para exportar', 'error')

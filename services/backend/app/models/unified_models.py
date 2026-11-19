@@ -792,7 +792,7 @@ class MonthlyProjection(Base, AccountBaseEntity):
         CheckConstraint("kind IN ('fixed', 'variable', 'income')", name='chk_monthly_projections_kind'),
         CheckConstraint(
             "source IN ('manual', 'clone', 'card_invoice', 'card_item_manual', "
-            "'card_item_installment', 'payroll')",
+            "'card_item_installment', 'payroll', 'bank_statement')",
             name='chk_monthly_projections_source',
         ),
         {'quote': False},
@@ -805,6 +805,7 @@ class MonthlyProjection(Base, AccountBaseEntity):
     my_amount = Column(Numeric(15, 2), nullable=False, default=Decimal("0"), name="my_amount")
     kind = Column(String(10), nullable=False, default='fixed', name="kind")
     source = Column(String(30), nullable=False, default='manual', name="source")
+    is_automatic = Column(Boolean, nullable=False, default=False, server_default=text("false"), name="is_automatic")
     credit_card_id = Column(Integer, ForeignKey('credit_cards.id', ondelete='SET NULL'), nullable=True, name="credit_card_id")
     invoice_group_id = Column(Integer, ForeignKey('credit_card_invoice_groups.id', ondelete='SET NULL'), nullable=True, name="invoice_group_id")
     breakdown = Column(JSONB, nullable=True, name="breakdown")

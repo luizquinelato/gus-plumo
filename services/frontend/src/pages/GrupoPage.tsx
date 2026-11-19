@@ -198,6 +198,59 @@ const formatItemDate = (iso: string) => {
 const valueClass = (n: number) =>
   n < 0 ? 'text-red-600 dark:text-red-400' : n > 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-400'
 
+type SourceTotalCardData = {
+  key: string
+  label: string
+  mine: number
+  partner: number
+  total: number
+  count: number
+}
+
+function SourceTotalCard({ c }: { c: SourceTotalCardData }) {
+  const subtitle =
+    c.key === 'account'
+      ? 'Extrato + cartão'
+      : c.key === 'all'
+        ? 'Extrato + cartão + benefício'
+        : null
+  const metric = (label: string, value: number, padCls: string) => {
+    const text = formatCurrency(value)
+    return (
+      <div className={`min-w-0 flex-1 ${padCls}`}>
+        <p className="text-[10px] font-medium uppercase leading-tight text-gray-500 dark:text-gray-400">{label}</p>
+        <p
+          className={`mt-0.5 truncate text-xs font-semibold tabular-nums sm:text-sm ${valueClass(value)}`}
+          title={text}
+        >
+          {text}
+        </p>
+      </div>
+    )
+  }
+  return (
+    <div className="min-w-0 rounded-xl border border-gray-200 bg-white px-3 py-3 dark:border-gray-700 dark:bg-gray-800 sm:px-4">
+      <p className="flex flex-wrap items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        {c.key !== 'all' && c.key !== 'account' ? <SourceIcon source={c.key} /> : null}
+        <span className="min-w-0">{c.label}</span>
+      </p>
+      {subtitle ? (
+        <p className="mt-0.5 text-[10px] font-normal normal-case text-gray-400 dark:text-gray-500">{subtitle}</p>
+      ) : null}
+      <div className="mt-2 flex min-w-0 items-stretch divide-x divide-gray-200 dark:divide-gray-600">
+        {metric('Minha parte', c.mine, 'pr-2 sm:pr-3')}
+        {metric('Compartilhado', c.partner, 'px-2 sm:px-3')}
+        {metric('Total', c.total, 'pl-2 sm:pl-3')}
+      </div>
+      <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+        {c.count} {c.count === 1 ? 'lançamento' : 'lançamentos'}
+      </p>
+    </div>
+  )
+}
+
+const PRIMARY_SOURCE_TOTAL_KEYS = new Set(['all', 'account'])
+
 // Com `limit`, mantém as (limit - 1) maiores e agrupa o resto em "Demais".
 const buildSlices = (map: Map<string, number>, limit?: number): ChartSlice[] => {
   const total = Array.from(map.values()).reduce((s, v) => s + v, 0)
@@ -475,6 +528,7 @@ const GrupoPage = () => {
 
   const { tagSlices, subtagSlices } = chartData
   const hasResults = tagSlices.length > 0
+  const reportMenuReady = expenses.length > 0 && hasResults
 
   // Lista de itens: acompanha a aba e as fatias selecionadas (tag e subtag)
   const [listSort, setListSort] = useState<{ key: ListSortKey; direction: 'asc' | 'desc' }>({
@@ -758,7 +812,7 @@ const GrupoPage = () => {
                 <CadastroListHeaderActions
                   menu={{
                     menuTitle: 'Exportar',
-                    exportDisabled: !hasResults,
+                    exportDisabled: !reportMenuReady,
                     onExportExcel: handleExportExcel,
                     extraItems: [
                       {
@@ -1011,40 +1065,21 @@ const GrupoPage = () => {
                   </button>
                 ))}
               </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
-                {sourceTotals.map((c) => (
-                  <div
-                    key={c.key}
-                    className="rounded-xl border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800"
-                  >
-                    <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                      {c.key !== 'all' && c.key !== 'account' && <SourceIcon source={c.key} />}
-                      {c.label}
-                      {(c.key === 'account' || c.key === 'all') && (
-                        <span className="font-normal normal-case text-gray-400 dark:text-gray-500">
-                          {c.key === 'account' ? '(extrato+cartão)' : '(extrato+cartão+benefício)'}
-                        </span>
-                      )}
-                    </p>
-                    <div className="mt-1 flex items-stretch divide-x divide-gray-200 tabular-nums dark:divide-gray-600">
-                      <div className="pr-3">
-                        <p className="text-[10px] uppercase text-gray-500 dark:text-gray-400">Minha parte</p>
-                        <p className={`text-sm font-semibold ${valueClass(c.mine)}`}>{formatCurrency(c.mine)}</p>
-                      </div>
-                      <div className="px-3">
-                        <p className="text-[10px] uppercase text-gray-500 dark:text-gray-400">Compartilhado</p>
-                        <p className={`text-sm font-semibold ${valueClass(c.partner)}`}>{formatCurrency(c.partner)}</p>
-                      </div>
-                      <div className="pl-3">
-                        <p className="text-[10px] uppercase text-gray-500 dark:text-gray-400">Total</p>
-                        <p className={`text-sm font-semibold ${valueClass(c.total)}`}>{formatCurrency(c.total)}</p>
-                      </div>
-                    </div>
-                    <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                      {c.count} {c.count === 1 ? 'lançamento' : 'lançamentos'}
-                    </p>
-                  </div>
-                ))}
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {sourceTotals
+                    .filter((c) => PRIMARY_SOURCE_TOTAL_KEYS.has(c.key))
+                    .map((c) => (
+                      <SourceTotalCard key={c.key} c={c} />
+                    ))}
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  {sourceTotals
+                    .filter((c) => !PRIMARY_SOURCE_TOTAL_KEYS.has(c.key))
+                    .map((c) => (
+                      <SourceTotalCard key={c.key} c={c} />
+                    ))}
+                </div>
               </div>
               <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer w-fit">
                 <input

@@ -1,4 +1,7 @@
 import { ChevronsRight } from 'lucide-react'
+import { listPageTableSectionCls } from './CadastroListPageLayout'
+import type { ProjectionSource } from './ProjectionOriginBadge'
+import ProjectionLaunchCard from './ProjectionLaunchCard'
 
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'] as const
 
@@ -7,6 +10,7 @@ type IncomeRow = {
   description: string
   amount: string
   editable: boolean
+  source: ProjectionSource
 }
 
 type ExpenseRow = {
@@ -14,6 +18,7 @@ type ExpenseRow = {
   description: string
   amount: string
   kind: 'fixed' | 'variable'
+  source: ProjectionSource
 }
 
 type Props = {
@@ -27,6 +32,8 @@ type Props = {
   valueOf: (e: ExpenseRow) => number
   onIncome: (inc: IncomeRow) => void
   onExpense: (e: ExpenseRow) => void
+  onDelete: (id: number) => void
+  deleting?: boolean
 }
 
 export default function ProjecaoMensalMobileCalendar({
@@ -40,6 +47,8 @@ export default function ProjecaoMensalMobileCalendar({
   valueOf,
   onIncome,
   onExpense,
+  onDelete,
+  deleting = false,
 }: Props) {
   const [y, m] = yearMonth.split('-').map(Number)
   const daysInMonth = new Date(y, m, 0).getDate()
@@ -56,7 +65,7 @@ export default function ProjecaoMensalMobileCalendar({
         return (
           <section
             key={day}
-            className={`overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 ${
+            className={`${listPageTableSectionCls} flex flex-col overflow-hidden ${
               day === 15 ? 'ring-2 ring-[var(--color-1)]/35' : ''
             }`}
           >
@@ -66,7 +75,7 @@ export default function ProjecaoMensalMobileCalendar({
                 2ª quinzena (dia 15 em diante)
               </div>
             ) : null}
-            <header className="flex items-center justify-between gap-2 border-b border-gray-100 px-3 py-2 dark:border-gray-700">
+            <header className="flex items-center justify-between gap-2 border-b border-gray-200 px-3 py-2.5 dark:border-gray-600">
               <div className="flex items-baseline gap-2">
                 <span className="text-lg font-bold tabular-nums text-gray-900 dark:text-white">{day}</span>
                 <span className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
@@ -77,46 +86,42 @@ export default function ProjecaoMensalMobileCalendar({
                 <span className={`text-xs font-semibold tabular-nums ${debitCls}`}>{debit(expenseTotal)}</span>
               ) : null}
             </header>
-            <div className="px-3 py-2">
+            <div className="space-y-1.5 p-2">
               {!hasItems ? (
-                <p className="text-xs text-gray-400 dark:text-gray-500">Sem lançamentos</p>
+                <p className="px-1 py-1 text-xs text-gray-400 dark:text-gray-500">Sem lançamentos</p>
               ) : (
                 <ul className="space-y-1.5">
                   {incomes.map((inc) => (
                     <li key={`i-${inc.id}`}>
-                      <button
-                        type="button"
-                        onClick={() => onIncome(inc)}
-                        className="flex w-full items-start justify-between gap-2 rounded-lg bg-green-50 px-2.5 py-2 text-left dark:bg-green-900/25"
-                      >
-                        <span className="min-w-0 flex-1 text-sm text-green-900 dark:text-green-100">
-                          <span className="line-clamp-2">{inc.description}</span>
-                          {!inc.editable ? (
-                            <span className="mt-0.5 block text-[10px] text-green-700/80 dark:text-green-300/80">
-                              Projeção automática
-                            </span>
-                          ) : null}
-                        </span>
-                        <span className={`shrink-0 text-sm font-semibold tabular-nums ${creditCls}`}>
-                          {formatCurrency(Number(inc.amount))}
-                        </span>
-                      </button>
+                      <ProjectionLaunchCard
+                        compact
+                        source={inc.source}
+                        description={inc.description}
+                        amount={formatCurrency(Number(inc.amount))}
+                        tone="income"
+                        deleting={deleting}
+                        title={
+                          inc.editable
+                            ? 'Receita lançada'
+                            : 'Projeção automática: toque para excluir ou lance novamente para atualizar'
+                        }
+                        onOpen={() => onIncome(inc)}
+                        onDelete={() => onDelete(inc.id)}
+                      />
                     </li>
                   ))}
                   {expenses.map((e) => (
                     <li key={e.id}>
-                      <button
-                        type="button"
-                        onClick={() => onExpense(e)}
-                        className={`flex w-full items-start justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-sm ${
-                          e.kind === 'fixed'
-                            ? 'bg-red-50 text-red-900 dark:bg-red-900/25 dark:text-red-100'
-                            : 'bg-orange-50 text-orange-900 dark:bg-orange-900/25 dark:text-orange-100'
-                        }`}
-                      >
-                        <span className="line-clamp-2 min-w-0 flex-1">{e.description}</span>
-                        <span className={`shrink-0 font-semibold tabular-nums ${debitCls}`}>{debit(valueOf(e))}</span>
-                      </button>
+                      <ProjectionLaunchCard
+                        compact
+                        source={e.source}
+                        description={e.description}
+                        amount={debit(valueOf(e))}
+                        tone={e.kind === 'fixed' ? 'fixed' : 'variable'}
+                        deleting={deleting}
+                        onOpen={() => onExpense(e)}
+                        onDelete={() => onDelete(e.id)}
+                      />
                     </li>
                   ))}
                 </ul>

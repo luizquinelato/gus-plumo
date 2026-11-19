@@ -5,7 +5,7 @@ from __future__ import annotations
 import calendar
 import logging
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 
 from sqlalchemy import func
@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.models.payroll_models import Payslip
 from app.models.unified_models import (
+    BankStatement,
     Cartao,
     CreditCardInvoice,
     MonthlyProjection,
@@ -26,7 +27,8 @@ from app.utils.card_invoice_calendar import (
 logger = logging.getLogger(__name__)
 
 DEFAULT_HISTORY_MONTHS = 6
-AUTOMATIC_SOURCES = ("card_invoice", "payroll")
+BANK_STATEMENT_SOURCE = "bank_statement"
+AUTOMATIC_SOURCES = ("card_invoice", "payroll", BANK_STATEMENT_SOURCE)
 INSTALLMENT_SOURCE = "card_item_installment"
 CARD_ITEM_SOURCE = "card_item_manual"
 CARD_SOURCES = ("card_invoice", CARD_ITEM_SOURCE, INSTALLMENT_SOURCE)
@@ -349,7 +351,7 @@ def launch_income_projections(
         ):
             db.add(MonthlyProjection(
                 tenant_id=tenant_id, account_id=account_id, created_by=user_id,
-                year_month=ym, kind="income", source="payroll",
+                year_month=ym, kind="income", source="payroll", is_automatic=True,
                 description=proj["description"], expected_date=proj["expected_date"],
                 amount=proj["amount"], my_amount=proj["amount"],
             ))
@@ -483,7 +485,7 @@ def _replace_installments(
             ]
             db.add(MonthlyProjection(
                 tenant_id=tenant_id, account_id=account_id, created_by=user_id, year_month=ym,
-                kind="fixed", source=INSTALLMENT_SOURCE, credit_card_id=card_id,
+                kind="fixed", source=INSTALLMENT_SOURCE, is_automatic=True, credit_card_id=card_id,
                 description=f"Parcelas {card.name} •{card.number}"[:255],
                 expected_date=insts[0]["expected_date"],
                 amount=_money(mine if own_only else total),
@@ -570,6 +572,7 @@ def launch_card_projections(
             account_id=account_id,
             created_by=user_id,
             year_month=year_month,
+            is_automatic=True,
             **kwargs,
         ))
         created += 1
@@ -598,12 +601,86 @@ def launch_card_projections(
     return created
 
 
+def _month_bounds(year_month: str) -> tuple[date, date]:
+    year, month = int(year_month[:4]), int(year_month[5:7])
+    start = date(year, month, 1)
+    end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    return start, end
+
+
+def _statement_day(value) -> date:
+    if isinstance(value, datetime):
+        return value.date()
+    return value
+
+
+def launch_statement_projections(
+    db: Session,
+    tenant_id: int,
+    account_id: int,
+    user_id: int,
+    year_month: str,
+) -> int:
+    """Apaga os lançamentos de extrato do mês e recria um item por linha de bank_statements.
+
+    Não mexe em manuais, fatura, parcelas nem folha. Valor zero é ignorado.
+    Positivo vira receita; negativo vira despesa variável com valor absoluto.
+    """
+    start, end = _month_bounds(year_month)
+    db.query(MonthlyProjection).filter(
+        MonthlyProjection.tenant_id == tenant_id,
+        MonthlyProjection.account_id == account_id,
+        MonthlyProjection.year_month == year_month,
+        MonthlyProjection.source == BANK_STATEMENT_SOURCE,
+    ).delete(synchronize_session=False)
+
+    rows = (
+        db.query(BankStatement)
+        .filter(
+            BankStatement.tenant_id == tenant_id,
+            BankStatement.account_id == account_id,
+            BankStatement.date >= start,
+            BankStatement.date < end,
+        )
+        .order_by(BankStatement.date, BankStatement.id)
+        .all()
+    )
+    created = 0
+    for row in rows:
+        amount = _money(row.amount)
+        if amount == 0:
+            continue
+        income = amount > 0
+        description = (row.description or "").strip()[:255] or "Extrato"
+        db.add(MonthlyProjection(
+            tenant_id=tenant_id,
+            account_id=account_id,
+            created_by=user_id,
+            year_month=year_month,
+            kind="income" if income else "variable",
+            source=BANK_STATEMENT_SOURCE,
+            is_automatic=True,
+            description=description,
+            expected_date=_statement_day(row.date),
+            amount=abs(amount),
+            my_amount=abs(amount),
+        ))
+        created += 1
+    db.commit()
+    logger.info(
+        "Projeção de extrato lançada: %s (%s, conta %s)", created, year_month, account_id,
+    )
+    return created
+
+
 def clone_to_next_month(
     db: Session, tenant_id: int, account_id: int, user_id: int, source_ym: str, months: int = 1,
     include_cards: bool = True,
 ) -> tuple[str, int]:
-    """Copia todos os itens ativos (receitas e despesas, inclusive os gerados pela projeção, com
-    cartão e detalhamento) para os `months` meses seguintes. Dia inexistente -> último dia.
+    """Copia os itens ativos para os `months` meses seguintes. Dia inexistente -> último dia.
+
+    Lançamentos de extrato (`bank_statement`) não entram: o mês seguinte recebe o extrato
+    pela atualização própria.
 
     Faz upsert nos meses de destino: o item que já existe igual (mesma descrição, mesmo dia do
     mês e mesma direção: receita ou despesa) é atualizado; o que não existe é criado. Itens só do destino são mantidos.
@@ -623,6 +700,8 @@ def clone_to_next_month(
     items = base.filter(MonthlyProjection.year_month == source_ym).all()
     if not include_cards:
         items = [i for i in items if i.source not in CARD_SOURCES]
+    # Extrato não é plano do mês seguinte: cada mês vem de uma atualização própria.
+    items = [i for i in items if i.source != BANK_STATEMENT_SOURCE]
     # Parcelas não são copiadas: são recalculadas em cada mês de destino (abaixo).
     installment_cards: dict[str, set[int]] = defaultdict(set)
     for i in items:
@@ -639,7 +718,9 @@ def clone_to_next_month(
     for target_ym in targets:
         existing: dict[tuple, list[MonthlyProjection]] = defaultdict(list)
         target_rows = base.filter(
-            MonthlyProjection.year_month == target_ym, MonthlyProjection.source != INSTALLMENT_SOURCE,
+            MonthlyProjection.year_month == target_ym,
+            MonthlyProjection.source != INSTALLMENT_SOURCE,
+            MonthlyProjection.source != BANK_STATEMENT_SOURCE,
         )
         for row in target_rows.order_by(MonthlyProjection.id):
             existing[_key(row.description, row.expected_date, row.kind)].append(row)
@@ -648,7 +729,8 @@ def clone_to_next_month(
             values = dict(
                 expected_date=target_date,
                 amount=item.amount, my_amount=item.my_amount,
-                kind=item.kind, source=item.source, credit_card_id=item.credit_card_id,
+                kind=item.kind, source=item.source, is_automatic=bool(item.is_automatic),
+                credit_card_id=item.credit_card_id,
                 invoice_group_id=item.invoice_group_id,
                 breakdown=item.breakdown, sharing=item.sharing,
             )
@@ -670,12 +752,28 @@ def clone_to_next_month(
     return targets[0], len(items) * len(targets) + recalculated
 
 
-def clear_month(db: Session, tenant_id: int, account_id: int, year_month: str) -> int:
-    """Exclui definitivamente (hard delete) todos os itens do mês. Retorna a quantidade."""
-    deleted = db.query(MonthlyProjection).filter(
+CLEAR_SOURCES = {
+    "manual": ("manual", "clone"),
+    "account": (BANK_STATEMENT_SOURCE,),
+    "card": CARD_SOURCES,
+}
+
+
+def clear_month(db: Session, tenant_id: int, account_id: int, year_month: str, scope: str = "all") -> int:
+    """Exclui definitivamente (hard delete) os itens do mês no escopo pedido.
+
+    ``manual``: digitados. ``account``: extrato. ``card``: fatura e parcelas.
+    ``all``: o mês inteiro, inclusive folha. Retorna a quantidade.
+    """
+    if scope != "all" and scope not in CLEAR_SOURCES:
+        raise ValueError("Escopo de limpeza inválido")
+    query = db.query(MonthlyProjection).filter(
         MonthlyProjection.tenant_id == tenant_id,
         MonthlyProjection.account_id == account_id,
         MonthlyProjection.year_month == year_month,
-    ).delete(synchronize_session=False)
+    )
+    if scope != "all":
+        query = query.filter(MonthlyProjection.source.in_(CLEAR_SOURCES[scope]))
+    deleted = query.delete(synchronize_session=False)
     db.commit()
     return deleted

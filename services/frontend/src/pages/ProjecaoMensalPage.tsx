@@ -29,17 +29,22 @@ import {
   FileText,
   Loader2,
   Maximize2,
+  Landmark,
   MessageCircle,
   Pencil,
   Plus,
+  SlidersHorizontal,
   Trash2,
   Wallet,
 } from 'lucide-react'
-import { CadastroListHeaderActions } from '../components/CadastroExcelMenu'
+import CadastroExcelMenu, { CadastroListHeaderActions } from '../components/CadastroExcelMenu'
 import { DateField } from '../components/date'
 import Sidebar from '../components/Sidebar'
 import PortalOnly from '../components/PortalOnly'
+import { useMobileTopBarActions } from '../contexts/MobileTopBarActionsContext'
 import ProjecaoMensalMobileCalendar from '../components/ProjecaoMensalMobileCalendar'
+import { ProjectionOriginBadge, ProjectionOriginLegend, type ProjectionSource } from '../components/ProjectionOriginBadge'
+import ProjectionLaunchCard from '../components/ProjectionLaunchCard'
 import {
   CadastroListPageBody,
   CadastroListPageHero,
@@ -102,7 +107,7 @@ interface Expense {
   amount: string
   my_amount: string
   kind: Kind
-  source: 'manual' | 'clone' | 'card_invoice' | 'card_item_manual' | 'card_item_installment' | 'payroll'
+  source: ProjectionSource
   breakdown?: BreakdownItem[] | null
   editable?: boolean
   is_actual?: boolean
@@ -123,6 +128,11 @@ interface Income {
   description: string
   amount: string
   expected_date: string
+  source: ProjectionSource
+}
+
+interface AutoLine extends Income {
+  income: boolean
 }
 
 interface CardOption {
@@ -242,6 +252,7 @@ const SOURCE_LABELS: Record<Expense['source'], string> = {
   card_item_manual: 'Item de cartão',
   card_item_installment: 'Parcela de cartão',
   payroll: 'Folha',
+  bank_statement: 'Extrato',
 }
 
 const EXPORT_COLUMNS = ['Data', 'Descrição', 'Tipo', 'Origem', 'Valor', 'Minha parte']
@@ -310,7 +321,7 @@ function monthExportLines(month: MonthData): ExportLine[] {
     date: i.expected_date,
     description: i.description,
     type: 'Receita',
-    origin: '',
+    origin: SOURCE_LABELS[i.source] ?? i.source,
     amount: Number(i.amount),
     mine: null,
   }))
@@ -518,6 +529,7 @@ function CardProjectionDetailTable({
 
 export default function ProjecaoMensalPage() {
   const { isMobile } = useDeviceMode()
+  const { setActions } = useMobileTopBarActions()
   const { showConfirm, ConfirmComponent } = useConfirm()
   const [yearMonth, setYearMonth] = useState(currentYearMonth())
   const [data, setData] = useState<MonthData | null>(null)
@@ -532,10 +544,11 @@ export default function ProjecaoMensalPage() {
   useEscapeKey(closeDetail, detail != null && !busy)
   const closeForm = useCallback(() => setForm(null), [])
   useEscapeKey(closeForm, form != null && detail == null && !busy)
-  const [autoIncome, setAutoIncome] = useState<Income | null>(null)
+  const [autoIncome, setAutoIncome] = useState<AutoLine | null>(null)
   const closeAutoIncome = useCallback(() => setAutoIncome(null), [])
   useEscapeKey(closeAutoIncome, autoIncome != null && !busy)
   const [launchHubOpen, setLaunchHubOpen] = useState(false)
+  const [hubView, setHubView] = useState<'main' | 'clear'>('main')
   const [manualExpenseForm, setManualExpenseForm] = useState<ManualExpenseLaunchForm | null>(null)
   const [incomeLaunchForm, setIncomeLaunchForm] = useState<IncomeLaunchForm | null>(null)
   const [cardForm, setCardForm] = useState<CardFormState | null>(null)
@@ -617,7 +630,10 @@ export default function ProjecaoMensalPage() {
     },
     [yearMonth, applyCardSelectionForPreview],
   )
-  const closeLaunchHub = useCallback(() => setLaunchHubOpen(false), [])
+  const closeLaunchHub = useCallback(() => {
+    setLaunchHubOpen(false)
+    setHubView('main')
+  }, [])
   const closeManualExpenseForm = useCallback(() => setManualExpenseForm(null), [])
   const closeIncomeLaunchForm = useCallback(() => setIncomeLaunchForm(null), [])
   const closeCardForm = useCallback(() => {
@@ -848,11 +864,27 @@ export default function ProjecaoMensalPage() {
 
   const isCardProjection = (e: Expense) => e.source === 'card_invoice' || e.source === 'card_item_installment'
 
-  const openEdit = (e: Expense) =>
-    isCardProjection(e)
-      ? setDetail(e)
-      : e.editable !== false &&
-        setForm({ id: e.id, expected_date: e.expected_date, description: e.description, amount: `-${e.amount}`, kind: e.kind })
+  const openAutomatic = (line: AutoLine) => setAutoIncome(line)
+
+  const openEdit = (e: Expense) => {
+    if (isCardProjection(e)) {
+      setDetail(e)
+      return
+    }
+    if (e.source === 'bank_statement' || e.editable === false) {
+      openAutomatic({
+        id: e.id,
+        description: e.description,
+        amount: e.amount,
+        expected_date: e.expected_date,
+        source: e.source,
+        editable: false,
+        income: false,
+      })
+      return
+    }
+    setForm({ id: e.id, expected_date: e.expected_date, description: e.description, amount: `-${e.amount}`, kind: e.kind })
+  }
 
   const [dragOverDay, setDragOverDay] = useState<number | null>(null)
 
@@ -902,7 +934,10 @@ export default function ProjecaoMensalPage() {
     }
   }
 
-  const openLaunchHub = () => setLaunchHubOpen(true)
+  const openLaunchHub = () => {
+    setHubView('main')
+    setLaunchHubOpen(true)
+  }
 
   const openManualExpenseLaunch = () => {
     setLaunchHubOpen(false)
@@ -1105,24 +1140,88 @@ export default function ProjecaoMensalPage() {
     }
   }
 
-  const clearMonth = async () => {
+  const launchStatements = async () => {
     const label = `${MONTH_NAMES[Number(yearMonth.slice(5, 7)) - 1]} ${yearMonth.slice(0, 4)}`
     const confirmed = await showConfirm({
+      title: 'Atualizar com extrato',
+      message: `Apaga os lançamentos da conta em ${label} e recria a partir do extrato. Manuais, faturas, parcelas e folha permanecem.`,
+      confirmText: 'Atualizar',
+      cancelText: 'Cancelar',
+      type: 'warning',
+    })
+    if (!confirmed) return
+    setLaunchHubOpen(false)
+    setSaving(true)
+    try {
+      const res = await axios.post<{ created: number }>('/api/monthly-projections/launch-statements', {
+        year_month: yearMonth,
+      })
+      await load()
+      setToast({ message: `Extrato atualizado: ${res.data.created} lançamento(s).`, type: 'success' })
+    } catch (err) {
+      console.error('Erro ao atualizar projeção com extrato:', err)
+      setError('Não foi possível atualizar a projeção com o extrato.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const clearMonth = async (scope: 'manual' | 'account' | 'card' | 'all') => {
+    const label = `${MONTH_NAMES[Number(yearMonth.slice(5, 7)) - 1]} ${yearMonth.slice(0, 4)}`
+    const copy = {
+      manual: `Excluir os lançamentos manuais de ${label}? Conta, cartão e folha permanecem.`,
+      account: `Excluir os lançamentos da conta em ${label}? Manuais, cartão e folha permanecem.`,
+      card: `Excluir fatura e parcelas de cartão em ${label}? Manuais, conta e folha permanecem.`,
+      all: `Excluir definitivamente todos os itens de ${label}, inclusive a folha? Esta ação não pode ser desfeita.`,
+    }[scope]
+    const confirmed = await showConfirm({
       title: 'Limpar mês',
-      message: `Excluir definitivamente todos os itens de ${label}? Esta ação não pode ser desfeita.`,
+      message: copy,
       confirmText: 'Excluir',
       cancelText: 'Cancelar',
       type: 'danger',
     })
     if (!confirmed) return
     try {
-      await axios.delete('/api/monthly-projections', { params: { year_month: yearMonth } })
+      await axios.delete('/api/monthly-projections', { params: { year_month: yearMonth, scope } })
       await load()
+      closeLaunchHub()
     } catch (err) {
       console.error('Erro ao limpar mês:', err)
       setError('Não foi possível limpar o mês.')
     }
   }
+
+  const reportMenuReady = !loading && data != null
+
+  useEffect(() => {
+    if (!isMobile) {
+      setActions(null)
+      return
+    }
+    setActions(
+      <CadastroExcelMenu
+        compact
+        menuTitle="Mais ações"
+        exportDisabled={!reportMenuReady}
+        extraItems={[
+          {
+            id: 'excel',
+            label: 'Exportar Excel',
+            icon: <FileSpreadsheet size={16} />,
+            onClick: () => setExportOpt({ kind: 'excel', mode: 'current', from: yearMonth, to: yearMonth }),
+          },
+          {
+            id: 'pdf',
+            label: 'Exportar PDF',
+            icon: <FileText size={16} />,
+            onClick: () => setExportOpt({ kind: 'pdf', mode: 'current', from: yearMonth, to: yearMonth }),
+          },
+        ]}
+      />,
+    )
+    return () => setActions(null)
+  }, [isMobile, setActions, yearMonth, reportMenuReady])
 
   const [year, month] = yearMonth.split('-').map(Number)
 
@@ -1239,11 +1338,10 @@ export default function ProjecaoMensalPage() {
                 <CadastroListHeaderActions
                   menu={{
                     menuTitle: 'Mais ações',
+                    exportDisabled: !reportMenuReady,
                     extraItems: [
-                      { id: 'clone', label: 'Clonar', icon: <Copy size={16} />, onClick: () => { setCloneCards(true); setCloneMonths('1') } },
                       { id: 'excel', label: 'Exportar Excel', icon: <FileSpreadsheet size={16} />, onClick: () => setExportOpt({ kind: 'excel', mode: 'current', from: yearMonth, to: yearMonth }) },
                       { id: 'pdf', label: 'Exportar PDF', icon: <FileText size={16} />, onClick: () => setExportOpt({ kind: 'pdf', mode: 'current', from: yearMonth, to: yearMonth }) },
-                      { id: 'clear', label: 'Limpar mês', icon: <Eraser size={16} />, onClick: clearMonth },
                     ],
                   }}
                 >
@@ -1258,8 +1356,8 @@ export default function ProjecaoMensalPage() {
                     <MessageCircle size={18} />
                   </button>
                   <CadastroListPrimaryButton
-                    label="Lançar"
-                    icon={<CalendarDays size={18} />}
+                    label="Ações"
+                    icon={<SlidersHorizontal size={18} />}
                     onClick={openLaunchHub}
                   />
                   </PortalOnly>
@@ -1400,6 +1498,7 @@ export default function ProjecaoMensalPage() {
             </div>
 
             {error && <p className="text-sm text-red-600">{error}</p>}
+            <ProjectionOriginLegend />
             {loading ? (
               <LoadingSpinner />
             ) : isMobile ? (
@@ -1412,8 +1511,10 @@ export default function ProjecaoMensalPage() {
                 debitCls={debitCls}
                 creditCls={creditCls}
                 valueOf={(e) => Number(e.amount)}
-                onIncome={(inc) => (inc.editable ? openEditIncome(inc as Income) : setAutoIncome(inc as Income))}
+                onIncome={(inc) => (inc.editable ? openEditIncome(inc as Income) : openAutomatic({ ...(inc as Income), income: true }))}
                 onExpense={(e) => openEdit(e as Expense)}
+                onDelete={(id) => void removeAutomatic(id)}
+                deleting={deleting}
               />
             ) : (
               <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
@@ -1484,26 +1585,37 @@ export default function ProjecaoMensalPage() {
                               <Plus className="h-5 w-5" />
                             </button>
                           </div>
-                          <div className="mt-1 space-y-1">
+                          <div className="mt-1 space-y-1.5">
                             {(incomeByDay.get(day) ?? []).map((inc) => (
-                              <button
+                              <ProjectionLaunchCard
                                 key={inc.id}
-                                type="button"
+                                compact
+                                source={inc.source}
+                                description={inc.description}
+                                amount={formatCurrency(Number(inc.amount))}
+                                tone="income"
                                 draggable={inc.editable}
-                                onDragStart={(ev) => ev.dataTransfer.setData('text/plain', JSON.stringify({ id: inc.id, income: true }))}
-                                onClick={() => (inc.editable ? openEditIncome(inc) : setAutoIncome(inc))}
+                                deleting={deleting}
                                 title={inc.editable ? 'Receita lançada' : 'Projeção automática: clique para excluir ou lance novamente para atualizar'}
-                                className="flex w-full items-center justify-between gap-1 rounded bg-green-50 px-1.5 py-1 text-left text-[11px] text-green-900 dark:bg-green-900/30 dark:text-green-100"
-                              >
-                                <span className="truncate">{inc.description}</span>
-                                <span className={`shrink-0 font-semibold ${creditCls}`}>{formatCurrency(Number(inc.amount))}</span>
-                              </button>
+                                onDragStart={(ev) => ev.dataTransfer.setData('text/plain', JSON.stringify({ id: inc.id, income: true }))}
+                                onOpen={() => (inc.editable ? openEditIncome(inc) : openAutomatic({ ...inc, income: true }))}
+                                onDelete={() => void removeAutomatic(inc.id)}
+                              />
                             ))}
                             {items.map((e) => (
-                              <button key={e.id} type="button" draggable={canDragExpense(e)} onDragStart={(ev) => ev.dataTransfer.setData('text/plain', JSON.stringify({ id: e.id, income: false }))} onClick={() => openEdit(e)} className={`flex w-full items-center justify-between gap-1 rounded px-1.5 py-1 text-left text-[11px] ${e.kind === 'fixed' ? 'bg-red-50 text-red-900 dark:bg-red-900/30 dark:text-red-100' : 'bg-orange-50 text-orange-900 dark:bg-orange-900/30 dark:text-orange-100'}`}>
-                                <span className="truncate">{e.description}</span>
-                                <span className={`shrink-0 font-semibold ${debitCls}`}>{debit(valueOf(e))}</span>
-                              </button>
+                              <ProjectionLaunchCard
+                                key={e.id}
+                                compact
+                                source={e.source}
+                                description={e.description}
+                                amount={debit(valueOf(e))}
+                                tone={e.kind === 'fixed' ? 'fixed' : 'variable'}
+                                draggable={canDragExpense(e)}
+                                deleting={deleting}
+                                onDragStart={(ev) => ev.dataTransfer.setData('text/plain', JSON.stringify({ id: e.id, income: false }))}
+                                onOpen={() => openEdit(e)}
+                                onDelete={() => void removeAutomatic(e.id)}
+                              />
                             ))}
                           </div>
                           {items.length > 1 && <p className={`mt-1 text-right text-[10px] font-semibold ${debitCls}`}>{debit(dayTotal)}</p>}
@@ -1770,6 +1882,7 @@ export default function ProjecaoMensalPage() {
                 Copia receitas e despesas de {MONTH_NAMES[month - 1]} {year} para os próximos{' '}
                 {Math.min(24, Math.max(1, Math.floor(Number(cloneMonths) || 1)))} mês(es), mantendo o mesmo dia do mês.
                 Se já existir lançamento igual no destino, o valor é atualizado; caso contrário, um novo item é criado.
+                Lançamentos do extrato não são copiados.
               </p>
             </div>
           </CadastroModalBody>
@@ -1782,17 +1895,30 @@ export default function ProjecaoMensalPage() {
           <CadastroModalHeader
             isEdit={false}
             title={autoIncome.description}
+            titleAddon={<ProjectionOriginBadge source={autoIncome.source} />}
             subtitle={`Projeção automática • ${autoIncome.expected_date.split('-').reverse().join('/')}`}
             onClose={closeAutoIncome}
             closeDisabled={busy}
-            icon={<Wallet size={18} />}
+            icon={autoIncome.source === 'bank_statement' ? <Landmark size={18} /> : <Wallet size={18} />}
           />
           <CadastroModalBody>
             <p className="p-4 text-sm leading-relaxed text-gray-700 dark:text-gray-300">
               Valor projetado:{' '}
-              <span className={`font-semibold ${creditCls}`}>{formatCurrency(Number(autoIncome.amount))}</span>.
-              Gerado pelo lançamento da folha — não dá para alterar data ou valor aqui. Para atualizar, use{' '}
-              <strong className="font-medium">Lançar → Receita da folha</strong> de novo, ou exclua esta linha.
+              <span className={`font-semibold ${autoIncome.income ? creditCls : debitCls}`}>
+                {autoIncome.income ? formatCurrency(Number(autoIncome.amount)) : debit(Number(autoIncome.amount))}
+              </span>
+              .{' '}
+              {autoIncome.source === 'bank_statement' ? (
+                <>
+                  Lançamento do extrato neste dia. Não dá para alterar data ou valor aqui. Para refazer o mês, use{' '}
+                  <strong className="font-medium">Ações → Atualizar com extrato</strong>, ou exclua esta linha.
+                </>
+              ) : (
+                <>
+                  Gerado pelo lançamento da folha — não dá para alterar data ou valor aqui. Para atualizar, use{' '}
+                  <strong className="font-medium">Ações → Receita da folha</strong> de novo, ou exclua esta linha.
+                </>
+              )}
             </p>
           </CadastroModalBody>
           <CadastroModalFooter
@@ -1935,49 +2061,141 @@ export default function ProjecaoMensalPage() {
         <CadastroModalShell maxWidth="max-w-lg">
           <CadastroModalHeader
             isEdit={false}
-            title="Lançar na projeção"
-            subtitle={`${MONTH_NAMES[month - 1]} ${year} — escolha o tipo`}
+            title={hubView === 'clear' ? 'Limpar mês' : 'Ações do mês'}
+            subtitle={`${MONTH_NAMES[month - 1]} ${year}`}
             onClose={closeLaunchHub}
             closeDisabled={busy}
-            icon={<Plus size={18} />}
+            icon={hubView === 'clear' ? <Eraser size={18} /> : <SlidersHorizontal size={18} />}
           />
           <CadastroModalBody>
-            <CadastroFormSection title="O que lançar?" icon={<CalendarDays size={14} />}>
-              <div className="flex flex-col gap-2">
-                <button type="button" className={launchOptionBtnCls} onClick={openManualExpenseLaunch}>
-                  <Plus size={18} className="shrink-0 text-[var(--color-1)]" />
-                  <span className="min-w-0 flex-1 text-left">
-                    <span className="block text-sm font-medium text-gray-900 dark:text-white">Despesas manuais</span>
-                    <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
-                      Data, descrição e valor. Não altera itens automáticos já lançados.
+            {hubView === 'clear' ? (
+              <CadastroFormSection title="O que excluir?" icon={<Eraser size={14} />}>
+                <div className="flex flex-col gap-2">
+                  <button type="button" className={launchOptionBtnCls} onClick={() => void clearMonth('manual')}>
+                    <Pencil size={18} className="shrink-0 text-[var(--color-1)]" />
+                    <span className="min-w-0 flex-1 text-left">
+                      <span className="block text-sm font-medium text-gray-900 dark:text-white">Manuais</span>
+                      <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                        Só o que foi digitado. Conta, cartão e folha permanecem.
+                      </span>
                     </span>
-                  </span>
-                  <ChevronRight size={16} className="shrink-0 text-gray-400" />
-                </button>
-                <button type="button" className={launchOptionBtnCls} onClick={() => void openCardLaunch()}>
-                  <CreditCard size={18} className="shrink-0 text-[var(--color-1)]" />
-                  <span className="min-w-0 flex-1 text-left">
-                    <span className="block text-sm font-medium text-gray-900 dark:text-white">Cartão de crédito</span>
-                    <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
-                      Fatura importada ou estimativa por parcelas. Um lançamento por cartão. Valores avulsos: despesas manuais.
+                  </button>
+                  <button type="button" className={launchOptionBtnCls} onClick={() => void clearMonth('account')}>
+                    <Landmark size={18} className="shrink-0 text-[var(--color-1)]" />
+                    <span className="min-w-0 flex-1 text-left">
+                      <span className="block text-sm font-medium text-gray-900 dark:text-white">Conta</span>
+                      <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                        Lançamentos trazidos do extrato.
+                      </span>
                     </span>
-                  </span>
-                  <ChevronRight size={16} className="shrink-0 text-gray-400" />
-                </button>
-                <button type="button" className={launchOptionBtnCls} onClick={openIncomeLaunch}>
-                  <Wallet size={18} className="shrink-0 text-[var(--color-1)]" />
-                  <span className="min-w-0 flex-1 text-left">
-                    <span className="block text-sm font-medium text-gray-900 dark:text-white">Receita da folha</span>
-                    <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
-                      Adiantamento e salário com base nos holerites. Substitui receitas automáticas do mês.
+                  </button>
+                  <button type="button" className={launchOptionBtnCls} onClick={() => void clearMonth('card')}>
+                    <CreditCard size={18} className="shrink-0 text-[var(--color-1)]" />
+                    <span className="min-w-0 flex-1 text-left">
+                      <span className="block text-sm font-medium text-gray-900 dark:text-white">Cartão</span>
+                      <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                        Fatura importada e estimativa de parcelas.
+                      </span>
                     </span>
-                  </span>
-                  <ChevronRight size={16} className="shrink-0 text-gray-400" />
-                </button>
+                  </button>
+                  <button type="button" className={launchOptionBtnCls} onClick={() => void clearMonth('all')}>
+                    <Eraser size={18} className="shrink-0 text-red-600 dark:text-red-400" />
+                    <span className="min-w-0 flex-1 text-left">
+                      <span className="block text-sm font-medium text-gray-900 dark:text-white">Tudo</span>
+                      <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                        Manuais, conta, cartão e folha. Não dá para desfazer.
+                      </span>
+                    </span>
+                  </button>
+                </div>
+              </CadastroFormSection>
+            ) : (
+              <div>
+                <CadastroFormSection title="Incluir ou atualizar" icon={<Plus size={14} />}>
+                  <div className="flex flex-col gap-2">
+                    <button type="button" className={launchOptionBtnCls} onClick={openManualExpenseLaunch}>
+                      <Plus size={18} className="shrink-0 text-[var(--color-1)]" />
+                      <span className="min-w-0 flex-1 text-left">
+                        <span className="block text-sm font-medium text-gray-900 dark:text-white">Despesas manuais</span>
+                        <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                          Data, descrição e valor. Não altera itens automáticos já lançados.
+                        </span>
+                      </span>
+                      <ChevronRight size={16} className="shrink-0 text-gray-400" />
+                    </button>
+                    <button type="button" className={launchOptionBtnCls} onClick={() => void launchStatements()}>
+                      <Landmark size={18} className="shrink-0 text-[var(--color-1)]" />
+                      <span className="min-w-0 flex-1 text-left">
+                        <span className="block text-sm font-medium text-gray-900 dark:text-white">Atualizar com extrato</span>
+                        <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                          Gastos e receitas da conta, cada um no dia do extrato. Substitui só os lançamentos da conta.
+                        </span>
+                      </span>
+                      <ChevronRight size={16} className="shrink-0 text-gray-400" />
+                    </button>
+                    <button type="button" className={launchOptionBtnCls} onClick={() => void openCardLaunch()}>
+                      <CreditCard size={18} className="shrink-0 text-[var(--color-1)]" />
+                      <span className="min-w-0 flex-1 text-left">
+                        <span className="block text-sm font-medium text-gray-900 dark:text-white">Cartão de crédito</span>
+                        <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                          Fatura importada ou estimativa por parcelas. Um lançamento por cartão. Valores avulsos: despesas manuais.
+                        </span>
+                      </span>
+                      <ChevronRight size={16} className="shrink-0 text-gray-400" />
+                    </button>
+                    <button type="button" className={launchOptionBtnCls} onClick={openIncomeLaunch}>
+                      <Wallet size={18} className="shrink-0 text-[var(--color-1)]" />
+                      <span className="min-w-0 flex-1 text-left">
+                        <span className="block text-sm font-medium text-gray-900 dark:text-white">Receita da folha</span>
+                        <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                          Adiantamento e salário com base nos holerites. Substitui receitas automáticas do mês.
+                        </span>
+                      </span>
+                      <ChevronRight size={16} className="shrink-0 text-gray-400" />
+                    </button>
+                  </div>
+                </CadastroFormSection>
+                <CadastroFormSection title="Organizar o mês" icon={<Copy size={14} />}>
+                  <div className="flex flex-col gap-2">
+                    <button
+                      type="button"
+                      className={launchOptionBtnCls}
+                      onClick={() => {
+                        setLaunchHubOpen(false)
+                        setCloneCards(true)
+                        setCloneMonths('1')
+                      }}
+                    >
+                      <Copy size={18} className="shrink-0 text-[var(--color-1)]" />
+                      <span className="min-w-0 flex-1 text-left">
+                        <span className="block text-sm font-medium text-gray-900 dark:text-white">Clonar</span>
+                        <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                          Copia este mês para os seguintes. O extrato não entra na cópia.
+                        </span>
+                      </span>
+                      <ChevronRight size={16} className="shrink-0 text-gray-400" />
+                    </button>
+                    <button type="button" className={launchOptionBtnCls} onClick={() => setHubView('clear')}>
+                      <Eraser size={18} className="shrink-0 text-[var(--color-1)]" />
+                      <span className="min-w-0 flex-1 text-left">
+                        <span className="block text-sm font-medium text-gray-900 dark:text-white">Limpar</span>
+                        <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                          Manuais, conta, cartão ou o mês inteiro.
+                        </span>
+                      </span>
+                      <ChevronRight size={16} className="shrink-0 text-gray-400" />
+                    </button>
+                  </div>
+                </CadastroFormSection>
               </div>
-            </CadastroFormSection>
+            )}
           </CadastroModalBody>
-          <CadastroModalFooter onClose={closeLaunchHub} closeDisabled={busy} hideSave closeLabel="Fechar" />
+          <CadastroModalFooter
+            onClose={hubView === 'clear' ? () => setHubView('main') : closeLaunchHub}
+            closeDisabled={busy}
+            hideSave
+            closeLabel={hubView === 'clear' ? 'Voltar' : 'Fechar'}
+          />
         </CadastroModalShell>
       )}
 

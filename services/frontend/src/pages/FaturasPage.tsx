@@ -837,6 +837,8 @@ const FaturasPage = () => {
     })
   }, [invoiceData, searchTerm, searchAmount, creditCardIds, appliedTransactionType])
 
+  const reportMenuReady = Boolean(invoiceData && filteredItems.length > 0)
+
   useEffect(() => {
     if (!isMobile) {
       setActions(null)
@@ -860,6 +862,7 @@ const FaturasPage = () => {
       <CadastroExcelMenu
         compact
         menuTitle="Exportar"
+        exportDisabled={!reportMenuReady}
         onExportExcel={openExportExcel}
         extraItems={[
           {
@@ -872,7 +875,7 @@ const FaturasPage = () => {
       />,
     )
     return () => setActions(null)
-  }, [isMobile, setActions, filteredItems.length])
+  }, [isMobile, setActions, filteredItems.length, reportMenuReady])
 
   const currentItems = useMemo(() => {
     if (!activeMonth) return []
@@ -1693,6 +1696,7 @@ const FaturasPage = () => {
                 <CadastroListHeaderActions
                   menu={{
                     menuTitle: 'Exportar',
+                    exportDisabled: !reportMenuReady,
                     onExportExcel: () => {
                       if (!filteredItems.length) {
                         handleShowToast('Nenhum dado para exportar', 'error')
