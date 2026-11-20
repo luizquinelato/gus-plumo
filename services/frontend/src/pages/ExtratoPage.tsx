@@ -12,10 +12,6 @@ import {
   CadastroListPrimaryButton,
   CadastroFilterField,
   cadastroFilterFieldCls,
-  listPageTableCls,
-  listPageTableRowHoverCls,
-  reportRowActionBtnClass,
-  reportTableChromeHeaderCls,
 } from '../components/CadastroListPageLayout'
 import {
   CadastroFormSection,
@@ -29,7 +25,6 @@ import ExtratoMobileTransactionList from '../components/ExtratoMobileTransaction
 import MobileReportFilterBar from '../components/MobileReportFilterBar'
 import { useDeviceMode } from '../contexts/DeviceModeContext'
 import { useMobileTopBarActions } from '../contexts/MobileTopBarActionsContext'
-import ListPagination from '../components/ListPagination'
 import LoadingSpinner from '../components/LoadingSpinner'
 import SplitExpenseModal from '../components/SplitExpenseModal'
 import EditExpenseModal from '../components/EditExpenseModal'
@@ -37,10 +32,9 @@ import BatchEditExpenseModal from '../components/BatchEditExpenseModal'
 import ClosureEditImpactSummaryModal from '../components/ClosureEditImpactSummaryModal'
 import type { ClosureEditImpact } from '../types/closureEditImpact'
 import type { ExpenseEditSuccessPayload } from '../utils/closureEditImpact'
-import SharedAccountDisplay from '../components/SharedAccountDisplay'
 import { MultiSelectDropdown, SourceMultiSelectDropdown } from '../components/MultiSelectDropdown'
 import { DateField } from '../components/date'
-import { FileText, Edit2, Trash2, ArrowDownCircle, ArrowUpCircle, Search, X, Filter, Calendar, Landmark, Gift, ArrowUpDown, ArrowUp, CheckSquare, Square, MinusSquare, Database, Tag, Tags, Users, TrendingUp, PlusCircle, ArrowLeftRight, AlertTriangle, ArrowRight } from 'lucide-react'
+import { FileText, Edit2, Trash2, ArrowDownCircle, ArrowUpCircle, Search, X, Filter, Calendar, Landmark, Gift, ArrowUpDown, ArrowUp, Database, Tag, Tags, Users, TrendingUp, PlusCircle, ArrowLeftRight, AlertTriangle, ArrowRight } from 'lucide-react'
 import LinkedInvoiceItemsModal, { type LinkedInvoiceSummary } from '../components/LinkedInvoiceItemsModal'
 import { useConfirm } from '../hooks/useConfirm'
 import { dateToLocalString, parseLocalDate } from '../utils/dateUtils'
@@ -57,7 +51,6 @@ import ExtratoExpenseActionsModal, {
 import Toast from '../components/Toast'
 // import { formatAccountDisplay } from '../utils/accountFormatter'
 import {
-  dailyBalanceRowClass,
   EXTRATO_DAILY_BALANCE_SOURCE,
   isExtratoDailyBalanceRow,
   localDateKeyFromIso,
@@ -834,12 +827,6 @@ const ExtratoPage = () => {
       return value
     }
   }, [searchedExpenses, appliedPeriodStartKey])
-
-  const paginatedExpenses = useMemo(() => {
-    const start = itemsPerPage === 0 ? 0 : (currentPage - 1) * itemsPerPage
-    const end = itemsPerPage === 0 ? filteredExpenses.length : currentPage * itemsPerPage
-    return filteredExpenses.slice(start, end)
-  }, [filteredExpenses, currentPage, itemsPerPage])
 
   const exportExpenses = useMemo(
     () => searchedExpenses.filter((row) => !isExtratoDailyBalanceRow(row)),
@@ -1817,341 +1804,52 @@ const ExtratoPage = () => {
             </div>
           )}
 
-          {/* Tabela de Transações */}
+          {/* Lista de transações (cards) */}
           {!loading && detailedReport && filteredExpenses.length > 0 && (
             <div className={`${selectedItems.size > 0 || showBackToTop ? 'pb-20 max-md:pb-24' : ''}`}>
-              <div className="md:hidden">
-                <ExtratoMobileTransactionList
-                  expenses={filteredExpenses}
-                  formatCurrency={formatCurrency}
-                  formatDateTime={formatDateTime}
-                  dailyPartnerCumulative={dailyPartnerCumulative}
-                  page={currentPage}
-                  perPage={itemsPerPage}
-                  total={filteredExpenses.length}
-                  onPageChange={setCurrentPage}
-                  onPerPageChange={setItemsPerPage}
-                />
-              </div>
-
-              <div className="hidden rounded-lg border border-gray-300 bg-white md:block dark:border-gray-600 dark:bg-gray-800">
-                <table className={`${listPageTableCls} table-fixed`}>
-                  <colgroup>
-                    <col style={{ width: '2.25%' }} />
-                    <col style={{ width: '2.25%' }} />
-                    <col style={{ width: '3%' }} />
-                    <col style={{ width: '8%' }} />
-                    <col style={{ width: '26.5%' }} />
-                    <col style={{ width: '7.5%' }} />
-                    <col style={{ width: '8%' }} />
-                    <col style={{ width: '12.5%' }} />
-                    <col style={{ width: '7.25%' }} />
-                    <col style={{ width: '7.25%' }} />
-                    <col style={{ width: '7.25%' }} />
-                    <col style={{ width: '5.5%' }} />
-                  </colgroup>
-                  <thead className={reportTableChromeHeaderCls}>
-                    <tr>
-                      {/* Checkbox Selecionar Todos */}
-                      <th className="px-2 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap w-10">
-                        <button
-                          onClick={() => {
-                            if (selectAllState === 'none') {
-                              selectAllFiltered()
-                            } else {
-                              clearSelection()
-                            }
-                          }}
-                          className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
-                          title={selectAllState === 'none' ? 'Selecionar todos' : 'Limpar seleção'}
-                        >
-                          {selectAllState === 'none' && <Square size={18} className="text-gray-400" />}
-                          {selectAllState === 'partial' && <MinusSquare size={18} className="text-blue-600" />}
-                          {selectAllState === 'all' && <CheckSquare size={18} className="text-blue-600" />}
-                        </button>
-                      </th>
-                      <th className="px-2 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap">#</th>
-                      <th className="px-2 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap">Origem</th>
-                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-color-primary" onClick={() => handleSort('date')}>
-                        Data {sortField === 'date' && (sortDirection === 'asc' ? '↑' : '↓')}
-                      </th>
-                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:text-color-primary" onClick={() => handleSort('description')}>
-                        Descrição {sortField === 'description' && (sortDirection === 'asc' ? '↑' : '↓')}
-                      </th>
-                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:text-color-primary" onClick={() => handleSort('tag_name')}>
-                        Tag {sortField === 'tag_name' && (sortDirection === 'asc' ? '↑' : '↓')}
-                      </th>
-                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:text-color-primary" onClick={() => handleSort('subtag_name')}>
-                        Subtag {sortField === 'subtag_name' && (sortDirection === 'asc' ? '↑' : '↓')}
-                      </th>
-                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:text-color-primary" onClick={() => handleSort('shared_partner_name')}>
-                        Compartilhamento {sortField === 'shared_partner_name' && (sortDirection === 'asc' ? '↑' : '↓')}
-                      </th>
-                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap">
-                        Minha parte
-                      </th>
-                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap">
-                        Compartilhado
-                      </th>
-                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-color-primary" onClick={() => handleSort('amount')}>
-                        Total {sortField === 'amount' && (sortDirection === 'asc' ? '↑' : '↓')}
-                      </th>
-                      <th className="px-2 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">
-                        Ações
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="[&_td]:align-top">
-                      {paginatedExpenses.map((expense, index) => {
-                          const isDailyBalance = isExtratoDailyBalanceRow(expense)
-                          const lineNumber = itemsPerPage === 0
-                            ? index + 1
-                            : (currentPage - 1) * itemsPerPage + index + 1
-                          return (
-                            <tr
-                              key={`${expense.source}-${expense.id}`}
-                              className={`border-t border-t-gray-200 dark:border-t-gray-700 border-l-4 ${
-                                isDailyBalance
-                                  ? `${dailyBalanceRowClass(expense)} font-medium`
-                                  : `${listPageTableRowHoverCls} ${
-                                      isItemSelected(expense)
-                                        ? 'table-row-selected border-l-blue-600 bg-[color-mix(in_srgb,var(--color-1)_7%,transparent)]'
-                                        : 'border-l-gray-300 dark:border-l-gray-600'
-                                    }`
-                              }`}
-                              onMouseEnter={(e) => {
-                                if (!isDailyBalance && !isItemSelected(expense)) {
-                                  e.currentTarget.style.borderLeftColor = 'var(--color-1)'
-                                }
-                              }}
-                              onMouseLeave={(e) => {
-                                if (!isDailyBalance && !isItemSelected(expense)) {
-                                  e.currentTarget.style.borderLeftColor = ''
-                                }
-                              }}
-                            >
-                              {/* Checkbox de Seleção */}
-                              <td className="px-2 py-4 text-left whitespace-nowrap">
-                                <button
-                                  onClick={() => toggleItemSelection(expense)}
-                                  disabled={!canSelectItem(expense)}
-                                  className={`p-1 rounded transition-colors ${
-                                    !canSelectItem(expense)
-                                      ? 'opacity-30 cursor-not-allowed'
-                                      : 'hover:bg-gray-200 dark:hover:bg-gray-600'
-                                  }`}
-                                  title={
-                                    !canSelectItem(expense)
-                                      ? `Não é possível selecionar ${expense.amount < 0 ? 'despesas' : 'receitas'} junto com ${selectionType}`
-                                      : isItemSelected(expense)
-                                        ? 'Remover seleção'
-                                        : 'Selecionar'
-                                  }
-                                >
-                                  {isItemSelected(expense) ? (
-                                    <CheckSquare size={18} className="text-blue-600" />
-                                  ) : (
-                                    <Square size={18} className={canSelectItem(expense) ? 'text-gray-400' : 'text-gray-300'} />
-                                  )}
-                                </button>
-                              </td>
-
-                              {/* Número da Linha */}
-                              <td className="px-2 py-4 text-left whitespace-nowrap">
-                                <span className="text-xs font-mono text-gray-500 dark:text-gray-400">{lineNumber}</span>
-                              </td>
-
-                              {/* Origem */}
-                              <td className="px-2 py-4 text-left whitespace-nowrap">
-                                <div className="flex items-center gap-1">
-                                  {isDailyBalance ? (
-                                    <TrendingUp
-                                      className="inline"
-                                      style={{ color: 'var(--color-4)' }}
-                                      size={20}
-                                      aria-label="Saldo diário"
-                                    />
-                                  ) : expense.source === 'bank' ? (
-                                    <Landmark className="inline" style={{ color: 'var(--color-1)' }} size={20} aria-label="Extrato Bancário" />
-                                  ) : (
-                                    <Gift className="inline" style={{ color: 'var(--color-3)' }} size={20} aria-label="Benefício" />
-                                  )}
-                                  {/* Mostra ícone de inversão para itens migrados */}
-                                  {expense.migrated_from_account_id && (
-                                    <span title="Item invertido de outra conta" className="inline-flex">
-                                      <ArrowLeftRight
-                                        size={16}
-                                        className="text-cyan-600 dark:text-cyan-400"
-                                        aria-label="Item Invertido/Migrado"
-                                      />
-                                    </span>
-                                  )}
-                                  {/* Mostra "M" apenas para bank_statements manuais (sem category e não migrado) */}
-                                  {expense.source === 'bank' && expense.is_manual && !expense.migrated_from_account_id && (
-                                    <span
-                                      className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold rounded-full bg-orange-500 text-white shadow-sm"
-                                      title="Lançamento Manual"
-                                    >
-                                      M
-                                    </span>
-                                  )}
-                                </div>
-                              </td>
-
-                              {/* Data */}
-                              <td className="px-3 py-4 text-left whitespace-nowrap">
-                                <span className="text-sm text-gray-900 dark:text-white">{formatDateTime(expense.date)}</span>
-                              </td>
-
-                              {/* Descrição */}
-                              <td className="px-3 py-4 text-left">
-                                <div className="flex flex-col min-w-0 break-words">
-                                  <span className="text-sm text-gray-900 dark:text-white">
-                                    {expense.description}
-                                    {expense.current_installment && expense.total_installments && (
-                                      <span className="text-xs text-gray-500 dark:text-gray-400"> • {expense.current_installment}/{expense.total_installments}x</span>
-                                    )}
-                                  </span>
-                                  {expense.card_number && (
-                                    <span className="text-xs mt-0.5 break-words" style={{ color: 'var(--color-4)' }}>
-                                      {expense.card_name && `${expense.card_name} • `}
-                                      ****{expense.card_number}
-                                    </span>
-                                  )}
-                                </div>
-                              </td>
-
-                              {/* Tag */}
-                              <td className="px-3 py-4 text-left">
-                                <span className="text-sm text-gray-900 dark:text-white break-words">
-                                  {isDailyBalance ? '—' : (expense.tag_name || '-')}
-                                </span>
-                              </td>
-
-                              {/* Subtag */}
-                              <td className="px-3 py-4 text-left">
-                                <span className="text-sm text-gray-900 dark:text-white break-words">
-                                  {isDailyBalance ? '—' : (expense.subtag_name || '-')}
-                                </span>
-                              </td>
-
-                              {/* Compartilhamento */}
-                              <td className="px-3 py-4 text-left">
-                                {isDailyBalance ? (
-                                  <span className="text-sm text-gray-500 dark:text-gray-400">—</span>
-                                ) : (
-                                <SharedAccountDisplay
-                                  allowWrap
-                                  account={expense.shared_partner_name ? {
-                                    id: expense.shared_partner_id || 0,
-                                    name: expense.shared_partner_name,
-                                    bank: expense.shared_partner_bank ? { name: expense.shared_partner_bank } : null,
-                                    agency: expense.shared_partner_agency,
-                                    account_number: expense.shared_partner_account_number
-                                  } : null}
-                                  ownershipPercentage={expense.ownership_percentage}
-                                />
-                                )}
-                              </td>
-
-                              {/* Minha parte */}
-                              <td className="px-3 py-4 text-left whitespace-nowrap">
-                                {isDailyBalance ? (() => {
-                                  const partnerCum = dailyPartnerCumulative(localDateKeyFromIso(expense.date))
-                                  const mineCum = Math.round((expense.amount - partnerCum) * 100) / 100
-                                  return (
-                                    <span className={`text-sm font-semibold ${mineCum >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                                      {formatCurrency(mineCum)}
-                                    </span>
-                                  )
-                                })() : (() => {
-                                  const pct = expense.ownership_percentage == null ? 100 : Number(expense.ownership_percentage)
-                                  const mine = Math.round(expense.amount * pct) / 100
-                                  return (
-                                    <span className={`text-sm ${mine >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                                      {formatCurrency(mine)}
-                                    </span>
-                                  )
-                                })()}
-                              </td>
-
-                              {/* Compartilhado */}
-                              <td className="px-3 py-4 text-left whitespace-nowrap">
-                                {isDailyBalance ? (() => {
-                                  const partnerCum = dailyPartnerCumulative(localDateKeyFromIso(expense.date))
-                                  return (
-                                    <span className={`text-sm font-semibold ${partnerCum < 0 ? 'text-red-600 dark:text-red-400' : partnerCum > 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}`}>
-                                      {formatCurrency(partnerCum)}
-                                    </span>
-                                  )
-                                })() : (() => {
-                                  const pct = expense.ownership_percentage == null ? 100 : Number(expense.ownership_percentage)
-                                  const partner = Math.round((expense.amount - Math.round(expense.amount * pct) / 100) * 100) / 100
-                                  return (
-                                    <span className={`text-sm ${partner < 0 ? 'text-red-600 dark:text-red-400' : partner > 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}`}>
-                                      {formatCurrency(partner)}
-                                    </span>
-                                  )
-                                })()}
-                              </td>
-
-                              {/* Total */}
-                              <td className="px-3 py-4 text-left whitespace-nowrap">
-                                <span
-                                  className={`text-sm ${isDailyBalance ? 'font-semibold' : ''} ${expense.amount >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}
-                                >
-                                  {formatCurrency(expense.amount)}
-                                </span>
-                              </td>
-
-                              {/* Ações */}
-                              <td className="px-2 py-4 text-left align-top whitespace-nowrap">
-                                {isDailyBalance ? (
-                                  <span className="text-xs text-gray-500 dark:text-gray-400">Resumo</span>
-                                ) : (
-                                <div className="flex items-center gap-0.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenExpenseActionsHub(expense)}
-                                    disabled={selectedItems.size > 0}
-                                    className={reportRowActionBtnClass(selectedItems.size === 0)}
-                                    title={selectedItems.size > 0 ? 'Limpe a seleção' : 'Ações do lançamento'}
-                                  >
-                                    <Edit2 size={18} />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDelete(expense)}
-                                    disabled={selectedItems.size > 0}
-                                    className={reportRowActionBtnClass(selectedItems.size === 0, 'danger')}
-                                    title={selectedItems.size > 0 ? 'Limpe a seleção para excluir' : 'Excluir'}
-                                  >
-                                    <Trash2 size={18} />
-                                  </button>
-                                </div>
-                                )}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                    </tbody>
-
-                    {/* Rodapé com Totais e Paginação */}
-                    <tfoot>
-                      <tr>
-                        <td colSpan={12} className="p-0">
-                          <ListPagination
-                            total={filteredExpenses.length}
-                            page={currentPage}
-                            perPage={itemsPerPage}
-                            onPageChange={setCurrentPage}
-                            onPerPageChange={setItemsPerPage}
-                          />
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-              </div>
+              <ExtratoMobileTransactionList
+                expenses={filteredExpenses}
+                formatCurrency={formatCurrency}
+                formatDateTime={formatDateTime}
+                dailyPartnerCumulative={dailyPartnerCumulative}
+                page={currentPage}
+                perPage={itemsPerPage}
+                total={filteredExpenses.length}
+                onPageChange={setCurrentPage}
+                onPerPageChange={setItemsPerPage}
+                selection={
+                  isMobile
+                    ? undefined
+                    : {
+                        isSelected: isItemSelected,
+                        canSelect: canSelectItem,
+                        onToggle: toggleItemSelection,
+                        bulkActive: selectedItems.size > 0,
+                      }
+                }
+                onOpenActions={isMobile ? undefined : handleOpenExpenseActionsHub}
+                onDelete={isMobile ? undefined : handleDelete}
+                sort={
+                  isMobile
+                    ? undefined
+                    : {
+                        sortField,
+                        sortDirection,
+                        onSort: handleSort,
+                      }
+                }
+                bulkSelectHeader={
+                  isMobile
+                    ? undefined
+                    : {
+                        selectAllState,
+                        onSelectAllToggle: () => {
+                          if (selectAllState === 'none') selectAllFiltered()
+                          else clearSelection()
+                        },
+                      }
+                }
+              />
             </div>
           )}
 
