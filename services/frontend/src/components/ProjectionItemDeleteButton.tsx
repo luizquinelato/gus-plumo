@@ -1,4 +1,5 @@
 import { Trash2 } from 'lucide-react'
+import { usePageWriteAllowed } from '../contexts/PageMutationContext'
 
 type Props = {
   label: string
@@ -8,6 +9,8 @@ type Props = {
 
 /** Lixeira do lançamento: aparece no hover (e fica visível em tela de toque). */
 export default function ProjectionItemDeleteButton({ label, disabled, onDelete }: Props) {
+  const canWrite = usePageWriteAllowed()
+  if (!canWrite) return null
   return (
     <button
       type="button"

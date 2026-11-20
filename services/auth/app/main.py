@@ -16,6 +16,7 @@ from psycopg2.extras import RealDictCursor
 # Importa configurações
 from app.core.config import get_settings
 from app.core.rbac import RBAC
+from app.core.page_access import anexar_paginas_ao_usuario
 from app.core.logging_config import setup_logging, get_logger
 from app.providers.local_provider import LocalProvider
 
@@ -154,7 +155,6 @@ async def login(request: LoginRequest):
     # Gera token JWT
     access_token = gerar_token_jwt(user_data)
 
-    # Salva sessão no banco
     conn = get_database_connection()
     try:
         cursor = conn.cursor()
@@ -168,6 +168,7 @@ async def login(request: LoginRequest):
             VALUES (%s, %s, %s, %s, TRUE, NOW(), NOW());
         """, (user_data['tenant_id'], user_data['id'], token_hash, expires_at))
         conn.commit()
+        user_data = anexar_paginas_ao_usuario(conn, user_data)
     finally:
         conn.close()
 
@@ -245,9 +246,14 @@ async def verify_token(authorization: Optional[str] = Header(None)):
     if not user_data:
         return TokenValidationResponse(valid=False)
 
-    # Adiciona account_id do payload do JWT se presente
     if 'account_id' in payload:
         user_data['account_id'] = payload['account_id']
+
+    conn = get_database_connection()
+    try:
+        user_data = anexar_paginas_ao_usuario(conn, user_data)
+    finally:
+        conn.close()
 
     return TokenValidationResponse(valid=True, user=user_data)
 
@@ -334,10 +340,13 @@ async def get_user_accounts(authorization: Optional[str] = Header(None)):
             detail="Token inválido"
         )
 
-    # Busca contas do usuário
     conn = get_database_connection()
     try:
         cursor = conn.cursor(cursor_factory=RealDictCursor)
+        tenant_id = payload["tenant_id"]
+        user_id = payload["user_id"]
+        is_admin = bool(payload.get("is_admin", False))
+
         cursor.execute("""
             SELECT
                 a.id,
@@ -352,11 +361,10 @@ async def get_user_accounts(authorization: Optional[str] = Header(None)):
                 b.name as bank_name
             FROM accounts a
             LEFT JOIN banks b ON a.bank_id = b.id
-            WHERE a.user_id = %s
-              AND a.tenant_id = %s
+            WHERE a.tenant_id = %s
               AND a.active = TRUE
             ORDER BY a.name;
-        """, (payload['user_id'], payload['tenant_id']))
+        """, (tenant_id,))
 
         accounts = cursor.fetchall()
         return {"accounts": [dict(acc) for acc in accounts]}
@@ -391,23 +399,25 @@ async def select_account(
             detail="Token inválido"
         )
 
-    # Verifica se a conta pertence ao usuário
     conn = get_database_connection()
     try:
         cursor = conn.cursor(cursor_factory=RealDictCursor)
+        tenant_id = payload["tenant_id"]
+        user_id = payload["user_id"]
+        is_admin = bool(payload.get("is_admin", False))
+
         cursor.execute("""
             SELECT id FROM accounts
             WHERE id = %s
-              AND user_id = %s
               AND tenant_id = %s
               AND active = TRUE;
-        """, (request.account_id, payload['user_id'], payload['tenant_id']))
+        """, (request.account_id, tenant_id))
 
         account = cursor.fetchone()
         if not account:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Conta não encontrada ou não pertence ao usuário"
+                detail="Conta não encontrada ou sem permissão de acesso"
             )
 
         # Busca dados do usuário
@@ -434,8 +444,9 @@ async def select_account(
         """, (user_data['tenant_id'], user_data['id'], token_hash, expires_at))
         conn.commit()
 
-        # Adiciona account_id ao user_data para retornar no response
-        user_data_with_account = {**user_data, 'account_id': request.account_id}
+        user_data_with_account = anexar_paginas_ao_usuario(
+            conn, {**user_data, 'account_id': request.account_id}
+        )
 
         return LoginResponse(
             access_token=new_token,

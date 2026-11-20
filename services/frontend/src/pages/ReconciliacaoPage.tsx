@@ -35,6 +35,7 @@ import {
   ListTableStaticHeader,
 } from '../components/ListTableSelectColumns'
 import FloatingFooterBar from '../components/FloatingFooterBar'
+import { WriteGate } from '../contexts/PageMutationContext'
 import PageScrollRoot from '../components/PageScrollRoot'
 import Badge from '../components/Badge'
 import { badgeVariantForColumnRole } from '../utils/badgeSurfaces'
@@ -784,26 +785,28 @@ const ReconciliacaoPage = () => {
         {showRowActions ? (
           <td className={`${listPageTableTdCls} text-right`}>
             {removable ? (
-              <button
-                type="button"
-                className={cadastroRowIconDangerCls}
-                title={
-                  cycle.status === 'unlinked'
-                    ? 'Remover marca de não vinculado'
-                    : 'Excluir vínculo com o extrato'
-                }
-                disabled={workingKey === cycle.key}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  void unmatch(cycle)
-                }}
-              >
-                {workingKey === cycle.key ? (
-                  <Loader2 size={16} className="animate-spin" />
-                ) : (
-                  <Trash2 size={16} />
-                )}
-              </button>
+              <WriteGate>
+                <button
+                  type="button"
+                  className={cadastroRowIconDangerCls}
+                  title={
+                    cycle.status === 'unlinked'
+                      ? 'Remover marca de não vinculado'
+                      : 'Excluir vínculo com o extrato'
+                  }
+                  disabled={workingKey === cycle.key}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    void unmatch(cycle)
+                  }}
+                >
+                  {workingKey === cycle.key ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Trash2 size={16} />
+                  )}
+                </button>
+              </WriteGate>
             ) : (
               <span className="text-gray-400">—</span>
             )}
@@ -1015,30 +1018,32 @@ const ReconciliacaoPage = () => {
               <span />
             )}
             <div className="flex flex-wrap items-center gap-2">
-              {footerSaveVisible ? (
-                <button
-                  type="button"
-                  onClick={() => void saveSelectedDrafts()}
-                  disabled={workingKey !== null}
-                  className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
-                  style={{ background: 'var(--color-save)', color: 'var(--on-color-save)' }}
-                >
-                  {workingKey === 'save-drafts' ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                  Salvar vínculos ({savableSelectedCount})
-                </button>
-              ) : null}
-              {footerUnmatchVisible ? (
-                <button
-                  type="button"
-                  onClick={() => setShowUnmatchConfirm(true)}
-                  disabled={workingKey !== null}
-                  className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
-                  style={{ backgroundColor: 'var(--color-danger, #dc2626)', color: '#fff' }}
-                >
-                  {workingKey === 'unmatch-bulk' ? <Loader2 size={14} className="animate-spin" /> : <Unlink size={14} />}
-                  Desvincular ({selectedMatchedCount})
-                </button>
-              ) : null}
+              <WriteGate>
+                {footerSaveVisible ? (
+                  <button
+                    type="button"
+                    onClick={() => void saveSelectedDrafts()}
+                    disabled={workingKey !== null}
+                    className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
+                    style={{ background: 'var(--color-save)', color: 'var(--on-color-save)' }}
+                  >
+                    {workingKey === 'save-drafts' ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                    Salvar vínculos ({savableSelectedCount})
+                  </button>
+                ) : null}
+                {footerUnmatchVisible ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowUnmatchConfirm(true)}
+                    disabled={workingKey !== null}
+                    className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
+                    style={{ backgroundColor: 'var(--color-danger, #dc2626)', color: '#fff' }}
+                  >
+                    {workingKey === 'unmatch-bulk' ? <Loader2 size={14} className="animate-spin" /> : <Unlink size={14} />}
+                    Desvincular ({selectedMatchedCount})
+                  </button>
+                ) : null}
+              </WriteGate>
               {showBackToTop ? (
                 <button
                   type="button"

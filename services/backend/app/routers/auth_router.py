@@ -44,16 +44,12 @@ class TokenValidationResponse(BaseModel):
 async def login(request: LoginRequest):
     """
     Endpoint de login que se comunica com o serviço de autenticação.
-    Apenas usuários admin podem fazer login.
-    
+
     Args:
         request: Dados de login (email e senha)
-        
+
     Returns:
         Token de acesso e dados do usuário
-        
-    Raises:
-        HTTPException: Se as credenciais forem inválidas ou o usuário não for admin
     """
     try:
         # Fazer requisição para o serviço de auth
@@ -69,14 +65,7 @@ async def login(request: LoginRequest):
             
             if response.status_code == 200:
                 data = response.json()
-                
-                # Verificar se o usuário é admin
-                if not data.get("user", {}).get("is_admin", False):
-                    raise HTTPException(
-                        status_code=403,
-                        detail="Acesso negado: apenas administradores podem fazer login"
-                    )
-                
+
                 return LoginResponse(
                     access_token=data["access_token"],
                     token_type=data.get("token_type", "Bearer"),

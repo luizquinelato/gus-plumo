@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useLocation, useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
+import { usePageWriteAllowed, WriteGate } from '../contexts/PageMutationContext'
 import {
   CadastroFilterField,
   CadastroListPageBody,
@@ -1638,6 +1639,7 @@ const resolveReopenBulkSelection = (
 }
 
 const AccountClosuresPage = () => {
+  const canWrite = usePageWriteAllowed()
   const location = useLocation()
   const navigate = useNavigate()
   const { ConfirmComponent, isConfirmOpen } = useConfirm()
@@ -2491,28 +2493,29 @@ const AccountClosuresPage = () => {
                                 <Download size={16} />
                               </button>
                               {activeTab === 'open' && (
-                                <>
-                                  {index === 0 && item.can_close ? (
-                                    <button
-                                      type="button"
-                                      className={cadastroRowIconBtnCls}
-                                      title={`Fechar ${monthTitle(item)}`}
-                                      disabled={saving}
-                                      onClick={() => openCloseModal([item])}
-                                      style={{ color: 'var(--color-1)' }}
-                                    >
-                                      <Unlock size={16} />
-                                    </button>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      className={`${cadastroRowIconBtnCls} cursor-not-allowed opacity-40 hover:bg-transparent hover:text-gray-400`}
-                                      title={item.block_reason || `Feche ${monthTitle(previousPeriod(item.year, item.month))} antes deste`}
-                                      disabled
-                                    >
-                                      <Lock size={16} />
-                                    </button>
-                                  )}
+                                <WriteGate>
+                                  <>
+                                    {index === 0 && item.can_close ? (
+                                      <button
+                                        type="button"
+                                        className={cadastroRowIconBtnCls}
+                                        title={`Fechar ${monthTitle(item)}`}
+                                        disabled={saving}
+                                        onClick={() => openCloseModal([item])}
+                                        style={{ color: 'var(--color-1)' }}
+                                      >
+                                        <Unlock size={16} />
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        className={`${cadastroRowIconBtnCls} cursor-not-allowed opacity-40 hover:bg-transparent hover:text-gray-400`}
+                                        title={item.block_reason || `Feche ${monthTitle(previousPeriod(item.year, item.month))} antes deste`}
+                                        disabled
+                                      >
+                                        <Lock size={16} />
+                                      </button>
+                                    )}
                                   {item.has_open_shared_closure ? (
                                     <button
                                       type="button"
@@ -2525,18 +2528,21 @@ const AccountClosuresPage = () => {
                                       <AlertTriangle size={16} />
                                     </button>
                                   ) : null}
-                                </>
+                                  </>
+                                </WriteGate>
                               )}
                               {activeTab === 'closed' && item.can_reopen && (
-                                <button
-                                  type="button"
-                                  className={cadastroRowIconDangerCls}
-                                  title={`Reabrir ${monthTitle(item)}`}
-                                  disabled={saving}
-                                  onClick={() => void handleReopen(item)}
-                                >
-                                  <Unlock size={16} />
-                                </button>
+                                <WriteGate>
+                                  <button
+                                    type="button"
+                                    className={cadastroRowIconDangerCls}
+                                    title={`Reabrir ${monthTitle(item)}`}
+                                    disabled={saving}
+                                    onClick={() => void handleReopen(item)}
+                                  >
+                                    <Unlock size={16} />
+                                  </button>
+                                </WriteGate>
                               )}
                             </div>
                           </td>
@@ -2560,7 +2566,7 @@ const AccountClosuresPage = () => {
         />
       </CadastroListPageShell>
 
-      {activeTab === 'open' && selectedKeys.size > 0 && (
+      {canWrite && activeTab === 'open' && selectedKeys.size > 0 && (
         <FloatingFooterBar>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -2577,16 +2583,18 @@ const AccountClosuresPage = () => {
               </button>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => openCloseModal(selectedMonths)}
-                disabled={saving}
-                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
-                style={{ background: 'var(--color-save)', color: 'var(--on-color-save)' }}
-              >
-                <Lock size={14} />
-                Fechar selecionados
-              </button>
+              <WriteGate>
+                <button
+                  type="button"
+                  onClick={() => openCloseModal(selectedMonths)}
+                  disabled={saving}
+                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
+                  style={{ background: 'var(--color-save)', color: 'var(--on-color-save)' }}
+                >
+                  <Lock size={14} />
+                  Fechar selecionados
+                </button>
+              </WriteGate>
               {showBackToTop && (
                 <button
                   type="button"
@@ -2603,7 +2611,7 @@ const AccountClosuresPage = () => {
         </FloatingFooterBar>
       )}
 
-      {activeTab === 'closed' && selectedKeys.size > 0 && (
+      {canWrite && activeTab === 'closed' && selectedKeys.size > 0 && (
         <FloatingFooterBar>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -2620,16 +2628,18 @@ const AccountClosuresPage = () => {
               </button>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => openReopenModal(selectedClosedMonths)}
-                disabled={saving}
-                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
-                style={{ backgroundColor: 'var(--crud-delete)' }}
-              >
-                <Unlock size={14} />
-                Reabrir selecionados
-              </button>
+              <WriteGate>
+                <button
+                  type="button"
+                  onClick={() => openReopenModal(selectedClosedMonths)}
+                  disabled={saving}
+                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
+                  style={{ backgroundColor: 'var(--crud-delete)' }}
+                >
+                  <Unlock size={14} />
+                  Reabrir selecionados
+                </button>
+              </WriteGate>
               {showBackToTop && (
                 <button
                   type="button"

@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
 import BulkSelectCheckbox from './BulkSelectCheckbox'
+import { usePageWriteAllowed } from '../contexts/PageMutationContext'
 import type { HeaderCheckState } from './BulkSelectCheckbox'
 
 /**
@@ -235,9 +236,11 @@ export function ListTableCheckboxHeader({
   onToggle?: () => void
   reserveOnly?: boolean
 }) {
+  const canWrite = usePageWriteAllowed()
+  const hideCheckbox = reserveOnly || !canWrite
   return (
     <th className={listPageTableCheckboxThCls} style={checkboxColStyle}>
-      {reserveOnly ? (
+      {hideCheckbox ? (
         <LeadingCellWrap style={checkboxLeadingInnerStyle} aria-hidden />
       ) : (
         <LeadingCellWrap style={checkboxLeadingInnerStyle}>
@@ -265,13 +268,15 @@ export function ListTableCheckboxCell({
   disabled?: boolean
   title?: string
 }) {
+  const canWrite = usePageWriteAllowed()
+  const hideCheckbox = reserveOnly || !canWrite
   return (
     <td
       className={listPageTableCheckboxTdCls}
       style={checkboxColStyle}
       onClick={stopPropagation ? (e) => e.stopPropagation() : undefined}
     >
-      {reserveOnly ? (
+      {hideCheckbox ? (
         <LeadingCellWrap style={checkboxLeadingInnerStyle} aria-hidden />
       ) : (
         <LeadingCellWrap style={checkboxLeadingInnerStyle}>

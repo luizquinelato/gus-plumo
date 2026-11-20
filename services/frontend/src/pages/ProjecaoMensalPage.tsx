@@ -43,6 +43,7 @@ import CadastroExcelMenu, { CadastroListHeaderActions } from '../components/Cada
 import { DateField } from '../components/date'
 import Sidebar from '../components/Sidebar'
 import PortalOnly from '../components/PortalOnly'
+import { usePageWriteAllowed, WriteGate } from '../contexts/PageMutationContext'
 import { useMobileTopBarActions } from '../contexts/MobileTopBarActionsContext'
 import ProjecaoMensalMobileCalendar from '../components/ProjecaoMensalMobileCalendar'
 import {
@@ -586,6 +587,7 @@ function CardProjectionDetailTable({
 }
 
 export default function ProjecaoMensalPage() {
+  const canWrite = usePageWriteAllowed()
   const { isMobile } = useDeviceMode()
   const { setActions } = useMobileTopBarActions()
   const { showConfirm, ConfirmComponent } = useConfirm()
@@ -1117,6 +1119,7 @@ export default function ProjecaoMensalPage() {
       openBankStatementLine({ ...e, income: false })
       return
     }
+    if (!canWrite) return
     if (e.editable === false) {
       openAutomatic({
         id: e.id,
@@ -1162,7 +1165,7 @@ export default function ProjecaoMensalPage() {
       openBankStatementLine({ ...inc, income: true })
       return
     }
-    if (inc.editable) {
+    if (inc.editable && canWrite) {
       setForm({
         id: inc.id,
         expected_date: inc.expected_date,
@@ -1914,15 +1917,17 @@ export default function ProjecaoMensalPage() {
                   }}
                 >
                   <PortalOnly>
-                  <button
-                    type="button"
-                    onClick={() => setWhatsappDate(todayLocal())}
-                    title="Enviar despesas do dia por WhatsApp"
-                    aria-label="Enviar despesas do dia por WhatsApp"
-                    className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white p-2 text-green-600 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-green-400 dark:hover:bg-gray-700"
-                  >
-                    <MessageCircle size={18} />
-                  </button>
+                  <WriteGate>
+                    <button
+                      type="button"
+                      onClick={() => setWhatsappDate(todayLocal())}
+                      title="Enviar despesas do dia por WhatsApp"
+                      aria-label="Enviar despesas do dia por WhatsApp"
+                      className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white p-2 text-green-600 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-green-400 dark:hover:bg-gray-700"
+                    >
+                      <MessageCircle size={18} />
+                    </button>
+                  </WriteGate>
                   <CadastroListPrimaryButton
                     label="Ações"
                     icon={<SlidersHorizontal size={18} />}
@@ -2243,9 +2248,11 @@ export default function ProjecaoMensalPage() {
                         <>
                           <div className="flex items-center justify-between text-base font-semibold text-gray-700 dark:text-gray-200">
                             <span>{day}</span>
-                            <button type="button" onClick={() => openNew(day)} className="rounded p-1 opacity-0 hover:bg-gray-200 group-hover:opacity-100 dark:hover:bg-gray-700" aria-label={`Adicionar lançamento no dia ${day}`}>
-                              <Plus className="h-5 w-5" />
-                            </button>
+                            {canWrite ? (
+                              <button type="button" onClick={() => openNew(day)} className="rounded p-1 opacity-0 hover:bg-gray-200 group-hover:opacity-100 dark:hover:bg-gray-700" aria-label={`Adicionar lançamento no dia ${day}`}>
+                                <Plus className="h-5 w-5" />
+                              </button>
+                            ) : null}
                           </div>
                           <div className="mt-1 space-y-1.5">
                             {(incomeByDayFiltered.get(day) ?? []).map((inc) => (
@@ -2257,7 +2264,7 @@ export default function ProjecaoMensalPage() {
                                 description={inc.description}
                                 amount={formatCurrency(Number(inc.amount))}
                                 tone="income"
-                                draggable={inc.editable}
+                                draggable={canWrite && inc.editable}
                                 deleting={deleting}
                                 title={
                                   payrollEstimateAmountEditable(inc)
@@ -2267,11 +2274,17 @@ export default function ProjecaoMensalPage() {
                                       : 'Projeção automática: clique para excluir ou lance novamente para atualizar'
                                 }
                                 onDragStart={(ev) => ev.dataTransfer.setData('text/plain', JSON.stringify({ id: inc.id, income: true }))}
-                                onOpen={() =>
-                                  inc.source === 'bank_statement' || payrollEstimateAmountEditable(inc) || !inc.editable
-                                    ? openBankStatementLine({ ...inc, income: true })
-                                    : openEditIncome(inc)
-                                }
+                                onOpen={() => {
+                                  if (
+                                    inc.source === 'bank_statement' ||
+                                    payrollEstimateAmountEditable(inc) ||
+                                    !inc.editable
+                                  ) {
+                                    openBankStatementLine({ ...inc, income: true })
+                                  } else if (canWrite) {
+                                    openEditIncome(inc)
+                                  }
+                                }}
                                 onDelete={() => void removeAutomatic(inc.id)}
                               />
                             ))}
@@ -2283,7 +2296,7 @@ export default function ProjecaoMensalPage() {
                                 description={e.description}
                                 amount={debit(valueOf(e))}
                                 tone={e.kind === 'fixed' ? 'fixed' : 'variable'}
-                                draggable={canDragExpense(e)}
+                                draggable={canWrite && canDragExpense(e)}
                                 deleting={deleting}
                                 onDragStart={(ev) => ev.dataTransfer.setData('text/plain', JSON.stringify({ id: e.id, income: false }))}
                                 onOpen={() => openEdit(e)}
@@ -2342,14 +2355,16 @@ export default function ProjecaoMensalPage() {
             closeLabel="Fechar"
             hideSave
             leading={
-              <button
-                type="button"
-                onClick={() => void removeAutomatic(detail.id)}
-                disabled={deleting}
-                className="inline-flex items-center gap-1 text-sm font-medium text-red-600 disabled:opacity-60 dark:text-red-400"
-              >
-                {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Excluir
-              </button>
+              <WriteGate>
+                <button
+                  type="button"
+                  onClick={() => void removeAutomatic(detail.id)}
+                  disabled={deleting}
+                  className="inline-flex items-center gap-1 text-sm font-medium text-red-600 disabled:opacity-60 dark:text-red-400"
+                >
+                  {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Excluir
+                </button>
+              </WriteGate>
             }
           />
         </CadastroModalShell>
@@ -2485,33 +2500,35 @@ export default function ProjecaoMensalPage() {
       )}
 
       {whatsappDate != null && (
-        <CadastroModalShell maxWidth="max-w-md">
-          <CadastroModalHeader
-            isEdit={false}
-            title="Enviar por WhatsApp"
-            subtitle="Despesas do dia na projeção mensal"
-            onClose={closeWhatsapp}
-            closeDisabled={busy}
-            icon={<MessageCircle size={18} />}
-          />
-          <CadastroModalBody>
-            <div className="space-y-3 p-4 text-sm text-gray-700 dark:text-gray-300">
-              <div>
-                <CadastroFieldLabel>Dia</CadastroFieldLabel>
-                <DateField value={whatsappDate} onChange={setWhatsappDate} className={cadastroFieldCls} />
+        <WriteGate>
+          <CadastroModalShell maxWidth="max-w-md">
+            <CadastroModalHeader
+              isEdit={false}
+              title="Enviar por WhatsApp"
+              subtitle="Despesas do dia na projeção mensal"
+              onClose={closeWhatsapp}
+              closeDisabled={busy}
+              icon={<MessageCircle size={18} />}
+            />
+            <CadastroModalBody>
+              <div className="space-y-3 p-4 text-sm text-gray-700 dark:text-gray-300">
+                <div>
+                  <CadastroFieldLabel>Dia</CadastroFieldLabel>
+                  <DateField value={whatsappDate} onChange={setWhatsappDate} className={cadastroFieldCls} />
+                </div>
               </div>
-            </div>
-          </CadastroModalBody>
-          <CadastroModalFooter
-            onClose={closeWhatsapp}
-            onSave={sendWhatsapp}
-            saving={saving}
-            saveLabel="Enviar"
-            saveTone="create"
-            disabled={saving || !whatsappDate}
-            closeDisabled={busy}
-          />
-        </CadastroModalShell>
+            </CadastroModalBody>
+            <CadastroModalFooter
+              onClose={closeWhatsapp}
+              onSave={sendWhatsapp}
+              saving={saving}
+              saveLabel="Enviar"
+              saveTone="create"
+              disabled={saving || !whatsappDate}
+              closeDisabled={busy}
+            />
+          </CadastroModalShell>
+        </WriteGate>
       )}
 
       <ExtratoExpenseFlowHost

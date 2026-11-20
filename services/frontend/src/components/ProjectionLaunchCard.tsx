@@ -7,6 +7,7 @@ import {
   type ProjectionSource,
 } from './ProjectionOriginBadge'
 import ProjectionItemDeleteButton from './ProjectionItemDeleteButton'
+import { usePageWriteAllowed } from '../contexts/PageMutationContext'
 
 type Tone = 'income' | 'fixed' | 'variable'
 
@@ -41,7 +42,9 @@ export default function ProjectionLaunchCard({
   onDelete,
   onDragStart,
 }: Props) {
+  const canWrite = usePageWriteAllowed()
   const income = tone === 'income'
+  const allowDrag = Boolean(draggable && canWrite)
   const accentVar = income ? 'var(--color-success)' : 'var(--color-danger)'
   const flowIconCls = income
     ? 'text-green-600 dark:text-green-400'
@@ -61,8 +64,8 @@ export default function ProjectionLaunchCard({
     <div className="group/item relative">
       <button
         type="button"
-        draggable={draggable}
-        onDragStart={onDragStart}
+        draggable={allowDrag}
+        onDragStart={allowDrag ? onDragStart : undefined}
         onClick={onOpen}
         title={title}
         className={`${listPageTableSectionCls} flex w-full touch-manipulation flex-col overflow-hidden text-left transition-all hover:border-[var(--color-1)] active:border-[var(--color-1)]`}

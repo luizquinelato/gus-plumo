@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import Sidebar from '../components/Sidebar'
 import {
   CadastroListCreateButton,
+  CadastroRowMutations,
   CadastroListPageBody,
   CadastroListPageEmptyCard,
   CadastroListPageHero,
@@ -15,6 +16,7 @@ import {
   type StatusFilter,
 } from '../components/CadastroListPageLayout'
 import FloatingFooterBar from '../components/FloatingFooterBar'
+import { usePageWriteAllowed, WriteGate } from '../contexts/PageMutationContext'
 import BulkSelectCheckbox, { type HeaderCheckState } from '../components/BulkSelectCheckbox'
 import { ListPageExpandRow, ListPageNestedTable, ListPageTable } from '../components/ListPageTable'
 import {
@@ -58,6 +60,7 @@ interface ToastState {
 const TEMPLATE_TABLE_COL_SPAN = 8
 
 const ExpenseTemplatesPage = () => {
+  const canWrite = usePageWriteAllowed()
   const { showConfirm, ConfirmComponent } = useConfirm()
   const { AlertComponent } = useAlert()
 
@@ -584,34 +587,36 @@ const ExpenseTemplatesPage = () => {
                         />
                       </td>
                       <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center gap-1">
-                          {template.active && (
+                        <CadastroRowMutations>
+                          <div className="flex items-center gap-1">
+                            {template.active && (
+                              <button
+                                type="button"
+                                onClick={() => handleApply(template)}
+                                className={cadastroRowIconBtnCls}
+                                title="Usar template"
+                              >
+                                <Play size={15} />
+                              </button>
+                            )}
                             <button
                               type="button"
-                              onClick={() => handleApply(template)}
+                              onClick={() => handleEdit(template)}
                               className={cadastroRowIconBtnCls}
-                              title="Usar template"
+                              title="Editar"
                             >
-                              <Play size={15} />
+                              <Edit2 size={15} />
                             </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => handleEdit(template)}
-                            className={cadastroRowIconBtnCls}
-                            title="Editar"
-                          >
-                            <Edit2 size={15} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(template)}
-                            className={cadastroRowIconDangerCls}
-                            title="Excluir"
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(template)}
+                              className={cadastroRowIconDangerCls}
+                              title="Excluir"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </CadastroRowMutations>
                       </td>
                     </tr>
                     {isExpanded && (
@@ -717,7 +722,7 @@ const ExpenseTemplatesPage = () => {
         </CadastroListPageBody>
       </CadastroListPageShell>
 
-      {bulkSelectionCount > 0 && (
+      {canWrite && bulkSelectionCount > 0 && (
         <FloatingFooterBar>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -736,16 +741,18 @@ const ExpenseTemplatesPage = () => {
               </button>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleBulkDelete}
-                disabled={bulkDeleting}
-                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
-                style={{ backgroundColor: 'var(--crud-delete)' }}
-              >
-                <Trash2 size={14} />
-                {bulkDeleting ? 'Excluindo…' : 'Excluir'}
-              </button>
+              <WriteGate>
+                <button
+                  type="button"
+                  onClick={handleBulkDelete}
+                  disabled={bulkDeleting}
+                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
+                  style={{ backgroundColor: 'var(--crud-delete)' }}
+                >
+                  <Trash2 size={14} />
+                  {bulkDeleting ? 'Excluindo…' : 'Excluir'}
+                </button>
+              </WriteGate>
               {showBackToTop && (
                 <button
                   type="button"

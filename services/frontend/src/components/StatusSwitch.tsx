@@ -1,3 +1,5 @@
+import { usePageWriteAllowed } from '../contexts/PageMutationContext'
+
 interface StatusSwitchProps {
   checked: boolean
   onChange: (next: boolean) => void
@@ -23,6 +25,8 @@ export default function StatusSwitch({
   showLabel = false,
   title,
 }: StatusSwitchProps) {
+  const pageWriteAllowed = usePageWriteAllowed()
+  const effectiveDisabled = disabled || !pageWriteAllowed
   const dims = size === 'sm'
     ? { w: 30, h: 16, knob: 12, pad: 2 }
     : { w: 38, h: 20, knob: 16, pad: 2 }
@@ -35,13 +39,13 @@ export default function StatusSwitch({
       aria-checked={checked}
       aria-label={checked ? labelOn : labelOff}
       title={title ?? (showLabel ? undefined : (checked ? labelOn : labelOff))}
-      disabled={disabled}
+      disabled={effectiveDisabled}
       onClick={(e) => {
         e.stopPropagation()
-        if (!disabled) onChange(!checked)
+        if (!effectiveDisabled) onChange(!checked)
       }}
       className={`relative inline-flex items-center rounded-full transition-colors outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-[var(--color-1)] ${
-        disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+        effectiveDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
       }`}
       style={{ width: dims.w, height: dims.h, background: trackBg }}
     >

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useConfirm } from '../hooks/useConfirm'
 import { useAuth } from '../contexts/AuthContext'
+import { WriteGate } from '../contexts/PageMutationContext'
 import { Link, useLocation } from 'react-router-dom'
 import axios from 'axios'
 import { ArrowUp, Check, ChevronLeft, ChevronsRight, FileSpreadsheet, FileText, FileUp, Trash2, Upload } from 'lucide-react'
@@ -944,7 +945,7 @@ function cachedAccountName(accountId?: number): string | null {
   }
 }
 
-export default function ImportWizardPage() {
+function ImportWizardPage() {
   const { showConfirm, ConfirmComponent } = useConfirm()
   const { user } = useAuth()
   const targetAccountName = useMemo(() => cachedAccountName(user?.account_id), [user?.account_id])
@@ -1555,23 +1556,25 @@ export default function ImportWizardPage() {
                       icon={<Upload size={18} />}
                     />
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => void goNext()}
-                      disabled={Boolean(block) || running || previewLoading || rawLoading || Boolean(rawPendingText)}
-                      title={
-                        previewLoading
-                          ? 'Aguarde o fim da pré-visualização'
-                          : rawLoading
-                            ? 'Aguarde a análise dos arquivos'
-                            : rawPendingText ?? undefined
-                      }
-                      className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                      style={{ background: 'var(--color-create)', color: 'var(--on-color-create)' }}
-                    >
-                      Próximo
-                      <ChevronsRight size={18} aria-hidden />
-                    </button>
+                    <WriteGate>
+                      <button
+                        type="button"
+                        onClick={() => void goNext()}
+                        disabled={Boolean(block) || running || previewLoading || rawLoading || Boolean(rawPendingText)}
+                        title={
+                          previewLoading
+                            ? 'Aguarde o fim da pré-visualização'
+                            : rawLoading
+                              ? 'Aguarde a análise dos arquivos'
+                              : rawPendingText ?? undefined
+                        }
+                        className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                        style={{ background: 'var(--color-create)', color: 'var(--on-color-create)' }}
+                      >
+                        Próximo
+                        <ChevronsRight size={18} aria-hidden />
+                      </button>
+                    </WriteGate>
                   )}
                 </>
               }
@@ -1876,19 +1879,21 @@ export default function ImportWizardPage() {
                                   </div>
                                 </td>
                                 <td className="px-2 py-2.5 text-center">
-                                  <button
-                                    type="button"
-                                    className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
-                                    onClick={() => {
-                                      setFiles((prev) => prev.filter((item) => item.id !== file.id))
-                                      setFileVersion((version) => version + 1)
-                                      setAdjustVersion(-1)
-                                    }}
-                                    aria-label="Remover arquivo"
-                                    title="Remover arquivo"
-                                  >
-                                    <Trash2 size={15} />
-                                  </button>
+                                  <WriteGate>
+                                    <button
+                                      type="button"
+                                      className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
+                                      onClick={() => {
+                                        setFiles((prev) => prev.filter((item) => item.id !== file.id))
+                                        setFileVersion((version) => version + 1)
+                                        setAdjustVersion(-1)
+                                      }}
+                                      aria-label="Remover arquivo"
+                                      title="Remover arquivo"
+                                    >
+                                      <Trash2 size={15} />
+                                    </button>
+                                  </WriteGate>
                                 </td>
                               </tr>
                             ))}
@@ -2225,6 +2230,8 @@ export default function ImportWizardPage() {
     </div>
   )
 }
+
+export default ImportWizardPage
 
 const adjustmentSelectCls = `${cadastroFilterFieldCls} ring-1 ring-amber-400/80`
 

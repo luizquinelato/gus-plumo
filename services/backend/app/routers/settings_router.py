@@ -42,29 +42,18 @@ async def copy_settings(
 
     Apenas o dono das contas pode copiar configurações entre elas.
     """
-    user_id = current_user.get("user_id") or current_user.get("id")
-    tenant_id = current_user.get("tenant_id")
-    
-    # Verifica se ambas as contas pertencem ao usuário
-    source_account = db.query(Account).filter(
-        Account.id == request.source_account_id,
-        Account.user_id == user_id,
-        Account.tenant_id == tenant_id,
-        Account.active == True
-    ).first()
-    
-    if not source_account:
-        raise HTTPException(status_code=404, detail="Conta de origem não encontrada ou não pertence a você")
-    
-    destination_account = db.query(Account).filter(
-        Account.id == request.destination_account_id,
-        Account.user_id == user_id,
-        Account.tenant_id == tenant_id,
-        Account.active == True
-    ).first()
-    
-    if not destination_account:
-        raise HTTPException(status_code=404, detail="Conta de destino não encontrada ou não pertence a você")
+    from app.services.account_access import require_account_access, resolve_auth_flags
+
+    tenant_id, user_id, is_admin = resolve_auth_flags(current_user)
+
+    require_account_access(
+        db, tenant_id, user_id, is_admin, request.source_account_id,
+        not_found_detail="Conta de origem não encontrada ou sem permissão de acesso",
+    )
+    require_account_access(
+        db, tenant_id, user_id, is_admin, request.destination_account_id,
+        not_found_detail="Conta de destino não encontrada ou sem permissão de acesso",
+    )
     
     if request.source_account_id == request.destination_account_id:
         raise HTTPException(status_code=400, detail="Conta de origem e destino não podem ser iguais")

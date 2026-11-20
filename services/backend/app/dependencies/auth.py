@@ -142,3 +142,27 @@ async def require_admin(authorization: Optional[str] = Header(None)) -> dict:
 
     return user_data
 
+
+def require_page_access(page_key: str, *, write: bool = False):
+    """Dependência: checa mapa `pages` retornado pelo auth service no verify."""
+
+    async def checker(authorization: Optional[str] = Header(None)) -> dict:
+        user_data = await get_current_user(authorization)
+        if user_data.get("is_admin"):
+            return user_data
+        pages = user_data.get("pages") or {}
+        entry = pages.get(page_key)
+        if not entry or not entry.get("can_read"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Acesso negado à página '{page_key}'.",
+            )
+        if write and not entry.get("can_write"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Acesso de escrita negado à página '{page_key}'.",
+            )
+        return user_data
+
+    return checker
+

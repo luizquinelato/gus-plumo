@@ -19,6 +19,7 @@ import CadastroExcelMenu from '../components/CadastroExcelMenu'
 import { useDeviceMode } from '../contexts/DeviceModeContext'
 import { useMobileTopBarActions } from '../contexts/MobileTopBarActionsContext'
 import FloatingFooterBar from '../components/FloatingFooterBar'
+import { usePageWriteAllowed, WriteGate } from '../contexts/PageMutationContext'
 import Badge from '../components/Badge'
 import LoadingSpinner from '../components/LoadingSpinner'
 import SharedAccountDisplay from '../components/SharedAccountDisplay'
@@ -294,6 +295,7 @@ function resolveCardIssuer(
 }
 
 const FaturasPage = () => {
+  const canWrite = usePageWriteAllowed()
   // Hook para ler navigation state
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -1567,17 +1569,19 @@ const FaturasPage = () => {
                     }}
                   >
                     <td className="px-2 py-3 text-center w-10">
-                      <button
-                        onClick={() => toggleItemSelection(item)}
-                        className="p-1 rounded transition-colors hover:bg-gray-200 dark:hover:bg-gray-600"
-                        title={isItemSelected(item) ? 'Remover seleção' : 'Selecionar'}
-                      >
-                        {isItemSelected(item) ? (
-                          <CheckSquare size={18} className="text-blue-600" />
-                        ) : (
-                          <Square size={18} className="text-gray-400" />
-                        )}
-                      </button>
+                      {canWrite ? (
+                        <button
+                          onClick={() => toggleItemSelection(item)}
+                          className="p-1 rounded transition-colors hover:bg-gray-200 dark:hover:bg-gray-600"
+                          title={isItemSelected(item) ? 'Remover seleção' : 'Selecionar'}
+                        >
+                          {isItemSelected(item) ? (
+                            <CheckSquare size={18} className="text-blue-600" />
+                          ) : (
+                            <Square size={18} className="text-gray-400" />
+                          )}
+                        </button>
+                      ) : null}
                     </td>
                     <td className="px-3 py-3 text-sm text-center text-gray-500 dark:text-gray-400 w-12">{idx + 1}</td>
                     <td className="px-4 py-3 text-sm text-gray-900 dark:text-white whitespace-nowrap w-28">
@@ -1625,47 +1629,49 @@ const FaturasPage = () => {
                       {formatCurrency(Number(item.amount))}
                     </td>
                     <td className="px-3 py-3 text-center w-28">
-                      <div className="flex items-center justify-center gap-0.5">
-                        <button
-                          type="button"
-                          onClick={() => handleEdit(item)}
-                          disabled={selectedItems.size > 0}
-                          className={reportRowActionBtnClass(selectedItems.size === 0)}
-                          title={
-                            selectedItems.size > 0
-                              ? 'Limpe a seleção para editar'
-                              : 'Editar lançamento'
-                          }
-                        >
-                          <Edit2 size={18} />
-                        </button>
-                        {invoiceCardMoveOptions.length > 1 && (
+                      <WriteGate>
+                        <div className="flex items-center justify-center gap-0.5">
                           <button
                             type="button"
-                            onClick={() =>
-                              openMoveCardModal([{ id: item.id, source: 'card' }], cardId)
-                            }
+                            onClick={() => handleEdit(item)}
                             disabled={selectedItems.size > 0}
                             className={reportRowActionBtnClass(selectedItems.size === 0)}
                             title={
                               selectedItems.size > 0
-                                ? 'Limpe a seleção para mover'
-                                : 'Mover para outro cartão desta fatura'
+                                ? 'Limpe a seleção para editar'
+                                : 'Editar lançamento'
                             }
                           >
-                            <ArrowRightLeft size={18} />
+                            <Edit2 size={18} />
                           </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => void handleDeleteItem(item)}
-                          disabled={selectedItems.size > 0}
-                          className={reportRowActionBtnClass(selectedItems.size === 0, 'danger')}
-                          title={selectedItems.size > 0 ? 'Limpe a seleção para excluir' : 'Excluir lançamento'}
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
+                          {invoiceCardMoveOptions.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openMoveCardModal([{ id: item.id, source: 'card' }], cardId)
+                              }
+                              disabled={selectedItems.size > 0}
+                              className={reportRowActionBtnClass(selectedItems.size === 0)}
+                              title={
+                                selectedItems.size > 0
+                                  ? 'Limpe a seleção para mover'
+                                  : 'Mover para outro cartão desta fatura'
+                              }
+                            >
+                              <ArrowRightLeft size={18} />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteItem(item)}
+                            disabled={selectedItems.size > 0}
+                            className={reportRowActionBtnClass(selectedItems.size === 0, 'danger')}
+                            title={selectedItems.size > 0 ? 'Limpe a seleção para excluir' : 'Excluir lançamento'}
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
+                      </WriteGate>
                     </td>
                   </tr>
                 ))}
@@ -2359,7 +2365,7 @@ const FaturasPage = () => {
       </div>
 
       {/* Barra Flutuante de Ações em Lote */}
-      {selectedItems.size > 0 && (
+      {canWrite && selectedItems.size > 0 && (
         <FloatingFooterBar>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -2375,47 +2381,49 @@ const FaturasPage = () => {
               </button>
             </div>
             <div className="flex items-center gap-2">
-              {allFilteredSelected ? (
+              <WriteGate>
+                {allFilteredSelected ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBatchEditSharingOnly(true)
+                      setIsBatchEditModalOpen(true)
+                    }}
+                    className="px-3 py-1.5 text-white rounded-lg transition-colors flex items-center gap-1.5 hover:opacity-90 text-sm font-semibold"
+                    style={{ backgroundColor: 'var(--crud-edit)' }}
+                    title="Alterar compartilhamento de todos os lançamentos selecionados no filtro"
+                  >
+                    <Users size={14} />
+                    Compartilhamento em lote
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBatchEditSharingOnly(false)
+                      setIsBatchEditModalOpen(true)
+                    }}
+                    className="px-3 py-1.5 text-white rounded-lg transition-colors flex items-center gap-1.5 hover:opacity-90 text-sm font-semibold"
+                    style={{ backgroundColor: 'var(--crud-edit)' }}
+                    title={
+                      batchCardMoveOptions.length > 0
+                        ? 'Editar categoria, compartilhamento e cartão em lote'
+                        : 'Editar categoria e compartilhamento em lote'
+                    }
+                  >
+                    <Edit2 size={14} />
+                    Editar em Lote
+                  </button>
+                )}
                 <button
-                  type="button"
-                  onClick={() => {
-                    setBatchEditSharingOnly(true)
-                    setIsBatchEditModalOpen(true)
-                  }}
+                  onClick={handleBatchDelete}
                   className="px-3 py-1.5 text-white rounded-lg transition-colors flex items-center gap-1.5 hover:opacity-90 text-sm font-semibold"
-                  style={{ backgroundColor: 'var(--crud-edit)' }}
-                  title="Alterar compartilhamento de todos os lançamentos selecionados no filtro"
+                  style={{ backgroundColor: 'var(--crud-delete)' }}
                 >
-                  <Users size={14} />
-                  Compartilhamento em lote
+                  <Trash2 size={14} />
+                  Excluir
                 </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setBatchEditSharingOnly(false)
-                    setIsBatchEditModalOpen(true)
-                  }}
-                  className="px-3 py-1.5 text-white rounded-lg transition-colors flex items-center gap-1.5 hover:opacity-90 text-sm font-semibold"
-                  style={{ backgroundColor: 'var(--crud-edit)' }}
-                  title={
-                    batchCardMoveOptions.length > 0
-                      ? 'Editar categoria, compartilhamento e cartão em lote'
-                      : 'Editar categoria e compartilhamento em lote'
-                  }
-                >
-                  <Edit2 size={14} />
-                  Editar em Lote
-                </button>
-              )}
-              <button
-                onClick={handleBatchDelete}
-                className="px-3 py-1.5 text-white rounded-lg transition-colors flex items-center gap-1.5 hover:opacity-90 text-sm font-semibold"
-                style={{ backgroundColor: 'var(--crud-delete)' }}
-              >
-                <Trash2 size={14} />
-                Excluir
-              </button>
+              </WriteGate>
               {showBackToTop && (
                 <button
                   onClick={scrollToTop}

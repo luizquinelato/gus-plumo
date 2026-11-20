@@ -11,7 +11,12 @@ from pydantic import BaseModel, field_serializer
 from app.database import get_db
 from app.models.unified_models import Account, Bank
 from app.models.auth_models import Usuario
-from app.dependencies.auth import get_current_user
+from app.dependencies.auth import get_current_user, require_page_access
+from app.services.account_access import (
+    filter_accounts_cadastro_mutable,
+    filter_accounts_owned_or_admin,
+    resolve_auth_flags,
+)
 from app.utils.account_import_password import set_account_import_file_password
 from app.schemas.bulk_ops import BulkDeleteResponse, BulkIdsRequest
 
@@ -167,13 +172,10 @@ async def listar_contas(
     Args:
         incluir_inativos: Se True, inclui contas inativas na listagem
     """
-    tenant_id = current_user.get("tenant_id", 1)
-    user_id = current_user.get("user_id", 1)
+    tenant_id, user_id, is_admin = resolve_auth_flags(current_user)
 
-    query = db.query(Account).filter(
-        Account.tenant_id == tenant_id,
-        Account.user_id == user_id
-    )
+    query = db.query(Account)
+    query = filter_accounts_owned_or_admin(query, tenant_id, user_id, is_admin)
     if not incluir_inativos:
         query = query.filter(Account.active == True)
     contas = query.order_by(Account.id).all()
@@ -189,17 +191,13 @@ async def obter_conta(
     """Obtém uma conta específica por ID com dados do banco."""
     from sqlalchemy.orm import joinedload
 
-    tenant_id = current_user.get("tenant_id", 1)
-    user_id = current_user.get("user_id", 1)
+    tenant_id, user_id, is_admin = resolve_auth_flags(current_user)
 
-    conta = db.query(Account).options(
-        joinedload(Account.bank)
-    ).filter(
+    query = db.query(Account).options(joinedload(Account.bank)).filter(
         Account.id == account_id,
-        Account.tenant_id == tenant_id,
-        Account.user_id == user_id,
-        Account.active == True
-    ).first()
+        Account.active == True,
+    )
+    conta = filter_accounts_owned_or_admin(query, tenant_id, user_id, is_admin).first()
     if not conta:
         raise HTTPException(status_code=404, detail="Conta não encontrada")
     return conta
@@ -209,7 +207,7 @@ async def obter_conta(
 async def criar_conta(
     account_data: AccountCreate,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_page_access("configuracoes.contas", write=True)),
 ):
     """Cria uma nova conta bancária."""
     tenant_id = current_user.get("tenant_id", 1)
@@ -249,18 +247,14 @@ async def atualizar_conta(
     account_id: int,
     account_data: AccountUpdate,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_page_access("configuracoes.contas", write=True)),
 ):
     """Atualiza uma conta existente."""
-    tenant_id = current_user.get("tenant_id", 1)
-    user_id = current_user.get("user_id", 1)
+    tenant_id, user_id, is_admin = resolve_auth_flags(current_user)
 
     # Removido filtro Account.active == True para permitir inativar/reativar
-    conta = db.query(Account).filter(
-        Account.id == account_id,
-        Account.tenant_id == tenant_id,
-        Account.user_id == user_id
-    ).first()
+    query = db.query(Account).filter(Account.id == account_id)
+    conta = filter_accounts_cadastro_mutable(query, tenant_id, user_id, is_admin).first()
     if not conta:
         raise HTTPException(status_code=404, detail="Conta não encontrada")
 
@@ -294,25 +288,17 @@ async def atualizar_conta(
 async def bulk_deletar_contas(
     body: BulkIdsRequest,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_page_access("configuracoes.contas", write=True)),
 ):
     """Exclui permanentemente várias contas bancárias do usuário."""
     if not body.ids:
         raise HTTPException(status_code=400, detail="Nenhuma conta selecionada")
 
-    tenant_id = current_user.get("tenant_id", 1)
-    user_id = current_user.get("user_id", 1)
+    tenant_id, user_id, is_admin = resolve_auth_flags(current_user)
     unique_ids = list(dict.fromkeys(body.ids))
 
-    contas = (
-        db.query(Account)
-        .filter(
-            Account.id.in_(unique_ids),
-            Account.tenant_id == tenant_id,
-            Account.user_id == user_id,
-        )
-        .all()
-    )
+    query = db.query(Account).filter(Account.id.in_(unique_ids))
+    contas = filter_accounts_cadastro_mutable(query, tenant_id, user_id, is_admin).all()
     found_ids = {c.id for c in contas}
     for conta in contas:
         db.delete(conta)
@@ -327,18 +313,13 @@ async def bulk_deletar_contas(
 async def deletar_conta(
     account_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_page_access("configuracoes.contas", write=True)),
 ):
     """Deleta permanentemente uma conta bancária."""
-    tenant_id = current_user.get("tenant_id", 1)
-    user_id = current_user.get("user_id", 1)
+    tenant_id, user_id, is_admin = resolve_auth_flags(current_user)
 
-    # Removido filtro active == True para permitir deletar contas inativas também
-    conta = db.query(Account).filter(
-        Account.id == account_id,
-        Account.tenant_id == tenant_id,
-        Account.user_id == user_id
-    ).first()
+    query = db.query(Account).filter(Account.id == account_id)
+    conta = filter_accounts_cadastro_mutable(query, tenant_id, user_id, is_admin).first()
     if not conta:
         raise HTTPException(status_code=404, detail="Conta não encontrada")
 

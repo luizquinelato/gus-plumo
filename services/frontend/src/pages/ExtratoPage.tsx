@@ -21,6 +21,7 @@ import {
   CadastroModalShell,
 } from '../components/CadastroFormLayout'
 import FloatingFooterBar from '../components/FloatingFooterBar'
+import { usePageWriteAllowed, WriteGate } from '../contexts/PageMutationContext'
 import ExtratoMobileTransactionList from '../components/ExtratoMobileTransactionList'
 import MobileReportFilterBar from '../components/MobileReportFilterBar'
 import { useDeviceMode } from '../contexts/DeviceModeContext'
@@ -183,6 +184,7 @@ const ORIGIN_OPTIONS = [
 ]
 
 const ExtratoPage = () => {
+  const canWrite = usePageWriteAllowed()
   // Hook para ler navigation state
   const location = useLocation()
   const navigationState = location.state as NavigationState | null
@@ -1818,7 +1820,7 @@ const ExtratoPage = () => {
                 onPageChange={setCurrentPage}
                 onPerPageChange={setItemsPerPage}
                 selection={
-                  isMobile
+                  isMobile || !canWrite
                     ? undefined
                     : {
                         isSelected: isItemSelected,
@@ -1827,8 +1829,8 @@ const ExtratoPage = () => {
                         bulkActive: selectedItems.size > 0,
                       }
                 }
-                onOpenActions={isMobile ? undefined : handleOpenExpenseActionsHub}
-                onDelete={isMobile ? undefined : handleDelete}
+                onOpenActions={isMobile || !canWrite ? undefined : handleOpenExpenseActionsHub}
+                onDelete={isMobile || !canWrite ? undefined : handleDelete}
                 sort={
                   isMobile
                     ? undefined
@@ -1839,7 +1841,7 @@ const ExtratoPage = () => {
                       }
                 }
                 bulkSelectHeader={
-                  isMobile
+                  isMobile || !canWrite
                     ? undefined
                     : {
                         selectAllState,
@@ -2084,7 +2086,7 @@ const ExtratoPage = () => {
       <ConfirmComponent />
 
       {/* Barra Flutuante de Ações em Lote - Fixed no rodapé, respeita o sidebar */}
-      {selectedItems.size > 0 && (
+      {canWrite && selectedItems.size > 0 && (
         <FloatingFooterBar className="max-md:hidden">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -2100,36 +2102,38 @@ const ExtratoPage = () => {
               </button>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => setIsBatchEditModalOpen(true)}
-                className="px-3 py-1.5 text-white rounded-lg transition-colors flex items-center gap-1.5 hover:opacity-90 text-sm font-semibold"
-                style={{ backgroundColor: 'var(--crud-edit)' }}
-              >
-                <Edit2 size={14} />
-                Editar em Lote
-              </button>
-              <button
-                type="button"
-                onClick={handleOpenBatchInvertModal}
-                disabled={!allSelectedHaveSharing || invertLoading}
-                className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 text-sm font-medium border ${
-                  allSelectedHaveSharing && !invertLoading
-                    ? 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
-                    : 'border-transparent bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
-                }`}
-                title={!allSelectedHaveSharing ? 'Todos os itens devem ter compartilhamento e não podem ser itens já invertidos' : 'Inverter compartilhamento'}
-              >
-                <ArrowLeftRight size={14} />
-                Inverter
-              </button>
-              <button
-                onClick={handleBatchDelete}
-                className="px-3 py-1.5 text-white rounded-lg transition-colors flex items-center gap-1.5 hover:opacity-90 text-sm font-semibold"
-                style={{ backgroundColor: 'var(--crud-delete)' }}
-              >
-                <Trash2 size={14} />
-                Excluir
-              </button>
+              <WriteGate>
+                <button
+                  onClick={() => setIsBatchEditModalOpen(true)}
+                  className="px-3 py-1.5 text-white rounded-lg transition-colors flex items-center gap-1.5 hover:opacity-90 text-sm font-semibold"
+                  style={{ backgroundColor: 'var(--crud-edit)' }}
+                >
+                  <Edit2 size={14} />
+                  Editar em Lote
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenBatchInvertModal}
+                  disabled={!allSelectedHaveSharing || invertLoading}
+                  className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 text-sm font-medium border ${
+                    allSelectedHaveSharing && !invertLoading
+                      ? 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                      : 'border-transparent bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                  }`}
+                  title={!allSelectedHaveSharing ? 'Todos os itens devem ter compartilhamento e não podem ser itens já invertidos' : 'Inverter compartilhamento'}
+                >
+                  <ArrowLeftRight size={14} />
+                  Inverter
+                </button>
+                <button
+                  onClick={handleBatchDelete}
+                  className="px-3 py-1.5 text-white rounded-lg transition-colors flex items-center gap-1.5 hover:opacity-90 text-sm font-semibold"
+                  style={{ backgroundColor: 'var(--crud-delete)' }}
+                >
+                  <Trash2 size={14} />
+                  Excluir
+                </button>
+              </WriteGate>
               {/* Botão Back to Top dentro da barra de ações */}
               {showBackToTop && (
                 <button

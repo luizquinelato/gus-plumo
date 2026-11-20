@@ -118,21 +118,27 @@ const SidebarNavGroup = ({
 
       {collapsed && open && buttonRef.current &&
         createPortal(
+          (() => {
+            const rect = buttonRef.current!.getBoundingClientRect()
+            const anchorBottom = rect.bottom > window.innerHeight * 0.55
+            return (
           <div
             ref={popupRef}
-            className="fixed w-56 bg-gray-800 rounded-lg shadow-xl border border-gray-700 overflow-hidden"
+            className="fixed flex w-56 max-h-[min(70vh,calc(100vh-1rem))] flex-col overflow-hidden rounded-lg border border-gray-700 bg-gray-800 shadow-xl"
             style={{
-              left: buttonRef.current.getBoundingClientRect().right + 8,
-              top: buttonRef.current.getBoundingClientRect().top,
+              left: rect.right + 8,
+              ...(anchorBottom
+                ? { bottom: window.innerHeight - rect.bottom }
+                : { top: Math.max(8, Math.min(rect.top, window.innerHeight - 120)) }),
               zIndex: 99999,
             }}
           >
-            <div className="px-4 pt-3 pb-2 border-b border-gray-700">
+            <div className="shrink-0 border-b border-gray-700 px-4 pb-2 pt-3">
               <p className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--color-1)' }}>
                 {label}
               </p>
             </div>
-            <div className="py-1.5">
+            <div className="min-h-0 flex-1 overflow-y-auto py-1.5">
               {items.map((subItem) => {
                 const SubIcon = subItem.icon
                 const isSubActive =
@@ -159,7 +165,9 @@ const SidebarNavGroup = ({
                 )
               })}
             </div>
-          </div>,
+          </div>
+            )
+          })(),
           document.body,
         )}
 

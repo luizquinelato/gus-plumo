@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Sidebar from '../components/Sidebar'
 import {
   CadastroListCreateButton,
+  CadastroRowMutations,
   CadastroListPageBody,
   CadastroListPageEmptyCard,
   CadastroListPageHero,
@@ -15,6 +16,7 @@ import {
   type StatusFilter,
 } from '../components/CadastroListPageLayout'
 import FloatingFooterBar from '../components/FloatingFooterBar'
+import { usePageWriteAllowed, WriteGate } from '../contexts/PageMutationContext'
 import { ListPageTable } from '../components/ListPageTable'
 import {
   ListTableCheckboxCell,
@@ -96,6 +98,7 @@ interface ToastState {
 }
 
 const CompartilhamentosPage = () => {
+  const canWrite = usePageWriteAllowed()
   const [compartilhamentos, setCompartilhamentos] = useState<ExpenseSharing[]>([])
   const [minhasOutrasContas, setMinhasOutrasContas] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
@@ -651,24 +654,26 @@ const CompartilhamentosPage = () => {
                       {comp.is_inverse ? (
                         <span className="text-xs text-gray-400">—</span>
                       ) : (
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => abrirModalEditar(comp)}
-                            className={cadastroRowIconBtnCls}
-                            title="Editar"
-                          >
-                            <Edit2 size={15} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeletar(comp.id)}
-                            className={cadastroRowIconDangerCls}
-                            title="Excluir"
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
+                        <CadastroRowMutations>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => abrirModalEditar(comp)}
+                              className={cadastroRowIconBtnCls}
+                              title="Editar"
+                            >
+                              <Edit2 size={15} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeletar(comp.id)}
+                              className={cadastroRowIconDangerCls}
+                              title="Excluir"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </CadastroRowMutations>
                       )}
                     </td>
                   </tr>
@@ -679,7 +684,7 @@ const CompartilhamentosPage = () => {
         </CadastroListPageBody>
       </CadastroListPageShell>
 
-      {selectedSharingIds.size > 0 && (
+      {canWrite && selectedSharingIds.size > 0 && (
         <FloatingFooterBar>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -698,26 +703,28 @@ const CompartilhamentosPage = () => {
               </button>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={openBulkEditModal}
-                disabled={bulkDeleting || bulkEditing}
-                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
-                style={{ backgroundColor: 'var(--crud-edit)' }}
-              >
-                <Edit2 size={14} />
-                Editar
-              </button>
-              <button
-                type="button"
-                onClick={handleBulkDelete}
-                disabled={bulkDeleting || bulkEditing}
-                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
-                style={{ backgroundColor: 'var(--crud-delete)' }}
-              >
-                <Trash2 size={14} />
-                {bulkDeleting ? 'Excluindo…' : 'Excluir'}
-              </button>
+              <WriteGate>
+                <button
+                  type="button"
+                  onClick={openBulkEditModal}
+                  disabled={bulkDeleting || bulkEditing}
+                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
+                  style={{ backgroundColor: 'var(--crud-edit)' }}
+                >
+                  <Edit2 size={14} />
+                  Editar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBulkDelete}
+                  disabled={bulkDeleting || bulkEditing}
+                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
+                  style={{ backgroundColor: 'var(--crud-delete)' }}
+                >
+                  <Trash2 size={14} />
+                  {bulkDeleting ? 'Excluindo…' : 'Excluir'}
+                </button>
+              </WriteGate>
               {showBackToTop && (
                 <button
                   type="button"

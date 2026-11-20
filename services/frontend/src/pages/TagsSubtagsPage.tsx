@@ -3,6 +3,7 @@ import axios from 'axios'
 import Sidebar from '../components/Sidebar'
 import {
   CadastroListCreateButton,
+  CadastroRowMutations,
   CadastroListPageBody,
   CadastroListPageEmptyCard,
   CadastroListPageHero,
@@ -14,6 +15,7 @@ import {
   listPageTableRowHoverCls,
 } from '../components/CadastroListPageLayout'
 import FloatingFooterBar from '../components/FloatingFooterBar'
+import { usePageWriteAllowed, WriteGate } from '../contexts/PageMutationContext'
 import BulkSelectCheckbox, { type HeaderCheckState } from '../components/BulkSelectCheckbox'
 import { ListPageExpandRow, ListPageTable } from '../components/ListPageTable'
 import {
@@ -186,14 +188,16 @@ function SubtagAreaCard({
             <span className="font-normal normal-case text-gray-500 dark:text-gray-400">({rows.length})</span>
           </h4>
         </div>
-        <button
-          type="button"
-          onClick={() => onCreate(tagId, kind)}
-          className={cadastroRowIconBtnCls}
-          title={`Nova subtag de ${kind}`}
-        >
-          <Plus size={14} />
-        </button>
+        <CadastroRowMutations>
+          <button
+            type="button"
+            onClick={() => onCreate(tagId, kind)}
+            className={cadastroRowIconBtnCls}
+            title={`Nova subtag de ${kind}`}
+          >
+            <Plus size={14} />
+          </button>
+        </CadastroRowMutations>
       </div>
       {rows.length === 0 ? (
         <p className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
@@ -249,26 +253,28 @@ function SubtagAreaCard({
                 {isPendingMove ? (
                   <Badge variant="statusCompact" tone="warning" label="Movida" />
                 ) : null}
-                <div className="flex shrink-0 items-center">
-                  <button
-                    type="button"
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onClick={() => onEdit(subtag)}
-                    className={cadastroRowIconBtnCls}
-                    title="Editar"
-                  >
-                    <Edit2 size={13} />
-                  </button>
-                  <button
-                    type="button"
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onClick={() => onDelete(subtag.id)}
-                    className={cadastroRowIconDangerCls}
-                    title="Excluir"
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
+                <CadastroRowMutations>
+                  <div className="flex shrink-0 items-center">
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={() => onEdit(subtag)}
+                      className={cadastroRowIconBtnCls}
+                      title="Editar"
+                    >
+                      <Edit2 size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={() => onDelete(subtag.id)}
+                      className={cadastroRowIconDangerCls}
+                      title="Excluir"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </CadastroRowMutations>
               </li>
             )
           })}
@@ -279,6 +285,7 @@ function SubtagAreaCard({
 }
 
 const TagsSubtagsPage = () => {
+  const canWrite = usePageWriteAllowed()
   const { showConfirm, ConfirmComponent } = useConfirm()
 
   const [hierarchicalData, setHierarchicalData] = useState<HierarchicalData[]>([])
@@ -1136,24 +1143,26 @@ const TagsSubtagsPage = () => {
                         </div>
                       </td>
                       <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center gap-0.5">
-                          <button
-                            type="button"
-                            onClick={() => handleEditTag(item.tag)}
-                            className={cadastroRowIconBtnCls}
-                            title="Editar tag"
-                          >
-                            <Edit2 size={15} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteTag(item.tag.id)}
-                            className={cadastroRowIconDangerCls}
-                            title="Excluir tag"
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
+                        <CadastroRowMutations>
+                          <div className="flex items-center gap-0.5">
+                            <button
+                              type="button"
+                              onClick={() => handleEditTag(item.tag)}
+                              className={cadastroRowIconBtnCls}
+                              title="Editar tag"
+                            >
+                              <Edit2 size={15} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteTag(item.tag.id)}
+                              className={cadastroRowIconDangerCls}
+                              title="Excluir tag"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </CadastroRowMutations>
                       </td>
                     </tr>
                     {isExpanded && (
@@ -1237,7 +1246,7 @@ const TagsSubtagsPage = () => {
         </CadastroListPageBody>
       </CadastroListPageShell>
 
-      {pendingMoveCount > 0 && (
+      {canWrite && pendingMoveCount > 0 && (
         <FloatingFooterBar>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-4">
@@ -1283,7 +1292,7 @@ const TagsSubtagsPage = () => {
         </FloatingFooterBar>
       )}
 
-      {bulkSelectionCount > 0 && pendingMoveCount === 0 && (
+      {canWrite && bulkSelectionCount > 0 && pendingMoveCount === 0 && (
         <FloatingFooterBar>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -1302,16 +1311,18 @@ const TagsSubtagsPage = () => {
               </button>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => void handleBulkDelete()}
-                disabled={bulkDeleting}
-                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
-                style={{ backgroundColor: 'var(--crud-delete)' }}
-              >
-                <Trash2 size={14} />
-                {bulkDeleting ? 'Excluindo…' : 'Excluir'}
-              </button>
+              <WriteGate>
+                <button
+                  type="button"
+                  onClick={() => void handleBulkDelete()}
+                  disabled={bulkDeleting}
+                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
+                  style={{ backgroundColor: 'var(--crud-delete)' }}
+                >
+                  <Trash2 size={14} />
+                  {bulkDeleting ? 'Excluindo…' : 'Excluir'}
+                </button>
+              </WriteGate>
               {showBackToTop && (
                 <button
                   type="button"

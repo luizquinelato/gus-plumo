@@ -3,6 +3,7 @@ import { Filter, Plus, Search, X } from 'lucide-react'
 import PageScrollRoot from './PageScrollRoot'
 import Badge from './Badge'
 import { useDeviceMode } from '../contexts/DeviceModeContext'
+import { usePageWriteAllowed } from '../contexts/PageMutationContext'
 
 /** Shell de páginas de relatório no mobile (abaixo do MobileTopBar). */
 export const MOBILE_REPORT_SHELL_CLS =
@@ -137,12 +138,20 @@ export function CadastroListPrimaryButton({
   onClick,
   disabled,
   icon,
+  requireWrite = true,
+  writePageKey,
 }: {
   label: string
   onClick: () => void
   disabled?: boolean
   icon: ReactNode
+  /** Oculta o botão quando o usuário só tem leitura na página (padrão: sim). */
+  requireWrite?: boolean
+  /** Página de escrita (ex.: Importar na home usa `importar`). */
+  writePageKey?: string
 }) {
+  const canWrite = usePageWriteAllowed(writePageKey)
+  if (requireWrite && !canWrite) return null
   return (
     <button
       type="button"
@@ -166,13 +175,19 @@ export function CadastroListSecondaryButton({
   disabled,
   icon,
   title,
+  requireWrite = false,
+  writePageKey,
 }: {
   label: string
   onClick: () => void
   disabled?: boolean
   icon: ReactNode
   title?: string
+  requireWrite?: boolean
+  writePageKey?: string
 }) {
+  const canWrite = usePageWriteAllowed(writePageKey)
+  if (requireWrite && !canWrite) return null
   return (
     <button
       type="button"
@@ -190,10 +205,12 @@ export function CadastroListCreateButton({
   label,
   onClick,
   disabled,
+  writePageKey,
 }: {
   label: string
   onClick: () => void
   disabled?: boolean
+  writePageKey?: string
 }) {
   return (
     <CadastroListPrimaryButton
@@ -201,8 +218,16 @@ export function CadastroListCreateButton({
       onClick={onClick}
       disabled={disabled}
       icon={<Plus size={18} />}
+      writePageKey={writePageKey}
     />
   )
+}
+
+/** Ícones de editar/excluir etc. — omitidos em modo leitura. */
+export function CadastroRowMutations({ children }: { children: ReactNode }) {
+  const canWrite = usePageWriteAllowed()
+  if (!canWrite) return null
+  return <>{children}</>
 }
 
 export function CadastroFilterField({

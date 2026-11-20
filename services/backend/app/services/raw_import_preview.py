@@ -106,6 +106,8 @@ def extrato_other_account_warnings(
     user_id: int,
     account_id: int,
     result: dict[str, Any],
+    *,
+    is_admin: bool = False,
 ) -> list[str]:
     """Avisa quando os lançamentos "novos" já existem em outra conta do mesmo usuário (conta errada selecionada)."""
     creates = [
@@ -116,14 +118,11 @@ def extrato_other_account_warnings(
     if len(creates) < OTHER_ACCOUNT_MIN_MATCHES:
         return []
 
-    accounts = {
-        row.id: row.name
-        for row in db.query(Account.id, Account.name).filter(
-            Account.tenant_id == tenant_id,
-            Account.user_id == user_id,
-            Account.id != account_id,
-        )
-    }
+    from app.services.account_access import filter_accounts_for_user
+
+    account_query = db.query(Account.id, Account.name).filter(Account.id != account_id)
+    account_query = filter_accounts_for_user(account_query, tenant_id, user_id, is_admin)
+    accounts = {row.id: row.name for row in account_query}
     if not accounts:
         return []
 

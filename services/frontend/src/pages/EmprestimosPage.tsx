@@ -8,6 +8,7 @@ import {
   CadastroListPageShell,
   CadastroListPageTabs,
   CadastroListPrimaryButton,
+  CadastroRowMutations,
   CadastroListPageFilterCard,
   CadastroListPageSearchField,
   CadastroFilterField,
@@ -931,30 +932,32 @@ export default function EmprestimosPage() {
                         <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Fechamento</span>
                       </div>
                     ) : (
-                      <div className="flex items-center justify-end gap-1">
-                        {loan.status !== 'settled' && (
+                      <CadastroRowMutations>
+                        <div className="flex items-center justify-end gap-1">
+                          {loan.status !== 'settled' && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenPayment(loan, payment)}
+                              className={cadastroRowIconBtnCls}
+                              title="Editar pagamento"
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                          )}
                           <button
                             type="button"
-                            onClick={() => handleOpenPayment(loan, payment)}
-                            className={cadastroRowIconBtnCls}
-                            title="Editar pagamento"
+                            onClick={() => handleDeletePayment(loan, payment)}
+                            className={cadastroRowIconDangerCls}
+                            title={
+                              loan.status === 'settled'
+                                ? 'Excluir pagamento (reabre o empréstimo)'
+                                : 'Excluir pagamento'
+                            }
                           >
-                            <Edit2 size={14} />
+                            <Trash2 size={14} />
                           </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => handleDeletePayment(loan, payment)}
-                          className={cadastroRowIconDangerCls}
-                          title={
-                            loan.status === 'settled'
-                              ? 'Excluir pagamento (reabre o empréstimo)'
-                              : 'Excluir pagamento'
-                          }
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
+                        </div>
+                      </CadastroRowMutations>
                     )}
                   </td>
                 )}
@@ -1237,28 +1240,28 @@ export default function EmprestimosPage() {
 
                       {/* Ações */}
                       {loan.is_owner && (
-                        <div className="flex items-center gap-1 self-center">
-                          {/* Ações apenas para empréstimos não quitados */}
-                          {loan.status !== 'settled' && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => handleOpenPayment(loan)}
-                                className={cadastroRowIconBtnCls}
-                                title="Registrar pagamento ou quitar"
-                              >
-                                <Plus size={18} />
-                              </button>
-                              <button type="button" onClick={() => handleEdit(loan)} className={cadastroRowIconBtnCls} title="Editar">
-                                <Edit2 size={18} />
-                              </button>
-                            </>
-                          )}
-                          {/* Excluir sempre disponível para o owner */}
-                          <button type="button" onClick={() => handleDelete(loan)} className={cadastroRowIconDangerCls} title="Excluir">
-                            <Trash2 size={18} />
-                          </button>
-                        </div>
+                        <CadastroRowMutations>
+                          <div className="flex items-center gap-1 self-center">
+                            {loan.status !== 'settled' && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenPayment(loan)}
+                                  className={cadastroRowIconBtnCls}
+                                  title="Registrar pagamento ou quitar"
+                                >
+                                  <Plus size={18} />
+                                </button>
+                                <button type="button" onClick={() => handleEdit(loan)} className={cadastroRowIconBtnCls} title="Editar">
+                                  <Edit2 size={18} />
+                                </button>
+                              </>
+                            )}
+                            <button type="button" onClick={() => handleDelete(loan)} className={cadastroRowIconDangerCls} title="Excluir">
+                              <Trash2 size={18} />
+                            </button>
+                          </div>
+                        </CadastroRowMutations>
                       )}
                     </div>
                   </div>
@@ -1408,19 +1411,20 @@ export default function EmprestimosPage() {
 
                           {/* Ações para quitados - mantém espaço para alinhamento */}
                           {loan.is_owner && (
-                            <div className="flex items-center gap-1 self-center">
-                              {/* Espaço invisível para manter alinhamento com abertos (3 botões) */}
-                              <div className="w-[34px]"></div>
-                              <button type="button" onClick={() => handleReopen(loan)} className={cadastroRowIconBtnCls} title="Reabrir empréstimo">
-                                <Lock size={18} />
-                              </button>
-                              <button type="button" onClick={() => handleEdit(loan, true)} className={cadastroRowIconBtnCls} title="Editar (descrição/contraparte)">
-                                <Edit2 size={18} />
-                              </button>
-                              <button type="button" onClick={() => handleDelete(loan)} className={cadastroRowIconDangerCls} title="Excluir">
-                                <Trash2 size={18} />
-                              </button>
-                            </div>
+                            <CadastroRowMutations>
+                              <div className="flex items-center gap-1 self-center">
+                                <div className="w-[34px]"></div>
+                                <button type="button" onClick={() => handleReopen(loan)} className={cadastroRowIconBtnCls} title="Reabrir empréstimo">
+                                  <Lock size={18} />
+                                </button>
+                                <button type="button" onClick={() => handleEdit(loan, true)} className={cadastroRowIconBtnCls} title="Editar (descrição/contraparte)">
+                                  <Edit2 size={18} />
+                                </button>
+                                <button type="button" onClick={() => handleDelete(loan)} className={cadastroRowIconDangerCls} title="Excluir">
+                                  <Trash2 size={18} />
+                                </button>
+                              </div>
+                            </CadastroRowMutations>
                           )}
                         </div>
                       </div>

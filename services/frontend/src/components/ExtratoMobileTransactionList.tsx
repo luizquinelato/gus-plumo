@@ -13,6 +13,7 @@ import {
 import ListPagination from './ListPagination'
 import SharedAccountDisplay from './SharedAccountDisplay'
 import { reportRowActionBtnClass } from './CadastroListPageLayout'
+import { usePageWriteAllowed } from '../contexts/PageMutationContext'
 import { formatDateBR } from '../utils/dateUtils'
 import {
   isExtratoDailyBalanceRow,
@@ -850,13 +851,19 @@ export default function ExtratoMobileTransactionList({
   sort,
   bulkSelectHeader,
 }: ExtratoMobileTransactionListProps) {
+  const canWrite = usePageWriteAllowed()
+  const selectionProp = canWrite ? selection : undefined
+  const bulkSelectHeaderProp = canWrite ? bulkSelectHeader : undefined
+  const onOpenActionsProp = canWrite ? onOpenActions : undefined
+  const onDeleteProp = canWrite ? onDelete : undefined
+
   const slice = expenses.slice(
     perPage === 0 ? 0 : (page - 1) * perPage,
     perPage === 0 ? expenses.length : page * perPage,
   )
 
   let lastDayKey: string | null = null
-  const compactDesktop = Boolean(selection)
+  const compactDesktop = Boolean(selectionProp)
   const listContainerRef = useRef<HTMLDivElement>(null)
   const wideLayout = useWideRowLayout(listContainerRef)
 
@@ -889,9 +896,9 @@ export default function ExtratoMobileTransactionList({
               formatCurrency={formatCurrency}
               formatDateTime={formatDateTime}
               dailyPartnerCumulative={dailyPartnerCumulative}
-              selection={selection}
-              onOpenActions={onOpenActions}
-              onDelete={onDelete}
+              selection={selectionProp}
+              onOpenActions={onOpenActionsProp}
+              onDelete={onDeleteProp}
               wideLayout={wideLayout}
               lineNumber={lineNumber}
             />
@@ -918,7 +925,7 @@ export default function ExtratoMobileTransactionList({
         >
           <ExtratoDesktopListHeader
             wideLayout={wideLayout}
-            bulkSelectHeader={bulkSelectHeader}
+            bulkSelectHeader={bulkSelectHeaderProp}
             sort={sort}
           />
           <ul className="space-y-2">{listItems}</ul>

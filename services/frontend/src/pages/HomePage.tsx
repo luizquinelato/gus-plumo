@@ -231,6 +231,7 @@ const HomePage = () => {
                     label="Importar"
                     onClick={() => navigate('/importar')}
                     icon={<Upload size={18} />}
+                    writePageKey="importar"
                   />
                 </PortalOnly>
               }

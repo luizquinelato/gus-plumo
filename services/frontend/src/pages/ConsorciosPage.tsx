@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import axios from 'axios'
 import { ArrowUp, CalendarDays, CheckCircle, Clock, Download, Eye, Handshake, HelpCircle, Lock, Pencil, Percent, Trash2, TrendingUp, FileText, Unlock, Wallet } from 'lucide-react'
+import { WriteGate } from '../contexts/PageMutationContext'
 import Toast from '../components/Toast'
 import ConsortiumProjectionModal from '../components/ConsortiumProjectionModal'
 import { useConfirm } from '../hooks/useConfirm'
@@ -300,22 +301,24 @@ const ConsortiumCard = ({
           <button type="button" onClick={onExport} className={reportRowActionBtnClass(true)} title="Exportar">
             <Download size={18} />
           </button>
-          <button type="button" onClick={onEdit} className={reportRowActionBtnClass(true)} title="Editar">
-            <Pencil size={18} />
-          </button>
-          {!c.auto_closed && (
-            <button
-              type="button"
-              onClick={onToggleStatus}
-              className={reportRowActionBtnClass(true)}
-              title={c.is_closed ? 'Reabrir' : 'Encerrar'}
-            >
-              {c.is_closed ? <Unlock size={18} /> : <Lock size={18} />}
+          <WriteGate>
+            <button type="button" onClick={onEdit} className={reportRowActionBtnClass(true)} title="Editar">
+              <Pencil size={18} />
             </button>
-          )}
-          <button type="button" onClick={onDelete} className={reportRowActionBtnClass(true, 'danger')} title="Excluir">
-            <Trash2 size={18} />
-          </button>
+            {!c.auto_closed && (
+              <button
+                type="button"
+                onClick={onToggleStatus}
+                className={reportRowActionBtnClass(true)}
+                title={c.is_closed ? 'Reabrir' : 'Encerrar'}
+              >
+                {c.is_closed ? <Unlock size={18} /> : <Lock size={18} />}
+              </button>
+            )}
+            <button type="button" onClick={onDelete} className={reportRowActionBtnClass(true, 'danger')} title="Excluir">
+              <Trash2 size={18} />
+            </button>
+          </WriteGate>
         </div>
       </div>
 

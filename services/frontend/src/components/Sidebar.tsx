@@ -1,7 +1,8 @@
-import { Home, Palette, TrendingUp, Sun, Moon, CreditCard, LogOut, Tags, ClipboardCheck, FolderTree, Settings, ChevronRight, ChevronLeft, Building2, Users, User, FileText, RefreshCw, Copy, Scale, Layers, Wallet, Feather, Camera, FolderOpen, Link2, Landmark, Handshake, Activity, FileUp, CalendarDays } from 'lucide-react'
+import { Home, Palette, TrendingUp, Sun, Moon, CreditCard, LogOut, Tags, ClipboardCheck, FolderTree, Settings, ChevronRight, ChevronLeft, Building2, Users, User, UserCog, Shield, FileText, RefreshCw, Copy, Scale, Layers, Wallet, Feather, Camera, FolderOpen, Link2, Landmark, Handshake, Activity, FileUp, CalendarDays } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
+import { pathAllowed } from '../config/pageCatalog'
 import { useSidebar } from '../contexts/SidebarContext'
 import { useDeviceMode } from '../contexts/DeviceModeContext'
 import MobileTopBar from './MobileTopBar'
@@ -98,7 +99,22 @@ const Sidebar = () => {
   const location = useLocation()
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
-  const { user, logout, updateUser } = useAuth()
+  const { user, logout, updateUser, isAdmin, canAccessPage } = useAuth()
+
+  const allowPath = useCallback(
+    (path: string) => pathAllowed(path, canAccessPage),
+    [canAccessPage],
+  )
+
+  const cadastroNav = useMemo(() => cadastroSubmenu.filter((i) => allowPath(i.path)), [allowPath])
+  const relatoriosNav = useMemo(() => relatoriosSubmenu.filter((i) => allowPath(i.path)), [allowPath])
+  const fechamentosNav = useMemo(() => fechamentosSubmenu.filter((i) => allowPath(i.path)), [allowPath])
+  const topNav = useMemo(() => topLevelMenuItems.filter((i) => allowPath(i.path)), [allowPath])
+  const importNav = useMemo(() => importMenuItems.filter((i) => allowPath(i.path)), [allowPath])
+  const afterFechamentosNav = useMemo(
+    () => afterFechamentosMenuItems.filter((i) => allowPath(i.path)),
+    [allowPath],
+  )
   const { collapsed, toggleCollapsed, mobileMenuOpen, closeMobileMenu } = useSidebar()
   const { isMobile } = useDeviceMode()
   const menuCollapsed = isMobile ? false : collapsed
@@ -256,15 +272,24 @@ const Sidebar = () => {
   }
 
   // Menu de configurações (separado, apenas Cores e Copiar)
-  const settingsMenuItem = {
-    icon: Settings,
-    label: 'Configurações',
-    path: '/configuracoes',
-    submenu: [
+  const settingsMenuItem = useMemo(() => {
+    const submenu = [
       { icon: Copy, label: 'Copiar Configurações', path: '/configuracoes/copy-settings' },
       { icon: Palette, label: 'Cores', path: '/configuracoes/cores' },
-    ]
-  }
+      ...(isAdmin
+        ? [
+            { icon: Shield, label: 'Acessos', path: '/configuracoes/acessos' as const },
+            { icon: UserCog, label: 'Usuários', path: '/configuracoes/usuarios' as const },
+          ]
+        : []),
+    ].filter((i) => allowPath(i.path))
+    return {
+      icon: Settings,
+      label: 'Configurações',
+      path: '/configuracoes',
+      submenu,
+    }
+  }, [isAdmin, allowPath])
 
   const headerBorderColor = theme === 'dark' ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.12)'
   const collapseMutedColor = theme === 'dark' ? '#94A3B8' : 'rgba(255,255,255,0.65)'
@@ -413,7 +438,7 @@ const Sidebar = () => {
           </p>
         )}
         <ul className="space-y-0.5">
-          {topLevelMenuItems.map((item) => {
+          {topNav.map((item) => {
             const Icon = item.icon
             const isActive = location.pathname === item.path
             return (
@@ -441,7 +466,7 @@ const Sidebar = () => {
             icon={Scale}
             label="Fechamentos"
             routes={FECHAMENTOS_ROUTES}
-            items={fechamentosSubmenu}
+            items={fechamentosNav}
             collapsed={menuCollapsed}
             open={openGroups.has('fechamentos')}
             onToggle={() => toggleNavGroup('fechamentos')}
@@ -449,7 +474,7 @@ const Sidebar = () => {
           />
           )}
 
-          {showPortalNav && afterFechamentosMenuItems.map((item) => {
+          {showPortalNav && afterFechamentosNav.map((item) => {
             const Icon = item.icon
             const isActive = location.pathname === item.path
             return (
@@ -476,7 +501,7 @@ const Sidebar = () => {
             icon={TrendingUp}
             label="Relatórios"
             routes={['/relatorios']}
-            items={relatoriosSubmenu}
+            items={relatoriosNav}
             collapsed={menuCollapsed}
             open={openGroups.has('relatorios')}
             onToggle={() => toggleNavGroup('relatorios')}
@@ -489,7 +514,7 @@ const Sidebar = () => {
             icon={FolderOpen}
             label="Cadastro"
             routes={CADASTRO_ROUTES}
-            items={cadastroSubmenu}
+            items={cadastroNav}
             collapsed={menuCollapsed}
             open={openGroups.has('cadastro')}
             onToggle={() => toggleNavGroup('cadastro')}
@@ -497,7 +522,7 @@ const Sidebar = () => {
           />
           )}
 
-          {showPortalNav && (
+          {showPortalNav && importNav.length > 0 && (
           <>
           <li className={menuCollapsed ? 'mx-2 my-2 border-t border-gray-700' : 'px-3 pb-1 pt-4'}>
             {!menuCollapsed && (
@@ -506,7 +531,7 @@ const Sidebar = () => {
               </p>
             )}
           </li>
-          {importMenuItems.map((item) => {
+          {importNav.map((item) => {
             const Icon = item.icon
             const isActive = location.pathname === item.path
             return (
@@ -533,7 +558,7 @@ const Sidebar = () => {
       </nav>
 
       {/* Settings Menu — acima do tema, como no Vigra */}
-      {showPortalNav && (
+      {showPortalNav && settingsMenuItem.submenu.length > 0 && (
       <div className={`border-t border-gray-800 pt-2 pb-1 ${menuCollapsed ? 'px-2' : 'px-2'}`}>
         <ul>
           {(() => {
@@ -560,20 +585,21 @@ const Sidebar = () => {
                 {settingsOpen && settingsMenuRef?.current && createPortal(
                   <div
                     ref={settingsPopupRef}
-                    className="fixed w-56 bg-gray-800 rounded-lg shadow-xl border border-gray-700 overflow-hidden"
+                    className="fixed flex w-56 max-h-[min(70vh,calc(100vh-1rem))] flex-col overflow-hidden rounded-lg border border-gray-700 bg-gray-800 shadow-xl"
                     style={{
                       left: settingsMenuRef.current.getBoundingClientRect().right + 8,
-                      top: settingsMenuRef.current.getBoundingClientRect().top,
-                      zIndex: 99999
+                      bottom:
+                        window.innerHeight - settingsMenuRef.current.getBoundingClientRect().bottom,
+                      zIndex: 99999,
                     }}
                   >
                     {/* Título do submenu */}
-                    <div className="px-4 pt-3 pb-2 border-b border-gray-700">
+                    <div className="shrink-0 border-b border-gray-700 px-4 pb-2 pt-3">
                       <p className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--color-1)' }}>
                         {item.label}
                       </p>
                     </div>
-                    <div className="py-1.5">
+                    <div className="min-h-0 flex-1 overflow-y-auto py-1.5">
                       {item.submenu.map((subItem) => {
                         const SubIcon = subItem.icon
                         const isSubActive = location.pathname === subItem.path

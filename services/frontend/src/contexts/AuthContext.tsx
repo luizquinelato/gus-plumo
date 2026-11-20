@@ -1,5 +1,8 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react'
 import axios from 'axios'
+import { PLUMO_APP_PAGES } from '../config/pageCatalog'
+
+export type PageAccessEntry = { can_read: boolean; can_write: boolean }
 
 // Configurar base URL do backend (usa variável de ambiente ou default)
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -19,6 +22,7 @@ interface User {
   hide_balance_values?: boolean
   account_id?: number
   avatar_url?: string
+  pages?: Record<string, PageAccessEntry>
 }
 
 interface AuthContextType {
@@ -29,6 +33,7 @@ interface AuthContextType {
   isLoading: boolean
   isAuthenticated: boolean
   isAdmin: boolean
+  canAccessPage: (pageKey: string, opts?: { write?: boolean }) => boolean
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -37,9 +42,45 @@ interface AuthProviderProps {
   children: ReactNode
 }
 
+function mapApiUser(userData: Record<string, unknown>): User {
+  return {
+    id: String(userData.id),
+    email: String(userData.email),
+    nome:
+      userData.first_name && userData.last_name
+        ? `${userData.first_name} ${userData.last_name}`
+        : String(userData.first_name || userData.last_name || String(userData.email).split('@')[0]),
+    primeiro_nome: String(userData.first_name ?? ''),
+    ultimo_nome: String(userData.last_name ?? ''),
+    role: String(userData.role || 'user'),
+    is_admin: Boolean(userData.is_admin),
+    tenant_id: Number(userData.tenant_id),
+    theme_mode: userData.theme_mode as string | undefined,
+    sidebar_collapsed: Boolean(userData.sidebar_collapsed ?? false),
+    hide_balance_values: Boolean(userData.hide_balance_values ?? false),
+    account_id: userData.account_id as number | undefined,
+    avatar_url: (userData.avatar_url as string | undefined) || undefined,
+    pages: (userData.pages as Record<string, PageAccessEntry> | undefined) || undefined,
+  }
+}
+
 export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+
+  const canAccessPage = useCallback(
+    (pageKey: string, opts?: { write?: boolean }) => {
+      if (!user) return false
+      if (user.is_admin) return true
+      const pageMeta = PLUMO_APP_PAGES.find((p) => p.page_key === pageKey)
+      if (pageMeta?.admin_only) return false
+      const entry = user.pages?.[pageKey]
+      if (!entry?.can_read) return false
+      if (opts?.write) return Boolean(entry.can_write)
+      return true
+    },
+    [user],
+  )
 
   // Validar token ao carregar a aplicação
   useEffect(() => {
@@ -61,23 +102,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         if (response.data.valid && response.data.user) {
           const userData = response.data.user
 
-          setUser({
-            id: userData.id.toString(),
-            email: userData.email,
-            nome: userData.first_name && userData.last_name
-              ? `${userData.first_name} ${userData.last_name}`
-              : userData.first_name || userData.last_name || userData.email.split('@')[0],
-            primeiro_nome: userData.first_name,
-            ultimo_nome: userData.last_name,
-            role: userData.role,
-            is_admin: userData.is_admin,
-            tenant_id: userData.tenant_id,
-            theme_mode: userData.theme_mode,
-            sidebar_collapsed: userData.sidebar_collapsed ?? false,
-            hide_balance_values: userData.hide_balance_values ?? false,
-            account_id: userData.account_id,
-            avatar_url: userData.avatar_url || undefined,
-          })
+          setUser(mapApiUser(userData as Record<string, unknown>))
 
           // Aplicar tema do usuário
           if (userData.theme_mode) {
@@ -196,23 +221,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
 
         // Definir dados do usuário DEPOIS de carregar cores
-        setUser({
-          id: userData.id.toString(),
-          email: userData.email,
-          nome: userData.first_name && userData.last_name
-            ? `${userData.first_name} ${userData.last_name}`
-            : userData.first_name || userData.last_name || userData.email.split('@')[0],
-          primeiro_nome: userData.first_name,
-          ultimo_nome: userData.last_name,
-          role: userData.role,
-          is_admin: userData.is_admin,
-          tenant_id: userData.tenant_id,
-          theme_mode: userData.theme_mode,
-          sidebar_collapsed: userData.sidebar_collapsed ?? false,
-          hide_balance_values: userData.hide_balance_values ?? false,
-          account_id: userData.account_id,
-          avatar_url: userData.avatar_url || undefined,
-        })
+        setUser(mapApiUser(userData as Record<string, unknown>))
 
         // Aplicar tema do usuário
         if (userData.theme_mode) {
@@ -265,7 +274,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     updateUser,
     isLoading,
     isAuthenticated: !!user,
-    isAdmin: !!user && user.is_admin
+    isAdmin: !!user && user.is_admin,
+    canAccessPage,
   }
 
   return (

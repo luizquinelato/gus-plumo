@@ -23,6 +23,7 @@ import Badge from '../components/Badge'
 import { badgeVariantForColumnRole } from '../utils/badgeSurfaces'
 import { badgeToneMap } from '../utils/badgePalettes'
 import LoadingSpinner from '../components/LoadingSpinner'
+import { usePageWriteAllowed, WriteGate } from '../contexts/PageMutationContext'
 import Toast from '../components/Toast'
 import FloatingFooterBar from '../components/FloatingFooterBar'
 import {
@@ -208,6 +209,7 @@ const getIncomeSelectionKey = (report: IncomeReport) => `income:${report.id}`
 const META_LABEL_CLS = 'text-[11px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500'
 
 const PayrollPage = () => {
+  const canWrite = usePageWriteAllowed()
   const [activeTab, setActiveTab] = useState<PayrollTab>('payslips')
   const [loading, setLoading] = useState(false)
   const [filtersLoading, setFiltersLoading] = useState(true)
@@ -864,15 +866,17 @@ const PayrollPage = () => {
                                   >
                                     <Eye size={16} />
                                   </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeletePayslip(p)}
-                                    disabled={deleting}
-                                    className={cadastroRowIconDangerCls}
-                                    title="Excluir holerite"
-                                  >
-                                    <Trash2 size={16} />
-                                  </button>
+                                  <WriteGate>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeletePayslip(p)}
+                                      disabled={deleting}
+                                      className={cadastroRowIconDangerCls}
+                                      title="Excluir holerite"
+                                    >
+                                      <Trash2 size={16} />
+                                    </button>
+                                  </WriteGate>
                                 </div>
                               </div>
                             </div>
@@ -941,14 +945,16 @@ const PayrollPage = () => {
                               >
                                 <Eye size={16} />
                               </button>
-                              <button
-                                onClick={() => handleDeleteIncomeReport(r)}
-                                disabled={deleting}
-                                className="p-2 rounded-lg text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50"
-                                title="Excluir informe"
-                              >
-                                <Trash2 size={16} />
-                              </button>
+                              <WriteGate>
+                                <button
+                                  onClick={() => handleDeleteIncomeReport(r)}
+                                  disabled={deleting}
+                                  className="p-2 rounded-lg text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50"
+                                  title="Excluir informe"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </WriteGate>
                             </div>
                           </div>
                         </article>
@@ -1083,7 +1089,7 @@ const PayrollPage = () => {
         />
       )}
 
-      {selectedItems.size > 0 && (
+      {canWrite && selectedItems.size > 0 && (
         <FloatingFooterBar>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -1099,15 +1105,17 @@ const PayrollPage = () => {
               </button>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                onClick={handleBulkDelete}
-                disabled={deleting}
-                className="px-3 py-1.5 text-white rounded-lg transition-colors flex items-center gap-1.5 hover:opacity-90 text-sm font-semibold disabled:opacity-50"
-                style={{ backgroundColor: 'var(--crud-delete)' }}
-              >
-                <Trash2 size={14} />
-                Excluir
-              </button>
+              <WriteGate>
+                <button
+                  onClick={handleBulkDelete}
+                  disabled={deleting}
+                  className="px-3 py-1.5 text-white rounded-lg transition-colors flex items-center gap-1.5 hover:opacity-90 text-sm font-semibold disabled:opacity-50"
+                  style={{ backgroundColor: 'var(--crud-delete)' }}
+                >
+                  <Trash2 size={14} />
+                  Excluir
+                </button>
+              </WriteGate>
               {showBackToTop && (
                 <button
                   onClick={scrollToTop}

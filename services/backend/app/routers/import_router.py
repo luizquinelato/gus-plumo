@@ -191,19 +191,17 @@ def _resolve_extrato_account(db: Session, current_user: dict, account_id: Option
                 detail="account_id não encontrado no token JWT. Por favor, selecione uma conta."
             )
 
-    # Valida se o account_id pertence ao usuário logado
-    account = db.query(Account).filter(
-        Account.id == account_id,
-        Account.user_id == user_id,
-        Account.tenant_id == tenant_id,
-        Account.active == True
-    ).first()
+    from app.services.account_access import require_account_access
 
-    if not account:
-        raise HTTPException(
-            status_code=404,
-            detail="Conta não encontrada ou não pertence ao usuário logado"
-        )
+    is_admin = bool(current_user.get("is_admin", False))
+    require_account_access(
+        db,
+        int(tenant_id),
+        int(user_id),
+        is_admin,
+        int(account_id),
+        not_found_detail="Conta não encontrada ou sem permissão de acesso",
+    )
     return tenant_id, user_id, account_id
 
 
@@ -429,7 +427,14 @@ def process_extrato(
             "preview": build_raw_preview(
                 db, tenant_id, account_id, save_result,
                 unchanged=unchanged, ignored_rows=etl["ignored_rows"],
-                warnings=extrato_other_account_warnings(db, tenant_id, user_id, account_id, save_result),
+                warnings=extrato_other_account_warnings(
+                    db,
+                    tenant_id,
+                    user_id,
+                    account_id,
+                    save_result,
+                    is_admin=bool(current_user.get("is_admin", False)),
+                ),
             ),
         }
     finally:

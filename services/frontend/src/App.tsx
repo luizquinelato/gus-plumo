@@ -7,6 +7,8 @@ import { DeviceModeProvider } from './contexts/DeviceModeContext'
 import { MobileTopBarActionsProvider } from './contexts/MobileTopBarActionsContext'
 import { BalanceVisibilityProvider } from './contexts/BalanceVisibilityContext'
 import ProtectedRoute from './components/ProtectedRoute'
+import ProtectedPageRoute from './components/ProtectedPageRoute'
+import AdminRoute from './components/AdminRoute'
 import LoginPage from './pages/LoginPage'
 import SelectAccountPage from './pages/SelectAccountPage'
 import HomePage from './pages/HomePage'
@@ -16,6 +18,8 @@ import ContasPage from './pages/ContasPage'
 import CompartilhamentosPage from './pages/CompartilhamentosPage'
 import ColorSettingsPage from './pages/ColorSettingsPage'
 import SettingsPage from './pages/SettingsPage'
+import TenantUsersSettingsPage from './pages/TenantUsersSettingsPage'
+import TenantAccessSettingsPage from './pages/TenantAccessSettingsPage'
 import MappingsPage from './pages/MappingsPage'
 import ExtratoPage from './pages/ExtratoPage'
 import BalancoPage from './pages/BalancoPage'
@@ -94,50 +98,50 @@ function App() {
               <Route
                 path="/"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedPageRoute pageKey="home">
                     <HomePage />
-                  </ProtectedRoute>
+                  </ProtectedPageRoute>
                 }
               />
               <Route
                 path="/importar"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedPageRoute pageKey="importar">
                     <ImportWizardPage />
-                  </ProtectedRoute>
+                  </ProtectedPageRoute>
                 }
               />
               {/* Rotas de Configurações */}
               <Route
                 path="/configuracoes/cartoes"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedPageRoute pageKey="configuracoes.cartoes">
                     <CartoesPage />
-                  </ProtectedRoute>
+                  </ProtectedPageRoute>
                 }
               />
               <Route
                 path="/configuracoes/contas"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedPageRoute pageKey="configuracoes.contas">
                     <ContasPage />
-                  </ProtectedRoute>
+                  </ProtectedPageRoute>
                 }
               />
               <Route
                 path="/configuracoes/compartilhamentos"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedPageRoute pageKey="configuracoes.compartilhamentos">
                     <CompartilhamentosPage />
-                  </ProtectedRoute>
+                  </ProtectedPageRoute>
                 }
               />
               <Route
                 path="/configuracoes/tags-subtags"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedPageRoute pageKey="configuracoes.tags">
                     <TagsSubtagsPage />
-                  </ProtectedRoute>
+                  </ProtectedPageRoute>
                 }
               />
 
@@ -160,9 +164,9 @@ function App() {
               <Route
                 path="/mappings"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedPageRoute pageKey="cadastro.mappings">
                     <MappingsPage />
-                  </ProtectedRoute>
+                  </ProtectedPageRoute>
                 }
               />
               {/* Redirect /relatorios para /relatorios/graficos */}
@@ -173,9 +177,9 @@ function App() {
               <Route
                 path="/relatorios/extrato"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedPageRoute pageKey="relatorios.extrato">
                     <ExtratoPage />
-                  </ProtectedRoute>
+                  </ProtectedPageRoute>
                 }
               />
               {/* Redirect antigo /relatorios/detalhamento para /relatorios/extrato */}
@@ -187,141 +191,161 @@ function App() {
               <Route
                 path="/fechamentos/conta"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedPageRoute pageKey="fechamentos.conta">
                     <AccountClosuresPage />
-                  </ProtectedRoute>
+                  </ProtectedPageRoute>
                 }
               />
               <Route
                 path="/fechamentos/conta/fechados"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedPageRoute pageKey="fechamentos.conta">
                     <AccountClosuresPage />
-                  </ProtectedRoute>
+                  </ProtectedPageRoute>
                 }
               />
               <Route
                 path="/fechamentos/compartilhado/*"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedPageRoute pageKey="fechamentos.compartilhado">
                     <BalancoPage />
-                  </ProtectedRoute>
+                  </ProtectedPageRoute>
                 }
               />
               <Route path="/balanco" element={<Navigate to="/fechamentos/compartilhado" replace />} />
               <Route
                 path="/relatorios/faturas"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedPageRoute pageKey="relatorios.faturas">
                     <FaturasPage />
-                  </ProtectedRoute>
+                  </ProtectedPageRoute>
                 }
               />
               <Route
                 path="/relatorios/saldo-parcelado"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedPageRoute pageKey="relatorios.saldo_parcelado">
                     <SaldoParceladoPage />
-                  </ProtectedRoute>
+                  </ProtectedPageRoute>
                 }
               />
               <Route
                 path="/relatorios/projecao-mensal"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedPageRoute pageKey="relatorios.projecao">
                     <ProjecaoMensalPage />
-                  </ProtectedRoute>
+                  </ProtectedPageRoute>
                 }
               />
               <Route
                 path="/relatorios/grupo"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedPageRoute pageKey="relatorios.grupo">
                     <GrupoPage />
-                  </ProtectedRoute>
+                  </ProtectedPageRoute>
                 }
               />
               <Route
                 path="/informes"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedPageRoute pageKey="informes">
                     <PayrollPage />
-                  </ProtectedRoute>
+                  </ProtectedPageRoute>
                 }
               />
               <Route
                 path="/consorcios"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedPageRoute pageKey="consorcios">
                     <ConsorciosPage />
-                  </ProtectedRoute>
+                  </ProtectedPageRoute>
                 }
               />
               <Route path="/relatorios/holerites" element={<Navigate to="/informes" replace />} />
               <Route
                 path="/relatorios/saude"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedPageRoute pageKey="relatorios.saude">
                     <HealthCheckPage />
-                  </ProtectedRoute>
+                  </ProtectedPageRoute>
                 }
               />
               <Route
                 path="/fechamentos/saude"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedPageRoute pageKey="relatorios.saude">
                     <HealthCheckPage />
-                  </ProtectedRoute>
+                  </ProtectedPageRoute>
                 }
               />
               <Route path="/saude-financeira" element={<Navigate to="/relatorios/saude" replace />} />
               <Route
                 path="/fechamentos/faturas"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedPageRoute pageKey="fechamentos.faturas">
                     <ReconciliacaoPage />
-                  </ProtectedRoute>
+                  </ProtectedPageRoute>
                 }
               />
               <Route path="/reconciliacao" element={<Navigate to="/fechamentos/faturas" replace />} />
               <Route
                 path="/curadoria"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedPageRoute pageKey="curadoria">
                     <CuradoriaPage />
-                  </ProtectedRoute>
+                  </ProtectedPageRoute>
                 }
               />
               <Route
                 path="/templates"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedPageRoute pageKey="cadastro.templates">
                     <ExpenseTemplatesPage />
-                  </ProtectedRoute>
+                  </ProtectedPageRoute>
                 }
               />
               <Route
                 path="/emprestimos"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedPageRoute pageKey="emprestimos">
                     <EmprestimosPage />
-                  </ProtectedRoute>
+                  </ProtectedPageRoute>
                 }
               />
               <Route
                 path="/configuracoes/cores"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedPageRoute pageKey="configuracoes.cores">
                     <ColorSettingsPage />
-                  </ProtectedRoute>
+                  </ProtectedPageRoute>
                 }
               />
               <Route
                 path="/configuracoes/copy-settings"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedPageRoute pageKey="configuracoes.copy">
                     <SettingsPage />
-                  </ProtectedRoute>
+                  </ProtectedPageRoute>
+                }
+              />
+              <Route
+                path="/configuracoes/acessos"
+                element={
+                  <AdminRoute>
+                    <ProtectedPageRoute pageKey="configuracoes.acessos">
+                      <TenantAccessSettingsPage />
+                    </ProtectedPageRoute>
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="/configuracoes/usuarios"
+                element={
+                  <AdminRoute>
+                    <ProtectedPageRoute pageKey="configuracoes.usuarios">
+                      <TenantUsersSettingsPage />
+                    </ProtectedPageRoute>
+                  </AdminRoute>
                 }
               />
               {/* Redirects das rotas antigas */}

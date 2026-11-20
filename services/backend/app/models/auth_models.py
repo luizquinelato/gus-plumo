@@ -69,6 +69,55 @@ class Usuario(Base):
     tenant = relationship("Tenant", back_populates="users")
     sessions = relationship("Sessao", back_populates="user")
     permissions = relationship("Permissao", back_populates="user")
+    page_grants = relationship("UserPageGrant", back_populates="user", foreign_keys="UserPageGrant.user_id")
+
+
+class AppPage(Base):
+    """Catálogo global de páginas navegáveis."""
+    __tablename__ = "app_pages"
+
+    page_key = Column(String(100), primary_key=True)
+    route = Column(String(255), nullable=False)
+    label = Column(String(255), nullable=False)
+    group_label = Column(String(100), nullable=False)
+    sort_order = Column(Integer, nullable=False, default=0)
+    admin_only = Column(Boolean, nullable=False, default=False)
+    active = Column(Boolean, nullable=False, default=True)
+
+
+class UserPageGrant(Base):
+    """Concessão de leitura/escrita por página para um usuário."""
+    __tablename__ = "user_page_grants"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    page_key = Column(String(100), ForeignKey("app_pages.page_key", ondelete="CASCADE"), nullable=False, index=True)
+    can_read = Column(Boolean, nullable=False, default=False)
+    can_write = Column(Boolean, nullable=False, default=False)
+    granted_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    created_at = Column(DateTime, nullable=False, default=now_utc)
+    last_updated_at = Column(DateTime, nullable=False, default=now_utc, onupdate=now_utc)
+    active = Column(Boolean, nullable=False, default=True)
+
+    user = relationship("Usuario", back_populates="page_grants", foreign_keys=[user_id])
+
+
+class RolePageGrant(Base):
+    """Concessão de leitura/escrita por página para um role no tenant."""
+    __tablename__ = "role_page_grants"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    role = Column(String(50), nullable=False, index=True)
+    page_key = Column(String(100), ForeignKey("app_pages.page_key", ondelete="CASCADE"), nullable=False, index=True)
+    can_read = Column(Boolean, nullable=False, default=False)
+    can_write = Column(Boolean, nullable=False, default=False)
+    granted_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=now_utc)
+    last_updated_at = Column(DateTime, nullable=False, default=now_utc, onupdate=now_utc)
+    active = Column(Boolean, nullable=False, default=True)
 
 
 class Sessao(Base):

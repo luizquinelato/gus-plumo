@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Sidebar from '../components/Sidebar'
 import {
   CadastroListCreateButton,
+  CadastroRowMutations,
   CadastroListSecondaryButton,
   CadastroListPageBody,
   CadastroListPageEmptyCard,
@@ -19,6 +20,7 @@ import {
   type StatusFilter,
 } from '../components/CadastroListPageLayout'
 import FloatingFooterBar from '../components/FloatingFooterBar'
+import { usePageWriteAllowed, WriteGate } from '../contexts/PageMutationContext'
 import BulkSelectCheckbox, { type HeaderCheckState } from '../components/BulkSelectCheckbox'
 import { ListPageNestedTable } from '../components/ListPageTable'
 import {
@@ -212,6 +214,7 @@ function ActiveSwitch({
 }
 
 const CartoesPage = () => {
+  const canWrite = usePageWriteAllowed()
   const [cartoes, setCartoes] = useState<Cartao[]>([])
   const [invoiceGroups, setInvoiceGroups] = useState<InvoiceGroup[]>([])
   const [showGroupModal, setShowGroupModal] = useState(false)
@@ -825,14 +828,16 @@ const CartoesPage = () => {
   }
 
   const renderCartaoActions = (cartao: Cartao) => (
-    <div className="flex items-center gap-0.5">
-      <button type="button" onClick={() => abrirModalEditar(cartao)} className={cadastroRowIconBtnCls} title="Editar">
-        <Edit2 size={15} />
-      </button>
-      <button type="button" onClick={() => handleDelete(cartao.id)} className={cadastroRowIconDangerCls} title="Excluir">
-        <Trash2 size={15} />
-      </button>
-    </div>
+    <CadastroRowMutations>
+      <div className="flex items-center gap-0.5">
+        <button type="button" onClick={() => abrirModalEditar(cartao)} className={cadastroRowIconBtnCls} title="Editar">
+          <Edit2 size={15} />
+        </button>
+        <button type="button" onClick={() => handleDelete(cartao.id)} className={cadastroRowIconDangerCls} title="Excluir">
+          <Trash2 size={15} />
+        </button>
+      </div>
+    </CadastroRowMutations>
   )
 
   const renderCartaoTableRow = (cartao: Cartao, lineIndex: number) => {
@@ -948,6 +953,7 @@ const CartoesPage = () => {
                     label="Novo Grupo"
                     icon={<Layers size={18} />}
                     onClick={abrirModalGrupoNovo}
+                    requireWrite
                     disabled={cartoesCreditoAtivos.length < 2}
                     title={
                       cartoesCreditoAtivos.length < 2
@@ -1076,24 +1082,26 @@ const CartoesPage = () => {
                           </div>
                         </div>
                       </div>
-                      <div className="flex shrink-0 items-center gap-1 self-start">
-                        <button
-                          type="button"
-                          onClick={() => abrirModalGrupoEditar(group)}
-                          className={cadastroRowIconBtnCls}
-                          title="Editar grupo"
-                        >
-                          <Edit2 size={18} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => excluirGrupo(group)}
-                          className={cadastroRowIconDangerCls}
-                          title="Excluir grupo"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
+                      <CadastroRowMutations>
+                        <div className="flex shrink-0 items-center gap-1 self-start">
+                          <button
+                            type="button"
+                            onClick={() => abrirModalGrupoEditar(group)}
+                            className={cadastroRowIconBtnCls}
+                            title="Editar grupo"
+                          >
+                            <Edit2 size={18} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => excluirGrupo(group)}
+                            className={cadastroRowIconDangerCls}
+                            title="Excluir grupo"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
+                      </CadastroRowMutations>
                     </div>
 
                     {isExpanded && (
@@ -1155,7 +1163,7 @@ const CartoesPage = () => {
         </CadastroListPageBody>
       </CadastroListPageShell>
 
-      {selectedCardIds.size > 0 && (
+      {canWrite && selectedCardIds.size > 0 && (
         <FloatingFooterBar>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -1174,16 +1182,18 @@ const CartoesPage = () => {
               </button>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleBulkDelete}
-                disabled={bulkDeleting}
-                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
-                style={{ backgroundColor: 'var(--crud-delete)' }}
-              >
-                <Trash2 size={14} />
-                {bulkDeleting ? 'Excluindo…' : 'Excluir'}
-              </button>
+              <WriteGate>
+                <button
+                  type="button"
+                  onClick={handleBulkDelete}
+                  disabled={bulkDeleting}
+                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
+                  style={{ backgroundColor: 'var(--crud-delete)' }}
+                >
+                  <Trash2 size={14} />
+                  {bulkDeleting ? 'Excluindo…' : 'Excluir'}
+                </button>
+              </WriteGate>
               {showBackToTop && (
                 <button
                   type="button"

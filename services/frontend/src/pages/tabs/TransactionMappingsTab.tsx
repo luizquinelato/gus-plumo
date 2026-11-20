@@ -9,6 +9,7 @@ import { useExportRunner } from '../../hooks/useExportRunner'
 import { useEscapeKey } from '../../hooks/useEscapeKey'
 import Toast from '../../components/Toast'
 import FloatingFooterBar from '../../components/FloatingFooterBar'
+import { usePageWriteAllowed, WriteGate } from '../../contexts/PageMutationContext'
 import ListPagination from '../../components/ListPagination'
 import {
   CadastroFilterField,
@@ -20,6 +21,7 @@ import {
   CadastroListPageSearchField,
   cadastroRowIconBtnCls,
   cadastroRowIconDangerCls,
+  CadastroRowMutations,
   listPageTableRowHoverCls,
   listPageTableTdCls,
 } from '../../components/CadastroListPageLayout'
@@ -296,6 +298,7 @@ function compareMappings(
 }
 
 const TransactionMappingsTab = () => {
+  const canWrite = usePageWriteAllowed()
   const [tags, setTags] = useState<Tag[]>([])
   const [subtags, setSubtags] = useState<Subtag[]>([])
   const [partners, setPartners] = useState<ExpenseSharing[]>([])
@@ -2088,35 +2091,37 @@ const TransactionMappingsTab = () => {
                         </td>
                         <td className={listPageTableTdCls}>
                           <div className="flex items-center gap-0.5">
-                            <button
-                              type="button"
-                              onClick={() => handleEdit(mapping)}
-                              className={cadastroRowIconBtnCls}
-                              title="Editar mapeamento"
-                            >
-                              <Edit2 size={15} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => openRemapModal(mapping)}
-                              disabled={remappingId === mapping.id}
-                              className={`${cadastroRowIconBtnCls} disabled:opacity-50`}
-                              title="Aplicar mapeamento às transações existentes"
-                            >
-                              {remappingId === mapping.id ? (
-                                <Loader2 size={15} className="animate-spin" />
-                              ) : (
-                                <Play size={15} />
-                              )}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDelete(mapping.id)}
-                              className={cadastroRowIconDangerCls}
-                              title="Deletar mapeamento"
-                            >
-                              <Trash2 size={15} />
-                            </button>
+                            <CadastroRowMutations>
+                              <button
+                                type="button"
+                                onClick={() => handleEdit(mapping)}
+                                className={cadastroRowIconBtnCls}
+                                title="Editar mapeamento"
+                              >
+                                <Edit2 size={15} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openRemapModal(mapping)}
+                                disabled={remappingId === mapping.id}
+                                className={`${cadastroRowIconBtnCls} disabled:opacity-50`}
+                                title="Aplicar mapeamento às transações existentes"
+                              >
+                                {remappingId === mapping.id ? (
+                                  <Loader2 size={15} className="animate-spin" />
+                                ) : (
+                                  <Play size={15} />
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(mapping.id)}
+                                className={cadastroRowIconDangerCls}
+                                title="Deletar mapeamento"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </CadastroRowMutations>
                             {mapping.is_sensitive && (
                               <button
                                 type="button"
@@ -3152,7 +3157,7 @@ const TransactionMappingsTab = () => {
       )}
 
       {/* Barra Flutuante de Ações - Com seleção */}
-      {selectedMappings.size > 0 && (
+      {canWrite && selectedMappings.size > 0 && (
         <FloatingFooterBar>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -3168,38 +3173,40 @@ const TransactionMappingsTab = () => {
               </button>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowBatchEditModal(true)}
-                disabled={isBatchEditing || !canBatchEdit}
-                className="px-3 py-1.5 text-white rounded-lg transition-colors flex items-center gap-1.5 hover:opacity-90 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{ backgroundColor: 'var(--crud-edit)' }}
-                title={!canBatchEdit ? 'Selecione apenas mapeamentos do mesmo tipo (receita ou despesa)' : 'Editar mapeamentos selecionados'}
-              >
-                <Edit2 size={14} />
-                {isBatchEditing ? 'Editando...' : 'Editar Todas'}
-              </button>
-              <button
-                onClick={() => setShowBatchRemapModal(true)}
-                disabled={isBatchRemapping}
-                className="px-3 py-1.5 text-white rounded-lg transition-colors flex items-center gap-1.5 hover:opacity-90 text-sm font-semibold disabled:opacity-50"
-                style={{ backgroundColor: 'var(--color-2)' }}
-              >
-                {isBatchRemapping ? (
-                  <Loader2 size={14} className="animate-spin" />
-                ) : (
-                  <Play size={14} />
-                )}
-                {isBatchRemapping ? 'Executando...' : 'Executar selecionados'}
-              </button>
-              <button
-                onClick={handleDeleteSelected}
-                disabled={isDeletingSelected}
-                className="px-3 py-1.5 text-white rounded-lg transition-colors flex items-center gap-1.5 hover:opacity-90 text-sm font-semibold disabled:opacity-50"
-                style={{ backgroundColor: 'var(--crud-delete)' }}
-              >
-                <Trash2 size={14} />
-                {isDeletingSelected ? 'Deletando...' : `Deletar (${selectedMappings.size})`}
-              </button>
+              <WriteGate>
+                <button
+                  onClick={() => setShowBatchEditModal(true)}
+                  disabled={isBatchEditing || !canBatchEdit}
+                  className="px-3 py-1.5 text-white rounded-lg transition-colors flex items-center gap-1.5 hover:opacity-90 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ backgroundColor: 'var(--crud-edit)' }}
+                  title={!canBatchEdit ? 'Selecione apenas mapeamentos do mesmo tipo (receita ou despesa)' : 'Editar mapeamentos selecionados'}
+                >
+                  <Edit2 size={14} />
+                  {isBatchEditing ? 'Editando...' : 'Editar Todas'}
+                </button>
+                <button
+                  onClick={() => setShowBatchRemapModal(true)}
+                  disabled={isBatchRemapping}
+                  className="px-3 py-1.5 text-white rounded-lg transition-colors flex items-center gap-1.5 hover:opacity-90 text-sm font-semibold disabled:opacity-50"
+                  style={{ backgroundColor: 'var(--color-2)' }}
+                >
+                  {isBatchRemapping ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Play size={14} />
+                  )}
+                  {isBatchRemapping ? 'Executando...' : 'Executar selecionados'}
+                </button>
+                <button
+                  onClick={handleDeleteSelected}
+                  disabled={isDeletingSelected}
+                  className="px-3 py-1.5 text-white rounded-lg transition-colors flex items-center gap-1.5 hover:opacity-90 text-sm font-semibold disabled:opacity-50"
+                  style={{ backgroundColor: 'var(--crud-delete)' }}
+                >
+                  <Trash2 size={14} />
+                  {isDeletingSelected ? 'Deletando...' : `Deletar (${selectedMappings.size})`}
+                </button>
+              </WriteGate>
               {/* Botão Back to Top dentro da barra de ações */}
               {showBackToTop && (
                 <button

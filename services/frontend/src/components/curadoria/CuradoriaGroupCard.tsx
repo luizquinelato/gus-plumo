@@ -17,6 +17,7 @@ import {
 import { formatCurrencyWithColor } from '../../utils/currency'
 import { sharingPartnerLabel, sharingPercentForKind } from '../../utils/accountFormatter'
 import { CadastroFilterField, cadastroRowIconBtnCls } from '../CadastroListPageLayout'
+import { WriteGate } from '../../contexts/PageMutationContext'
 import { cadastroAccentControlCls, cadastroFieldCls, cadastroOptionLabelCls } from '../CadastroFormLayout'
 import { LIST_TABLE_INDEX_COL_PX } from '../ListTableSelectColumns'
 import type {
@@ -441,33 +442,35 @@ export default function CuradoriaGroupCard(props: CuradoriaGroupCardProps) {
           <div className={curadoriaFieldDividerCls} aria-hidden />
 
           <div className="flex shrink-0 items-center gap-0.5 pl-0 sm:pl-1">
-            <button
-              type="button"
-              onClick={() => onApplyGroupToRecords(group.groupKey)}
-              disabled={!needsApply || isSaved}
-              className={`${cadastroRowIconBtnCls} relative ${hasWarning ? 'text-amber-600 dark:text-amber-400' : ''}`}
-              title="Aplicar tag/subtag aos lançamentos"
-            >
-              <Copy size={18} />
-              {hasWarning ? (
-                <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-amber-500" />
-              ) : null}
-            </button>
-            <button
-              type="button"
-              onClick={() => (isVirtualGroup ? onSaveVirtualGroup(group.groupKey) : onSaveGroup(group.groupKey))}
-              disabled={!canSave || isSaved || isCurrentlySaving}
-              className={cadastroRowIconBtnCls}
-              title={isVirtualGroup ? `Salvar mapeamento ${detectedMode}` : 'Salvar grupo'}
-            >
-              {isCurrentlySaving ? (
-                <Loader2 className="animate-spin" size={18} />
-              ) : isSaved ? (
-                <Check size={18} className="text-green-600" />
-              ) : (
-                <Save size={18} />
-              )}
-            </button>
+            <WriteGate>
+              <button
+                type="button"
+                onClick={() => onApplyGroupToRecords(group.groupKey)}
+                disabled={!needsApply || isSaved}
+                className={`${cadastroRowIconBtnCls} relative ${hasWarning ? 'text-amber-600 dark:text-amber-400' : ''}`}
+                title="Aplicar tag/subtag aos lançamentos"
+              >
+                <Copy size={18} />
+                {hasWarning ? (
+                  <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-amber-500" />
+                ) : null}
+              </button>
+              <button
+                type="button"
+                onClick={() => (isVirtualGroup ? onSaveVirtualGroup(group.groupKey) : onSaveGroup(group.groupKey))}
+                disabled={!canSave || isSaved || isCurrentlySaving}
+                className={cadastroRowIconBtnCls}
+                title={isVirtualGroup ? `Salvar mapeamento ${detectedMode}` : 'Salvar grupo'}
+              >
+                {isCurrentlySaving ? (
+                  <Loader2 className="animate-spin" size={18} />
+                ) : isSaved ? (
+                  <Check size={18} className="text-green-600" />
+                ) : (
+                  <Save size={18} />
+                )}
+              </button>
+            </WriteGate>
             <button
               type="button"
               onClick={() => onOpenDetails(group)}

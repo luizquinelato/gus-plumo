@@ -4,6 +4,7 @@ import { DateField } from '../components/date'
 import { dateToLocalString, dateToLocalTimestamp, getTodayLocalDate } from '../utils/dateUtils'
 import axios from 'axios'
 import Sidebar from '../components/Sidebar'
+import { usePageWriteAllowed, WriteGate } from '../contexts/PageMutationContext'
 import {
   CadastroListPageBody,
   CadastroListPageEmptyCard,
@@ -12,6 +13,7 @@ import {
   CadastroListPageShell,
   CadastroListPageFilterCard,
   CadastroListPrimaryButton,
+  CadastroRowMutations,
   CadastroFilterField,
   cadastroFilterFieldCls,
   cadastroRowIconBtnCls,
@@ -431,6 +433,7 @@ function closureSettleDefaultInput(closure: BalanceClosure): string {
 }
 
 const SharedBalanceListPage = () => {
+  const canWrite = usePageWriteAllowed()
   const { showConfirm, ConfirmComponent } = useConfirm()
   const navigate = useNavigate()
   const [draftPartnerAccountId, setDraftPartnerAccountId] = useState<number | null>(null)
@@ -1885,22 +1888,24 @@ const SharedBalanceListPage = () => {
               subtitle="Consulte fechamentos por parceiro e ano ou inicie um novo fechamento por período"
               actions={
                 <CadastroListHeaderActions>
-                  <button
-                    type="button"
-                    onClick={sendClosuresWhatsapp}
-                    disabled={!filtersApplied || closuresLoading || closuresScorecards.pendingCount === 0 || sendingWhatsapp}
-                    title={
-                      !filtersApplied
-                        ? 'Aplique os filtros para habilitar o envio por WhatsApp'
-                        : appliedPartnerAccountId
-                          ? 'Enviar resumo dos fechamentos abertos por WhatsApp'
-                          : 'Enviar um resumo por compartilhamento com fechamento aberto por WhatsApp'
-                    }
-                    aria-label="Enviar resumo dos fechamentos abertos por WhatsApp"
-                    className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white p-2 text-green-600 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-600 dark:bg-gray-800 dark:text-green-400 dark:hover:bg-gray-700"
-                  >
-                    <MessageCircle size={18} />
-                  </button>
+                  <WriteGate>
+                    <button
+                      type="button"
+                      onClick={sendClosuresWhatsapp}
+                      disabled={!filtersApplied || closuresLoading || closuresScorecards.pendingCount === 0 || sendingWhatsapp}
+                      title={
+                        !filtersApplied
+                          ? 'Aplique os filtros para habilitar o envio por WhatsApp'
+                          : appliedPartnerAccountId
+                            ? 'Enviar resumo dos fechamentos abertos por WhatsApp'
+                            : 'Enviar um resumo por compartilhamento com fechamento aberto por WhatsApp'
+                      }
+                      aria-label="Enviar resumo dos fechamentos abertos por WhatsApp"
+                      className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white p-2 text-green-600 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-600 dark:bg-gray-800 dark:text-green-400 dark:hover:bg-gray-700"
+                    >
+                      <MessageCircle size={18} />
+                    </button>
+                  </WriteGate>
                   <CadastroListPrimaryButton
                     label="Realizar fechamento"
                     icon={<Archive size={18} />}
@@ -2367,33 +2372,35 @@ const SharedBalanceListPage = () => {
                                 >
                                   <Eye size={15} />
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setHubNestedScreen(null)
-                                    setHubClosure(closure)
-                                  }}
-                                  className={cadastroRowIconBtnCls}
-                                  title="Editar — pagamentos, recálculo, exportar e mais"
-                                >
-                                  <Pencil size={15} />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleReopenClosure(closure)}
-                                  className={reportRowActionBtnClass(
-                                    !closure.is_settled || settlementStatus === 'loan_open',
-                                    'danger',
-                                  )}
-                                  title={
-                                    closure.is_settled && settlementStatus !== 'loan_open'
-                                      ? 'Excluir fechamento (remova a quitação antes)'
-                                      : 'Excluir fechamento'
-                                  }
-                                  disabled={closure.is_settled && settlementStatus !== 'loan_open'}
-                                >
-                                  <Trash2 size={15} />
-                                </button>
+                                <CadastroRowMutations>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setHubNestedScreen(null)
+                                      setHubClosure(closure)
+                                    }}
+                                    className={cadastroRowIconBtnCls}
+                                    title="Editar — pagamentos, recálculo, exportar e mais"
+                                  >
+                                    <Pencil size={15} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleReopenClosure(closure)}
+                                    className={reportRowActionBtnClass(
+                                      !closure.is_settled || settlementStatus === 'loan_open',
+                                      'danger',
+                                    )}
+                                    title={
+                                      closure.is_settled && settlementStatus !== 'loan_open'
+                                        ? 'Excluir fechamento (remova a quitação antes)'
+                                        : 'Excluir fechamento'
+                                    }
+                                    disabled={closure.is_settled && settlementStatus !== 'loan_open'}
+                                  >
+                                    <Trash2 size={15} />
+                                  </button>
+                                </CadastroRowMutations>
                               </div>
                             </div>
                           </div>
@@ -2443,26 +2450,28 @@ const SharedBalanceListPage = () => {
                                             {payment.notes || <span className="italic text-gray-300 dark:text-gray-600">—</span>}
                                           </td>
                                           <td className="px-2 py-2">
-                                            <div className="flex items-center gap-0.5">
-                                              {!closure.is_settled && (
+                                            <CadastroRowMutations>
+                                              <div className="flex items-center gap-0.5">
+                                                {!closure.is_settled && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => openEditPayment(payment, closure)}
+                                                    className={cadastroRowIconBtnCls}
+                                                    title="Editar pagamento"
+                                                  >
+                                                    <Pencil size={14} />
+                                                  </button>
+                                                )}
                                                 <button
                                                   type="button"
-                                                  onClick={() => openEditPayment(payment, closure)}
-                                                  className={cadastroRowIconBtnCls}
-                                                  title="Editar pagamento"
+                                                  onClick={() => handleDeletePayment(closure, payment.id)}
+                                                  className={cadastroRowIconDangerCls}
+                                                  title="Remover pagamento"
                                                 >
-                                                  <Pencil size={14} />
+                                                  <Trash2 size={14} />
                                                 </button>
-                                              )}
-                                              <button
-                                                type="button"
-                                                onClick={() => handleDeletePayment(closure, payment.id)}
-                                                className={cadastroRowIconDangerCls}
-                                                title="Remover pagamento"
-                                              >
-                                                <Trash2 size={14} />
-                                              </button>
-                                            </div>
+                                              </div>
+                                            </CadastroRowMutations>
                                           </td>
                                         </tr>
                                       ))}
@@ -2635,7 +2644,7 @@ const SharedBalanceListPage = () => {
       </CadastroListPageShell>
 
         {/* Barra Flutuante de Ações em Lote - Fixed no rodapé, respeita o sidebar */}
-        {filtersApplied && selectedClosureIds.size > 0 && (() => {
+        {canWrite && filtersApplied && selectedClosureIds.size > 0 && (() => {
           const hasSettledSelected = closures.some(c => selectedClosureIds.has(c.id) && c.is_settled)
           const hasUnsettledSelected = closures.some(c => selectedClosureIds.has(c.id) && !c.is_settled)
           return (
@@ -2654,35 +2663,37 @@ const SharedBalanceListPage = () => {
                   </button>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleBulkSettle}
-                    disabled={bulkActionLoading || !hasUnsettledSelected}
-                    className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg transition-all font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md hover:opacity-90 whitespace-nowrap text-white bg-green-600 hover:bg-green-700"
-                    title={hasUnsettledSelected ? 'Quitar os fechamentos não-quitados selecionados' : 'Nenhum fechamento não-quitado selecionado'}
-                  >
-                    <Lock size={14} />
-                    Quitar
-                  </button>
-                  <button
-                    onClick={handleBulkUnsettle}
-                    disabled={bulkActionLoading || !hasSettledSelected}
-                    className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg transition-all font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md hover:opacity-90 whitespace-nowrap text-white"
-                    style={{ backgroundColor: 'var(--crud-edit)' }}
-                    title={hasSettledSelected ? 'Remover quitação dos fechamentos quitados selecionados' : 'Nenhum fechamento quitado selecionado'}
-                  >
-                    <Unlock size={14} />
-                    Abrir Quitados
-                  </button>
-                  <button
-                    onClick={handleBulkReopen}
-                    disabled={bulkActionLoading}
-                    className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg transition-all font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md hover:opacity-90 whitespace-nowrap text-white"
-                    style={{ backgroundColor: 'var(--crud-delete)' }}
-                    title="Excluir todos os fechamentos selecionados"
-                  >
-                    <Trash2 size={14} />
-                    Excluir
-                  </button>
+                  <WriteGate>
+                    <button
+                      onClick={handleBulkSettle}
+                      disabled={bulkActionLoading || !hasUnsettledSelected}
+                      className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg transition-all font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md hover:opacity-90 whitespace-nowrap text-white bg-green-600 hover:bg-green-700"
+                      title={hasUnsettledSelected ? 'Quitar os fechamentos não-quitados selecionados' : 'Nenhum fechamento não-quitado selecionado'}
+                    >
+                      <Lock size={14} />
+                      Quitar
+                    </button>
+                    <button
+                      onClick={handleBulkUnsettle}
+                      disabled={bulkActionLoading || !hasSettledSelected}
+                      className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg transition-all font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md hover:opacity-90 whitespace-nowrap text-white"
+                      style={{ backgroundColor: 'var(--crud-edit)' }}
+                      title={hasSettledSelected ? 'Remover quitação dos fechamentos quitados selecionados' : 'Nenhum fechamento quitado selecionado'}
+                    >
+                      <Unlock size={14} />
+                      Abrir Quitados
+                    </button>
+                    <button
+                      onClick={handleBulkReopen}
+                      disabled={bulkActionLoading}
+                      className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg transition-all font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md hover:opacity-90 whitespace-nowrap text-white"
+                      style={{ backgroundColor: 'var(--crud-delete)' }}
+                      title="Excluir todos os fechamentos selecionados"
+                    >
+                      <Trash2 size={14} />
+                      Excluir
+                    </button>
+                  </WriteGate>
                   {/* Botão Back to Top dentro da barra de ações */}
                   {showClosuresBackToTop && (
                     <button

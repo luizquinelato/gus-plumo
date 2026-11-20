@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Sidebar from '../components/Sidebar'
 import {
   CadastroListCreateButton,
+  CadastroRowMutations,
   CadastroListPageBody,
   CadastroListPageEmptyCard,
   CadastroListPageHero,
@@ -15,6 +16,7 @@ import {
   type StatusFilter,
 } from '../components/CadastroListPageLayout'
 import FloatingFooterBar from '../components/FloatingFooterBar'
+import { usePageWriteAllowed, WriteGate } from '../contexts/PageMutationContext'
 import { ListPageTable } from '../components/ListPageTable'
 import {
   ListTableCheckboxCell,
@@ -99,6 +101,7 @@ const contasTableColsEqual = (
 )
 
 const ContasPage = () => {
+  const canWrite = usePageWriteAllowed()
   const [contas, setContas] = useState<Conta[]>([])
   const [bancos, setBancos] = useState<Bank[]>([])
   const [loading, setLoading] = useState(true)
@@ -600,14 +603,16 @@ const ContasPage = () => {
                       />
                     </td>
                     <td className="px-3 py-3">
-                      <div className="flex items-center gap-1">
-                        <button type="button" onClick={() => abrirModalEditar(conta)} className={cadastroRowIconBtnCls} title="Editar">
-                          <Edit2 size={15} />
-                        </button>
-                        <button type="button" onClick={() => handleDelete(conta.id)} className={cadastroRowIconDangerCls} title="Excluir">
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
+                      <CadastroRowMutations>
+                        <div className="flex items-center gap-1">
+                          <button type="button" onClick={() => abrirModalEditar(conta)} className={cadastroRowIconBtnCls} title="Editar">
+                            <Edit2 size={15} />
+                          </button>
+                          <button type="button" onClick={() => handleDelete(conta.id)} className={cadastroRowIconDangerCls} title="Excluir">
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </CadastroRowMutations>
                     </td>
                   </tr>
                 )
@@ -617,7 +622,7 @@ const ContasPage = () => {
         </CadastroListPageBody>
       </CadastroListPageShell>
 
-      {selectedContaIds.size > 0 && (
+      {canWrite && selectedContaIds.size > 0 && (
         <FloatingFooterBar>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -636,16 +641,18 @@ const ContasPage = () => {
               </button>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleBulkDelete}
-                disabled={bulkDeleting}
-                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
-                style={{ backgroundColor: 'var(--crud-delete)' }}
-              >
-                <Trash2 size={14} />
-                {bulkDeleting ? 'Excluindo…' : 'Excluir'}
-              </button>
+              <WriteGate>
+                <button
+                  type="button"
+                  onClick={handleBulkDelete}
+                  disabled={bulkDeleting}
+                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
+                  style={{ backgroundColor: 'var(--crud-delete)' }}
+                >
+                  <Trash2 size={14} />
+                  {bulkDeleting ? 'Excluindo…' : 'Excluir'}
+                </button>
+              </WriteGate>
               {showBackToTop && (
                 <button
                   type="button"
